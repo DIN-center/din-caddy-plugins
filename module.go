@@ -6,15 +6,21 @@ import (
 	"net/http"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"net/url"
 )
 
 var (
 	_ caddy.Module                = (*DinUpstreams)(nil)
-	_ caddy.Provisioner           = (*DinUpstreams)(nil)
+	_ caddy.Module                = (*DinSelect)(nil)
+	_ caddy.Module                = (*DinMiddleware)(nil)
+	_ caddy.Provisioner           = (*DinSelect)(nil)
+	_ caddy.Provisioner           = (*DinMiddleware)(nil)
+	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
+	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
 	// _ caddy.Validator             = (*DinUpstreams)(nil)
-	_ caddyfile.Unmarshaler       = (*DinUpstreams)(nil)
 	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
 )
 
@@ -22,6 +28,8 @@ var (
 func init() {
 	caddy.RegisterModule(DinUpstreams{})
 	caddy.RegisterModule(DinSelect{})
+	caddy.RegisterModule(DinMiddleware{})
+	httpcaddyfile.RegisterHandlerDirective("din", parseCaddyfile)
 }
 
 type metaUpstream struct{
@@ -63,8 +71,6 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 }
 
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
-	// }
-
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var mus []*metaUpstream
 	if v, ok := repl.Get("din.internal.upstreams"); ok {
@@ -86,15 +92,15 @@ func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	return nil
 }
 
-
-
-// Gizmo is an example; put your own type here.
-type DinUpstreams struct {
+type DinMiddleware struct {
 	Services map[string][]*metaUpstream `json:"Services"`
 	Methods map[string][]*string `json:"Methods"`
 }
 
-func (d *DinUpstreams) Provision(context caddy.Context) error {
+// Gizmo is an example; put your own type here.
+type DinUpstreams struct {}
+
+func (d *DinMiddleware) Provision(context caddy.Context) error {
 	for _, upstreams := range d.Services {
 		for _, metaUpstream := range upstreams {
 			url, err := url.Parse(metaUpstream.HttpUrl)
@@ -109,32 +115,26 @@ func (d *DinUpstreams) Provision(context caddy.Context) error {
 	return nil
 }
 
-func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
+func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	mus, ok := d.Services[strings.TrimPrefix(r.URL.Path, "/")]
 	if !ok {
-		fmt.Printf("No services available for %v\n", strings.TrimPrefix(r.URL.Path, "/"))
-		return nil, fmt.Errorf("service undefined")
+		rw.WriteHeader(404)
+		rw.Write([]byte("Not Found\n"))
+		return fmt.Errorf("service undefined")
 	}
-	res := make([]*reverseproxy.Upstream, len(mus))
-	for i, u := range mus {
-		res[i] = u.upstream
-	}
-
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("din.internal.upstreams", mus)
-
-	return res, nil
+	return next.ServeHTTP(rw, r)
 }
 
 // CaddyModule returns the Caddy module information.
-func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
+func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.upstreams.dinupstreams",
-		New: func() caddy.Module { return new(DinUpstreams) },
+		ID:  "http.handlers.din",
+		New: func() caddy.Module { return new(DinMiddleware) },
 	}
 }
-
-func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
+func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	if d.Methods == nil {
 		d.Methods = make(map[string][]*string)
 	}
@@ -183,4 +183,40 @@ func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error 
 		}
 	}
 	return nil
+}
+
+
+func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
+	var mus []*metaUpstream
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if v, ok := repl.Get("din.internal.upstreams"); ok {
+		mus = v.([]*metaUpstream)
+	}
+	res := make([]*reverseproxy.Upstream, len(mus))
+	for i, u := range mus {
+		res[i] = u.upstream
+	}
+	return res, nil
+}
+
+func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.upstreams.dinupstreams",
+		New: func() caddy.Module { return new(DinUpstreams) },
+	}
+}
+
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	j := new(DinMiddleware)
+	err := j.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+
+	return j, nil
 }
