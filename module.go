@@ -118,6 +118,11 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	mus, ok := d.Services[strings.TrimPrefix(r.URL.Path, "/")]
 	if !ok {
+		if strings.TrimPrefix(r.URL.Path, "/") == "" {
+			rw.WriteHeader(200)
+			rw.Write([]byte("{}"))
+			return nil
+		}
 		rw.WriteHeader(404)
 		rw.Write([]byte("Not Found\n"))
 		return fmt.Errorf("service undefined")
