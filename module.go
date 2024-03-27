@@ -35,6 +35,7 @@ func init() {
 type metaUpstream struct{
 	HttpUrl string `json:"http.url"`
 	path    string
+	Headers map[string]string
 	upstream *reverseproxy.Upstream
 }
 
@@ -46,6 +47,7 @@ func urlToMetaUpstream(urlstr string) (*metaUpstream, error) {
 	return &metaUpstream{
 		HttpUrl: urlstr,
 		path: url.Path,
+		Headers: make(map[string]string),
 		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
 	}, nil
@@ -82,6 +84,9 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		if res == mu.upstream {
 			r.URL.RawPath = mu.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
+			for k, v := range mu.Headers {
+				r.Header.Add(k, v)
+			}
 			break
 		}
 	}
@@ -151,8 +156,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				fmt.Println(serviceName)
-	
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -164,20 +167,28 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return dispenser.Errf("invalid 'methods' argument for service %s", serviceName)
 						}
 					case "providers":
-						if dispenser.NextBlock(nesting + 1) {
+						for dispenser.NextBlock(nesting + 1) {
 							ms, err := urlToMetaUpstream(dispenser.Val())
 							if err != nil {
 								return err
 							}
-							d.Services[serviceName] = append(d.Services[serviceName], ms)
-							for dispenser.NextBlock(nesting + 1) {
-								ms, err := urlToMetaUpstream(dispenser.Val())
-								if err != nil {
-									return err
+							for dispenser.NextBlock(nesting + 2) {
+								switch dispenser.Val() {
+								case "headers":
+									for dispenser.NextBlock(nesting + 3) {
+										k := dispenser.Val()
+										var v string
+										if dispenser.Args(&v) {
+											ms.Headers[k] = v
+										} else {
+											return dispenser.Errf("header should have key and value")
+										}
+									}
 								}
-								d.Services[serviceName] = append(d.Services[serviceName], ms)
 							}
-						} else {
+							d.Services[serviceName] = append(d.Services[serviceName], ms)
+						}
+						if len(d.Services[serviceName]) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
 					default:
