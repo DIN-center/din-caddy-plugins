@@ -2,7 +2,10 @@ module github.com/openrelayxyz/din-caddy-plugins
 
 go 1.21.0
 
-require github.com/caddyserver/caddy/v2 v2.7.6
+require (
+	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/prometheus/client_golang v1.15.1
+)
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
@@ -62,7 +65,6 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.15.1 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
