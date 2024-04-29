@@ -10,6 +10,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"net/url"
+	"strconv"
 )
 
 var (
@@ -33,10 +34,11 @@ func init() {
 }
 
 type metaUpstream struct{
-	HttpUrl string `json:"http.url"`
-	path    string
-	Headers map[string]string
+	HttpUrl  string `json:"http.url"`
+	path     string
+	Headers  map[string]string
 	upstream *reverseproxy.Upstream
+	Priority int
 }
 
 func urlToMetaUpstream(urlstr string) (*metaUpstream, error) {
@@ -184,6 +186,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											return dispenser.Errf("header should have key and value")
 										}
 									}
+								case "priority":
+									dispenser.NextBlock(nesting + 2)
+									ms.Priority, err = strconv.Atoi(dispenser.Val())
+									if err != nil {
+										return err
+									}
 								}
 							}
 							d.Services[serviceName] = append(d.Services[serviceName], ms)
@@ -208,9 +216,22 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 	if v, ok := repl.Get("din.internal.upstreams"); ok {
 		mus = v.([]*metaUpstream)
 	}
-	res := make([]*reverseproxy.Upstream, len(mus))
-	for i, u := range mus {
-		res[i] = u.upstream
+	res := make([]*reverseproxy.Upstream, 0, len(mus))
+	for priority := 0; priority < len(mus); priority++ {
+		for _, u := range mus {
+			if u.Priority == priority && u.upstream.Available() {
+				res = append(res, u.upstream)
+			}
+		}
+		if len(res) > 0 {
+			break
+		}
+	}
+	if len(res) == 0 {
+		// Didn't find any based on priority, available, pass along all upstreams
+		for _, u := range mus {
+			res = append(res, u.upstream)
+		}
 	}
 	return res, nil
 }
