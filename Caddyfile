@@ -2,6 +2,7 @@
 	servers {
 		metrics
 	}
+    admin :2019
 }
 :8000 {
     route /* {
@@ -102,8 +103,10 @@
             dynamic dinupstreams
             header_up Host {upstream_hostport}
         }
-        metrics /metrics {
-		}
     }
-
+    metrics /metrics {
+    }
+	tracing {
+        span din_span
+    }
 }

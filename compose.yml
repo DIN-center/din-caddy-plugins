@@ -1,0 +1,19 @@
+## This file is for local development purposes ONLY ##
+version: '3.7'
+services:
+  din-caddy:
+    image: din-caddy
+    container_name: din-caddy
+    restart: always
+    ports:
+      - 2019:2019
+      - 8000:8000
+    volumes:
+      - ./Caddyfile.private:/etc/caddy/Caddyfile
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090

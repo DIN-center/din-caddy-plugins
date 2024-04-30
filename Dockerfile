@@ -11,16 +11,3 @@ RUN xcaddy build --with github.com/openrelayxyz/din-caddy-plugins=/din-plugins
 FROM caddy:2.7.6
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-
-
-# Use the official Prometheus image from Docker Hub
-FROM prom/prometheus
-
-# Copy the Prometheus configuration file from the host into the container
-COPY prometheus.yml /etc/prometheus/
-
-# Expose the Prometheus port
-EXPOSE 9090
-
-# Start Prometheus using the provided configuration
-CMD ["--config.file=/etc/prometheus/prometheus.yml"]
