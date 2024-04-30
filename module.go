@@ -17,6 +17,8 @@ var (
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
+	// TODO: validate provision step
+	// _ caddy.Validator			= (*DinMiddleware)(nil)
 
 	// Din Upstream Module
 	_ caddy.Module                = (*DinUpstreams)(nil)
