@@ -6,7 +6,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	mod "github.com/openrelayxyz/din-caddy-plugins/modules"
 )
 
 var (
@@ -14,31 +13,31 @@ var (
 	// https://caddyserver.com/docs/extending-caddy
 
 	// Din Middleware Module
-	_ caddy.Module                = (*mod.DinMiddleware)(nil)
-	_ caddy.Provisioner           = (*mod.DinMiddleware)(nil)
-	_ caddyhttp.MiddlewareHandler = (*mod.DinMiddleware)(nil)
-	_ caddyfile.Unmarshaler       = (*mod.DinMiddleware)(nil)
+	_ caddy.Module                = (*DinMiddleware)(nil)
+	_ caddy.Provisioner           = (*DinMiddleware)(nil)
+	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
+	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
 	// TODO: validate provision step
-	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
+	// _ caddy.Validator			= (*DinMiddleware)(nil)
 
 	// Din Upstream Module
-	_ caddy.Module                = (*mod.DinUpstreams)(nil)
-	_ reverseproxy.UpstreamSource = (*mod.DinUpstreams)(nil)
+	_ caddy.Module                = (*DinUpstreams)(nil)
+	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
 
 	// Din Select Module
-	_ caddy.Module      = (*mod.DinSelect)(nil)
-	_ caddy.Provisioner = (*mod.DinSelect)(nil)
+	_ caddy.Module      = (*DinSelect)(nil)
+	_ caddy.Provisioner = (*DinSelect)(nil)
 )
 
 func init() {
-	caddy.RegisterModule(mod.DinUpstreams{})
-	caddy.RegisterModule(mod.DinSelect{})
-	caddy.RegisterModule(mod.DinMiddleware{})
+	caddy.RegisterModule(DinUpstreams{})
+	caddy.RegisterModule(DinSelect{})
+	caddy.RegisterModule(DinMiddleware{})
 	httpcaddyfile.RegisterHandlerDirective("din", parseCaddyfile)
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	j := new(mod.DinMiddleware)
+	j := new(DinMiddleware)
 	err := j.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err
