@@ -1,4 +1,4 @@
-## This file is for local development purposes ONLY ##
+### This file is for LOCAL development purposes ONLY ###
 version: '3.7'
 services:
   din-caddy:
@@ -10,6 +10,12 @@ services:
       - 8000:8000
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
+    environment:
+      - OTEL_SERVICE_NAME=din-app
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
   prometheus:
     image: prom/prometheus
     container_name: prometheus
@@ -17,3 +23,20 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - 9090:9090
+  jaeger:
+      image: 'jaegertracing/all-in-one:1.37'
+      container_name: jaeger
+      environment:
+          - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+          - COLLECTOR_OTLP_ENABLED=true
+      ports:
+          - "6831:6831/udp"
+          - "6832:6832/udp"
+          - 5778:5778
+          - 16686:16686
+          - 4317:4317
+          - 4318:4318
+          - 14250:14250
+          - 14268:14268
+          - 14269:14269
+          - 9411:9411
