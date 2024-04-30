@@ -3,6 +3,6 @@ global:
   scrape_interval: 15s # default is 1 minute
 
 scrape_configs:
-  - job_name: din_caddy
+  - job_name: din-caddy-scraper
     static_configs:
-      - targets: ['localhost:2019']
+      - targets: ['din-caddy:2019']
