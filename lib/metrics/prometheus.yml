@@ -1,6 +1,6 @@
 # prometheus.yaml
 global:
-  scrape_interval: 60s # default is 1 minute
+  scrape_interval: 1s # default is 1 minute
 
 scrape_configs:
   - job_name: din-caddy-scraper

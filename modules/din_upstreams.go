@@ -1,4 +1,4 @@
-package din
+package modules
 
 import (
 	"net/http"
