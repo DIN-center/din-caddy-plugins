@@ -2,7 +2,6 @@ package din
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -51,20 +50,6 @@ type metaUpstream struct {
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream
 	Priority int
-}
-
-func urlToMetaUpstream(urlstr string) (*metaUpstream, error) {
-	url, err := url.Parse(urlstr)
-	if err != nil {
-		return nil, err
-	}
-	return &metaUpstream{
-		HttpUrl: urlstr,
-		path:    url.Path,
-		Headers: make(map[string]string),
-		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
-		upstream: &reverseproxy.Upstream{Dial: url.Host},
-	}, nil
 }
 
 func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
