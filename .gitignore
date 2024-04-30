@@ -1,0 +1,4 @@
+Caddyfile.private
+.vscode/
+data/
+caddy
