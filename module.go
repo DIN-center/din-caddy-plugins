@@ -10,15 +10,24 @@ import (
 )
 
 var (
-	_ caddy.Module                = (*DinUpstreams)(nil)
-	_ caddy.Module                = (*DinSelect)(nil)
+	// Initializations of extended Caddy Module Interface Guards
+	// https://caddyserver.com/docs/extending-caddy
+
+	// Din Middleware Module
 	_ caddy.Module                = (*DinMiddleware)(nil)
-	_ caddy.Provisioner           = (*DinSelect)(nil)
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
-	// _ caddy.Validator             = (*DinUpstreams)(nil)
+	// TODO: validate provision step
+	// _ caddy.Validator			= (*DinMiddleware)(nil)
+
+	// Din Upstream Module
+	_ caddy.Module                = (*DinUpstreams)(nil)
 	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
+
+	// Din Select Module
+	_ caddy.Module      = (*DinSelect)(nil)
+	_ caddy.Provisioner = (*DinSelect)(nil)
 )
 
 func init() {

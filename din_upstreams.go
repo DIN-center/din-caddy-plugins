@@ -10,6 +10,14 @@ import (
 
 type DinUpstreams struct{}
 
+type metaUpstream struct {
+	HttpUrl  string `json:"http.url"`
+	path     string
+	Headers  map[string]string
+	upstream *reverseproxy.Upstream
+	Priority int
+}
+
 // CaddyModule returns the Caddy module information.
 func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -42,14 +50,6 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		}
 	}
 	return res, nil
-}
-
-type metaUpstream struct {
-	HttpUrl  string `json:"http.url"`
-	path     string
-	Headers  map[string]string
-	upstream *reverseproxy.Upstream
-	Priority int
 }
 
 func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
