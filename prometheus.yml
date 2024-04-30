@@ -5,4 +5,4 @@ global:
 scrape_configs:
   - job_name: din-caddy-scraper
     static_configs:
-      - targets: ['din-caddy:2019']
+      - targets: ['din-caddy:2019'] ##TODO: Needs to be updated with the actual docker name
