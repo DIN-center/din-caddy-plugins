@@ -1,8 +1,8 @@
 # prometheus.yaml
 global:
-  scrape_interval: 15s # default is 1 minute
+  scrape_interval: 60s # default is 1 minute
 
 scrape_configs:
   - job_name: din-caddy-scraper
     static_configs:
-      - targets: ['din-caddy:2019'] ##TODO: Needs to be updated with the actual docker name
+      - targets: ['din-caddy:2019'] ##TODO: Needs to be updated with the actual docker container name
