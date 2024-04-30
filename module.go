@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	// Initializations of extended Caddy Modules
+	// Initializations of extended Caddy Module Interface Guards
 	// https://caddyserver.com/docs/extending-caddy
 
 	// Din Middleware Module
