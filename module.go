@@ -6,8 +6,10 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	mod "github.com/openrelayxyz/din-caddy-plugins/modules"
 	"github.com/prometheus/client_golang/prometheus"
+
+	metrics "github.com/openrelayxyz/din-caddy-plugins/lib/metrics"
+	mod "github.com/openrelayxyz/din-caddy-plugins/modules"
 )
 
 var (
@@ -38,7 +40,7 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("din", parseCaddyfile)
 
 	// Register custom prometheus request metrics
-	prometheus.MustRegister(dinRequestCount)
+	prometheus.MustRegister(metrics.DinRequestCount)
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -50,12 +52,3 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 	return j, nil
 }
-
-// prometheus metric initialization
-var dinRequestCount = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "din_http_request_count",
-		Help: "",
-	},
-	[]string{"service", "method", "provider"},
-)
