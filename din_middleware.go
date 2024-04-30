@@ -14,8 +14,8 @@ import (
 )
 
 type DinMiddleware struct {
-	Services map[string][]*metaUpstream `json:"Services"`
-	Methods  map[string][]*string       `json:"Methods"`
+	Services map[string][]*metaUpstream `json:"services"`
+	Methods  map[string][]*string       `json:"methods"`
 }
 
 // CaddyModule returns the Caddy module information.
