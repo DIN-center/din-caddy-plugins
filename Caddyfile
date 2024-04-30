@@ -106,7 +106,7 @@
     }
     metrics /metrics {
     }
-    tracing {
-        span din_span
+tracing {
+        span caddy_span
     }
 }
