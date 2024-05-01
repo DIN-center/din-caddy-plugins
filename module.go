@@ -6,8 +6,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	mod "github.com/openrelayxyz/din-caddy-plugins/modules"
-	prom "github.com/openrelayxyz/din-caddy-plugins/services/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
