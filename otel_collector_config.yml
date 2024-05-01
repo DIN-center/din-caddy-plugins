@@ -1,0 +1,17 @@
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'din-prometheus-collector'
+          static_configs:
+            - targets: ['prometheus:9090'] # Change this to match your Prometheus endpoint
+
+exporters:
+  logging:
+    loglevel: debug
+
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      exporters: [logging]

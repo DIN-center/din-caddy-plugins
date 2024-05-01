@@ -10,6 +10,14 @@ services:
       - 8000:8000
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
+  otel-collector:
+    image: otel/opentelemetry-collector:0.99.0
+    volumes:
+      - ./otel_collector_config.yml:/etc/otel/config/otel_collector_config.yml
+    ports:
+      - 4317:4317 # OpenTelemetry gRPC
+      - 55679:55679 # trace spans panel
+    # command: ["--config=/etc/otel/config/otel_collector_config.yml"]
   prometheus:
     image: prom/prometheus
     container_name: prometheus
