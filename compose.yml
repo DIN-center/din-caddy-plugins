@@ -11,10 +11,15 @@ services:
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
   otel-collector:
-    image: otel/opentelemetry-collector:0.99.0
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.99.0
     volumes:
-      - ./services/open-telemetry/config.yml:/etc/otel/config/config.yml
+      - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
     ports:
       - 4317:4317 # OpenTelemetry gRPC
+      - 9090:9090
+      - 443:443
+      - 8443:8443
+      - 80:80
       - 55679:55679 # trace spans panel
     command: ["--config=/etc/otel/config/config.yml"]
