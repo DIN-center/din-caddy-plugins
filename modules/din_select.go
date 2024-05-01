@@ -1,4 +1,4 @@
-package din
+package modules
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
+	prom "github.com/openrelayxyz/din-caddy-plugins/services/prometheus"
 )
 
 type DinSelect struct {
@@ -85,7 +87,7 @@ func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, provid
 	service = strings.TrimPrefix(service, "/")
 
 	// Increment prometheus metric based on request data
-	dinRequestCount.WithLabelValues(service, method, provider).Inc()
+	prom.DinRequestCount.WithLabelValues(service, method, provider).Inc()
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

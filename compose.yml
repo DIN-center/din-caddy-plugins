@@ -13,15 +13,15 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector:0.99.0
     volumes:
-      - ./otel_collector_config.yml:/etc/otel/config/otel_collector_config.yml
+      - ./services/open-telemetry/config.yml:/etc/otel/config/config.yml
     ports:
       - 4317:4317 # OpenTelemetry gRPC
       - 55679:55679 # trace spans panel
-    # command: ["--config=/etc/otel/config/otel_collector_config.yml"]
+    # command: ["--config=/etc/otel/config/config.yml"]
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - 9090:9090
