@@ -106,7 +106,7 @@
         metrics /metrics {
         }
     }
-tracing {
+    tracing {
         span caddy_span
     }
 }
