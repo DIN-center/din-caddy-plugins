@@ -79,7 +79,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [resourcedetection, batch]
-      exporters: [otlp/grafana_cloud_traces, logging]
+      exporters: [otlp/grafana_cloud_traces]
     # logs:
     #   receivers: [prometheus]
     #   processors: [resourcedetection, batch]
