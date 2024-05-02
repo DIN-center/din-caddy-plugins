@@ -11,32 +11,18 @@ services:
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
     environment:
-      - OTEL_SERVICE_NAME=din-app
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=test-service3
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo-prod-04-prod-us-east-0.grafana.net:443
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.instance.id=shopping-cart-66b6c48dd5-hprdn
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo-prod-04-prod-us-east-0.grafana.net:443
       - OTEL_EXPORTER_OTLP_INSECURE=true
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.99.0
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
     ports:
-      - 9090:9090
-  jaeger:
-      image: 'jaegertracing/all-in-one:1.37'
-      container_name: jaeger
-      environment:
-          - COLLECTOR_ZIPKIN_HOST_PORT=:9411
-          - COLLECTOR_OTLP_ENABLED=true
-      ports:
-          - "6831:6831/udp"
-          - "6832:6832/udp"
-          - 5778:5778
-          - 16686:16686
-          - 4317:4317
-          - 4318:4318
-          - 14250:14250
-          - 14268:14268
-          - 14269:14269
-          - 9411:9411
+      - 4317:4317
+      - 8888:8888 # for Prometheus metrics /metrics
+    command: ["--config=/etc/otel/config/config.yml"]

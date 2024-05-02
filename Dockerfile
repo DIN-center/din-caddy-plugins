@@ -5,7 +5,13 @@ FROM caddy:2.7.6-builder AS builder
 RUN xcaddy build
 
 RUN mkdir /din-plugins
+RUN mkdir /din-plugins/lib
+RUN mkdir /din-plugins/modules
+
 COPY *.go go.* /din-plugins/
+COPY lib/ /din-plugins/lib/
+COPY modules/ /din-plugins/modules/
+
 RUN xcaddy build --with github.com/openrelayxyz/din-caddy-plugins=/din-plugins
 
 FROM caddy:2.7.6
