@@ -11,10 +11,9 @@ services:
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
     environment:
-      - OTEL_SERVICE_NAME=test-service3
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo-prod-04-prod-us-east-0.grafana.net:443
-      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.instance.id=shopping-cart-66b6c48dd5-hprdn
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo-prod-04-prod-us-east-0.grafana.net:443
+      - OTEL_SERVICE_NAME=din-caddy
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_INSECURE=true
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
   otel-collector:
