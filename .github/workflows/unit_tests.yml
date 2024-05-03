@@ -28,7 +28,7 @@ jobs:
 
       - name: Package Unit Tests
         run: |
-          go test -count=1 -covermode=count -coverprofile=coverage.out github.com/openrelayxyz/modules/...
+          go test -count=1 -covermode=count -coverprofile=coverage.out ./...
           go tool cover -func coverage.out
           echo "PER_COVER=`go tool cover -func coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}'`" >> $GITHUB_ENV
 
