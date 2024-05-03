@@ -4,6 +4,7 @@ go 1.21.0
 
 require (
 	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/golang/mock v1.6.0
 	github.com/prometheus/client_golang v1.15.1
 )
 
