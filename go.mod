@@ -6,8 +6,10 @@ require (
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
+	github.com/golang/mock v1.6.0
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spruceid/siwe-go v0.2.1
+	go.uber.org/zap v1.25.0
 )
 
 require (
@@ -101,7 +103,6 @@ require (
 	go.step.sm/linkedca v0.20.1 // indirect
 	go.uber.org/mock v0.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.25.0 // indirect
 	golang.org/x/crypto v0.22.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/mod v0.17.0 // indirect
