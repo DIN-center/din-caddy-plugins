@@ -3,3 +3,4 @@ Caddyfile.private
 data/
 caddy
 din-plugins/
+coverage.out
