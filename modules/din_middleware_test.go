@@ -92,7 +92,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	}
 }
 
-func TestURLToMetaUpstream(t *testing.T) {
+func TestUrlToMetaUpstream(t *testing.T) {
 	tests := []struct {
 		name   string
 		urlstr string
