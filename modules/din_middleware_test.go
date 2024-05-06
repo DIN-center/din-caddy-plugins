@@ -47,15 +47,15 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	test := []struct {
 		name     string
 		request  *http.Request
-		services map[string][]*metaUpstream
+		services map[string][]*upstreamWrapper
 		hasErr   bool
 	}{
 		{
 			name:    "successful request",
 			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-			services: map[string][]*metaUpstream{
+			services: map[string][]*upstreamWrapper{
 				"eth": {
-					&metaUpstream{},
+					&upstreamWrapper{},
 				},
 			},
 			hasErr: false,
@@ -63,9 +63,9 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		{
 			name:    "unsuccessful request, path not found",
 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
-			services: map[string][]*metaUpstream{
+			services: map[string][]*upstreamWrapper{
 				"eth": {
-					&metaUpstream{},
+					&upstreamWrapper{},
 				},
 			},
 			hasErr: true,
@@ -73,7 +73,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		{
 			name:     "unsuccessful request, service map is empty",
 			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-			services: map[string][]*metaUpstream{},
+			services: map[string][]*upstreamWrapper{},
 			hasErr:   true,
 		},
 	}
@@ -92,17 +92,17 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	}
 }
 
-func TestUrlToMetaUpstream(t *testing.T) {
+func TestUrlToUpstreamWrapper(t *testing.T) {
 	tests := []struct {
 		name   string
 		urlstr string
-		outPut *metaUpstream
+		outPut *upstreamWrapper
 		hasErr bool
 	}{
 		{
 			name:   "passing localhost",
 			urlstr: "http://localhost:8080",
-			outPut: &metaUpstream{
+			outPut: &upstreamWrapper{
 				HttpUrl:  "http://localhost:8080",
 				path:     "",
 				Headers:  make(map[string]string),
@@ -114,7 +114,7 @@ func TestUrlToMetaUpstream(t *testing.T) {
 		{
 			name:   "passing fullurl with key",
 			urlstr: "https://eth.rpc.test.cloud:443/key",
-			outPut: &metaUpstream{
+			outPut: &upstreamWrapper{
 				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
 				path:     "/key",
 				Headers:  make(map[string]string),
@@ -127,12 +127,12 @@ func TestUrlToMetaUpstream(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metaUpstream, err := urlToMetaUpstream(tt.urlstr)
+			upstreamWrapper, err := urlToUpstreamWrapper(tt.urlstr)
 			if err != nil && !tt.hasErr {
-				t.Errorf("urlToMetaUpstream() = %v, want %v", err, tt.hasErr)
+				t.Errorf("urlToUpstreamWrapper() = %v, want %v", err, tt.hasErr)
 			}
-			if !reflect.DeepEqual(metaUpstream, tt.outPut) {
-				t.Errorf("urlToMetaUpstream() = %v, want %v", metaUpstream, tt.outPut)
+			if !reflect.DeepEqual(upstreamWrapper, tt.outPut) {
+				t.Errorf("urlToUpstreamWrapper() = %v, want %v", upstreamWrapper, tt.outPut)
 			}
 		})
 	}

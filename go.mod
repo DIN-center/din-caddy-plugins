@@ -6,7 +6,6 @@ require (
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
-	github.com/golang/mock v1.6.0
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spruceid/siwe-go v0.2.1
 	go.uber.org/zap v1.25.0
