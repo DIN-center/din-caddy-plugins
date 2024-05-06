@@ -9,8 +9,22 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+)
+
+var (
+	// Initializations of extended Caddy Module Interface Guards
+	// https://caddyserver.com/docs/extending-caddy
+
+	// Din Middleware Module
+	_ caddy.Module                = (*DinMiddleware)(nil)
+	_ caddy.Provisioner           = (*DinMiddleware)(nil)
+	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
+	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
+	// TODO: validate provision step
+	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
 )
 
 type DinMiddleware struct {
@@ -135,4 +149,13 @@ func urlToMetaUpstream(urlstr string) (*metaUpstream, error) {
 		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
 	}, nil
+}
+
+func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	err := d.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+
+	return d, nil
 }

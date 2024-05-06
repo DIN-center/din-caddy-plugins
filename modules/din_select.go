@@ -16,6 +16,15 @@ import (
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
+var (
+	// Initializations of extended Caddy Module Interface Guards
+	// https://caddyserver.com/docs/extending-caddy
+
+	// Din Select Module
+	_ caddy.Module      = (*DinSelect)(nil)
+	_ caddy.Provisioner = (*DinSelect)(nil)
+)
+
 type DinSelect struct {
 	selector reverseproxy.Selector
 }
