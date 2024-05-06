@@ -35,13 +35,19 @@ func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// GetUpstreams returns the possible upstreams for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
 	var upstreamWrappers []*upstreamWrapper
+
+	// Get upstreams from the replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if v, ok := repl.Get("din.internal.upstreams"); ok {
 		upstreamWrappers = v.([]*upstreamWrapper)
 	}
+
 	res := make([]*reverseproxy.Upstream, 0, len(upstreamWrappers))
+
+	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < len(upstreamWrappers); priority++ {
 		for _, u := range upstreamWrappers {
 			if u.Priority == priority && u.upstream.Available() {

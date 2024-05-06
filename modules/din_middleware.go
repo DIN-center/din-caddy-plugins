@@ -40,9 +40,12 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision() is called by Caddy to prepare the middleware for use.
+// It is called only once, when the server is starting.
+// For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
-	for _, upstreams := range d.Services {
-		for _, upstreamWrapper := range upstreams {
+	for _, upstreamWrappers := range d.Services {
+		for _, upstreamWrapper := range upstreamWrappers {
 			url, err := url.Parse(upstreamWrapper.HttpUrl)
 			if err != nil {
 				return err
@@ -55,6 +58,8 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	return nil
 }
 
+// ServeHTTP is the main handler for the middleware that is ran for every request.
+// It checks if the service path is defined in the services map and sets the upstreamWrapper in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 
@@ -74,6 +79,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	return next.ServeHTTP(rw, r)
 }
 
+// UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	if d.Methods == nil {
 		d.Methods = make(map[string][]*string)
@@ -137,6 +143,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	return nil
 }
 
+// urlToUpstreamWrapper parses the URL and returns an upstreamWrapper object
 func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
 	url, err := url.Parse(urlstr)
 	if err != nil {
