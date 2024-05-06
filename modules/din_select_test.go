@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestSelectCaddyModule(t *testing.T) {
@@ -32,5 +33,13 @@ func TestSelectCaddyModule(t *testing.T) {
 				t.Errorf("CaddyModule() = %v, want %v", modInfo.New(), tt.output.New())
 			}
 		})
+	}
+}
+
+func TestDinSelectUnmarshalCaddyfile(t *testing.T) {
+	dinSelect := new(DinSelect)
+	err := dinSelect.UnmarshalCaddyfile(&caddyfile.Dispenser{})
+	if err != nil {
+		t.Errorf("UnmarshalCaddyfile() error = %v, want nil", err)
 	}
 }

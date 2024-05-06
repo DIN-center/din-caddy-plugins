@@ -137,3 +137,63 @@ func TestUrlToUpstreamWrapper(t *testing.T) {
 		})
 	}
 }
+
+func TestDinMiddlewareProvision(t *testing.T) {
+	dinMiddleware := new(DinMiddleware)
+
+	tests := []struct {
+		name     string
+		services map[string][]*upstreamWrapper
+		hasErr   bool
+	}{
+		{
+			name: "Provision() populated 1 service, 2 upstreams successful",
+			services: map[string][]*upstreamWrapper{
+				"/eth": {
+					&upstreamWrapper{
+						HttpUrl: "http://localhost:8000/eth",
+					},
+					&upstreamWrapper{
+						HttpUrl: "http://localhost:8001/eth",
+					},
+				},
+			},
+			hasErr: false,
+		},
+		{
+			name: "Provision() populated 2 service, 1 upstreams successful",
+			services: map[string][]*upstreamWrapper{
+				"/eth": {
+					&upstreamWrapper{
+						HttpUrl: "http://localhost:8000/eth",
+					},
+				},
+				"/polygon": {
+					&upstreamWrapper{
+						HttpUrl: "http://localhost:8001/polygon",
+					},
+				},
+			},
+			hasErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinMiddleware.Services = tt.services
+			err := dinMiddleware.Provision(caddy.Context{})
+			if err != nil && !tt.hasErr {
+				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
+			}
+
+			for _, upstreamWrappers := range dinMiddleware.Services {
+				for _, upstreamWrapper := range upstreamWrappers {
+					if upstreamWrapper.upstream.Dial == "" || upstreamWrapper.path == "" {
+						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
+					}
+
+				}
+			}
+		})
+	}
+}
