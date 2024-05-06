@@ -8,6 +8,15 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
+var (
+	// Initializations of extended Caddy Module Interface Guards
+	// https://caddyserver.com/docs/extending-caddy
+
+	// Din Upstream Module
+	_ caddy.Module                = (*DinUpstreams)(nil)
+	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
+)
+
 type DinUpstreams struct{}
 
 type metaUpstream struct {
