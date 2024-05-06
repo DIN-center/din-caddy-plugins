@@ -63,7 +63,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 
-	upstreamWrapper, ok := d.Services[servicePath]
+	upstreamWrapperList, ok := d.Services[servicePath]
 	if !ok {
 		if servicePath == "" {
 			rw.WriteHeader(200)
@@ -75,7 +75,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set("din.internal.upstreams", upstreamWrapper)
+	repl.Set(DinUpstreamsContextKey, upstreamWrapperList)
 	return next.ServeHTTP(rw, r)
 }
 

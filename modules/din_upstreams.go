@@ -41,7 +41,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 
 	// Get upstreams from the replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if v, ok := repl.Get("din.internal.upstreams"); ok {
+	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		upstreamWrappers = v.([]*upstreamWrapper)
 	}
 
