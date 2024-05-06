@@ -32,11 +32,13 @@ type DinSelect struct {
 // CaddyModule returns the Caddy module information.
 func (DinSelect) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.selection_policies.dinupstreams",
+		ID:  "http.reverse_proxy.selection_policies.din_reverse_proxy_policy",
 		New: func() caddy.Module { return new(DinSelect) },
 	}
 }
 
+// Provision() is called by Caddy to prepare the selector for use.
+// It is called only once, when the server is starting.
 func (d *DinSelect) Provision(context caddy.Context) error {
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
 	selector.Provision(context)
@@ -44,19 +46,24 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 	return nil
 }
 
+// Select() is called by Caddy reverse proxy dynamic upstream selecting process to select an upstream based on the request.
+// It is called for each request.
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
+	//
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var mus []*metaUpstream
+	var upstreamWrappers []*upstreamWrapper
 	if v, ok := repl.Get("din.internal.upstreams"); ok {
-		mus = v.([]*metaUpstream)
+		upstreamWrappers = v.([]*upstreamWrapper)
 	}
 
+	// Select upstream based on request
 	res := d.selector.Select(pool, r, rw)
-	for _, mu := range mus {
-		if res == mu.upstream {
-			r.URL.RawPath = mu.path
+	for _, upstreamWrapper := range upstreamWrappers {
+		// If the upstream is found in the upstreamWrappers, set the path and headers for the request
+		if res == upstreamWrapper.upstream {
+			r.URL.RawPath = upstreamWrapper.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range mu.Headers {
+			for k, v := range upstreamWrapper.Headers {
 				r.Header.Add(k, v)
 			}
 			break
@@ -78,7 +85,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	return res
 }
 
-// Increments prometheus metric based on request data passed in
+// handleRequestMetric increments prometheus metric based on request data passed in
 func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, provider string) {
 	// First extract method data from body
 	// define struct to hold request data

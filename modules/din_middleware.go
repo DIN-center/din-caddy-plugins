@@ -28,8 +28,8 @@ var (
 )
 
 type DinMiddleware struct {
-	Services map[string][]*metaUpstream `json:"services"`
-	Methods  map[string][]*string       `json:"methods"`
+	Services map[string][]*upstreamWrapper `json:"services"`
+	Methods  map[string][]*string          `json:"methods"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -40,25 +40,30 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision() is called by Caddy to prepare the middleware for use.
+// It is called only once, when the server is starting.
+// For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
-	for _, upstreams := range d.Services {
-		for _, metaUpstream := range upstreams {
-			url, err := url.Parse(metaUpstream.HttpUrl)
+	for _, upstreamWrappers := range d.Services {
+		for _, upstreamWrapper := range upstreamWrappers {
+			url, err := url.Parse(upstreamWrapper.HttpUrl)
 			if err != nil {
 				return err
 			}
-			// metaUpstream.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
-			metaUpstream.upstream = &reverseproxy.Upstream{Dial: url.Host}
-			metaUpstream.path = url.Path
+			// upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
+			upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: url.Host}
+			upstreamWrapper.path = url.Path
 		}
 	}
 	return nil
 }
 
+// ServeHTTP is the main handler for the middleware that is ran for every request.
+// It checks if the service path is defined in the services map and sets the upstreamWrapper in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 
-	mus, ok := d.Services[servicePath]
+	upstreamWrapper, ok := d.Services[servicePath]
 	if !ok {
 		if servicePath == "" {
 			rw.WriteHeader(200)
@@ -70,16 +75,17 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set("din.internal.upstreams", mus)
+	repl.Set("din.internal.upstreams", upstreamWrapper)
 	return next.ServeHTTP(rw, r)
 }
 
+// UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	if d.Methods == nil {
 		d.Methods = make(map[string][]*string)
 	}
 	if d.Services == nil {
-		d.Services = make(map[string][]*metaUpstream)
+		d.Services = make(map[string][]*upstreamWrapper)
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
@@ -98,7 +104,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							ms, err := urlToMetaUpstream(dispenser.Val())
+							ms, err := urlToUpstreamWrapper(dispenser.Val())
 							if err != nil {
 								return err
 							}
@@ -137,12 +143,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	return nil
 }
 
-func urlToMetaUpstream(urlstr string) (*metaUpstream, error) {
+// urlToUpstreamWrapper parses the URL and returns an upstreamWrapper object
+func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
 	url, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, err
 	}
-	return &metaUpstream{
+	return &upstreamWrapper{
 		HttpUrl: urlstr,
 		path:    url.Path,
 		Headers: make(map[string]string),
