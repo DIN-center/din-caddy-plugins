@@ -81,11 +81,11 @@ service:
     metrics:
       receivers: [prometheus]
       processors: [resourcedetection, transform/add_resource_attributes_as_metric_attributes, batch]
-      exporters: [prometheusremotewrite/grafana_cloud_metrics, otlp]
+      exporters: [otlp]
     traces:
       receivers: [otlp]
       processors: [resourcedetection, batch]
-      exporters: [otlp/grafana_cloud_traces, otlp]
+      exporters: [otlp]
     # logs:
     #   receivers: [prometheus]
     #   processors: [resourcedetection, batch]
