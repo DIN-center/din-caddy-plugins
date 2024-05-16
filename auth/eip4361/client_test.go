@@ -29,7 +29,8 @@ func TestClientBasic(t *testing.T) {
 	signer := &SigningConfig{
 		PrivateKey: keyBytes,
 	}
-	signer.genPrivKey()
+	signer.GenPrivKey()
+	fmt.Printf("Key: %#x\nAddress: %v", keyBytes, signer.Address)
 	client := NewEIP4361Client(server.URL + "/auth", 16, signer)
 	if err := client.Start(); err != nil {
 		t.Errorf(err.Error())

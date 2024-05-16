@@ -53,7 +53,7 @@ type AuthClient interface {
 	// Error will return an error if the AuthClient is unhealthy, or nil if it should be able to sign a valid request
 	Error() error
 	// GetToken should take a map of parameters for a token, and return a map of Header -> Value for a session
-	GetToken(map[string]interface{}) AuthToken
+	GetToken(map[string]interface{}) (AuthToken, error)
 	// Sign should add headers to the client request such that it would be accepted by the server
 	Sign(*http.Request) error
 	// Stop should end any Goroutines associated with this client. Once an AuthClient is stopped it cannot be started again

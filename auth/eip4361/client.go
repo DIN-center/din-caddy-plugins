@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"hash/fnv"
+	"go.uber.org/zap"
 )
 
 type SigningConfig struct {
@@ -28,7 +29,7 @@ type SigningConfig struct {
 
 func (sc *SigningConfig) Sign(msg string) ([]byte, error) {
 	if sc.privateKey == nil && len(sc.PrivateKey) > 0 {
-		sc.genPrivKey()
+		sc.GenPrivKey()
 	}
 	if sc.privateKey != nil {
 		// Sign Locally
@@ -38,11 +39,17 @@ func (sc *SigningConfig) Sign(msg string) ([]byte, error) {
 	return nil, errors.New("private key must be set in signing config")
 }
 
-func (sc *SigningConfig) genPrivKey() error {
-	privateKey, err := crypto.ToECDSA(sc.PrivateKey)
-	sc.privateKey = privateKey
-	sc.Address = crypto.PubkeyToAddress(sc.privateKey.PublicKey).String()
-	return err
+func (sc *SigningConfig) GenPrivKey() error {
+	if sc.privateKey == nil {
+		privateKey, err := crypto.ToECDSA(sc.PrivateKey)
+		sc.privateKey = privateKey
+		if err != nil { return err }
+	}
+	if sc.Address == "" {
+		sc.Address = crypto.PubkeyToAddress(sc.privateKey.PublicKey).String()
+		fmt.Printf("Address: %v\n", sc.Address)
+	}
+	return nil
 }
 
 func signHash(data []byte) common.Hash {
@@ -71,6 +78,7 @@ type EIP4361ClientAuth struct {
 	quitCh chan struct{}
 	client *http.Client
 	domain string
+	logger *zap.Logger
 }
 
 func NewEIP4361Client(url string, sessionCount int, signer *SigningConfig) *EIP4361ClientAuth {
@@ -98,6 +106,20 @@ func NewEIP4361Client(url string, sessionCount int, signer *SigningConfig) *EIP4
 // Start a series of sessions with the provider. The AuthClient should automatically 
 // establish new sessions as they near expiration
 func (c *EIP4361ClientAuth) Start() error {
+	if c.client == nil {
+		c.client = &http.Client{Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConnsPerHost:   16,
+			MaxIdleConns:          16,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}}
+	}
 	url, err := url.Parse(c.ProviderURL)
 	if err != nil {
 		return err
@@ -108,6 +130,7 @@ func (c *EIP4361ClientAuth) Start() error {
 	}
 	c.SessionTokens = make([]auth.AuthToken, c.SessionCount)
 	for i := 0; i < c.SessionCount; i++ {
+		fmt.Printf("Making session tokens: %v/%v\n", i, c.SessionCount)
 		var err error
 		c.SessionTokens[i], err = c.GetToken(nil)
 		if err != nil {
@@ -155,6 +178,7 @@ type signedMessage struct {
 func (c *EIP4361ClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error) {
 	options := make(map[string]interface{})
 	options["expirationTime"] = time.Now().Add(time.Minute)
+	c.Signer.GenPrivKey()
 	msg, err := siwe.InitMessage(c.domain, c.Signer.Address, c.ProviderURL, siwe.GenerateNonce(), options)
 	if err != nil {
 		return auth.AuthToken{}, err
@@ -166,7 +190,7 @@ func (c *EIP4361ClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, er
 	data, err := json.Marshal(signedMessage{
 		Message: msg.String(),
 		Signature: sig,
-	}); 
+	})
 	if err != nil {
 		return auth.AuthToken{}, err
 	}

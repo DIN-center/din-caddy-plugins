@@ -2,16 +2,21 @@ package modules
 
 import (
 	"fmt"
+	"encoding/hex"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"io/ioutil"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
+	"github.com/openrelayxyz/din-caddy-plugins/auth/eip4361"
+	"go.uber.org/zap"
 )
 
 var (
@@ -30,6 +35,7 @@ var (
 type DinMiddleware struct {
 	Services map[string][]*upstreamWrapper `json:"services"`
 	Methods  map[string][]*string          `json:"methods"`
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -44,6 +50,7 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 // For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	d.logger = context.Logger(d) 
 	for _, upstreamWrappers := range d.Services {
 		for _, upstreamWrapper := range upstreamWrappers {
 			url, err := url.Parse(upstreamWrapper.HttpUrl)
@@ -110,6 +117,62 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							}
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
+								case "auth":
+									auth := &eip4361.EIP4361ClientAuth{
+										ProviderURL: strings.TrimSuffix(ms.HttpUrl, "/") + "/auth",
+										SessionCount: 16,
+									}
+									for dispenser.NextBlock(nesting + 3) {
+										switch dispenser.Val() {
+										case "type":
+											dispenser.NextBlock(nesting + 3)
+											if dispenser.Val() != "eip4361" {
+												return fmt.Errorf("Unknown auth type")
+											}
+										case "url":
+											dispenser.NextBlock(nesting + 3)
+											auth.ProviderURL = dispenser.Val()
+										case "sessions":
+											dispenser.NextBlock(nesting + 3)
+											auth.SessionCount, err = strconv.Atoi(dispenser.Val())
+											if err != nil {
+												return err
+											}
+										case "signer":
+											var key []byte
+											for dispenser.NextBlock(nesting + 4) {
+												switch dispenser.Val() {
+												case "secret_file":
+													dispenser.NextBlock(nesting + 4)
+													key, err = ioutil.ReadFile(dispenser.Val())
+													if err != nil {
+														return dispenser.Errf("failed to read secret file: %v", err)
+													}
+												case "secret":
+													dispenser.NextBlock(nesting + 4)
+													hexKey := dispenser.Val()
+													hexKey = strings.TrimPrefix(hexKey, "0x")
+													key, err = hex.DecodeString(hexKey)
+													if err != nil {
+														return err
+													}
+												}
+											}
+											auth.Signer = &eip4361.SigningConfig{
+												PrivateKey: key,
+											}
+											if err := auth.Signer.GenPrivKey(); err != nil {
+												return err
+											}
+										}
+									}
+									if auth.Signer == nil {
+										return fmt.Errorf("signer must be set")
+									}
+									ms.Auth = auth
+									if err := ms.Auth.Start(); err != nil {
+										return err
+									}
 								case "headers":
 									for dispenser.NextBlock(nesting + 3) {
 										k := dispenser.Val()

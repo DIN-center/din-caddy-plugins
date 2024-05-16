@@ -6,6 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/openrelayxyz/din-caddy-plugins/auth/eip4361"
 )
 
 var (
@@ -25,6 +26,7 @@ type upstreamWrapper struct {
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream
 	Priority int
+	Auth     *eip4361.EIP4361ClientAuth
 }
 
 // CaddyModule returns the Caddy module information.
