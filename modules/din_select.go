@@ -77,7 +77,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	}
 	// Increment prometheus metric based on request data
 	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.handleRequestMetric(body, r.RequestURI, res.Dial)
+	go d.handleRequestMetric(body, r.RequestURI, r.Host, res.Dial)
 
 	// Set request body back to original state
 	r.Body = io.NopCloser(bytes.NewBuffer(body))
@@ -86,7 +86,8 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
-func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, provider string) {
+func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
+	fmt.Println(hostName)
 	// First extract method data from body
 	// define struct to hold request data
 	var requestBody struct {
@@ -103,7 +104,7 @@ func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, provid
 	service = strings.TrimPrefix(service, "/")
 
 	// Increment prometheus metric based on request data
-	prom.DinRequestCount.WithLabelValues(service, method, provider).Inc()
+	prom.DinRequestCount.WithLabelValues(service, method, provider, hostName).Inc()
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

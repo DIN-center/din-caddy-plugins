@@ -1,4 +1,13 @@
 # Extending Caddy functionality documentation: https://caddyserver.com/docs/extending-caddy
+# global admin options: https://caddyserver.com/docs/caddyfile/options#global-options
+{
+	# admin configuration for metrics
+	servers {
+		metrics
+	}
+	# metrics port
+	admin :2019
+}
 # caddy server main port
 :8000 {
 	route /* {
@@ -108,6 +117,21 @@
 						https://bsc-mainnet.core.chainstack.com:443/key
 					}
 				}
+<<<<<<< HEAD
+=======
+				starknet-sepolia {
+					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
+					providers {
+						https://starknet-sepolia.blastapi.io/key
+					}
+				}
+				starknet-mainnet {
+					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
+					providers {
+						https://starknet-mainnet.blastapi.io/key
+					}
+				}
+>>>>>>> origin/master
 			}
 		}
 		# din reverse proxy directive configuration
