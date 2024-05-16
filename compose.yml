@@ -1,0 +1,27 @@
+### This file is for LOCAL development purposes ONLY ###
+version: '3.7'
+services:
+  din-caddy:
+    image: din-caddy
+    container_name: din-caddy
+    restart: always
+    ports:
+      - 2019:2019
+      - 8000:8000
+    volumes:
+      - ./Caddyfile.private:/etc/caddy/Caddyfile
+    environment:
+      - OTEL_SERVICE_NAME=din-caddy
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    volumes:
+      - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
+    ports:
+      - 4317:4317
+      - 8888:8888 # for Prometheus metrics /metrics
+    command: ["--config=/etc/otel/config/config.yml"]

@@ -1,0 +1,6 @@
+Caddyfile.private
+.vscode/
+data/
+caddy
+din-plugins/
+coverage.out
