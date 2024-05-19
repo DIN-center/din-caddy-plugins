@@ -12,8 +12,8 @@ jobs:
       - run:
           name: Authenticate with Google Cloud
           command: |
-            echo $GCP_SERVICE_ACCOUNT_KEY 
-            # | base64 --decode > ${HOME}/gcp-key.json
+            echo $GCP_SERVICE_ACCOUNT_KEY | base64 --decode 
+            # > ${HOME}/gcp-key.json
             # cat ${HOME}/gcp-key.json
       #       echo "export GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcp-key.json" >> $BASH_ENV
       #       source $BASH_ENV
