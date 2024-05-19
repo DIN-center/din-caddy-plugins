@@ -24,13 +24,13 @@ jobs:
       # - run:
       #     name: Build Docker image
       #     command: |
-      #       docker build -t gcr.io/$GCLOUD_PROJECT_ID/your_image_name:$CIRCLE_SHA1 .
+      #       docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG .
 
       # # Push Docker image to Google Container Registry (GCR)
       # - run:
       #     name: Push Docker image to GCR
       #     command: |
-      #       docker push gcr.io/$GCLOUD_PROJECT_ID/your_image_name:$CIRCLE_SHA1
+      #       docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
 
 workflows:
   version: 2
