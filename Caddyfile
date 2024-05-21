@@ -1,5 +1,4 @@
 # Extending Caddy functionality documentation: https://caddyserver.com/docs/extending-caddy
-
 # global admin options: https://caddyserver.com/docs/caddyfile/options#global-options
 {
 	# admin configuration for metrics
