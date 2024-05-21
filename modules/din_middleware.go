@@ -60,6 +60,11 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			// upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
 			upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			upstreamWrapper.path = url.Path
+			if upstreamWrapper.Auth != nil {
+				if err := upstreamWrapper.Auth.Start(context.Logger(d)); err != nil {
+					d.logger.Warn("Error starting authentication", zap.String("provider", upstreamWrapper.HttpUrl))
+				}
+			}
 		}
 	}
 	return nil
@@ -127,7 +132,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										case "type":
 											dispenser.NextBlock(nesting + 3)
 											if dispenser.Val() != "eip4361" {
-												return fmt.Errorf("Unknown auth type")
+												return fmt.Errorf("unknown auth type")
 											}
 										case "url":
 											dispenser.NextBlock(nesting + 3)
@@ -170,9 +175,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										return fmt.Errorf("signer must be set")
 									}
 									ms.Auth = auth
-									if err := ms.Auth.Start(); err != nil {
-										return err
-									}
 								case "headers":
 									for dispenser.NextBlock(nesting + 3) {
 										k := dispenser.Val()

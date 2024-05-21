@@ -47,7 +47,6 @@ func (sc *SigningConfig) GenPrivKey() error {
 	}
 	if sc.Address == "" {
 		sc.Address = crypto.PubkeyToAddress(sc.privateKey.PublicKey).String()
-		fmt.Printf("Address: %v\n", sc.Address)
 	}
 	return nil
 }
@@ -105,7 +104,8 @@ func NewEIP4361Client(url string, sessionCount int, signer *SigningConfig) *EIP4
 
 // Start a series of sessions with the provider. The AuthClient should automatically 
 // establish new sessions as they near expiration
-func (c *EIP4361ClientAuth) Start() error {
+func (c *EIP4361ClientAuth) Start(logger *zap.Logger) error {
+	c.logger = logger
 	if c.client == nil {
 		c.client = &http.Client{Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -130,11 +130,15 @@ func (c *EIP4361ClientAuth) Start() error {
 	}
 	c.SessionTokens = make([]auth.AuthToken, c.SessionCount)
 	for i := 0; i < c.SessionCount; i++ {
-		fmt.Printf("Making session tokens: %v/%v\n", i, c.SessionCount)
+		c.logger.Debug("Making session tokens", zap.Int("i", i), zap.Int("of", c.SessionCount))
 		var err error
 		c.SessionTokens[i], err = c.GetToken(nil)
 		if err != nil {
-			return err
+			c.logger.Info("Error establishing session. Will retry in 15 seconds", zap.Int("i", i))
+			now := auth.UnixTime(time.Now())
+			c.SessionTokens[i].Expiration = &now
+			c.Renew(i, 15 * time.Second)
+			continue
 		}
 		if c.SessionTokens[i].Expiration != nil {
 			c.Renew(i, time.Until(time.Time(*c.SessionTokens[i].Expiration)))
@@ -143,17 +147,20 @@ func (c *EIP4361ClientAuth) Start() error {
 	return nil
 }
 
-func (c *EIP4361ClientAuth) Renew(i int, d time.Duration) func() {
-	return func() {
+func (c *EIP4361ClientAuth) Renew(i int, d time.Duration) {
+	go func() {
 		t := time.NewTimer(d - (time.Second * 5))
 		select {
 		case <-t.C:
 			var err error
+			c.logger.Debug("Attempting renewal", zap.Int("i", i))
 			c.SessionTokens[i], err = c.GetToken(nil)
 			if err != nil {
-				c.err = err
+				c.logger.Warn("Error getting token, will try again in 1 minute\n", zap.Int("i", i))
+				c.Renew(i, time.Minute) // Attempt renewal in 1 minute
 				return
 			}
+			c.logger.Debug("Renewal successful", zap.Int("i", i))
 			if c.SessionTokens[i].Expiration != nil {
 				c.Renew(i, time.Until(time.Time(*c.SessionTokens[i].Expiration)))
 			}
@@ -161,12 +168,21 @@ func (c *EIP4361ClientAuth) Renew(i int, d time.Duration) func() {
 			c.err = auth.ErrSessionClosed
 			return
 		}
-	}
+	}()
 }
 
 // Error will return an error if the AuthClient is unhealthy, or nil if it should be able to sign a valid request
 func (c *EIP4361ClientAuth) Error() error {
-	return c.err
+	if c.err != nil {
+		return c.err
+	}
+	for _, token := range c.SessionTokens {
+		if err := token.Peek(); err == nil {
+			// If any token is non-nil, this client is okay
+			return nil
+		}
+	}
+	return auth.ErrNoTokensAvailable
 }
 
 type signedMessage struct {
@@ -205,7 +221,12 @@ func (c *EIP4361ClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, er
 	if err != nil {
 		return tok, err
 	}
-	err = json.Unmarshal(body, &tok)
+	if err := json.Unmarshal(body, &tok); err != nil {
+		return tok, err
+	}
+	if tok.Error != "" {
+		err = errors.New(tok.Error)
+	}
 
 	return tok, err
 }
@@ -217,6 +238,7 @@ func (c *EIP4361ClientAuth) Sign(r *http.Request) error {
 		if counter == 10 {
 			return err
 		}
+		counter++
 		at = c.selectAuthToken(r)
 	}
 	for k, v := range at.Headers {

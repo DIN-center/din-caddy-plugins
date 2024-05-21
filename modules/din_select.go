@@ -69,9 +69,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			for k, v := range upstreamWrapper.Headers {
 				r.Header.Add(k, v)
 			}
-			d.logger.Info("About to sign")
 			if upstreamWrapper.Auth != nil {
-				d.logger.Info("Have signer")
 				if err := upstreamWrapper.Auth.Sign(r); err != nil {
 					d.logger.Error("error signing request", zap.String("err", err.Error()))
 				}
