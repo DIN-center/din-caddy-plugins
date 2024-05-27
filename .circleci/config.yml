@@ -21,6 +21,7 @@ jobs:
             # docker --version
             # sudo systemctl status docker
             # uname -a
+            IMAGE_TAG=$(date "+%Y%m%d%M%S")
 
 
       # Build Docker image
@@ -28,14 +29,14 @@ jobs:
           name: Build Docker image
           command: |
             # docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG .
-            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d") .
+            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG .
 
       # Push Docker image to Google Container Registry (GCR)
       - run:
           name: Push Docker image to GCR
           command: |
             # docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
-            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d")
+            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG
 
 workflows:
   version: 2
