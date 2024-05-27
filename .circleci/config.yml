@@ -23,14 +23,14 @@ jobs:
           name: Build Docker image
           command: |
             # docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG .
-            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d%H%M.%S") .
+            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d%H%M%S") .
 
       # Push Docker image to Google Container Registry (GCR)
       - run:
           name: Push Docker image to GCR
           command: |
             # docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
-            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d%H%M.%S")
+            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$(date "+%Y%m%d%H%M%S")
 
 workflows:
   version: 2
