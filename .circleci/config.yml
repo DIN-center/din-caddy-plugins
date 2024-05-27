@@ -7,8 +7,8 @@ jobs:
 
     steps:
       - checkout
-      - setup_remote_docker:
-          docker_layer_caching: false
+      # - setup_remote_docker:
+      #     docker_layer_caching: false
 
       # Authenticate with Google Cloud using service account key
       - run:
@@ -22,6 +22,7 @@ jobs:
             # sudo systemctl status docker
             # uname -a
             IMAGE_TAG=$(date "+%Y%m%d%M%S")
+            echo $IMAGE_TAG
 
 
       # Build Docker image
@@ -29,14 +30,15 @@ jobs:
           name: Build Docker image
           command: |
             # docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG .
-            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG .
+            echo $IMAGE_TAG
+            # docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG .
 
-      # Push Docker image to Google Container Registry (GCR)
-      - run:
-          name: Push Docker image to GCR
-          command: |
-            # docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
-            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG
+      # # Push Docker image to Google Container Registry (GCR)
+      # - run:
+      #     name: Push Docker image to GCR
+      #     command: |
+      #       # docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
+      #       docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG
 
 workflows:
   version: 2
