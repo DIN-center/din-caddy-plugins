@@ -70,6 +70,10 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
+	if r.Body == nil {
+		return res
+	}
+
 	// Read request body for passing to metric middleware
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
