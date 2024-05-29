@@ -53,6 +53,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			// upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
 			upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			upstreamWrapper.path = url.Path
+			upstreamWrapper.StartHealthchecks()
 		}
 	}
 	return nil
@@ -108,6 +109,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							if err != nil {
 								return err
 							}
+							ms.HCRPCMethod = "eth_blockNumber"
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "headers":
@@ -126,7 +128,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									if err != nil {
 										return err
 									}
+								case "healthcheck_method":
+									dispenser.NextBlock(nesting + 2)
+									ms.HCRPCMethod = dispenser.Val()
 								}
+
 							}
 							d.Services[serviceName] = append(d.Services[serviceName], ms)
 						}

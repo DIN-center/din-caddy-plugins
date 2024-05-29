@@ -91,7 +91,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 
 // handleRequestMetric increments prometheus metric based on request data passed in
 func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
-	fmt.Println(hostName)
+	// fmt.Println(hostName)
 	// First extract method data from body
 	// define struct to hold request data
 	var requestBody struct {
