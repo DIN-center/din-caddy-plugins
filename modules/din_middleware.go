@@ -109,7 +109,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							if err != nil {
 								return err
 							}
+							// Default values, to be overridden if specified
 							ms.HCRPCMethod = "eth_blockNumber"
+							ms.HCThreshold = 2
+							ms.HCInterval = 5
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "headers":
@@ -131,6 +134,18 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 								case "healthcheck_method":
 									dispenser.NextBlock(nesting + 2)
 									ms.HCRPCMethod = dispenser.Val()
+								case "healthcheck_threshold":
+									dispenser.NextBlock(nesting + 2)
+									ms.HCThreshold, err = strconv.Atoi(dispenser.Val())
+									if err != nil {
+										return err
+									}
+								case "healthcheck_interval":
+									dispenser.NextBlock(nesting + 2)
+									ms.HCInterval, err = strconv.Atoi(dispenser.Val())
+									if err != nil {
+										return err
+									}
 								}
 
 							}

@@ -30,18 +30,27 @@ type upstreamWrapper struct {
 	upstream  *reverseproxy.Upstream
 	Priority  int
 	HCRPCMethod string `json:"healthcheck.rpc.method"`
+	HCInterval int `json:"healthceck.interval.seconds"`
+	HCThreshold int `json:"healthcheck.threshold"`
 	failures  int
 	successes int
 	healthy   bool
 	quit      chan struct{}
 }
 
+
+// Available indicates whether the Caddy upstream is available, and 
+// whether the upstream wrapper's healthchecks indicate the upstream is healthy.
 func (u *upstreamWrapper) Available() bool {
 	return u.upstream.Available() && u.Healthy()
 }
 
+// StartHealthchecks starts a background goroutine to monitor the target
+// and make sure it remains healthy.
 func (u *upstreamWrapper) StartHealthchecks() {
 	u.quit = make(chan struct{})
+	
+	// Use an *http.Client for connection keepalive
 	c := &http.Client{Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -54,15 +63,21 @@ func (u *upstreamWrapper) StartHealthchecks() {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}}
+
 	u.healthy = true
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(time.Second * time.Duration(u.HCInterval))
 	go func() {
-		for i :=0 ; ; i++ {
+		// Keep an index for RPC request IDs
+		for i := 0 ; ; i++ {
 			select {
+			// Cleanup if the quit channel gets closed. Right now nothing closes this channel, but
+			// once we integrate the authentication work there's code that should.
 			case <-u.quit:
 				ticker.Stop()
 				return
+
 			case <-ticker.C:
+				// Set up the healthcheck request with authentication for this provider.
 				rpcCallString := fmt.Sprintf(`{"jsonrpc":"2.0","id":%v,"method":"%v","params":[]}`, i, u.HCRPCMethod)
 				req, err := http.NewRequest("POST", u.HttpUrl, strings.NewReader(rpcCallString))
 				if err != nil {
@@ -73,6 +88,8 @@ func (u *upstreamWrapper) StartHealthchecks() {
 					req.Header.Add(k, v)
 				}
 				req.Header.Add("Content-Type", "application/json")
+
+				// Execute the request and mark successes or failures.
 				res, err := c.Do(req)
 				if err != nil {
 					u.markFailure(err.Error())
@@ -91,23 +108,29 @@ func (u *upstreamWrapper) StartHealthchecks() {
 	}()
 }
 
+// markFailure records the failure, and if the failure count exceeds the healthcheck threshold
+// marks the upstream as unhealthy
 func (u *upstreamWrapper) markFailure(reason string) {
 	u.failures++
 	u.successes = 0
-	if u.failures > 2 && u.healthy {
+	if u.healthy && u.failures > u.HCThreshold {
 		u.healthy = false
 		// fmt.Printf("Marking %v as unhealthy: %v\n", u.HttpUrl, reason)
 	}
 }
+
+// markSuccess records a successful healthcheck, and if the success count exceeds the healthcheck
+// threshold marks the upsteram as healthy
 func (u *upstreamWrapper) markSuccess() {
 	u.successes++
-	if u.successes > 2 && !u.healthy {
+	if !u.healthy && u.successes > u.HCThreshold {
 		u.failures = 0
 		u.healthy = true
 		// fmt.Printf("Marking %v as healthy\n", u.HttpUrl)
 	}
 }
 
+// Healthy returns True if the node is passing healthchecks, False otherwise
 func (u *upstreamWrapper) Healthy() bool {
 	return u.healthy
 }
