@@ -109,10 +109,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							if err != nil {
 								return err
 							}
-							// Default values, to be overridden if specified
-							ms.HCRPCMethod = "eth_blockNumber"
-							ms.HCThreshold = 2
-							ms.HCInterval = 5
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "headers":
@@ -176,6 +172,11 @@ func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
 		Headers: make(map[string]string),
 		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
+
+		// Default values, to be overridden if specified in the Caddyfile
+		HCRPCMethod: "eth_blockNumber",
+		HCThreshold: 2,
+		HCInterval: 5,
 	}, nil
 }
 

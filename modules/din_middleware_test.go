@@ -55,7 +55,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
 			services: map[string][]*upstreamWrapper{
 				"eth": {
-					&upstreamWrapper{},
+					&upstreamWrapper{
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
+					},
 				},
 			},
 			hasErr: false,
@@ -65,7 +69,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
 			services: map[string][]*upstreamWrapper{
 				"eth": {
-					&upstreamWrapper{},
+					&upstreamWrapper{
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
+					},
 				},
 			},
 			hasErr: true,
@@ -108,6 +116,9 @@ func TestUrlToUpstreamWrapper(t *testing.T) {
 				Headers:  make(map[string]string),
 				upstream: &reverseproxy.Upstream{Dial: "localhost:8080"},
 				Priority: 0,
+				HCRPCMethod: "eth_blockNumber",
+				HCThreshold: 2,
+				HCInterval: 5,
 			},
 			hasErr: false,
 		},
@@ -120,6 +131,9 @@ func TestUrlToUpstreamWrapper(t *testing.T) {
 				Headers:  make(map[string]string),
 				upstream: &reverseproxy.Upstream{Dial: "eth.rpc.test.cloud:443"},
 				Priority: 0,
+				HCRPCMethod: "eth_blockNumber",
+				HCThreshold: 2,
+				HCInterval: 5,
 			},
 			hasErr: false,
 		},
@@ -152,9 +166,15 @@ func TestDinMiddlewareProvision(t *testing.T) {
 				"/eth": {
 					&upstreamWrapper{
 						HttpUrl: "http://localhost:8000/eth",
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
 					},
 					&upstreamWrapper{
 						HttpUrl: "http://localhost:8001/eth",
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
 					},
 				},
 			},
@@ -166,11 +186,17 @@ func TestDinMiddlewareProvision(t *testing.T) {
 				"/eth": {
 					&upstreamWrapper{
 						HttpUrl: "http://localhost:8000/eth",
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
 					},
 				},
 				"/polygon": {
 					&upstreamWrapper{
 						HttpUrl: "http://localhost:8001/polygon",
+						HCRPCMethod: "eth_blockNumber",
+						HCThreshold: 2,
+						HCInterval: 5,
 					},
 				},
 			},
