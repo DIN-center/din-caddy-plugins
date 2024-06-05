@@ -11,6 +11,7 @@ jobs:
           docker_layer_caching: false
 
       # Authenticate with Google Cloud using service account key
+      # test test test
       - run:
           name: Authenticate with Google Cloud
           command: |
