@@ -12,6 +12,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
+	dingo "github.com/din-center/din-sc"
 )
 
 var (
@@ -44,6 +46,10 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 // For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	// provision din registry services into upstreams
+	dingo.Init()
+
+	// provision local services into upstreams
 	for _, upstreamWrappers := range d.Services {
 		for _, upstreamWrapper := range upstreamWrappers {
 			url, err := url.Parse(upstreamWrapper.HttpUrl)
