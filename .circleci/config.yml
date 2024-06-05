@@ -1,0 +1,47 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: google/cloud-sdk:latest
+
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: false
+
+      # Authenticate with Google Cloud using service account key
+      - run:
+          name: Authenticate with Google Cloud
+          command: |
+            echo $GCP_SERVICE_ACCOUNT_KEY | base64 --decode > ${HOME}/gcp-key.json
+            echo "export GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcp-key.json" >> $BASH_ENV
+            echo "export IMAGE_TAG=$(date "+%Y%m%d%M%S")" >> $BASH_ENV
+            source $BASH_ENV
+            echo $GCP_SERVICE_ACCOUNT_KEY | base64 --decode | docker login -u _json_key --password-stdin https://us-east4-docker.pkg.dev
+            IMAGE_TAG=$(date "+%Y%m%d%M%S")
+            #echo $IMAGE_TAG
+
+
+      # Build Docker image
+      - run:
+          name: Build Docker image
+          command: |
+            # docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG .
+            echo $IMAGE_TAG
+            docker build -t us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG .
+
+      # Push Docker image to Google Container Registry (GCR)
+      - run:
+          name: Push Docker image to GCR
+          command: |
+            # docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$CIRCLE_TAG
+            docker push us-east4-docker.pkg.dev/rivet-din/din/din-caddy:$IMAGE_TAG
+
+workflows:
+  version: 2
+  build_and_push:
+    jobs:
+      - build:
+          context: Rivet
+
