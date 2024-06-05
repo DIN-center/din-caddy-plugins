@@ -44,4 +44,6 @@ workflows:
     jobs:
       - build:
           context: Rivet
-
+          filters:
+            tags:
+              only: /^v.*/
