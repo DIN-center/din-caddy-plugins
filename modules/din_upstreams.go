@@ -6,6 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
 )
 
 var (
@@ -25,6 +26,9 @@ type upstreamWrapper struct {
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream
 	Priority int
+
+	RuntimeClient     runtime.IRuntimeClient
+	BlockNumberMethod string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -35,7 +39,7 @@ func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// GetUpstreams returns the possible upstreams for the request.
+// GetUpstreams returns the possible upstream endpoints for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
 	var upstreamWrappers []*upstreamWrapper
 
@@ -47,6 +51,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 
 	res := make([]*reverseproxy.Upstream, 0, len(upstreamWrappers))
 
+	// TODO: update logic to incorporate latest block upstreams as well as priority
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < len(upstreamWrappers); priority++ {
 		for _, u := range upstreamWrappers {

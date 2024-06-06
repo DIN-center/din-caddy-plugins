@@ -12,6 +12,11 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/ethereum"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/solana"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/starknet"
 )
 
 var (
@@ -81,6 +86,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 // UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
+	var runtime string
 	if d.Methods == nil {
 		d.Methods = make(map[string][]*string)
 	}
@@ -94,6 +100,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				serviceName := dispenser.Val()
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
+					case "runtime":
+						dispenser.NextBlock(nesting + 2)
+						runtime = dispenser.Val()
 					case "methods":
 						d.Methods[serviceName] = make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
@@ -104,7 +113,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							ms, err := urlToUpstreamWrapper(dispenser.Val())
+							upstreamWrapper, err := urlToUpstreamWrapper(dispenser.Val())
 							if err != nil {
 								return err
 							}
@@ -115,20 +124,28 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										k := dispenser.Val()
 										var v string
 										if dispenser.Args(&v) {
-											ms.Headers[k] = v
+											upstreamWrapper.Headers[k] = v
 										} else {
 											return dispenser.Errf("header should have key and value")
 										}
 									}
 								case "priority":
 									dispenser.NextBlock(nesting + 2)
-									ms.Priority, err = strconv.Atoi(dispenser.Val())
+									upstreamWrapper.Priority, err = strconv.Atoi(dispenser.Val())
 									if err != nil {
 										return err
 									}
 								}
 							}
-							d.Services[serviceName] = append(d.Services[serviceName], ms)
+
+							// setup the runtime client
+							// TODO: may want to set these clients up globally so they aren't attached individually to each upstreamWrapper
+							upstreamWrapper.RuntimeClient, err = getRuntimeClient(runtime)
+							if err != nil {
+								return dispenser.Errf("error getting runtime client: %v", err)
+							}
+
+							d.Services[serviceName] = append(d.Services[serviceName], upstreamWrapper)
 						}
 						if len(d.Services[serviceName]) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
@@ -156,6 +173,19 @@ func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
 		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
 	}, nil
+}
+
+func getRuntimeClient(runtime string) (runtime.IRuntimeClient, error) {
+	switch runtime {
+	case Ethereum:
+		return ethereum.NewEthereumRuntimeClient(), nil
+	case Solana:
+		return solana.NewSolanaRuntimeClient(), nil
+	case Starknet:
+		return starknet.NewStarknetRuntimeClient(), nil
+	default:
+		return nil, fmt.Errorf("runtime %s not supported", runtime)
+	}
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {

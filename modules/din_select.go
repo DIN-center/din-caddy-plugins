@@ -57,10 +57,13 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	}
 
 	// Select upstream based on request
-	res := d.selector.Select(pool, r, rw)
+	selectedUpstream := d.selector.Select(pool, r, rw)
+
+	fmt.Println("Upstream Wrappers: ", len(upstreamWrappers))
+	fmt.Println("Selected Upstream: ", selectedUpstream.Dial)
 	for _, upstreamWrapper := range upstreamWrappers {
 		// If the upstream is found in the upstreamWrappers, set the path and headers for the request
-		if res == upstreamWrapper.upstream {
+		if selectedUpstream == upstreamWrapper.upstream {
 			r.URL.RawPath = upstreamWrapper.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
 			for k, v := range upstreamWrapper.Headers {
@@ -77,17 +80,16 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	}
 	// Increment prometheus metric based on request data
 	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.handleRequestMetric(body, r.RequestURI, r.Host, res.Dial)
+	go d.handleRequestMetric(body, r.RequestURI, r.Host, selectedUpstream.Dial)
 
 	// Set request body back to original state
 	r.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	return res
+	return selectedUpstream
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
 func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
-	fmt.Println(hostName)
 	// First extract method data from body
 	// define struct to hold request data
 	var requestBody struct {
