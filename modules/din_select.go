@@ -59,8 +59,6 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
-	fmt.Println("Upstream Wrappers: ", len(upstreamWrappers))
-	fmt.Println("Selected Upstream: ", selectedUpstream.Dial)
 	for _, upstreamWrapper := range upstreamWrappers {
 		// If the upstream is found in the upstreamWrappers, set the path and headers for the request
 		if selectedUpstream == upstreamWrapper.upstream {
