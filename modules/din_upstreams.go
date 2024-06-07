@@ -6,7 +6,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
 )
 
 var (
@@ -26,9 +25,6 @@ type upstreamWrapper struct {
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream
 	Priority int
-
-	RuntimeClient     runtime.IRuntimeClient
-	BlockNumberMethod string
 }
 
 // CaddyModule returns the Caddy module information.

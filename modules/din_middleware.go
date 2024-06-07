@@ -12,11 +12,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/ethereum"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/solana"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/starknet"
 )
 
 var (
@@ -33,8 +28,14 @@ var (
 )
 
 type DinMiddleware struct {
-	Services map[string][]*upstreamWrapper `json:"services"`
-	Methods  map[string][]*string          `json:"methods"`
+	Services map[string]*Service `json:"services"`
+}
+
+type Service struct {
+	UpstreamWrappers        []*upstreamWrapper `json:"upstreams_wrappers"`
+	Methods                 []*string          `json:"methods"`
+	LatestBlockNumberMethod string             `json:"latest_block_number_method"`
+	LatestBlockNumber       *int64             `json:"latest_block_number"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -49,8 +50,8 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 // For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
-	for _, upstreamWrappers := range d.Services {
-		for _, upstreamWrapper := range upstreamWrappers {
+	for _, service := range d.Services {
+		for _, upstreamWrapper := range service.UpstreamWrappers {
 			url, err := url.Parse(upstreamWrapper.HttpUrl)
 			if err != nil {
 				return err
@@ -86,29 +87,27 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 // UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
-	var runtime string
-	if d.Methods == nil {
-		d.Methods = make(map[string][]*string)
-	}
+	var latestBlockNumberMethod string
+	// if d.Methods == nil {
+	// 	d.Methods = make(map[string][]*string)
+	// }
 	if d.Services == nil {
-		d.Services = make(map[string][]*upstreamWrapper)
+		d.Services = make(map[string]*Service)
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
+				d.Services[serviceName] = &Service{}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
-					case "runtime":
-						dispenser.NextBlock(nesting + 2)
-						runtime = dispenser.Val()
 					case "methods":
-						d.Methods[serviceName] = make([]*string, dispenser.CountRemainingArgs())
+						d.Services[serviceName].Methods = make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
-							d.Methods[serviceName][i] = new(string)
+							d.Services[serviceName].Methods[i] = new(string)
 						}
-						if !dispenser.Args(d.Methods[serviceName]...) {
+						if !dispenser.Args(d.Services[serviceName].Methods...) {
 							return dispenser.Errf("invalid 'methods' argument for service %s", serviceName)
 						}
 					case "providers":
@@ -137,19 +136,18 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									}
 								}
 							}
-
-							// setup the runtime client
-							// TODO: may want to set these clients up globally so they aren't attached individually to each upstreamWrapper
-							upstreamWrapper.RuntimeClient, err = getRuntimeClient(runtime)
-							if err != nil {
-								return dispenser.Errf("error getting runtime client: %v", err)
-							}
-
-							d.Services[serviceName] = append(d.Services[serviceName], upstreamWrapper)
+							d.Services[serviceName].UpstreamWrappers = append(d.Services[serviceName].UpstreamWrappers, upstreamWrapper)
 						}
-						if len(d.Services[serviceName]) == 0 {
+						if len(d.Services[serviceName].UpstreamWrappers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
+					case "latest_block_number_method":
+						dispenser.Next()
+						latestBlockNumberMethod = dispenser.Val()
+						if d.Services[serviceName] == nil {
+							return dispenser.Errf("service %s not found", serviceName)
+						}
+						d.Services[serviceName].LatestBlockNumberMethod = latestBlockNumberMethod
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
@@ -173,19 +171,6 @@ func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
 		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
 	}, nil
-}
-
-func getRuntimeClient(runtime string) (runtime.IRuntimeClient, error) {
-	switch runtime {
-	case Ethereum:
-		return ethereum.NewEthereumRuntimeClient(), nil
-	case Solana:
-		return solana.NewSolanaRuntimeClient(), nil
-	case Starknet:
-		return starknet.NewStarknetRuntimeClient(), nil
-	default:
-		return nil, fmt.Errorf("runtime %s not supported", runtime)
-	}
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
