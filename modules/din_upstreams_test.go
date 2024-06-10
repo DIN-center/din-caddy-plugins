@@ -49,15 +49,15 @@ func TestGetDinUpstreams(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                     string
-		request                  *http.Request
-		replacerUpstreamWrappers []*upstreamWrapper
-		output                   []*reverseproxy.Upstream
+		name              string
+		request           *http.Request
+		replacerProviders []*provider
+		output            []*reverseproxy.Upstream
 	}{
 		{
 			name:    "TestGetDinUpstreams succesful, both 0 priority",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
+			replacerProviders: []*provider{
 				{
 					upstream: upstream1,
 					Priority: 0,
@@ -72,7 +72,7 @@ func TestGetDinUpstreams(t *testing.T) {
 		{
 			name:    "TestGetDinUpstreams succesful, both 2 priority",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
+			replacerProviders: []*provider{
 				{
 					upstream: upstream1,
 					Priority: 2,
@@ -87,7 +87,7 @@ func TestGetDinUpstreams(t *testing.T) {
 		{
 			name:    "TestGetDinUpstreams succesful, different priorities",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
+			replacerProviders: []*provider{
 				{
 					upstream: upstream1,
 					Priority: 1,
@@ -100,17 +100,17 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:                     "TestGetDinUpstreams succesful, no priorities",
-			request:                  &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{},
-			output:                   []*reverseproxy.Upstream{},
+			name:              "TestGetDinUpstreams succesful, no priorities",
+			request:           &http.Request{},
+			replacerProviders: []*provider{},
+			output:            []*reverseproxy.Upstream{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-			repl.Set(DinUpstreamsContextKey, tt.replacerUpstreamWrappers)
+			repl.Set(DinUpstreamsContextKey, tt.replacerProviders)
 
 			upstreams, _ := dinUpstreams.GetUpstreams(tt.request)
 			if !reflect.DeepEqual(upstreams, tt.output) {

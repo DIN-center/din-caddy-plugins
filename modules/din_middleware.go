@@ -32,10 +32,10 @@ type DinMiddleware struct {
 }
 
 type Service struct {
-	UpstreamWrappers        []*upstreamWrapper `json:"upstreams_wrappers"`
-	Methods                 []*string          `json:"methods"`
-	LatestBlockNumberMethod string             `json:"latest_block_number_method"`
-	LatestBlockNumber       *int64             `json:"latest_block_number"`
+	Providers               []*provider `json:"providers"`
+	Methods                 []*string   `json:"methods"`
+	LatestBlockNumberMethod string      `json:"latest_block_number_method"`
+	LatestBlockNumber       *int64      `json:"latest_block_number"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -48,24 +48,24 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
-// For each upstream wrapper object, we parse the URL and populate the upstream and path fields.
+// For each provider object, we parse the URL and populate the upstream and path fields.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	for _, service := range d.Services {
-		for _, upstreamWrapper := range service.UpstreamWrappers {
-			url, err := url.Parse(upstreamWrapper.HttpUrl)
+		for _, provider := range service.Providers {
+			url, err := url.Parse(provider.HttpUrl)
 			if err != nil {
 				return err
 			}
-			// upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
-			upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: url.Host}
-			upstreamWrapper.path = url.Path
+			// provider.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
+			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
+			provider.path = url.Path
 		}
 	}
 	return nil
 }
 
 // ServeHTTP is the main handler for the middleware that is ran for every request.
-// It checks if the service path is defined in the services map and sets the upstreamWrapper in the context.
+// It checks if the service path is defined in the services map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 
@@ -81,11 +81,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set(DinUpstreamsContextKey, service.UpstreamWrappers)
+	repl.Set(DinUpstreamsContextKey, service.Providers)
 	return next.ServeHTTP(rw, r)
 }
 
-// UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
+// UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	var latestBlockNumberMethod string
 	// if d.Methods == nil {
@@ -112,7 +112,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							upstreamWrapper, err := urlToUpstreamWrapper(dispenser.Val())
+							provider, err := urlToProvider(dispenser.Val())
 							if err != nil {
 								return err
 							}
@@ -123,22 +123,22 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										k := dispenser.Val()
 										var v string
 										if dispenser.Args(&v) {
-											upstreamWrapper.Headers[k] = v
+											provider.Headers[k] = v
 										} else {
 											return dispenser.Errf("header should have key and value")
 										}
 									}
 								case "priority":
 									dispenser.NextBlock(nesting + 2)
-									upstreamWrapper.Priority, err = strconv.Atoi(dispenser.Val())
+									provider.Priority, err = strconv.Atoi(dispenser.Val())
 									if err != nil {
 										return err
 									}
 								}
 							}
-							d.Services[serviceName].UpstreamWrappers = append(d.Services[serviceName].UpstreamWrappers, upstreamWrapper)
+							d.Services[serviceName].Providers = append(d.Services[serviceName].Providers, provider)
 						}
-						if len(d.Services[serviceName].UpstreamWrappers) == 0 {
+						if len(d.Services[serviceName].Providers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
 					case "latest_block_number_method":
@@ -158,13 +158,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	return nil
 }
 
-// urlToUpstreamWrapper parses the URL and returns an upstreamWrapper object
-func urlToUpstreamWrapper(urlstr string) (*upstreamWrapper, error) {
+// urlToProvider parses the URL and returns an provider object
+func urlToProvider(urlstr string) (*provider, error) {
 	url, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, err
 	}
-	return &upstreamWrapper{
+	return &provider{
 		HttpUrl: urlstr,
 		path:    url.Path,
 		Headers: make(map[string]string),

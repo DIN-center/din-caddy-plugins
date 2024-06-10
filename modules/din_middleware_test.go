@@ -34,15 +34,15 @@ package modules
 // 	test := []struct {
 // 		name     string
 // 		request  *http.Request
-// 		services map[string][]*upstreamWrapper
+// 		services map[string][]*provider
 // 		hasErr   bool
 // 	}{
 // 		{
 // 			name:    "successful request",
 // 			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-// 			services: map[string][]*upstreamWrapper{
+// 			services: map[string][]*provider{
 // 				"eth": {
-// 					&upstreamWrapper{},
+// 					&provider{},
 // 				},
 // 			},
 // 			hasErr: false,
@@ -50,9 +50,9 @@ package modules
 // 		{
 // 			name:    "unsuccessful request, path not found",
 // 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
-// 			services: map[string][]*upstreamWrapper{
+// 			services: map[string][]*provider{
 // 				"eth": {
-// 					&upstreamWrapper{},
+// 					&provider{},
 // 				},
 // 			},
 // 			hasErr: true,
@@ -60,7 +60,7 @@ package modules
 // 		{
 // 			name:     "unsuccessful request, service map is empty",
 // 			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-// 			services: map[string][]*upstreamWrapper{},
+// 			services: map[string][]*provider{},
 // 			hasErr:   true,
 // 		},
 // 	}
@@ -79,17 +79,17 @@ package modules
 // 	}
 // }
 
-// func TestUrlToUpstreamWrapper(t *testing.T) {
+// func TestUrlToProvider(t *testing.T) {
 // 	tests := []struct {
 // 		name   string
 // 		urlstr string
-// 		outPut *upstreamWrapper
+// 		outPut *provider
 // 		hasErr bool
 // 	}{
 // 		{
 // 			name:   "passing localhost",
 // 			urlstr: "http://localhost:8080",
-// 			outPut: &upstreamWrapper{
+// 			outPut: &provider{
 // 				HttpUrl:  "http://localhost:8080",
 // 				path:     "",
 // 				Headers:  make(map[string]string),
@@ -101,7 +101,7 @@ package modules
 // 		{
 // 			name:   "passing fullurl with key",
 // 			urlstr: "https://eth.rpc.test.cloud:443/key",
-// 			outPut: &upstreamWrapper{
+// 			outPut: &provider{
 // 				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
 // 				path:     "/key",
 // 				Headers:  make(map[string]string),
@@ -114,12 +114,12 @@ package modules
 
 // 	for _, tt := range tests {
 // 		t.Run(tt.name, func(t *testing.T) {
-// 			upstreamWrapper, err := urlToUpstreamWrapper(tt.urlstr)
+// 			provider, err := urlToProvider(tt.urlstr)
 // 			if err != nil && !tt.hasErr {
-// 				t.Errorf("urlToUpstreamWrapper() = %v, want %v", err, tt.hasErr)
+// 				t.Errorf("urlToProvider() = %v, want %v", err, tt.hasErr)
 // 			}
-// 			if !reflect.DeepEqual(upstreamWrapper, tt.outPut) {
-// 				t.Errorf("urlToUpstreamWrapper() = %v, want %v", upstreamWrapper, tt.outPut)
+// 			if !reflect.DeepEqual(provider, tt.outPut) {
+// 				t.Errorf("urlToProvider() = %v, want %v", provider, tt.outPut)
 // 			}
 // 		})
 // 	}
@@ -130,17 +130,17 @@ package modules
 
 // 	tests := []struct {
 // 		name     string
-// 		services map[string][]*upstreamWrapper
+// 		services map[string][]*provider
 // 		hasErr   bool
 // 	}{
 // 		{
 // 			name: "Provision() populated 1 service, 2 upstreams successful",
-// 			services: map[string][]*upstreamWrapper{
+// 			services: map[string][]*provider{
 // 				"/eth": {
-// 					&upstreamWrapper{
+// 					&provider{
 // 						HttpUrl: "http://localhost:8000/eth",
 // 					},
-// 					&upstreamWrapper{
+// 					&provider{
 // 						HttpUrl: "http://localhost:8001/eth",
 // 					},
 // 				},
@@ -149,14 +149,14 @@ package modules
 // 		},
 // 		{
 // 			name: "Provision() populated 2 service, 1 upstreams successful",
-// 			services: map[string][]*upstreamWrapper{
+// 			services: map[string][]*provider{
 // 				"/eth": {
-// 					&upstreamWrapper{
+// 					&provider{
 // 						HttpUrl: "http://localhost:8000/eth",
 // 					},
 // 				},
 // 				"/polygon": {
-// 					&upstreamWrapper{
+// 					&provider{
 // 						HttpUrl: "http://localhost:8001/polygon",
 // 					},
 // 				},
@@ -173,9 +173,9 @@ package modules
 // 				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 // 			}
 
-// 			for _, upstreamWrappers := range dinMiddleware.Services {
-// 				for _, upstreamWrapper := range upstreamWrappers {
-// 					if upstreamWrapper.upstream.Dial == "" || upstreamWrapper.path == "" {
+// 			for _, providers := range dinMiddleware.Services {
+// 				for _, provider := range providers {
+// 					if provider.upstream.Dial == "" || provider.path == "" {
 // 						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 // 					}
 

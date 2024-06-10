@@ -19,7 +19,7 @@ var (
 
 type DinUpstreams struct{}
 
-type upstreamWrapper struct {
+type provider struct {
 	HttpUrl  string `json:"http.url"`
 	path     string
 	Headers  map[string]string
@@ -37,20 +37,20 @@ func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 
 // GetUpstreams returns the possible upstream endpoints for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
-	var upstreamWrappers []*upstreamWrapper
+	var providers []*provider
 
 	// Get upstreams from the replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		upstreamWrappers = v.([]*upstreamWrapper)
+		providers = v.([]*provider)
 	}
 
-	res := make([]*reverseproxy.Upstream, 0, len(upstreamWrappers))
+	res := make([]*reverseproxy.Upstream, 0, len(providers))
 
-	// TODO: update logic to incorporate latest block upstreams as well as priority
+	// TODO: update logic to incorporate latest block provider upstreams as well as priority
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
-	for priority := 0; priority < len(upstreamWrappers); priority++ {
-		for _, u := range upstreamWrappers {
+	for priority := 0; priority < len(providers); priority++ {
+		for _, u := range providers {
 			if u.Priority == priority && u.upstream.Available() {
 				res = append(res, u.upstream)
 			}
@@ -61,7 +61,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 	}
 	if len(res) == 0 {
 		// Didn't find any based on priority, available, pass along all upstreams
-		for _, u := range upstreamWrappers {
+		for _, u := range providers {
 			res = append(res, u.upstream)
 		}
 	}

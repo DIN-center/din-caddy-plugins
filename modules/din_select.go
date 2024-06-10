@@ -49,22 +49,22 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 // Select() is called by Caddy reverse proxy dynamic upstream selecting process to select an upstream based on the request.
 // It is called for each request.
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
-	// Get upstreamWrappers from context
+	// Get providers from context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var upstreamWrappers []*upstreamWrapper
+	var providers []*provider
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		upstreamWrappers = v.([]*upstreamWrapper)
+		providers = v.([]*provider)
 	}
 
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
-	for _, upstreamWrapper := range upstreamWrappers {
-		// If the upstream is found in the upstreamWrappers, set the path and headers for the request
-		if selectedUpstream == upstreamWrapper.upstream {
-			r.URL.RawPath = upstreamWrapper.path
+	for _, provider := range providers {
+		// If the upstream is found in the providers, set the path and headers for the request
+		if selectedUpstream == provider.upstream {
+			r.URL.RawPath = provider.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range upstreamWrapper.Headers {
+			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
 			break
