@@ -2,58 +2,37 @@ package http
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/pkg/errors"
 )
 
-type HTTPClient struct{}
+type HTTPClient struct {
+	httpClient *http.Client
+}
 
 func NewHTTPClient() *HTTPClient {
-	return &HTTPClient{}
+	return &HTTPClient{
+		httpClient: &http.Client{},
+	}
 }
 
-func (h *HTTPClient) GetLatestBlockNumber(url string, latestBlockNumberMethod string) (*int64, error) {
-	payload := []byte(`{"jsonrpc":"2.0","method":"` + latestBlockNumberMethod + `","params":[],"id":1}`)
-
+func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte) ([]byte, error) {
 	// Send the POST request
-	resp, err := h.Post(url, []byte(payload))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, errors.Wrap(err, "Error making POST request")
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error sending POST request")
 	}
-
-	// Parse the response
-	var result struct {
-		Jsonrpc string `json:"jsonrpc"`
-		Id      int    `json:"id"`
-		Result  string `json:"result"`
-	}
-
-	err = json.Unmarshal(resp, &result)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	// Convert the hexadecimal string to an int64
-	blockNumber, err := strconv.ParseInt(result.Result[2:], 16, 64)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error converting block number")
-	}
-
-	return aws.Int64(blockNumber), nil
-}
-
-func (h *HTTPClient) Post(url string, payload []byte) ([]byte, error) {
-	// Send the POST request
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(payload))
-	if err != nil {
-		return nil, errors.Wrap(err, "Error sending POST request")
-	}
-
 	defer resp.Body.Close()
 
 	// Read the response body

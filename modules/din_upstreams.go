@@ -37,12 +37,12 @@ func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 
 // GetUpstreams returns the possible upstream endpoints for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
-	var providers []*provider
+	var providers map[string]*provider
 
 	// Get upstreams from the replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		providers = v.([]*provider)
+		providers = v.(map[string]*provider)
 	}
 
 	res := make([]*reverseproxy.Upstream, 0, len(providers))

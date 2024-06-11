@@ -51,11 +51,10 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
 	// Get providers from context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var providers []*provider
+	var providers map[string]*provider
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		providers = v.([]*provider)
+		providers = v.(map[string]*provider)
 	}
-
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
