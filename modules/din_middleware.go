@@ -85,6 +85,8 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 // updateProviderPriorities is a goroutine that updates the provider priorities every 10 seconds.
 func (d *DinMiddleware) updateProviderPrioritiesRoutine() {
+	// initial priority setup
+	d.updateProviderPriorities()
 	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
