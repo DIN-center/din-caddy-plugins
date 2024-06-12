@@ -34,12 +34,12 @@ var (
 )
 
 type DinMiddleware struct {
-	Services   map[string]*Service `json:"services"`
+	Services   map[string]*service `json:"services"`
 	stopChan   chan struct{}
 	HttpClient *din_http.HTTPClient
 }
 
-type Service struct {
+type service struct {
 	Providers map[string]*provider `json:"providers"`
 	Methods   []*string            `json:"methods"`
 
@@ -78,55 +78,80 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// We then start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's priorities accordingly.
-	go d.UpdateProviderPriorities()
+	go d.updateProviderPrioritiesRoutine()
 
 	return nil
 }
 
 // updateProviderPriorities is a goroutine that updates the provider priorities every 10 seconds.
-func (d *DinMiddleware) UpdateProviderPriorities() {
+func (d *DinMiddleware) updateProviderPrioritiesRoutine() {
 	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Println("ticker")
-			for _, service := range d.Services {
-				// only update the latest block number if the service doesn't have a locked priority hierarchy in place
-				if service.PriorityLocked || service.LatestBlockNumberMethod == "" {
-					continue
-				}
-
-				checkedProviders := make(map[string]int64)
-				for _, provider := range service.Providers {
-					// get the latest block number from the provider
-					latestBlockNumber, err := d.GetLatestBlockNumber(provider, service.LatestBlockNumberMethod)
-					if err != nil {
-						fmt.Println("error getting latest block number", err)
-						continue
-					}
-					// if the latest block number is greater than the current latest block number, update the service's latest block number
-					if service.LatestBlockNumber == nil || *service.LatestBlockNumber < *latestBlockNumber {
-						service.LatestBlockNumber = latestBlockNumber
-
-						// set the priority of the provider to 0
-						// service.Providers[provider.path].Priority = 0
-						provider.Priority = 0
-
-						// loop through all of the checked providers and set their priority to 1 unless they are the provider with the latest block number
-						for path, blockNumber := range checkedProviders {
-							if blockNumber != *service.LatestBlockNumber {
-								service.Providers[path].Priority = 1
-							}
-						}
-					}
-					// add this provider to the checked providers map
-					checkedProviders[provider.path] = *latestBlockNumber
-				}
-			}
+			d.updateProviderPriorities()
 		case <-d.stopChan:
 			ticker.Stop()
 			return
 		}
+	}
+}
+
+func (d *DinMiddleware) updateProviderPriorities() {
+	for serviceName, service := range d.Services {
+		// only update the latest block number if the service doesn't have a locked priority hierarchy in place
+		if service.PriorityLocked || service.LatestBlockNumberMethod == "" {
+			continue
+		}
+
+		if service.LatestBlockNumber != nil {
+			fmt.Print("\n\n")
+			fmt.Println("previous service block number ", serviceName, *service.LatestBlockNumber)
+			fmt.Print("\n")
+		} else {
+			fmt.Print("\n\n")
+			fmt.Println("initialization of service ", serviceName, nil)
+			fmt.Print("\n")
+		}
+
+		checkedProviders := make(map[string]int64)
+
+		for _, provider := range service.Providers {
+			// get the latest block number from the current provider
+			latestBlockNumber, err := d.getLatestBlockNumber(provider, service.LatestBlockNumberMethod)
+			if err != nil {
+				fmt.Println("error getting latest block number", err)
+				continue
+			}
+			// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
+			// set the current provider's priority to 0 and loop through all of the checked providers and set their priority to 1
+			if service.LatestBlockNumber == nil || *service.LatestBlockNumber < *latestBlockNumber {
+				service.LatestBlockNumber = latestBlockNumber
+				fmt.Println("new service latest block number", *service.LatestBlockNumber)
+
+				provider.Priority = 0
+
+				for hostName, blockNumber := range checkedProviders {
+					if blockNumber != *service.LatestBlockNumber {
+						service.Providers[hostName].Priority = 1
+					}
+				}
+				// if the current provider's latest block number is equal to the service's latest block number, set the current provider's priority to 0
+			} else if *service.LatestBlockNumber == *latestBlockNumber {
+				provider.Priority = 0
+			} else {
+				// if the current provider's latest block number is less than the service's latest block number, set the current provider's priority to 1
+				provider.Priority = 1
+			}
+			// add the current provider to the checked providers map
+			checkedProviders[provider.upstream.Dial] = *latestBlockNumber
+			fmt.Println("provider:", provider.upstream.Dial, "provider latest block number", *latestBlockNumber)
+		}
+
+		for hostName := range checkedProviders {
+			fmt.Println(service.Providers[hostName].upstream.Dial, "priority", service.Providers[hostName].Priority)
+		}
+		fmt.Println()
 	}
 }
 
@@ -158,14 +183,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	// 	d.Methods = make(map[string][]*string)
 	// }
 	if d.Services == nil {
-		d.Services = make(map[string]*Service)
+		d.Services = make(map[string]*service)
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = &Service{}
+				d.Services[serviceName] = &service{}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -178,7 +203,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							providerObj, err := urlToProvider(dispenser.Val())
+							providerObj, err := urlToProviderObject(dispenser.Val())
 							if err != nil {
 								return err
 							}
@@ -200,13 +225,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									if err != nil {
 										return err
 									}
+									// if a priority value is being set, lock the priority system for the service
+									d.Services[serviceName].PriorityLocked = true
 								}
 							}
 							if d.Services[serviceName].Providers == nil {
 								d.Services[serviceName].Providers = make(map[string]*provider)
 							}
 
-							d.Services[serviceName].Providers[providerObj.path] = providerObj
+							d.Services[serviceName].Providers[providerObj.upstream.Dial] = providerObj
 						}
 						if len(d.Services[serviceName].Providers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
@@ -229,21 +256,20 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 }
 
 // urlToProvider parses the URL and returns an provider object
-func urlToProvider(urlStr string) (*provider, error) {
+func urlToProviderObject(urlStr string) (*provider, error) {
 	url, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err
 	}
 	return &provider{
-		HttpUrl: urlStr,
-		path:    url.Path,
-		Headers: make(map[string]string),
-		// upstream: &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)},
+		HttpUrl:  urlStr,
+		path:     url.Path,
+		Headers:  make(map[string]string),
 		upstream: &reverseproxy.Upstream{Dial: url.Host},
 	}, nil
 }
 
-func (d *DinMiddleware) GetLatestBlockNumber(provider *provider, latestBlockNumberMethod string) (*int64, error) {
+func (d *DinMiddleware) getLatestBlockNumber(provider *provider, latestBlockNumberMethod string) (*int64, error) {
 	payload := []byte(`{"jsonrpc":"2.0","method":"` + latestBlockNumberMethod + `","params":[],"id":1}`)
 
 	// Send the POST request
