@@ -1,5 +1,18 @@
 package modules
 
+// import (
+// 	"context"
+// 	"net/http"
+// 	"net/http/httptest"
+// 	reflect "reflect"
+// 	"testing"
+
+// 	"github.com/caddyserver/caddy/v2"
+// 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+// 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+// )
+
 // func TestMiddlewareCaddyModule(t *testing.T) {
 // 	dinMiddleware := new(DinMiddleware)
 
@@ -42,7 +55,11 @@ package modules
 // 			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
 // 			services: map[string][]*provider{
 // 				"eth": {
-// 					&provider{},
+// 					&provider{
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
+// 					},
 // 				},
 // 			},
 // 			hasErr: false,
@@ -52,7 +69,11 @@ package modules
 // 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
 // 			services: map[string][]*provider{
 // 				"eth": {
-// 					&provider{},
+// 					&provider{
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
+// 					},
 // 				},
 // 			},
 // 			hasErr: true,
@@ -79,7 +100,7 @@ package modules
 // 	}
 // }
 
-// func TestUrlToProvider(t *testing.T) {
+// func TestUrlToProviderObject(t *testing.T) {
 // 	tests := []struct {
 // 		name   string
 // 		urlstr string
@@ -90,11 +111,14 @@ package modules
 // 			name:   "passing localhost",
 // 			urlstr: "http://localhost:8080",
 // 			outPut: &provider{
-// 				HttpUrl:  "http://localhost:8080",
-// 				path:     "",
-// 				Headers:  make(map[string]string),
-// 				upstream: &reverseproxy.Upstream{Dial: "localhost:8080"},
-// 				Priority: 0,
+// 				HttpUrl:     "http://localhost:8080",
+// 				path:        "",
+// 				Headers:     make(map[string]string),
+// 				upstream:    &reverseproxy.Upstream{Dial: "localhost:8080"},
+// 				Priority:    0,
+// 				HCRPCMethod: "eth_blockNumber",
+// 				HCThreshold: 2,
+// 				HCInterval:  5,
 // 			},
 // 			hasErr: false,
 // 		},
@@ -102,11 +126,14 @@ package modules
 // 			name:   "passing fullurl with key",
 // 			urlstr: "https://eth.rpc.test.cloud:443/key",
 // 			outPut: &provider{
-// 				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
-// 				path:     "/key",
-// 				Headers:  make(map[string]string),
-// 				upstream: &reverseproxy.Upstream{Dial: "eth.rpc.test.cloud:443"},
-// 				Priority: 0,
+// 				HttpUrl:     "https://eth.rpc.test.cloud:443/key",
+// 				path:        "/key",
+// 				Headers:     make(map[string]string),
+// 				upstream:    &reverseproxy.Upstream{Dial: "eth.rpc.test.cloud:443"},
+// 				Priority:    0,
+// 				HCRPCMethod: "eth_blockNumber",
+// 				HCThreshold: 2,
+// 				HCInterval:  5,
 // 			},
 // 			hasErr: false,
 // 		},
@@ -114,12 +141,12 @@ package modules
 
 // 	for _, tt := range tests {
 // 		t.Run(tt.name, func(t *testing.T) {
-// 			provider, err := urlToProvider(tt.urlstr)
+// 			provider, err := urlToProviderObject(tt.urlstr)
 // 			if err != nil && !tt.hasErr {
-// 				t.Errorf("urlToProvider() = %v, want %v", err, tt.hasErr)
+// 				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
 // 			}
 // 			if !reflect.DeepEqual(provider, tt.outPut) {
-// 				t.Errorf("urlToProvider() = %v, want %v", provider, tt.outPut)
+// 				t.Errorf("urlToProviderObject() = %v, want %v", provider, tt.outPut)
 // 			}
 // 		})
 // 	}
@@ -138,10 +165,16 @@ package modules
 // 			services: map[string][]*provider{
 // 				"/eth": {
 // 					&provider{
-// 						HttpUrl: "http://localhost:8000/eth",
+// 						HttpUrl:     "http://localhost:8000/eth",
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
 // 					},
 // 					&provider{
-// 						HttpUrl: "http://localhost:8001/eth",
+// 						HttpUrl:     "http://localhost:8001/eth",
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
 // 					},
 // 				},
 // 			},
@@ -152,12 +185,18 @@ package modules
 // 			services: map[string][]*provider{
 // 				"/eth": {
 // 					&provider{
-// 						HttpUrl: "http://localhost:8000/eth",
+// 						HttpUrl:     "http://localhost:8000/eth",
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
 // 					},
 // 				},
 // 				"/polygon": {
 // 					&provider{
-// 						HttpUrl: "http://localhost:8001/polygon",
+// 						HttpUrl:     "http://localhost:8001/polygon",
+// 						HCRPCMethod: "eth_blockNumber",
+// 						HCThreshold: 2,
+// 						HCInterval:  5,
 // 					},
 // 				},
 // 			},
