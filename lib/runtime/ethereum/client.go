@@ -19,7 +19,7 @@ func NewEthereumClient(httpClient *http.HTTPClient) *EthereumClient {
 }
 
 func (e *EthereumClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
-	payload := []byte(`{"jsonrpc":"2.0","method"eth_blockNumber","params":[],"id":1}`)
+	payload := []byte(`{"jsonrpc":"2.0","method": "eth_blockNumber","params":[],"id":1}`)
 
 	// Send the POST request
 	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload))
