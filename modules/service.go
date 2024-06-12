@@ -8,6 +8,7 @@ import (
 	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
 	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/ethereum"
 	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/solana"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/starknet"
 )
 
 type service struct {
@@ -18,7 +19,7 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 
-	HCRPCMethod string `json:"healthcheck.rpc.method"`
+	Runtime     string `json:"runtime"`
 	HCInterval  int    `json:"healthceck.interval.seconds"`
 	HCThreshold int    `json:"healthcheck.threshold"`
 }
@@ -58,7 +59,7 @@ func (s *service) healthCheck() {
 
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
-		latestBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(s.HCRPCMethod, provider.HttpUrl, provider.Headers)
+		latestBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
 		if err != nil {
 			fmt.Println("error getting latest block number", err)
 			continue
@@ -110,9 +111,11 @@ func (s *service) healthCheck() {
 }
 
 func (s *service) getRuntimeClient(httpClient *din_http.HTTPClient) runtime.IRuntimeClient {
-	switch s.HCRPCMethod {
-	case SolanaHCRPCMethod:
+	switch s.Runtime {
+	case SolanaRuntime:
 		return solana.NewSolanaClient(httpClient)
+	case StarknetRuntime:
+		return starknet.NewStarknetClient(httpClient)
 	default:
 		return ethereum.NewEthereumClient(httpClient)
 	}

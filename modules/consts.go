@@ -3,8 +3,10 @@ package modules
 var (
 	DinUpstreamsContextKey = "din.internal.upstreams"
 
-	DefaultHCRPCMethod = "eth_blockNumber"
-	SolanaHCRPCMethod  = "getBlockHeight"
+	EthereumRuntime = "ethereum"
+	SolanaRuntime   = "solana"
+	StarknetRuntime = "starknet"
+	DefaultRuntime  = EthereumRuntime
 
 	DefaultHCThreshold = 2
 	DefaultHCInterval  = 5

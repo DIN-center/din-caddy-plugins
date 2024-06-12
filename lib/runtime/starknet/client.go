@@ -1,4 +1,4 @@
-package ethereum
+package starknet
 
 import (
 	"encoding/json"
@@ -8,18 +8,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-type EthereumClient struct {
+type StarknetClient struct {
 	HTTPClient *http.HTTPClient
 }
 
-func NewEthereumClient(httpClient *http.HTTPClient) *EthereumClient {
-	return &EthereumClient{
+func NewStarknetClient(httpClient *http.HTTPClient) *StarknetClient {
+	return &StarknetClient{
 		HTTPClient: httpClient,
 	}
 }
 
-func (e *EthereumClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
-	payload := []byte(`{"jsonrpc":"2.0","method"eth_blockNumber","params":[],"id":1}`)
+func (e *StarknetClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
+	payload := []byte(`{"jsonrpc":"2.0","method"starknet_blockNumber","params":[],"id":1}`)
 
 	// Send the POST request
 	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload))

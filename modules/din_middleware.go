@@ -107,7 +107,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					Name: serviceName,
 
 					// Default health check values, to be overridden if specified in the Caddyfile
-					HCRPCMethod: DefaultHCRPCMethod,
+					Runtime:     DefaultRuntime,
 					HCThreshold: DefaultHCThreshold,
 					HCInterval:  DefaultHCInterval,
 				}
@@ -161,7 +161,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "healthcheck_method":
 						dispenser.Next()
-						d.Services[serviceName].HCRPCMethod = dispenser.Val()
+						d.Services[serviceName].Runtime = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Services[serviceName].HCThreshold, err = strconv.Atoi(dispenser.Val())

@@ -17,7 +17,7 @@ func NewSolanaClient(httpClient *http.HTTPClient) *SolanaClient {
 	}
 }
 
-func (s *SolanaClient) GetLatestBlockNumber(hcRPCMethod string, httpUrl string, headers map[string]string) (int64, int, error) {
+func (s *SolanaClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
 	// Send the POST request to get the latest block
 	payload := []byte(`{"jsonrpc":"2.0", "method":"getBlockHeight","params":[],"id":1}`)
 	// Send the POST request
