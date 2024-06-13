@@ -39,7 +39,6 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 
 	res := make([]*reverseproxy.Upstream, 0, len(providers))
 
-	// TODO: update logic to incorporate latest block provider upstreams as well as priority
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < len(providers); priority++ {
 		for _, p := range providers {

@@ -186,11 +186,8 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
 func (d *DinMiddleware) startHealthchecks() {
-	for name, service := range d.Services {
-		// TODO: This is a temporary solution to only start the healthcheck for the blast mainnet service for local debugging
-		if name == "blast-mainnet" {
-			service.startHealthcheck()
-		}
+	for _, service := range d.Services {
+		service.startHealthcheck()
 	}
 }
 
