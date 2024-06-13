@@ -40,6 +40,10 @@ func (e *EthereumClient) GetLatestBlockNumber(httpUrl string, headers map[string
 		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
 	}
 
+	if result.Result == "" || result.Result[:2] != "0x" {
+		return 0, 0, errors.New("Invalid block number")
+	}
+
 	// Convert the hexadecimal string to an int64
 	blockNumber, err := strconv.ParseInt(result.Result[2:], 16, 64)
 	if err != nil {

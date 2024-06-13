@@ -159,7 +159,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if len(d.Services[serviceName].Providers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
-					case "healthcheck_method":
+					case "runtime":
 						dispenser.Next()
 						d.Services[serviceName].Runtime = dispenser.Val()
 					case "healthcheck_threshold":

@@ -5,6 +5,7 @@ go 1.21.3
 require (
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/golang/mock v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
 

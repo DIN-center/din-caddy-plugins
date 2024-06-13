@@ -58,7 +58,6 @@ func (p *provider) markPingSuccess(hcThreshold int) {
 	if !p.healthy && p.successes > hcThreshold {
 		p.failures = 0
 		p.healthy = true
-		// fmt.Printf("Marking %v as healthy\n", p.HttpUrl)
 	}
 }
 

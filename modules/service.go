@@ -45,23 +45,14 @@ func (s *service) startHealthcheck() {
 }
 
 func (s *service) healthCheck() {
-	if s.LatestBlockNumber == 0 {
-		fmt.Print("\n\n")
-		fmt.Println("initialization of service ", s.Name, nil)
-		fmt.Print("\n")
-	} else {
-		fmt.Print("\n\n")
-		fmt.Println("previous service block number ", s.Name, s.LatestBlockNumber)
-		fmt.Print("\n")
-	}
-
 	checkedProviders := make(map[string]int64)
 
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
-		latestBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
+		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
 		if err != nil {
-			fmt.Println("error getting latest block number", err)
+			fmt.Println(err, "Error getting latest block number for provider", provider.host, "on service", s.Name)
+			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
 
@@ -75,20 +66,15 @@ func (s *service) healthCheck() {
 		}
 
 		// Consistency health check
-		if s.LatestBlockNumber == 0 || s.LatestBlockNumber < latestBlockNumber {
+		if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
 			// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
 			// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
-			s.LatestBlockNumber = latestBlockNumber
-			fmt.Println("new service latest block number", s.LatestBlockNumber)
+			s.LatestBlockNumber = providerBlockNumber
 
 			provider.healthy = true
 
-			for _, blockNumber := range checkedProviders {
-				if blockNumber != s.LatestBlockNumber {
-					provider.healthy = false
-				}
-			}
-		} else if s.LatestBlockNumber == latestBlockNumber {
+			s.evaluateCheckedProviders(checkedProviders)
+		} else if s.LatestBlockNumber == providerBlockNumber {
 			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
 			provider.healthy = true
 		} else {
@@ -96,18 +82,16 @@ func (s *service) healthCheck() {
 			provider.healthy = false
 		}
 		// add the current provider to the checked providers map
-		checkedProviders[provider.upstream.Dial] = latestBlockNumber
-		fmt.Println("provider:", provider.upstream.Dial, "provider latest block number", latestBlockNumber)
+		checkedProviders[provider.upstream.Dial] = providerBlockNumber
 	}
+}
 
-	for hostName := range checkedProviders {
-		healthyStatus := "unhealthy"
-		if s.Providers[hostName].Healthy() {
-			healthyStatus = "healthy"
+func (s *service) evaluateCheckedProviders(checkedProviders map[string]int64) {
+	for providerName, blockNumber := range checkedProviders {
+		if blockNumber < s.LatestBlockNumber {
+			s.Providers[providerName].healthy = false
 		}
-		fmt.Println(s.Providers[hostName].upstream.Dial, "status", healthyStatus)
 	}
-	fmt.Println()
 }
 
 func (s *service) getRuntimeClient(httpClient *din_http.HTTPClient) runtime.IRuntimeClient {
