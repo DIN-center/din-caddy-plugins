@@ -52,7 +52,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			if err != nil {
 				return err
 			}
-			// upstreamWrapper.upstream = &reverseproxy.Upstream{Dial: fmt.Sprintf("%v://%v", url.Scheme, url.Host)}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
 			provider.httpClient = httpClient
@@ -62,7 +61,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthchecks()
+	d.startHealthChecks()
 
 	return nil
 }
@@ -91,9 +90,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
-	// if d.Methods == nil {
-	// 	d.Methods = make(map[string][]*string)
-	// }
 	var err error
 	if d.Services == nil {
 		d.Services = make(map[string]*service)
@@ -185,7 +181,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 }
 
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
-func (d *DinMiddleware) startHealthchecks() {
+func (d *DinMiddleware) startHealthChecks() {
 	for _, service := range d.Services {
 		service.startHealthcheck()
 	}
