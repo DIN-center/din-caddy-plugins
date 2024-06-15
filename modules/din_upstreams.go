@@ -37,26 +37,28 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		providers = v.(map[string]*provider)
 	}
 
-	res := make([]*reverseproxy.Upstream, 0, len(providers))
+	upstreamPool := make([]*reverseproxy.Upstream, 0, len(providers))
 
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < len(providers); priority++ {
 		for _, p := range providers {
 			if p.Priority == priority && p.upstream.Available() {
-				res = append(res, p.upstream)
+				upstreamPool = append(upstreamPool, p.upstream)
 			}
 		}
-		if len(res) > 0 {
+		if len(upstreamPool) > 0 {
 			break
 		}
 	}
-	if len(res) == 0 {
+	if len(upstreamPool) == 0 {
 		// Didn't find any based on priority, available, pass along all upstreams
 		for _, p := range providers {
-			res = append(res, p.upstream)
+			if p.upstream.Available() {
+				upstreamPool = append(upstreamPool, p.upstream)
+			}
 		}
 	}
-	return res, nil
+	return upstreamPool, nil
 }
 
 func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

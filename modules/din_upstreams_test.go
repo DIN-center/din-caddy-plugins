@@ -55,7 +55,7 @@ func TestGetDinUpstreams(t *testing.T) {
 		output            []*reverseproxy.Upstream
 	}{
 		{
-			name:    "TestGetDinUpstreams succesful, both 0 priority",
+			name:    "TestGetDinUpstreams successful, both 0 priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
