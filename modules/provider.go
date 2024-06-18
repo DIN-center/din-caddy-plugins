@@ -61,6 +61,14 @@ func (p *provider) markPingSuccess(hcThreshold int) {
 	}
 }
 
+func (p *provider) markHealthy() {
+	p.healthy = true
+}
+
+func (p *provider) markUnhealthy() {
+	p.healthy = false
+}
+
 // Healthy returns True if the node is passing healthchecks, False otherwise
 func (p *provider) Healthy() bool {
 	return p.healthy

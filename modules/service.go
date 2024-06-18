@@ -71,15 +71,15 @@ func (s *service) healthCheck() {
 			// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
 			s.LatestBlockNumber = providerBlockNumber
 
-			provider.healthy = true
+			provider.markHealthy()
 
 			s.evaluateCheckedProviders(checkedProviders)
 		} else if s.LatestBlockNumber == providerBlockNumber {
 			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
-			provider.healthy = true
+			provider.markHealthy()
 		} else {
 			// if the current provider's latest block number is less than the service's latest block number, set the current provider to unhealthy
-			provider.healthy = false
+			provider.markUnhealthy()
 		}
 		// add the current provider to the checked providers map
 		checkedProviders[provider.upstream.Dial] = providerBlockNumber
@@ -89,7 +89,7 @@ func (s *service) healthCheck() {
 func (s *service) evaluateCheckedProviders(checkedProviders map[string]int64) {
 	for providerName, blockNumber := range checkedProviders {
 		if blockNumber < s.LatestBlockNumber {
-			s.Providers[providerName].healthy = false
+			s.Providers[providerName].markUnhealthy()
 		}
 	}
 }
