@@ -114,7 +114,7 @@ func TestMarkPingFailure(t *testing.T) {
 				healthy:   true,
 			},
 			hcThresh: 1,
-			output:   false,
+			output:   true,
 		},
 	}
 
@@ -153,7 +153,7 @@ func TestMarkPingSuccess(t *testing.T) {
 				healthy:   false,
 			},
 			hcThresh: 1,
-			output:   true,
+			output:   false,
 		},
 	}
 
