@@ -115,6 +115,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 							HttpUrl: "http://localhost:8001/eth",
 						},
 					},
+					checkedProviders: map[string][]healthCheckEntry{},
 				},
 			},
 			hasErr: false,
@@ -132,6 +133,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 							HttpUrl: "http://localhost:8000/eth",
 						},
 					},
+					checkedProviders: map[string][]healthCheckEntry{},
 				},
 				"starknet-mainnet": {
 					Name:        "eth",
@@ -143,6 +145,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 							HttpUrl: "http://localhost:8000/starknet-mainnet",
 						},
 					},
+					checkedProviders: map[string][]healthCheckEntry{},
 				},
 			},
 			hasErr: false,
@@ -162,7 +165,6 @@ func TestDinMiddlewareProvision(t *testing.T) {
 					if provider.upstream.Dial == "" || provider.path == "" {
 						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 					}
-
 				}
 			}
 		})

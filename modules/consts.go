@@ -1,6 +1,13 @@
 package modules
 
-var (
+type HealthStatus int
+
+const (
+	// Health status enums
+	Healthy HealthStatus = iota
+	Warning
+	Unhealthy
+
 	// Module constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
 
@@ -11,7 +18,7 @@ var (
 	DefaultRuntime  = EthereumRuntime
 
 	// Health check constants
-	DefaultHCThreshold = 2
-	DefaultHCInterval  = 5
+	DefaultHCThreshold   = 2
+	DefaultHCInterval    = 5
 	DefaultBlockLagLimit = int64(5)
 )

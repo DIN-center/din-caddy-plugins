@@ -16,10 +16,10 @@ type provider struct {
 	httpClient *din_http.HTTPClient
 	Priority   int
 
-	failures  int
-	successes int
-	healthy   bool
-	quit      chan struct{}
+	failures     int
+	successes    int
+	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
+	quit         chan struct{}
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -46,8 +46,8 @@ func (p *provider) Available() bool {
 func (p *provider) markPingFailure(hcThreshold int) {
 	p.failures++
 	p.successes = 0
-	if p.healthy && p.failures > hcThreshold {
-		p.healthy = false
+	if p.healthStatus == Healthy && p.failures > hcThreshold {
+		p.healthStatus = Unhealthy
 	}
 }
 
@@ -55,21 +55,25 @@ func (p *provider) markPingFailure(hcThreshold int) {
 // threshold marks the upsteram as healthy
 func (p *provider) markPingSuccess(hcThreshold int) {
 	p.successes++
-	if !p.healthy && p.successes > hcThreshold {
+	if p.healthStatus == Unhealthy && p.successes > hcThreshold {
 		p.failures = 0
-		p.healthy = true
+		p.healthStatus = Healthy
 	}
 }
 
 func (p *provider) markHealthy() {
-	p.healthy = true
+	p.healthStatus = Healthy
 }
 
 func (p *provider) markUnhealthy() {
-	p.healthy = false
+	p.healthStatus = Unhealthy
 }
 
 // Healthy returns True if the node is passing healthchecks, False otherwise
 func (p *provider) Healthy() bool {
-	return p.healthy
+	if p.healthStatus == Healthy {
+		return true
+	} else {
+		return false
+	}
 }

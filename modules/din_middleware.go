@@ -103,10 +103,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					Name: serviceName,
 
 					// Default health check values, to be overridden if specified in the Caddyfile
-					Runtime:     DefaultRuntime,
-					HCThreshold: DefaultHCThreshold,
-					HCInterval:  DefaultHCInterval,
-					BlockLagLimit: DefaultBlockLagLimit,
+					Runtime:          DefaultRuntime,
+					HCThreshold:      DefaultHCThreshold,
+					HCInterval:       DefaultHCInterval,
+					BlockLagLimit:    DefaultBlockLagLimit,
+					checkedProviders: make(map[string][]healthCheckEntry),
 				}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {

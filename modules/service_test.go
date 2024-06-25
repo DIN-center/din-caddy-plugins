@@ -36,6 +36,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 11,
@@ -44,7 +45,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -60,6 +61,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 20,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 0,
@@ -68,7 +70,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 			},
 		},
@@ -84,6 +86,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 30,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 0,
@@ -92,7 +95,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 			},
 		},
@@ -108,6 +111,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 40,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 40,
@@ -116,7 +120,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -132,6 +136,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 50,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 25,
@@ -140,7 +145,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 			},
 		},
@@ -161,6 +166,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 100,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 101,
@@ -169,10 +175,10 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 				"provider2": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -193,6 +199,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 200,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 200,
@@ -201,10 +208,10 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 				"provider2": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -225,6 +232,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 300,
+				checkedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 299,
@@ -233,10 +241,10 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 				"provider2": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 			},
 		},
@@ -248,8 +256,8 @@ func TestHealthCheck(t *testing.T) {
 			tt.service.healthCheck()
 
 			for providerName, provider := range tt.service.Providers {
-				if provider.healthy != tt.want[providerName].healthy {
-					t.Errorf("service.healthCheck() for %v  = %v, want %v", providerName, provider.healthy, tt.want[providerName].healthy)
+				if provider.healthStatus != tt.want[providerName].healthStatus {
+					t.Errorf("service.healthCheck() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
 			}
 		})
@@ -268,7 +276,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			service: &service{
 				Providers: map[string]*provider{
 					"provider1": {
-						healthy: true,
+						healthStatus: Healthy,
 					},
 				},
 				LatestBlockNumber: 10,
@@ -283,7 +291,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: false,
+					healthStatus: Unhealthy,
 				},
 			},
 		},
@@ -292,7 +300,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			service: &service{
 				Providers: map[string]*provider{
 					"provider1": {
-						healthy: true,
+						healthStatus: Healthy,
 					},
 				},
 				LatestBlockNumber: 10,
@@ -307,7 +315,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -316,7 +324,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			service: &service{
 				Providers: map[string]*provider{
 					"provider1": {
-						healthy: true,
+						healthStatus: Healthy,
 					},
 				},
 				LatestBlockNumber: 10,
@@ -331,7 +339,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthy: true,
+					healthStatus: Healthy,
 				},
 			},
 		},
@@ -342,8 +350,8 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			tt.service.evaluateCheckedProviders()
 
 			for providerName, provider := range tt.service.Providers {
-				if provider.healthy != tt.want[providerName].healthy {
-					t.Errorf("service.evaluateCheckedProviders() for %v  = %v, want %v", providerName, provider.healthy, tt.want[providerName].healthy)
+				if provider.healthStatus != tt.want[providerName].healthStatus {
+					t.Errorf("service.evaluateCheckedProviders() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
 			}
 		})

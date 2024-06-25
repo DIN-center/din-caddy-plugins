@@ -89,14 +89,14 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
-					Priority: 1,
-					healthy:  true,
+					upstream:     upstream1,
+					Priority:     1,
+					healthStatus: Healthy,
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
-					Priority: 2,
-					healthy:  true,
+					upstream:     upstream2,
+					Priority:     2,
+					healthStatus: Healthy,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},

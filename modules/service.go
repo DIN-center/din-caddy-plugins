@@ -53,6 +53,8 @@ type healthCheckEntry struct {
 }
 
 func (s *service) healthCheck() {
+	var blockTime time.Time
+	// TODO: check all of the providers simultaneously for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
 		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
@@ -61,6 +63,7 @@ func (s *service) healthCheck() {
 			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
+		blockTime = time.Now()
 
 		// Ping Health Check
 		// TODO: If status code is marked as 429, mark to warning.
@@ -90,15 +93,13 @@ func (s *service) healthCheck() {
 			provider.markUnhealthy()
 		}
 		// add the current provider to the checked providers map
-		s.addNewBlockNumberToCheckedProviders(provider.upstream.Dial, providerBlockNumber)
+		s.addNewBlockNumberToCheckedProviders(provider.upstream.Dial, providerBlockNumber, blockTime)
 	}
 }
 
-// addNewBlockNumberToCheckedProviders adds a new healthCheckEntry to the checkedProviders map for the given provider
+// addNewBlockNumberToCheckedProviders adds a new healthCheckEntry to the beginning of the checkedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
-func (s *service) addNewBlockNumberToCheckedProviders(providerName string, blockNumber int64) {
-	timestamp := time.Now()
-
+func (s *service) addNewBlockNumberToCheckedProviders(providerName string, blockNumber int64, timestamp time.Time) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
 	if _, ok := s.checkedProviders[providerName]; !ok {
 		s.checkedProviders[providerName] = make([]healthCheckEntry, 10)
@@ -119,7 +120,6 @@ func (s *service) addNewBlockNumberToCheckedProviders(providerName string, block
 
 	// once the new slice is created, we can set the checkedProviders map value to the new slice
 	s.checkedProviders[providerName] = newProviderSlice
-	return
 }
 
 func (s *service) evaluateCheckedProviders() {

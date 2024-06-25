@@ -61,7 +61,7 @@ func TestAvailable(t *testing.T) {
 		{
 			name: "Available with healthy upstream",
 			provider: &provider{
-				healthy: true,
+				healthStatus: Healthy,
 				upstream: &reverseproxy.Upstream{
 					Dial: "localhost:8080",
 				},
@@ -71,7 +71,7 @@ func TestAvailable(t *testing.T) {
 		{
 			name: "Available with unhealthy upstream",
 			provider: &provider{
-				healthy: false,
+				healthStatus: Unhealthy,
 				upstream: &reverseproxy.Upstream{
 					Dial: "localhost:8080",
 				},
@@ -94,35 +94,35 @@ func TestMarkPingFailure(t *testing.T) {
 		name     string
 		hcThresh int
 		provider *provider
-		output   bool
+		output   HealthStatus
 	}{
 		{
 			name: "markPingFailure with 0 threshold",
 			provider: &provider{
-				failures:  0,
-				successes: 0,
-				healthy:   true,
+				failures:     0,
+				successes:    0,
+				healthStatus: Healthy,
 			},
 			hcThresh: 0,
-			output:   false,
+			output:   Unhealthy,
 		},
 		{
 			name: "markPingFailure with 1 threshold",
 			provider: &provider{
-				failures:  0,
-				successes: 0,
-				healthy:   true,
+				failures:     0,
+				successes:    0,
+				healthStatus: Healthy,
 			},
 			hcThresh: 1,
-			output:   true,
+			output:   Healthy,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.provider.markPingFailure(tt.hcThresh)
-			if tt.provider.healthy != tt.output {
-				t.Errorf("markPingFailure() = %v, want %v", tt.provider.healthy, tt.output)
+			if tt.provider.healthStatus != tt.output {
+				t.Errorf("markPingFailure() = %v, want %v", tt.provider.healthStatus, tt.output)
 			}
 		})
 	}
@@ -133,35 +133,35 @@ func TestMarkPingSuccess(t *testing.T) {
 		name     string
 		hcThresh int
 		provider *provider
-		output   bool
+		output   HealthStatus
 	}{
 		{
 			name: "markPingSuccess with 0 threshold",
 			provider: &provider{
-				failures:  0,
-				successes: 0,
-				healthy:   false,
+				failures:     0,
+				successes:    0,
+				healthStatus: Unhealthy,
 			},
 			hcThresh: 0,
-			output:   true,
+			output:   Healthy,
 		},
 		{
 			name: "markPingSuccess with 1 threshold",
 			provider: &provider{
-				failures:  0,
-				successes: 0,
-				healthy:   false,
+				failures:     0,
+				successes:    0,
+				healthStatus: Unhealthy,
 			},
 			hcThresh: 1,
-			output:   false,
+			output:   Unhealthy,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.provider.markPingSuccess(tt.hcThresh)
-			if tt.provider.healthy != tt.output {
-				t.Errorf("markPingSuccess() = %v, want %v", tt.provider.healthy, tt.output)
+			if tt.provider.healthStatus != tt.output {
+				t.Errorf("markPingSuccess() = %v, want %v", tt.provider.healthStatus, tt.output)
 			}
 		})
 	}
