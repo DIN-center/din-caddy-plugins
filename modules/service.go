@@ -20,7 +20,7 @@ type service struct {
 	LatestBlockNumber int64 `json:"latest_block_number"`
 
 	// Healthcheck configuration
-	checkedProviders map[string][]healthCheckEntry `json:"checked_providers"`
+	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
 	Runtime          string                        `json:"runtime"`
 	HCInterval       int                           `json:"healthceck.interval.seconds"`
 	HCThreshold      int                           `json:"healthcheck.threshold"`
@@ -54,7 +54,7 @@ type healthCheckEntry struct {
 
 func (s *service) healthCheck() {
 	var blockTime time.Time
-	// TODO: check all of the providers simultaneously for more accurate blocknumber results.
+	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
 		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
@@ -66,16 +66,19 @@ func (s *service) healthCheck() {
 		blockTime = time.Now()
 
 		// Ping Health Check
-		// TODO: If status code is marked as 429, mark to warning.
 		if statusCode > 399 {
-			// if the status code is greater than 399, mark the provider as a failure
-			provider.markPingFailure(s.HCThreshold)
+			if statusCode == 429 {
+				// if the status code is 429, mark the provider as a warning
+				provider.markPingWarning()
+			} else {
+				// if the status code is greater than 399, mark the provider as a failure
+				provider.markPingFailure(s.HCThreshold)
+			}
 			continue
 		} else {
 			provider.markPingSuccess(s.HCThreshold)
 		}
 
-		// TODO: if the block number is behind the latest block number, mark to warning.
 		// Consistency health check
 		if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
 			// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
@@ -89,21 +92,21 @@ func (s *service) healthCheck() {
 			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
 			provider.markHealthy()
 		} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to unhealthy
-			provider.markUnhealthy()
+			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
+			provider.markWarning()
 		}
 		// add the current provider to the checked providers map
 		s.addNewBlockNumberToCheckedProviders(provider.upstream.Dial, providerBlockNumber, blockTime)
 	}
 }
 
-// addNewBlockNumberToCheckedProviders adds a new healthCheckEntry to the beginning of the checkedProviders healthCheck list for the given provider
+// addNewBlockNumberToCheckedProviders adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addNewBlockNumberToCheckedProviders(providerName string, blockNumber int64, timestamp time.Time) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
-	if _, ok := s.checkedProviders[providerName]; !ok {
-		s.checkedProviders[providerName] = make([]healthCheckEntry, 10)
-		s.checkedProviders[providerName][0] = healthCheckEntry{blockNumber: blockNumber, timestamp: &timestamp}
+	if _, ok := s.CheckedProviders[providerName]; !ok {
+		s.CheckedProviders[providerName] = make([]healthCheckEntry, 10)
+		s.CheckedProviders[providerName][0] = healthCheckEntry{blockNumber: blockNumber, timestamp: &timestamp}
 		return
 	}
 
@@ -112,20 +115,20 @@ func (s *service) addNewBlockNumberToCheckedProviders(providerName string, block
 	newProviderSlice[0] = healthCheckEntry{blockNumber: blockNumber, timestamp: &timestamp}
 
 	// if the old slice is full at 10 entries, we need to remove the last entry and copy the rest of the entries to the new slice
-	if len(s.checkedProviders) == 10 {
-		copy(newProviderSlice[1:], s.checkedProviders[providerName][:len(s.checkedProviders[providerName])-1])
+	if len(s.CheckedProviders) == 10 {
+		copy(newProviderSlice[1:], s.CheckedProviders[providerName][:len(s.CheckedProviders[providerName])-1])
 	} else {
-		copy(newProviderSlice[1:], s.checkedProviders[providerName])
+		copy(newProviderSlice[1:], s.CheckedProviders[providerName])
 	}
 
-	// once the new slice is created, we can set the checkedProviders map value to the new slice
-	s.checkedProviders[providerName] = newProviderSlice
+	// once the new slice is created, we can set the CheckedProviders map value to the new slice
+	s.CheckedProviders[providerName] = newProviderSlice
 }
 
 func (s *service) evaluateCheckedProviders() {
-	for providerName, healthCheckList := range s.checkedProviders {
+	for providerName, healthCheckList := range s.CheckedProviders {
 		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			s.Providers[providerName].markUnhealthy()
+			s.Providers[providerName].markWarning()
 		}
 	}
 }

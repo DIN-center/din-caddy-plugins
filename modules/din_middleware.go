@@ -107,7 +107,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					HCThreshold:      DefaultHCThreshold,
 					HCInterval:       DefaultHCInterval,
 					BlockLagLimit:    DefaultBlockLagLimit,
-					checkedProviders: make(map[string][]healthCheckEntry),
+					CheckedProviders: make(map[string][]healthCheckEntry),
 				}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
@@ -172,7 +172,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if err != nil {
 							return err
 						}
-					case "healthceck_blocklag_limit":
+					case "healthcheck_blocklag_limit":
 						dispenser.Next()
 						limit, err := strconv.Atoi(dispenser.Val())
 						if err != nil {

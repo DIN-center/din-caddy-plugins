@@ -41,6 +41,10 @@ func (p *provider) Available() bool {
 	return p.upstream.Available() && p.Healthy()
 }
 
+func (p *provider) IsAvailableWithWarning() bool {
+	return p.upstream.Available() && p.Warning()
+}
+
 // markPingFailure records the failure, and if the failure count exceeds the healthcheck threshold
 // marks the upstream as unhealthy
 func (p *provider) markPingFailure(hcThreshold int) {
@@ -49,6 +53,12 @@ func (p *provider) markPingFailure(hcThreshold int) {
 	if p.healthStatus == Healthy && p.failures > hcThreshold {
 		p.healthStatus = Unhealthy
 	}
+}
+
+func (p *provider) markPingWarning() {
+	p.successes = 0
+	p.failures = 0
+	p.healthStatus = Warning
 }
 
 // markPingSuccess records a successful healthcheck, and if the success count exceeds the healthcheck
@@ -65,6 +75,10 @@ func (p *provider) markHealthy() {
 	p.healthStatus = Healthy
 }
 
+func (p *provider) markWarning() {
+	p.healthStatus = Warning
+}
+
 func (p *provider) markUnhealthy() {
 	p.healthStatus = Unhealthy
 }
@@ -72,6 +86,15 @@ func (p *provider) markUnhealthy() {
 // Healthy returns True if the node is passing healthchecks, False otherwise
 func (p *provider) Healthy() bool {
 	if p.healthStatus == Healthy {
+		return true
+	} else {
+		return false
+	}
+}
+
+// Warning returns True if the node is returning warning in healthchecks, False otherwise
+func (p *provider) Warning() bool {
+	if p.healthStatus == Warning {
 		return true
 	} else {
 		return false

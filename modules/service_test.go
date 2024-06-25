@@ -36,7 +36,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 11,
@@ -61,7 +61,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 20,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 0,
@@ -86,7 +86,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 30,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 0,
@@ -111,7 +111,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 40,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 40,
@@ -136,7 +136,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 50,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 25,
@@ -166,7 +166,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 100,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 101,
@@ -199,7 +199,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 200,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 200,
@@ -232,7 +232,7 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 300,
-				checkedProviders:  map[string][]healthCheckEntry{},
+				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResponse: latestBlockResponse{
 				latestBlockNumber: 299,
@@ -280,7 +280,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 1,
@@ -304,7 +304,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 20,
@@ -328,7 +328,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 10,
