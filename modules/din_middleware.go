@@ -173,10 +173,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "healthceck_blocklag_limit":
 						dispenser.Next()
-						d.Services[serviceName].BlockLagLimit, err = strconv.Atoi(dispenser.Val())
+						limit, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
 							return err
 						}
+						d.Services[serviceName].BlockLagLimit = int64(limit)
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}

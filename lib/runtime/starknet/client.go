@@ -2,7 +2,6 @@ package starknet
 
 import (
 	"encoding/json"
-	"strconv"
 
 	"github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	"github.com/pkg/errors"
@@ -31,7 +30,7 @@ func (e *StarknetClient) GetLatestBlockNumber(httpUrl string, headers map[string
 	var result struct {
 		Jsonrpc string `json:"jsonrpc"`
 		Id      int    `json:"id"`
-		Result  string `json:"result"`
+		Result  int    `json:"result"`
 	}
 
 	// Unmarshal the response
@@ -40,11 +39,5 @@ func (e *StarknetClient) GetLatestBlockNumber(httpUrl string, headers map[string
 		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
 	}
 
-	// Convert the hexadecimal string to an int64
-	blockNumber, err := strconv.ParseInt(result.Result[2:], 16, 64)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error converting block number")
-	}
-
-	return blockNumber, *statusCode, nil
+	return int64(result.Result), *statusCode, nil
 }
