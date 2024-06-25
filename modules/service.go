@@ -24,7 +24,7 @@ type service struct {
 	Runtime          string                        `json:"runtime"`
 	HCInterval       int                           `json:"healthceck.interval.seconds"`
 	HCThreshold      int                           `json:"healthcheck.threshold"`
-	BlockLagLimit    int64                         `json:"healathcheck.blocklag.limit`
+	BlockLagLimit    int64                         `json:"healathcheck.blocklag.limit"`
 }
 
 func (s *service) startHealthcheck() {
