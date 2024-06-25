@@ -259,10 +259,9 @@ func TestHealthCheck(t *testing.T) {
 func TestEvaluateCheckedProviders(t *testing.T) {
 
 	tests := []struct {
-		name             string
-		service          *service
-		checkedProviders map[string]int64
-		want             map[string]*provider
+		name    string
+		service *service
+		want    map[string]*provider
 	}{
 		{
 			name: "1 provider, has older block, marked unhealthy",
@@ -273,9 +272,14 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-			},
-			checkedProviders: map[string]int64{
-				"provider1": 1,
+				checkedProviders: map[string][]healthCheckEntry{
+					"provider1": {
+						{
+							blockNumber: 1,
+							timestamp:   nil,
+						},
+					},
+				},
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -292,9 +296,14 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-			},
-			checkedProviders: map[string]int64{
-				"provider1": 20,
+				checkedProviders: map[string][]healthCheckEntry{
+					"provider1": {
+						{
+							blockNumber: 20,
+							timestamp:   nil,
+						},
+					},
+				},
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -311,9 +320,14 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 					},
 				},
 				LatestBlockNumber: 10,
-			},
-			checkedProviders: map[string]int64{
-				"provider1": 10,
+				checkedProviders: map[string][]healthCheckEntry{
+					"provider1": {
+						{
+							blockNumber: 10,
+							timestamp:   nil,
+						},
+					},
+				},
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -325,7 +339,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.service.evaluateCheckedProviders(tt.checkedProviders)
+			tt.service.evaluateCheckedProviders()
 
 			for providerName, provider := range tt.service.Providers {
 				if provider.healthy != tt.want[providerName].healthy {
