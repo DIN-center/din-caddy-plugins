@@ -51,6 +51,31 @@ func TestHealthCheck(t *testing.T) {
 			},
 		},
 		{
+			name: "1 provider, successful response, 429 too many request status, mark warning",
+			service: &service{
+				runtimeClient: mockRuntimeClient,
+				Providers: map[string]*provider{
+					"provider1": {
+						upstream: &reverseproxy.Upstream{
+							Dial: "provider1",
+						},
+					},
+				},
+				LatestBlockNumber: 10,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+			},
+			latestBlockResponse: latestBlockResponse{
+				latestBlockNumber: 11,
+				statusCode:        429,
+				err:               nil,
+			},
+			want: map[string]*provider{
+				"provider1": {
+					healthStatus: Warning,
+				},
+			},
+		},
+		{
 			name: "1 provider, GetLatestBlockNumber fails, marked unhealthy",
 			service: &service{
 				runtimeClient: mockRuntimeClient,
