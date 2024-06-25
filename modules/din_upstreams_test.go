@@ -70,16 +70,84 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 2 priority",
+			name:    "TestGetDinUpstreams successful, both 0 priority and healthy",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Healthy,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Healthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1, upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, both 0 priority and 1 is healthy",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Healthy,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, both 0 priority and both are warning",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1, upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, both 0 priority and one is Warning the other is Unhealthy",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Unhealthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, both 1 priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
-					Priority: 2,
+					Priority: 1,
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
-					Priority: 2,
+					Priority: 1,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -90,16 +158,50 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     1,
+					Priority:     0,
 					healthStatus: Healthy,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     2,
+					Priority:     1,
 					healthStatus: Healthy,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, different priorities, different health statues",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     1,
+					healthStatus: Healthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, different priorities, unhealthy health statuses",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Unhealthy,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     1,
+					healthStatus: Unhealthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{},
 		},
 		{
 			name:              "TestGetDinUpstreams succesful, no priorities",
