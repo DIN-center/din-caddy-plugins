@@ -106,6 +106,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					Runtime:     DefaultRuntime,
 					HCThreshold: DefaultHCThreshold,
 					HCInterval:  DefaultHCInterval,
+					BlockLagLimit: DefaultBlockLagLimit,
 				}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
@@ -170,6 +171,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if err != nil {
 							return err
 						}
+					case "healthceck_blocklag_limit":
+						dispenser.Next()
+						limit, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return err
+						}
+						d.Services[serviceName].BlockLagLimit = int64(limit)
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}

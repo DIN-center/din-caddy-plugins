@@ -24,6 +24,7 @@ type service struct {
 	Runtime          string                        `json:"runtime"`
 	HCInterval       int                           `json:"healthceck.interval.seconds"`
 	HCThreshold      int                           `json:"healthcheck.threshold"`
+	BlockLagLimit    int64                         `json:"healathcheck.blocklag.limit`
 }
 
 func (s *service) startHealthcheck() {
@@ -84,8 +85,8 @@ func (s *service) healthCheck() {
 		} else if s.LatestBlockNumber == providerBlockNumber {
 			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
 			provider.markHealthy()
-		} else {
-			// if the current provider's latest block number is less than the service's latest block number, set the current provider to unhealthy
+		} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
+			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to unhealthy
 			provider.markUnhealthy()
 		}
 		// add the current provider to the checked providers map
@@ -123,7 +124,7 @@ func (s *service) addNewBlockNumberToCheckedProviders(providerName string, block
 
 func (s *service) evaluateCheckedProviders() {
 	for providerName, healthCheckList := range s.checkedProviders {
-		if healthCheckList[0].blockNumber < s.LatestBlockNumber {
+		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 			s.Providers[providerName].markUnhealthy()
 		}
 	}

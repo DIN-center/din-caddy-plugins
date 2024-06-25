@@ -13,4 +13,5 @@ var (
 	// Health check constants
 	DefaultHCThreshold = 2
 	DefaultHCInterval  = 5
+	DefaultBlockLagLimit = int64(5)
 )
