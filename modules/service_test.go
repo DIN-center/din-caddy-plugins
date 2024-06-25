@@ -3,6 +3,7 @@ package modules
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
@@ -125,7 +126,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 		},
 		{
-			name: "1 provider, successful response, has smaller block number, marked unhealthy",
+			name: "1 provider, successful response, has smaller block number, marked warning",
 			service: &service{
 				runtimeClient: mockRuntimeClient,
 				Providers: map[string]*provider{
@@ -145,7 +146,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthStatus: Unhealthy,
+					healthStatus: Warning,
 				},
 			},
 		},
@@ -216,7 +217,7 @@ func TestHealthCheck(t *testing.T) {
 			},
 		},
 		{
-			name: "2 providers, successful response, both have older blocks, both marked unhealthy",
+			name: "2 providers, successful response, both have older blocks, both marked warning",
 			service: &service{
 				runtimeClient: mockRuntimeClient,
 				Providers: map[string]*provider{
@@ -241,10 +242,10 @@ func TestHealthCheck(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthStatus: Unhealthy,
+					healthStatus: Warning,
 				},
 				"provider2": {
-					healthStatus: Unhealthy,
+					healthStatus: Warning,
 				},
 			},
 		},
@@ -264,6 +265,191 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
+	timeNow := time.Now()
+	timeYesterday := timeNow.AddDate(0, 0, -1)
+
+	tests := []struct {
+		name             string
+		service          *service
+		providerName     string
+		healthCheckInput healthCheckEntry
+		want             []healthCheckEntry
+	}{
+		{
+			name: "health check entry added to empty list",
+			service: &service{
+				Providers: map[string]*provider{
+					"provider1": {
+						upstream: &reverseproxy.Upstream{},
+					},
+				},
+				CheckedProviders: map[string][]healthCheckEntry{},
+			},
+			providerName: "provider1",
+			healthCheckInput: healthCheckEntry{
+				blockNumber: 1,
+				timestamp:   &timeNow,
+			},
+			want: []healthCheckEntry{
+				{
+					blockNumber: 1,
+					timestamp:   &timeNow,
+				},
+			},
+		},
+		{
+			name: "health check entry added to a populated list",
+			service: &service{
+				Providers: map[string]*provider{
+					"provider1": {
+						upstream: &reverseproxy.Upstream{},
+					},
+				},
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {
+						{
+							blockNumber: 1,
+							timestamp:   &timeYesterday,
+						},
+					},
+				},
+			},
+			providerName: "provider1",
+			healthCheckInput: healthCheckEntry{
+				blockNumber: 2,
+				timestamp:   &timeNow,
+			},
+			want: []healthCheckEntry{
+				{
+					blockNumber: 2,
+					timestamp:   &timeNow,
+				},
+				{
+					blockNumber: 1,
+					timestamp:   &timeYesterday,
+				},
+			},
+		},
+		{
+			name: "health check entry added to a populated list of 10",
+			service: &service{
+				Providers: map[string]*provider{
+					"provider1": {
+						upstream: &reverseproxy.Upstream{},
+					},
+				},
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {
+						{
+							blockNumber: 10,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 9,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 8,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 7,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 6,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 5,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 4,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 3,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 2,
+							timestamp:   &timeYesterday,
+						},
+						{
+							blockNumber: 1,
+							timestamp:   &timeYesterday,
+						},
+					},
+				},
+			},
+			providerName: "provider1",
+			healthCheckInput: healthCheckEntry{
+				blockNumber: 11,
+				timestamp:   &timeNow,
+			},
+			want: []healthCheckEntry{
+				{
+					blockNumber: 11,
+					timestamp:   &timeNow,
+				},
+				{
+					blockNumber: 10,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 9,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 8,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 7,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 6,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 5,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 4,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 3,
+					timestamp:   &timeYesterday,
+				},
+				{
+					blockNumber: 2,
+					timestamp:   &timeYesterday,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.service.addHealthCheckToCheckedProviderList(tt.providerName, tt.healthCheckInput)
+
+			if len(tt.service.CheckedProviders[tt.providerName]) != len(tt.want) {
+				t.Errorf("service.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.service.CheckedProviders[tt.providerName]), len(tt.want))
+			}
+			if len(tt.want) > 0 {
+				if tt.service.CheckedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
+					t.Errorf("service.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.service.CheckedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
+				}
+			}
+		})
+	}
+}
+
 func TestEvaluateCheckedProviders(t *testing.T) {
 
 	tests := []struct {
@@ -272,7 +458,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 		want    map[string]*provider
 	}{
 		{
-			name: "1 provider, has older block, marked unhealthy",
+			name: "1 provider, has older block, marked Warning",
 			service: &service{
 				Providers: map[string]*provider{
 					"provider1": {
@@ -291,7 +477,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 			},
 			want: map[string]*provider{
 				"provider1": {
-					healthStatus: Unhealthy,
+					healthStatus: Warning,
 				},
 			},
 		},

@@ -96,33 +96,29 @@ func (s *service) healthCheck() {
 			provider.markWarning()
 		}
 		// add the current provider to the checked providers map
-		s.addNewBlockNumberToCheckedProviders(provider.upstream.Dial, providerBlockNumber, blockTime)
+		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 	}
 }
 
-// addNewBlockNumberToCheckedProviders adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
+// addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
-func (s *service) addNewBlockNumberToCheckedProviders(providerName string, blockNumber int64, timestamp time.Time) {
+func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
 	if _, ok := s.CheckedProviders[providerName]; !ok {
-		s.CheckedProviders[providerName] = make([]healthCheckEntry, 10)
-		s.CheckedProviders[providerName][0] = healthCheckEntry{blockNumber: blockNumber, timestamp: &timestamp}
+		s.CheckedProviders[providerName] = []healthCheckEntry{healthCheckInput}
 		return
 	}
 
 	// to add a new healthCheckEntry to index 0 of the provider's slice, we need to make a new slice and copy the old slice to the new slice
-	newProviderSlice := make([]healthCheckEntry, 10)
-	newProviderSlice[0] = healthCheckEntry{blockNumber: blockNumber, timestamp: &timestamp}
+	newHealthCheckList := []healthCheckEntry{healthCheckInput}
 
 	// if the old slice is full at 10 entries, we need to remove the last entry and copy the rest of the entries to the new slice
-	if len(s.CheckedProviders) == 10 {
-		copy(newProviderSlice[1:], s.CheckedProviders[providerName][:len(s.CheckedProviders[providerName])-1])
+	if len(s.CheckedProviders[providerName]) == 10 {
+		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName][:9]...)
+		copy(newHealthCheckList[1:], s.CheckedProviders[providerName][:len(s.CheckedProviders[providerName])-1])
 	} else {
-		copy(newProviderSlice[1:], s.CheckedProviders[providerName])
+		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName]...)
 	}
-
-	// once the new slice is created, we can set the CheckedProviders map value to the new slice
-	s.CheckedProviders[providerName] = newProviderSlice
 }
 
 func (s *service) evaluateCheckedProviders() {
