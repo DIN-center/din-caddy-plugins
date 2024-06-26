@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -66,6 +67,23 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	return nil
 }
 
+// ResponseWriterWrapper is a wrapper around http.ResponseWriter that captures the response body.
+type ResponseWriterWrapper struct {
+	http.ResponseWriter
+	body *bytes.Buffer
+}
+
+// NewCustomResponseWriter creates a new CustomResponseWriter.
+func NewResponseWriterWrapper(rw http.ResponseWriter) *ResponseWriterWrapper {
+	return &ResponseWriterWrapper{ResponseWriter: rw, body: new(bytes.Buffer)}
+}
+
+// Write captures the response body and writes it to the original ResponseWriter.
+func (crw *ResponseWriterWrapper) Write(b []byte) (int, error) {
+	crw.body.Write(b) // Capture the response body
+	return crw.ResponseWriter.Write(b)
+}
+
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the service path is defined in the services map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -85,7 +103,18 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
-	return next.ServeHTTP(rw, r)
+
+	crw := NewResponseWriterWrapper(rw)
+	err := next.ServeHTTP(crw, r)
+	if err != nil {
+		return err
+	}
+
+	//TODO: get rid of print
+	//  Print the captured response body
+	// fmt.Println("Response body:", crw.body.String())
+
+	return nil
 }
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile

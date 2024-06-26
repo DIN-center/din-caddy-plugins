@@ -4,7 +4,8 @@ import "github.com/prometheus/client_golang/prometheus"
 
 // prometheus metric initialization
 var (
-	DinRequestCount *prometheus.CounterVec
+	DinRequestCount  *prometheus.CounterVec
+	DinResponseCount *prometheus.CounterVec
 )
 
 // RegisterMetrics registers the prometheus metrics
@@ -18,4 +19,13 @@ func RegisterMetrics() {
 		[]string{"service", "method", "provider", "host_name"},
 	)
 	prometheus.MustRegister(DinRequestCount)
+
+	DinResponseCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "din_http_response_count",
+			Help: "Metric for counting din http responses",
+		},
+		[]string{},
+	)
+	prometheus.MustRegister(DinResponseCount)
 }
