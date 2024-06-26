@@ -2,17 +2,14 @@ package modules
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
@@ -26,7 +23,8 @@ var (
 )
 
 type DinSelect struct {
-	selector reverseproxy.Selector
+	selector         reverseproxy.Selector
+	PrometheusClient *prom.PrometheusClient
 }
 
 // CaddyModule returns the Caddy module information.
@@ -40,6 +38,8 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the selector for use.
 // It is called only once, when the server is starting.
 func (d *DinSelect) Provision(context caddy.Context) error {
+	// Initialize the prometheus client on the din middleware object
+	d.PrometheusClient = prom.NewPrometheusClient()
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
 	selector.Provision(context)
 	d.selector = selector
@@ -49,6 +49,10 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 // Select() is called by Caddy reverse proxy dynamic upstream selecting process to select an upstream based on the request.
 // It is called for each request.
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
+	// Create a new response writer wrapper to capture the response body and status code
+	rww := NewResponseWriterWrapper(rw)
+
+	fmt.Println("select function")
 	// Get providers from context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var providers map[string]*provider
@@ -70,44 +74,30 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
+	// if the request body is nil, return without logging the request via metrics
 	if r.Body == nil {
 		return selectedUpstream
 	}
 
 	// Read request body for passing to metric middleware
-	body, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil
 	}
+
 	// Increment prometheus metric based on request data
 	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.handleRequestMetric(body, r.RequestURI, r.Host, selectedUpstream.Dial)
+	go d.PrometheusClient.HandleRequestMetric(bodyBytes, &prom.PromRequestMetricData{
+		Service:   r.RequestURI,
+		Provider:  selectedUpstream.Dial,
+		HostName:  r.Host,
+		ResStatus: rww.statusCode,
+	})
 
 	// Set request body back to original state
-	r.Body = io.NopCloser(bytes.NewBuffer(body))
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	return selectedUpstream
-}
-
-// handleRequestMetric increments prometheus metric based on request data passed in
-func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
-	// First extract method data from body
-	// define struct to hold request data
-	var requestBody struct {
-		Method string `json:"method,omitempty"`
-	}
-	err := json.Unmarshal(bodyBytes, &requestBody)
-	if err != nil {
-		fmt.Printf("Error decoding request body: %v", http.StatusBadRequest)
-	}
-	var method string
-	if requestBody.Method != "" {
-		method = requestBody.Method
-	}
-	service = strings.TrimPrefix(service, "/")
-
-	// Increment prometheus metric based on request data
-	prom.DinRequestCount.WithLabelValues(service, method, provider, hostName).Inc()
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

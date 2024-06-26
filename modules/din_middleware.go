@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -44,10 +43,13 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	// Initialize the HTTP client and runtime client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		runtimeClient := service.getRuntimeClient(httpClient)
 		service.runtimeClient = runtimeClient
+
+		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
 			url, err := url.Parse(provider.HttpUrl)
 			if err != nil {
@@ -65,23 +67,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.startHealthChecks()
 
 	return nil
-}
-
-// ResponseWriterWrapper is a wrapper around http.ResponseWriter that captures the response body.
-type ResponseWriterWrapper struct {
-	http.ResponseWriter
-	body *bytes.Buffer
-}
-
-// NewCustomResponseWriter creates a new CustomResponseWriter.
-func NewResponseWriterWrapper(rw http.ResponseWriter) *ResponseWriterWrapper {
-	return &ResponseWriterWrapper{ResponseWriter: rw, body: new(bytes.Buffer)}
-}
-
-// Write captures the response body and writes it to the original ResponseWriter.
-func (crw *ResponseWriterWrapper) Write(b []byte) (int, error) {
-	crw.body.Write(b) // Capture the response body
-	return crw.ResponseWriter.Write(b)
 }
 
 // ServeHTTP is the main handler for the middleware that is ran for every request.
@@ -104,17 +89,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
-	crw := NewResponseWriterWrapper(rw)
-	err := next.ServeHTTP(crw, r)
-	if err != nil {
-		return err
-	}
-
-	//TODO: get rid of print
-	//  Print the captured response body
-	// fmt.Println("Response body:", crw.body.String())
-
-	return nil
+	return next.ServeHTTP(rw, r)
 }
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
