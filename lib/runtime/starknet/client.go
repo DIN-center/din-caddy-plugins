@@ -18,7 +18,7 @@ func NewStarknetClient(httpClient *http.HTTPClient) *StarknetClient {
 }
 
 func (e *StarknetClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
-	payload := []byte(`{"jsonrpc":"2.0","method"starknet_blockNumber","params":[],"id":1}`)
+	payload := []byte(`{"jsonrpc":"2.0","method":"starknet_blockNumber","params":[],"id":1}`)
 
 	// Send the POST request
 	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload))
