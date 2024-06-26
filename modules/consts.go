@@ -8,8 +8,10 @@ const (
 	Warning
 	Unhealthy
 
-	// Module constants
+	// Module Context Key constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
+	RequestProviderKey     = "request_provider"
+	RequestBodyKey         = "request_body"
 
 	// Runtime constants
 	EthereumRuntime = "ethereum"

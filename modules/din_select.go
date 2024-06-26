@@ -2,7 +2,6 @@ package modules
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,7 +9,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
 var (
@@ -23,8 +21,7 @@ var (
 )
 
 type DinSelect struct {
-	selector         reverseproxy.Selector
-	PrometheusClient *prom.PrometheusClient
+	selector reverseproxy.Selector
 }
 
 // CaddyModule returns the Caddy module information.
@@ -38,8 +35,6 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the selector for use.
 // It is called only once, when the server is starting.
 func (d *DinSelect) Provision(context caddy.Context) error {
-	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient()
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
 	selector.Provision(context)
 	d.selector = selector
@@ -49,10 +44,6 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 // Select() is called by Caddy reverse proxy dynamic upstream selecting process to select an upstream based on the request.
 // It is called for each request.
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
-	// Create a new response writer wrapper to capture the response body and status code
-	rww := NewResponseWriterWrapper(rw)
-
-	fmt.Println("select function")
 	// Get providers from context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var providers map[string]*provider
@@ -74,7 +65,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
-	// if the request body is nil, return without logging the request via metrics
+	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {
 		return selectedUpstream
 	}
@@ -84,15 +75,8 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	if err != nil {
 		return nil
 	}
-
-	// Increment prometheus metric based on request data
-	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.PrometheusClient.HandleRequestMetric(bodyBytes, &prom.PromRequestMetricData{
-		Service:   r.RequestURI,
-		Provider:  selectedUpstream.Dial,
-		HostName:  r.Host,
-		ResStatus: rww.statusCode,
-	})
+	repl.Set(RequestProviderKey, selectedUpstream.Dial)
+	repl.Set(RequestBodyKey, bodyBytes)
 
 	// Set request body back to original state
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))

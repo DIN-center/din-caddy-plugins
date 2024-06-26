@@ -62,7 +62,7 @@ func (p *provider) markPingWarning() {
 }
 
 // markPingSuccess records a successful healthcheck, and if the success count exceeds the healthcheck
-// threshold marks the upsteram as healthy
+// threshold marks the upstream as healthy
 func (p *provider) markPingSuccess(hcThreshold int) {
 	p.successes++
 	if p.healthStatus == Unhealthy && p.successes > hcThreshold {

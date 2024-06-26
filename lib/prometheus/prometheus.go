@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -32,17 +32,18 @@ func RegisterMetrics() {
 			Name: "din_http_request_count",
 			Help: "Metric for counting din http requests with service, method, provider, and host_name labels",
 		},
-		[]string{"service", "method", "provider", "host_name", "res_status"},
+		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency"},
 	)
 	prometheus.MustRegister(DinRequestCount)
 }
 
 type PromRequestMetricData struct {
-	Method    string
-	Service   string
-	Provider  string
-	HostName  string
-	ResStatus int
+	Method     string
+	Service    string
+	Provider   string
+	HostName   string
+	ResStatus  int
+	ResLatency time.Duration
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
@@ -56,14 +57,15 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 	if err != nil {
 		fmt.Printf("Error decoding request body: %v", http.StatusBadRequest)
 	}
+	var method string
 	if requestBody.Method != "" {
-		data.Method = requestBody.Method
+		method = requestBody.Method
 	}
 
 	service := strings.TrimPrefix(data.Service, "/")
-
-	spew.Dump(data)
+	latency := strconv.FormatInt(data.ResLatency.Milliseconds(), 10)
+	status := strconv.Itoa(data.ResStatus)
 
 	// Increment prometheus metric based on request data
-	DinRequestCount.WithLabelValues(service, data.Method, data.Provider, data.HostName, strconv.Itoa(data.ResStatus)).Inc()
+	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency).Inc()
 }
