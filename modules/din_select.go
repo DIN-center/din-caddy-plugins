@@ -52,21 +52,21 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 // Select() is called by Caddy reverse proxy dynamic upstream selecting process to select an upstream based on the request.
 // It is called for each request.
 func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw http.ResponseWriter) *reverseproxy.Upstream {
-	// Get upstreamWrappers from context
+	// Get providers from context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var upstreamWrappers []*upstreamWrapper
+	var providers map[string]*provider
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		upstreamWrappers = v.([]*upstreamWrapper)
+		providers = v.(map[string]*provider)
 	}
-
 	// Select upstream based on request
-	res := d.selector.Select(pool, r, rw)
-	for _, upstreamWrapper := range upstreamWrappers {
-		// If the upstream is found in the upstreamWrappers, set the path and headers for the request
-		if res == upstreamWrapper.upstream {
-			r.URL.RawPath = upstreamWrapper.path
+	selectedUpstream := d.selector.Select(pool, r, rw)
+
+	for _, provider := range providers {
+		// If the upstream is found in the providers, set the path and headers for the request
+		if selectedUpstream == provider.upstream {
+			r.URL.RawPath = provider.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range upstreamWrapper.Headers {
+			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
 			if upstreamWrapper.Auth != nil {
@@ -78,6 +78,10 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
+	if r.Body == nil {
+		return selectedUpstream
+	}
+
 	// Read request body for passing to metric middleware
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -85,17 +89,16 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	}
 	// Increment prometheus metric based on request data
 	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.handleRequestMetric(body, r.RequestURI, r.Host, res.Dial)
+	go d.handleRequestMetric(body, r.RequestURI, r.Host, selectedUpstream.Dial)
 
 	// Set request body back to original state
 	r.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	return res
+	return selectedUpstream
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
 func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
-	fmt.Println(hostName)
 	// First extract method data from body
 	// define struct to hold request data
 	var requestBody struct {
