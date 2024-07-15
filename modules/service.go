@@ -95,6 +95,9 @@ func (s *service) healthCheck() {
 			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
 			provider.markWarning()
 		}
+
+		// TODO: create a check based on time window of a provider's latest block number
+
 		// add the current provider to the checked providers map
 		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 	}

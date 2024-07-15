@@ -50,6 +50,8 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 			break
 		}
 	}
+
+	// TODO: set config based on customer's request header
 	// Didn't find any based on priority, available, find all upstreams that are in warning status by priority.
 	if len(upstreamPool) == 0 {
 		for priority := 0; priority < len(providers); priority++ {
