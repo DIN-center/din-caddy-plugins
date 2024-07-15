@@ -172,6 +172,7 @@
 					providers {
 						https://din-router.extrnode.com:443
 					}
+					runtime solana
 				}
 			}
 		}
