@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	reflect "reflect"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -43,20 +44,36 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 
+	now := time.Now()
+
 	test := []struct {
 		name     string
 		request  *http.Request
+		provider string
 		services map[string]*service
 		hasErr   bool
 	}{
 		{
-			name:    "successful request",
-			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
+			name:     "successful request",
+			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
+			provider: "localhost:8000",
 			services: map[string]*service{
 				"eth": {
-					Name:      "eth",
-					Runtime:   "ethereum",
-					Providers: map[string]*provider{},
+					Name:    "eth",
+					Runtime: "ethereum",
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							healthStatus: Healthy,
+						},
+					},
+					CheckedProviders: map[string][]healthCheckEntry{
+						"localhost:8000": {
+							{
+								blockNumber: 1,
+								timestamp:   &now,
+							},
+						},
+					},
 				},
 			},
 			hasErr: false,
@@ -82,6 +99,9 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			dinMiddleware.Services = tt.services
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			rw := httptest.NewRecorder()
+
+			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(RequestProviderKey, tt.provider)
 
 			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 			if err != nil && !tt.hasErr {
