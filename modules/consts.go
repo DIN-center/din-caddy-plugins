@@ -12,6 +12,8 @@ const (
 	DinUpstreamsContextKey = "din.internal.upstreams"
 	RequestProviderKey     = "request_provider"
 	RequestBodyKey         = "request_body"
+	HealthStatusKey        = "health_status"
+	BlockNumberKey         = "block_number"
 
 	// Runtime constants
 	EthereumRuntime = "ethereum"
@@ -24,3 +26,17 @@ const (
 	DefaultHCInterval    = 5
 	DefaultBlockLagLimit = int64(5)
 )
+
+// String method to convert MyEnum to string
+func (h HealthStatus) String() string {
+	switch h {
+	case Healthy:
+		return "Healthy"
+	case Warning:
+		return "Warning"
+	case Unhealthy:
+		return "Unhealthy"
+	default:
+		return "Unknown"
+	}
+}

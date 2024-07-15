@@ -110,13 +110,23 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	latency := time.Since(reqStartTime)
 
-	var reqBody []byte
-	if v, ok := repl.Get(RequestBodyKey); ok {
-		reqBody = v.([]byte)
-	}
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
+	}
+
+	var blockNumber int64
+	if len(service.CheckedProviders[provider]) > 0 {
+		blockNumber = service.CheckedProviders[provider][0].blockNumber
+	} else {
+		blockNumber = service.LatestBlockNumber
+	}
+
+	healthStatus := service.Providers[provider].healthStatus.String()
+
+	var reqBody []byte
+	if v, ok := repl.Get(RequestBodyKey); ok {
+		reqBody = v.([]byte)
 	}
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
@@ -126,11 +136,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
-		Service:    r.RequestURI,
-		Provider:   provider,
-		HostName:   r.Host,
-		ResStatus:  rww.statusCode,
-		ResLatency: latency,
+		Service:      r.RequestURI,
+		Provider:     provider,
+		HostName:     r.Host,
+		ResStatus:    rww.statusCode,
+		ResLatency:   latency,
+		HealthStatus: healthStatus,
+		BlockNumber:  strconv.FormatInt(blockNumber, 10),
 	})
 
 	return nil

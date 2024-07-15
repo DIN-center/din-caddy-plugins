@@ -38,12 +38,14 @@ func RegisterMetrics() {
 }
 
 type PromRequestMetricData struct {
-	Method     string
-	Service    string
-	Provider   string
-	HostName   string
-	ResStatus  int
-	ResLatency time.Duration
+	Method       string
+	Service      string
+	Provider     string
+	HostName     string
+	ResStatus    int
+	ResLatency   time.Duration
+	HealthStatus string
+	BlockNumber  string
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
@@ -67,5 +69,5 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 	status := strconv.Itoa(data.ResStatus)
 
 	// Increment prometheus metric based on request data
-	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency).Inc()
+	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency, data.HealthStatus, data.BlockNumber).Inc()
 }
