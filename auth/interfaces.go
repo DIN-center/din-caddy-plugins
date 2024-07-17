@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"errors"
+	"go.uber.org/zap"
 )
 
 type UnixTime time.Time
@@ -65,7 +66,7 @@ func (at *AuthToken) Peek() error {
 type AuthClient interface {
 	// Start a series of sessions with the provider. The AuthClient should automatically 
 	// establish new sessions as they near expiration
-	Start() error
+	Start(*zap.Logger) error
 	// Error will return an error if the AuthClient is unhealthy, or nil if it should be able to sign a valid request
 	Error() error
 	// GetToken should take a map of parameters for a token, and return a map of Header -> Value for a session

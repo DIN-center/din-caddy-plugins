@@ -57,7 +57,7 @@ func (s *service) healthCheck() {
 	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
-		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers)
+		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
 			fmt.Println(err, "Error getting latest block number for provider", provider.host, "on service", s.Name)
 			provider.markPingFailure(s.HCThreshold)

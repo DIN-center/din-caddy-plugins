@@ -65,7 +65,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			provider.httpClient = httpClient
 			if provider.Auth != nil {
 				if err := provider.Auth.Start(context.Logger(d)); err != nil {
-					d.logger.Warn("Error starting authentication", zap.String("provider", upstreamWrapper.HttpUrl))
+					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 				}
 			}
 		}
@@ -134,9 +134,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							providerObj := &provider{
-								Headers: make(map[string]string),
-							}
 							providerObj, err := NewProvider(dispenser.Val())
 							if err != nil {
 								return err
@@ -145,7 +142,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 								switch dispenser.Val() {
 								case "auth":
 									auth := &eip4361.EIP4361ClientAuth{
-										ProviderURL: strings.TrimSuffix(ms.HttpUrl, "/") + "/auth",
+										ProviderURL: strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
 										SessionCount: 16,
 									}
 									for dispenser.NextBlock(nesting + 3) {
@@ -195,7 +192,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									if auth.Signer == nil {
 										return fmt.Errorf("signer must be set")
 									}
-									ms.Auth = auth
+									providerObj.Auth = auth
 								case "headers":
 									for dispenser.NextBlock(nesting + 3) {
 										k := dispenser.Val()

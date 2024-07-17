@@ -69,8 +69,8 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
-			if upstreamWrapper.Auth != nil {
-				if err := upstreamWrapper.Auth.Sign(r); err != nil {
+			if provider.Auth != nil {
+				if err := provider.Auth.Sign(r); err != nil {
 					d.logger.Error("error signing request", zap.String("err", err.Error()))
 				}
 			}

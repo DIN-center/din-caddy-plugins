@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	"github.com/openrelayxyz/din-caddy-plugins/auth"
 	"github.com/pkg/errors"
 )
 
@@ -18,11 +19,11 @@ func NewEthereumClient(httpClient *http.HTTPClient) *EthereumClient {
 	}
 }
 
-func (e *EthereumClient) GetLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
+func (e *EthereumClient) GetLatestBlockNumber(httpUrl string, headers map[string]string, auth auth.AuthClient) (int64, int, error) {
 	payload := []byte(`{"jsonrpc":"2.0","method": "eth_blockNumber","params":[],"id":1}`)
 
 	// Send the POST request
-	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload))
+	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload), auth)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}
