@@ -59,8 +59,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			services: map[string]*service{
 				"eth": {
-					Name:    "eth",
-					Runtime: "ethereum",
+					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
@@ -124,7 +123,6 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			services: map[string]*service{
 				"eth": {
 					Name:        "eth",
-					Runtime:     "ethereum",
 					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
@@ -145,7 +143,6 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			services: map[string]*service{
 				"eth": {
 					Name:        "eth",
-					Runtime:     "ethereum",
 					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
@@ -157,7 +154,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 				},
 				"starknet-mainnet": {
 					Name:        "eth",
-					Runtime:     StarknetRuntime,
+					HCMethod:    "starknet_blockNumber",
 					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
