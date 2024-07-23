@@ -2,16 +2,17 @@ package starknet
 
 import (
 	"encoding/json"
+	"net/http"
 
-	"github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	"github.com/pkg/errors"
 )
 
 type StarknetClient struct {
-	HTTPClient *http.HTTPClient
+	HTTPClient *din_http.HTTPClient
 }
 
-func NewStarknetClient(httpClient *http.HTTPClient) *StarknetClient {
+func NewStarknetClient(httpClient *din_http.HTTPClient) *StarknetClient {
 	return &StarknetClient{
 		HTTPClient: httpClient,
 	}
@@ -24,6 +25,9 @@ func (e *StarknetClient) GetLatestBlockNumber(httpUrl string, headers map[string
 	resBytes, statusCode, err := e.HTTPClient.Post(httpUrl, headers, []byte(payload))
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
+	}
+	if *statusCode == http.StatusServiceUnavailable {
+		return 0, 0, errors.New("503 error Service Unavailable")
 	}
 
 	// response struct
