@@ -32,7 +32,7 @@ func RegisterMetrics() {
 			Name: "din_http_request_count",
 			Help: "Metric for counting din http requests with service, method, provider, and host_name labels",
 		},
-		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency"},
+		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency", "health_status", "block_number"},
 	)
 	prometheus.MustRegister(DinRequestCount)
 }
