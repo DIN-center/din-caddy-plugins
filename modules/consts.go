@@ -8,17 +8,30 @@ const (
 	Warning
 	Unhealthy
 
-	// Module constants
+	// Module Context Key constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
-
-	// Runtime constants
-	EthereumRuntime = "ethereum"
-	SolanaRuntime   = "solana"
-	StarknetRuntime = "starknet"
-	DefaultRuntime  = EthereumRuntime
+	RequestProviderKey     = "request_provider"
+	RequestBodyKey         = "request_body"
+	HealthStatusKey        = "health_status"
+	BlockNumberKey         = "block_number"
 
 	// Health check constants
+	DefaultHCMethod      = "eth_blockNumber"
 	DefaultHCThreshold   = 2
 	DefaultHCInterval    = 5
 	DefaultBlockLagLimit = int64(5)
 )
+
+// String method to convert MyEnum to string
+func (h HealthStatus) String() string {
+	switch h {
+	case Healthy:
+		return "Healthy"
+	case Warning:
+		return "Warning"
+	case Unhealthy:
+		return "Unhealthy"
+	default:
+		return "Unknown"
+	}
+}

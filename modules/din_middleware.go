@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -13,6 +14,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -29,7 +32,8 @@ var (
 )
 
 type DinMiddleware struct {
-	Services map[string]*service `json:"services"`
+	Services         map[string]*service `json:"services"`
+	PrometheusClient *prom.PrometheusClient
 }
 
 // CaddyModule returns the Caddy module information.
@@ -43,10 +47,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	// Initialize the prometheus client on the din middleware object
+	d.PrometheusClient = prom.NewPrometheusClient()
+
+	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
-		runtimeClient := service.getRuntimeClient(httpClient)
-		service.runtimeClient = runtimeClient
+		service.HTTPClient = httpClient
+
+		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
 			url, err := url.Parse(provider.HttpUrl)
 			if err != nil {
@@ -54,7 +63,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
-			provider.httpClient = httpClient
 		}
 	}
 
@@ -83,9 +91,59 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 
+	// Create a new response writer wrapper to capture the response body and status code
+	rww := NewResponseWriterWrapper(rw)
+
+	// Set the providers in the context for the selector to use
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
-	return next.ServeHTTP(rw, r)
+
+	reqStartTime := time.Now()
+
+	// Serve the request
+	err := next.ServeHTTP(rww, r)
+	if err != nil {
+		return errors.Wrap(err, "Error serving HTTP")
+	}
+
+	latency := time.Since(reqStartTime)
+
+	var provider string
+	if v, ok := repl.Get(RequestProviderKey); ok {
+		provider = v.(string)
+	}
+
+	var blockNumber int64
+	if len(service.CheckedProviders[provider]) > 0 {
+		blockNumber = service.CheckedProviders[provider][0].blockNumber
+	} else {
+		blockNumber = service.LatestBlockNumber
+	}
+
+	healthStatus := service.Providers[provider].healthStatus.String()
+
+	var reqBody []byte
+	if v, ok := repl.Get(RequestBodyKey); ok {
+		reqBody = v.([]byte)
+	}
+
+	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
+	if len(reqBody) == 0 {
+		return nil
+	}
+
+	// Increment prometheus metric based on request data
+	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
+		Service:      r.RequestURI,
+		Provider:     provider,
+		HostName:     r.Host,
+		ResStatus:    rww.statusCode,
+		ResLatency:   latency,
+		HealthStatus: healthStatus,
+		BlockNumber:  strconv.FormatInt(blockNumber, 10),
+	})
+
+	return nil
 }
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
@@ -101,14 +159,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				serviceName := dispenser.Val()
 				d.Services[serviceName] = &service{
 					Name: serviceName,
-
 					// Default health check values, to be overridden if specified in the Caddyfile
-					Runtime:          DefaultRuntime,
+					HCMethod:         DefaultHCMethod,
 					HCThreshold:      DefaultHCThreshold,
 					HCInterval:       DefaultHCInterval,
 					BlockLagLimit:    DefaultBlockLagLimit,
 					CheckedProviders: make(map[string][]healthCheckEntry),
 				}
+
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -157,9 +215,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if len(d.Services[serviceName].Providers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
-					case "runtime":
+					case "healthcheck_method":
 						dispenser.Next()
-						d.Services[serviceName].Runtime = dispenser.Val()
+						d.Services[serviceName].HCMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Services[serviceName].HCThreshold, err = strconv.Atoi(dispenser.Val())
