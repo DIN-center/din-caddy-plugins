@@ -50,11 +50,10 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Initialize the prometheus client on the din middleware object
 	d.PrometheusClient = prom.NewPrometheusClient()
 
-	// Initialize the HTTP client and runtime client for each service and provider
+	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
-		runtimeClient := service.getRuntimeClient(httpClient)
-		service.runtimeClient = runtimeClient
+		service.HTTPClient = httpClient
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -64,7 +63,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
-			provider.httpClient = httpClient
 		}
 	}
 
@@ -161,14 +159,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				serviceName := dispenser.Val()
 				d.Services[serviceName] = &service{
 					Name: serviceName,
-
 					// Default health check values, to be overridden if specified in the Caddyfile
-					Runtime:          DefaultRuntime,
+					HCMethod:         DefaultHCMethod,
 					HCThreshold:      DefaultHCThreshold,
 					HCInterval:       DefaultHCInterval,
 					BlockLagLimit:    DefaultBlockLagLimit,
 					CheckedProviders: make(map[string][]healthCheckEntry),
 				}
+
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -217,9 +215,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if len(d.Services[serviceName].Providers) == 0 {
 							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
-					case "runtime":
+					case "healthcheck_method":
 						dispenser.Next()
-						d.Services[serviceName].Runtime = dispenser.Val()
+						d.Services[serviceName].HCMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Services[serviceName].HCThreshold, err = strconv.Atoi(dispenser.Val())

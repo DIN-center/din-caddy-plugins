@@ -15,13 +15,8 @@ const (
 	HealthStatusKey        = "health_status"
 	BlockNumberKey         = "block_number"
 
-	// Runtime constants
-	EthereumRuntime = "ethereum"
-	SolanaRuntime   = "solana"
-	StarknetRuntime = "starknet"
-	DefaultRuntime  = EthereumRuntime
-
 	// Health check constants
+	DefaultHCMethod      = "eth_blockNumber"
 	DefaultHCThreshold   = 2
 	DefaultHCInterval    = 5
 	DefaultBlockLagLimit = int64(5)

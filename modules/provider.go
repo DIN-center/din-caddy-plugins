@@ -4,17 +4,15 @@ import (
 	"net/url"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 )
 
 type provider struct {
-	HttpUrl    string `json:"http.url"`
-	path       string
-	host       string
-	Headers    map[string]string
-	upstream   *reverseproxy.Upstream
-	httpClient *din_http.HTTPClient
-	Priority   int
+	HttpUrl  string `json:"http.url"`
+	path     string
+	host     string
+	Headers  map[string]string
+	upstream *reverseproxy.Upstream
+	Priority int
 
 	failures     int
 	successes    int
