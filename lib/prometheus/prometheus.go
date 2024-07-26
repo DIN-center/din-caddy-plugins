@@ -31,7 +31,7 @@ func RegisterMetrics() {
 	DinRequestCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_http_request_count",
-			Help: "Metric for counting din http requests with service, method, provider, and host_name labels",
+			Help: "Metric for counting din http requests with service, method, provider, host_name, res_status, res_latency, health_status, and block_number labels",
 		},
 		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency", "health_status", "block_number"},
 	)
@@ -39,7 +39,7 @@ func RegisterMetrics() {
 	DinHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_health_check_count",
-			Help: "Metric for counting din health checks with service, provider, host_name, res_status, res_latency, and block_number labels",
+			Help: "Metric for counting din health checks with service, provider, res_status, res_latency, and block_number labels",
 		},
 		[]string{"service", "provider", "res_status", "res_latency", "block_number"},
 	)
