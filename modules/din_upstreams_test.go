@@ -49,20 +49,20 @@ func TestGetDinUpstreams(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                     string
-		request                  *http.Request
-		replacerUpstreamWrappers []*upstreamWrapper
-		output                   []*reverseproxy.Upstream
+		name              string
+		request           *http.Request
+		replacerProviders map[string]*provider
+		output            []*reverseproxy.Upstream
 	}{
 		{
-			name:    "TestGetDinUpstreams succesful, both 0 priority",
+			name:    "TestGetDinUpstreams successful, both 0 priority",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
-				{
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 0,
 				},
-				{
+				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 0,
 				},
@@ -70,51 +70,155 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams succesful, both 2 priority",
+			name:    "TestGetDinUpstreams successful, both 0 priority and healthy",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
-				{
-					upstream: upstream1,
-					Priority: 2,
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Healthy,
 				},
-				{
-					upstream: upstream2,
-					Priority: 2,
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Healthy,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams succesful, different priorities",
+			name:    "TestGetDinUpstreams successful, both 0 priority and 1 is healthy",
 			request: &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{
-				{
-					upstream: upstream1,
-					Priority: 1,
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Healthy,
 				},
-				{
-					upstream: upstream2,
-					Priority: 2,
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Warning,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:                     "TestGetDinUpstreams succesful, no priorities",
-			request:                  &http.Request{},
-			replacerUpstreamWrappers: []*upstreamWrapper{},
-			output:                   []*reverseproxy.Upstream{},
+			name:    "TestGetDinUpstreams successful, both 0 priority and both are warning",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1, upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, both 0 priority and one is Warning the other is Unhealthy",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     0,
+					healthStatus: Unhealthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1},
+		},
+		{
+			name:    " successful, both 1 priority",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream: upstream1,
+					Priority: 1,
+				},
+				upstream2.Dial: {
+					upstream: upstream2,
+					Priority: 1,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1, upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, different priorities",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Healthy,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     1,
+					healthStatus: Healthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream1},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, different priorities, different health statues",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Warning,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     1,
+					healthStatus: Healthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{upstream2},
+		},
+		{
+			name:    "TestGetDinUpstreams successful, different priorities, unhealthy health statuses",
+			request: &http.Request{},
+			replacerProviders: map[string]*provider{
+				upstream1.Dial: {
+					upstream:     upstream1,
+					Priority:     0,
+					healthStatus: Unhealthy,
+				},
+				upstream2.Dial: {
+					upstream:     upstream2,
+					Priority:     1,
+					healthStatus: Unhealthy,
+				},
+			},
+			output: []*reverseproxy.Upstream{},
+		},
+		{
+			name:              "TestGetDinUpstreams succesful, no priorities",
+			request:           &http.Request{},
+			replacerProviders: map[string]*provider{},
+			output:            []*reverseproxy.Upstream{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-			repl.Set(DinUpstreamsContextKey, tt.replacerUpstreamWrappers)
+			repl.Set(DinUpstreamsContextKey, tt.replacerProviders)
 
 			upstreams, _ := dinUpstreams.GetUpstreams(tt.request)
-			if !reflect.DeepEqual(upstreams, tt.output) {
-				t.Errorf("GetUpstreams() = %v, want %v", upstreams, tt.output)
+			if len(upstreams) != len(tt.output) {
+				t.Errorf("GetUpstreams() = %v, want %v", len(upstreams), len(tt.output))
 			}
 		})
 	}

@@ -1,11 +1,17 @@
 module github.com/openrelayxyz/din-caddy-plugins
 
-go 1.21.0
+go 1.21.3
 
 require (
+	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/golang/mock v1.6.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
+
 )
+
+// replace github.com/DIN-center/din-sc/apps/din-go => git@github.com:DIN-center/din-sc.git/apps/din-go
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
@@ -22,6 +28,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/badger v1.6.2 // indirect
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
@@ -65,7 +72,6 @@ require (
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect

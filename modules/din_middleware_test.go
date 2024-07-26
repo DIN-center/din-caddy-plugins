@@ -6,11 +6,10 @@ import (
 	"net/http/httptest"
 	reflect "reflect"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -28,6 +27,7 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			modInfo := dinMiddleware.CaddyModule()
@@ -44,18 +44,35 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 
+	now := time.Now()
+
 	test := []struct {
 		name     string
 		request  *http.Request
-		services map[string][]*upstreamWrapper
+		provider string
+		services map[string]*service
 		hasErr   bool
 	}{
 		{
-			name:    "successful request",
-			request: httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-			services: map[string][]*upstreamWrapper{
+			name:     "successful request",
+			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
+			provider: "localhost:8000",
+			services: map[string]*service{
 				"eth": {
-					&upstreamWrapper{},
+					Name: "eth",
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							healthStatus: Healthy,
+						},
+					},
+					CheckedProviders: map[string][]healthCheckEntry{
+						"localhost:8000": {
+							{
+								blockNumber: 1,
+								timestamp:   &now,
+							},
+						},
+					},
 				},
 			},
 			hasErr: false,
@@ -63,17 +80,15 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		{
 			name:    "unsuccessful request, path not found",
 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
-			services: map[string][]*upstreamWrapper{
-				"eth": {
-					&upstreamWrapper{},
-				},
+			services: map[string]*service{
+				"eth": {},
 			},
 			hasErr: true,
 		},
 		{
 			name:     "unsuccessful request, service map is empty",
 			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-			services: map[string][]*upstreamWrapper{},
+			services: map[string]*service{},
 			hasErr:   true,
 		},
 	}
@@ -84,55 +99,12 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			rw := httptest.NewRecorder()
 
+			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(RequestProviderKey, tt.provider)
+
 			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 			if err != nil && !tt.hasErr {
 				t.Errorf("ServeHTTP() = %v, want %v", err, tt.hasErr)
-			}
-		})
-	}
-}
-
-func TestUrlToUpstreamWrapper(t *testing.T) {
-	tests := []struct {
-		name   string
-		urlstr string
-		outPut *upstreamWrapper
-		hasErr bool
-	}{
-		{
-			name:   "passing localhost",
-			urlstr: "http://localhost:8080",
-			outPut: &upstreamWrapper{
-				HttpUrl:  "http://localhost:8080",
-				path:     "",
-				Headers:  make(map[string]string),
-				upstream: &reverseproxy.Upstream{Dial: "localhost:8080"},
-				Priority: 0,
-			},
-			hasErr: false,
-		},
-		{
-			name:   "passing fullurl with key",
-			urlstr: "https://eth.rpc.test.cloud:443/key",
-			outPut: &upstreamWrapper{
-				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
-				path:     "/key",
-				Headers:  make(map[string]string),
-				upstream: &reverseproxy.Upstream{Dial: "eth.rpc.test.cloud:443"},
-				Priority: 0,
-			},
-			hasErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			upstreamWrapper, err := urlToUpstreamWrapper(tt.urlstr)
-			if err != nil && !tt.hasErr {
-				t.Errorf("urlToUpstreamWrapper() = %v, want %v", err, tt.hasErr)
-			}
-			if !reflect.DeepEqual(upstreamWrapper, tt.outPut) {
-				t.Errorf("urlToUpstreamWrapper() = %v, want %v", upstreamWrapper, tt.outPut)
 			}
 		})
 	}
@@ -143,35 +115,54 @@ func TestDinMiddlewareProvision(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		services map[string][]*upstreamWrapper
+		services map[string]*service
 		hasErr   bool
 	}{
 		{
-			name: "Provision() populated 1 service, 2 upstreams successful",
-			services: map[string][]*upstreamWrapper{
-				"/eth": {
-					&upstreamWrapper{
-						HttpUrl: "http://localhost:8000/eth",
+			name: "Provision() populated 1 service, 2 upstreams successful for ethereum runtime",
+			services: map[string]*service{
+				"eth": {
+					Name:        "eth",
+					HCThreshold: 2,
+					HCInterval:  5,
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							HttpUrl: "http://localhost:8000/eth",
+						},
+						"localhost:8001": {
+							HttpUrl: "http://localhost:8001/eth",
+						},
 					},
-					&upstreamWrapper{
-						HttpUrl: "http://localhost:8001/eth",
-					},
+					CheckedProviders: map[string][]healthCheckEntry{},
 				},
 			},
 			hasErr: false,
 		},
 		{
 			name: "Provision() populated 2 service, 1 upstreams successful",
-			services: map[string][]*upstreamWrapper{
-				"/eth": {
-					&upstreamWrapper{
-						HttpUrl: "http://localhost:8000/eth",
+			services: map[string]*service{
+				"eth": {
+					Name:        "eth",
+					HCThreshold: 2,
+					HCInterval:  5,
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							HttpUrl: "http://localhost:8000/eth",
+						},
 					},
+					CheckedProviders: map[string][]healthCheckEntry{},
 				},
-				"/polygon": {
-					&upstreamWrapper{
-						HttpUrl: "http://localhost:8001/polygon",
+				"starknet-mainnet": {
+					Name:        "eth",
+					HCMethod:    "starknet_blockNumber",
+					HCThreshold: 2,
+					HCInterval:  5,
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							HttpUrl: "http://localhost:8000/starknet-mainnet",
+						},
 					},
+					CheckedProviders: map[string][]healthCheckEntry{},
 				},
 			},
 			hasErr: false,
@@ -186,12 +177,11 @@ func TestDinMiddlewareProvision(t *testing.T) {
 				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 			}
 
-			for _, upstreamWrappers := range dinMiddleware.Services {
-				for _, upstreamWrapper := range upstreamWrappers {
-					if upstreamWrapper.upstream.Dial == "" || upstreamWrapper.path == "" {
+			for _, services := range dinMiddleware.Services {
+				for _, provider := range services.Providers {
+					if provider.upstream.Dial == "" || provider.path == "" {
 						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 					}
-
 				}
 			}
 		})
