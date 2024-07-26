@@ -19,7 +19,7 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
-	PrometheusClient  *prom.PrometheusClient
+	PrometheusClient  prom.IPrometheusClient
 
 	// Healthcheck configuration
 	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
@@ -61,13 +61,14 @@ func (s *service) healthCheck() {
 		// get the latest block number from the current provider
 		reqStartTime := time.Now()
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
+		latency := time.Since(reqStartTime)
 		if err != nil {
 			// if there is an error getting the latest block number, mark the provider as a failure
 			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
 			provider.markPingFailure(s.HCThreshold)
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, 0)
 			continue
 		}
-		latency := time.Since(reqStartTime)
 		blockTime = time.Now()
 
 		// Ping Health Check
@@ -79,6 +80,7 @@ func (s *service) healthCheck() {
 				// if the status code is greater than 399, mark the provider as a failure
 				provider.markPingFailure(s.HCThreshold)
 			}
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, 0)
 			continue
 		} else {
 			provider.markPingSuccess(s.HCThreshold)
@@ -103,17 +105,21 @@ func (s *service) healthCheck() {
 
 		// TODO: create a check based on time window of a provider's latest block number
 
-		s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-			Service:     s.Name,
-			Provider:    provider.upstream.Dial,
-			ResStatus:   statusCode,
-			ResLatency:  latency,
-			BlockNumber: strconv.FormatInt(providerBlockNumber, 10),
-		})
+		s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, providerBlockNumber)
 
 		// add the current provider to the checked providers map
 		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 	}
+}
+
+func (s *service) sendLatestBlockMetric(providerName string, statusCode int, latency time.Duration, blockNumber int64) {
+	s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
+		Service:     s.Name,
+		Provider:    providerName,
+		ResStatus:   statusCode,
+		ResLatency:  latency,
+		BlockNumber: strconv.FormatInt(blockNumber, 10),
+	})
 }
 
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
