@@ -48,12 +48,14 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient()
+	promClient := prom.NewPrometheusClient()
+	d.PrometheusClient = promClient
 
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
+		service.PrometheusClient = promClient
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {

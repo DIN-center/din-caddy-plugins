@@ -8,6 +8,7 @@ import (
 	"time"
 
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 )
 
@@ -18,6 +19,7 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
+	PrometheusClient  *prom.PrometheusClient
 
 	// Healthcheck configuration
 	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
@@ -57,6 +59,7 @@ func (s *service) healthCheck() {
 	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
+		reqStartTime := time.Now()
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
 		if err != nil {
 			// if there is an error getting the latest block number, mark the provider as a failure
@@ -64,6 +67,7 @@ func (s *service) healthCheck() {
 			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
+		latency := time.Since(reqStartTime)
 		blockTime = time.Now()
 
 		// Ping Health Check
@@ -98,6 +102,14 @@ func (s *service) healthCheck() {
 		}
 
 		// TODO: create a check based on time window of a provider's latest block number
+
+		s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
+			Service:     s.Name,
+			Provider:    provider.upstream.Dial,
+			ResStatus:   statusCode,
+			ResLatency:  latency,
+			BlockNumber: strconv.FormatInt(providerBlockNumber, 10),
+		})
 
 		// add the current provider to the checked providers map
 		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
