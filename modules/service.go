@@ -59,7 +59,8 @@ func (s *service) healthCheck() {
 		// get the latest block number from the current provider
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
 		if err != nil {
-			fmt.Println(err, "Error getting latest block number for provider", provider.host, "on service", s.Name)
+			// if there is an error getting the latest block number, mark the provider as a failure
+			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
 			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
@@ -141,7 +142,7 @@ func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}
 
-	if *statusCode == http.StatusServiceUnavailable {
+	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
 		return 0, *statusCode, errors.New("Service Unavailable")
 	}
 

@@ -168,7 +168,7 @@
 					providers {
 						https://din-router.extrnode.com:443
 					}
-					healthcheck_method starknet_blockNumber
+					healthcheck_method getBlockHeight
 				}
 			}
 		}
