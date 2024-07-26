@@ -82,10 +82,10 @@ service:
       receivers: [prometheus]
       processors: [resourcedetection, transform/add_resource_attributes_as_metric_attributes, batch]
       exporters: [otlp]
-    traces:
-      receivers: [otlp]
-      processors: [resourcedetection, batch]
-      exporters: [otlp]
+    # traces:
+    #   receivers: [otlp]
+    #   processors: [resourcedetection, batch]
+    #   exporters: [otlp]
     # logs:
     #   receivers: [prometheus]
     #   processors: [resourcedetection, batch]
