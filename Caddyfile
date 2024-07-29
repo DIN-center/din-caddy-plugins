@@ -194,9 +194,4 @@
 	metrics /metrics {
 	}
 
-	# Caddy tracing directive declaration. Pushes tracing data using OTLP format based on route declared in env variable.
-	# https://caddyserver.com/docs/caddyfile/directives/tracing
-	tracing {
-		span caddy_span
-	}
 }
