@@ -7,14 +7,16 @@ import (
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
+	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	"github.com/pkg/errors"
 )
 
 func TestHealthCheck(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockRuntimeClient := runtime.NewMockIRuntimeClient(mockCtrl)
-	type latestBlockResponse struct {
-		latestBlockNumber int64
+	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
+
+	type postResponse struct {
+		postResponseBytes []byte
 		statusCode        int
 		err               error
 	}
@@ -22,13 +24,13 @@ func TestHealthCheck(t *testing.T) {
 	tests := []struct {
 		name                string
 		service             *service
-		latestBlockResponse latestBlockResponse
+		latestBlockResponse postResponse
 		want                map[string]*provider
 	}{
 		{
 			name: "1 provider, successful response, has newer blocks, marked healthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -36,11 +38,36 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 10,
+				LatestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 11,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
+				statusCode:        200,
+				err:               nil,
+			},
+			want: map[string]*provider{
+				"provider1": {
+					healthStatus: Healthy,
+				},
+			},
+		},
+		{
+			name: "1 provider, successful response, has newer blocks, marked healthy, int result response",
+			service: &service{
+				HTTPClient: mockHttpClient,
+				Providers: map[string]*provider{
+					"provider1": {
+						upstream: &reverseproxy.Upstream{
+							Dial: "provider1",
+						},
+					},
+				},
+				LatestBlockNumber: 500,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+			},
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": 600}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -53,7 +80,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, 429 too many request status, mark warning",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -61,11 +88,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 10,
+				LatestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 11,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        429,
 				err:               nil,
 			},
@@ -78,7 +105,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, GetLatestBlockNumber fails, marked unhealthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -89,8 +116,8 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 20,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 0,
+			latestBlockResponse: postResponse{
+				postResponseBytes: nil,
 				statusCode:        200,
 				err:               errors.New(""),
 			},
@@ -103,7 +130,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, error code 400 marked unhealthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -114,8 +141,8 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 30,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 0,
+			latestBlockResponse: postResponse{
+				postResponseBytes: nil,
 				statusCode:        400,
 				err:               nil,
 			},
@@ -128,7 +155,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has equal block number, marked healthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -136,11 +163,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 40,
+				LatestBlockNumber: 6310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 40,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -153,7 +180,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has smaller block number, marked warning",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -161,11 +188,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 50,
+				LatestBlockNumber: 7310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 25,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -178,7 +205,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have newer blocks, both marked healthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -191,11 +218,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 100,
+				LatestBlockNumber: 5310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 101,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -211,7 +238,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have equal blocks, both marked healthy",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -224,11 +251,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 200,
+				LatestBlockNumber: 6310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 200,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -244,7 +271,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have older blocks, both marked warning",
 			service: &service{
-				runtimeClient: mockRuntimeClient,
+				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -257,11 +284,11 @@ func TestHealthCheck(t *testing.T) {
 						},
 					},
 				},
-				LatestBlockNumber: 300,
+				LatestBlockNumber: 7310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: latestBlockResponse{
-				latestBlockNumber: 299,
+			latestBlockResponse: postResponse{
+				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
 				statusCode:        200,
 				err:               nil,
 			},
@@ -277,7 +304,7 @@ func TestHealthCheck(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRuntimeClient.EXPECT().GetLatestBlockNumber(gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.latestBlockNumber, tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.service.Providers))
+			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.service.Providers))
 
 			tt.service.healthCheck()
 

@@ -1,30 +1,31 @@
 package modules
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/ethereum"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/solana"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/runtime/starknet"
+	"github.com/openrelayxyz/din-caddy-plugins/auth"
+	"github.com/pkg/errors"
 )
 
 type service struct {
 	Name              string               `json:"name"`
 	Providers         map[string]*provider `json:"providers"`
 	Methods           []*string            `json:"methods"`
-	runtimeClient     runtime.IRuntimeClient
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
+	HTTPClient        din_http.IHTTPClient
 
 	// Healthcheck configuration
 	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
-	Runtime          string                        `json:"runtime"`
-	HCInterval       int                           `json:"healthceck.interval.seconds"`
-	HCThreshold      int                           `json:"healthcheck.threshold"`
-	BlockLagLimit    int64                         `json:"healthcheck.blocklag.limit"`
+	HCMethod         string                        `json:"healthcheck_method"`
+	HCInterval       int                           `json:"healthceck_interval_seconds"`
+	HCThreshold      int                           `json:"healthcheck_threshold"`
+	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
 }
 
 func (s *service) startHealthcheck() {
@@ -57,9 +58,10 @@ func (s *service) healthCheck() {
 	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
-		providerBlockNumber, statusCode, err := s.runtimeClient.GetLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
-			fmt.Println(err, "Error getting latest block number for provider", provider.host, "on service", s.Name)
+			// if there is an error getting the latest block number, mark the provider as a failure
+			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
 			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
@@ -132,15 +134,51 @@ func (s *service) evaluateCheckedProviders() {
 	}
 }
 
-func (s *service) getRuntimeClient(httpClient *din_http.HTTPClient) runtime.IRuntimeClient {
-	switch s.Runtime {
-	case SolanaRuntime:
-		return solana.NewSolanaClient(httpClient)
-	case StarknetRuntime:
-		return starknet.NewStarknetClient(httpClient)
-	default:
-		return ethereum.NewEthereumClient(httpClient)
+func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.AuthClient) (int64, int, error) {
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, s.HCMethod))
+
+	// Send the POST request
+	resBytes, statusCode, err := s.HTTPClient.Post(httpUrl, headers, []byte(payload), ac)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}
+
+	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+		return 0, *statusCode, errors.New("Service Unavailable")
+	}
+
+	// response struct
+	var respObject map[string]interface{}
+
+	// Unmarshal the response
+	err = json.Unmarshal(resBytes, &respObject)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
+	}
+
+	if _, ok := respObject["result"]; !ok {
+		return 0, 0, errors.New("Error getting block number from response")
+	}
+
+	var blockNumber int64
+
+	switch result := respObject["result"].(type) {
+	case string:
+		if result == "" || result[:2] != "0x" {
+			return 0, 0, errors.New("Invalid block number")
+		}
+
+		// Convert the hexadecimal string to an int64
+		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
+		if err != nil {
+			return 0, 0, errors.Wrap(err, "Error converting block number")
+		}
+	case float64:
+		blockNumber = int64(result)
+	default:
+		return 0, 0, errors.New("unsupported block number type")
+	}
+	return blockNumber, *statusCode, nil
 }
 
 func (s *service) close() {

@@ -2,19 +2,16 @@ package modules
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
 
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
+	// prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
 var (
@@ -78,44 +75,23 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
+	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {
 		return selectedUpstream
 	}
 
 	// Read request body for passing to metric middleware
-	body, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil
 	}
-	// Increment prometheus metric based on request data
-	// Ran as a go routine to reduce latency on the client request to the provider
-	go d.handleRequestMetric(body, r.RequestURI, r.Host, selectedUpstream.Dial)
+	repl.Set(RequestProviderKey, selectedUpstream.Dial)
+	repl.Set(RequestBodyKey, bodyBytes)
 
 	// Set request body back to original state
-	r.Body = io.NopCloser(bytes.NewBuffer(body))
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	return selectedUpstream
-}
-
-// handleRequestMetric increments prometheus metric based on request data passed in
-func (d *DinSelect) handleRequestMetric(bodyBytes []byte, service string, hostName string, provider string) {
-	// First extract method data from body
-	// define struct to hold request data
-	var requestBody struct {
-		Method string `json:"method,omitempty"`
-	}
-	err := json.Unmarshal(bodyBytes, &requestBody)
-	if err != nil {
-		fmt.Printf("Error decoding request body: %v", http.StatusBadRequest)
-	}
-	var method string
-	if requestBody.Method != "" {
-		method = requestBody.Method
-	}
-	service = strings.TrimPrefix(service, "/")
-
-	// Increment prometheus metric based on request data
-	prom.DinRequestCount.WithLabelValues(service, method, provider, hostName).Inc()
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
