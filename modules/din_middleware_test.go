@@ -10,6 +10,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/golang/mock/gomock"
+	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -112,6 +114,8 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 func TestDinMiddlewareProvision(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
+	mockCtrl := gomock.NewController(t)
+	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
 
 	tests := []struct {
 		name     string
@@ -134,6 +138,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 				},
 			},
 			hasErr: false,
@@ -151,6 +156,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 				},
 				"starknet-mainnet": {
 					Name:        "eth",
@@ -163,6 +169,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 				},
 			},
 			hasErr: false,
@@ -172,6 +179,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dinMiddleware.Services = tt.services
+			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).AnyTimes()
 			err := dinMiddleware.Provision(caddy.Context{})
 			if err != nil && !tt.hasErr {
 				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
