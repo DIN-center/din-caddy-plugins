@@ -63,6 +63,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
+			provider.host = url.Host
 		}
 	}
 
