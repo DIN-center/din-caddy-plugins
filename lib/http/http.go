@@ -9,8 +9,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 
-	"github.com/pkg/errors"
 	"github.com/openrelayxyz/din-caddy-plugins/auth"
+	"github.com/pkg/errors"
 )
 
 type HTTPClient struct {
