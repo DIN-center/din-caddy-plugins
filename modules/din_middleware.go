@@ -100,6 +100,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	reqStartTime := time.Now()
 
 	var err error
+	// Retry the request if it fails up to the retry count
 	for attempt := 0; attempt < service.RetryCount; attempt++ {
 		// Reset the response writer wrapper for each attempt
 		rww = NewResponseWriterWrapper(rw)
