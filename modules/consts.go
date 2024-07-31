@@ -16,11 +16,11 @@ const (
 	BlockNumberKey         = "block_number"
 
 	// Health check constants
-	DefaultHCMethod      = "eth_blockNumber"
-	DefaultHCThreshold   = 2
-	DefaultHCInterval    = 5
-	DefaultBlockLagLimit = int64(5)
-	DefaultRetryCount    = 2
+	DefaultHCMethod            = "eth_blockNumber"
+	DefaultHCThreshold         = 2
+	DefaultHCInterval          = 5
+	DefaultBlockLagLimit       = int64(5)
+	DefaultRequestAttemptCount = 2
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523

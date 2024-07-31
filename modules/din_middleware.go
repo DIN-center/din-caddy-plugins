@@ -100,8 +100,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	reqStartTime := time.Now()
 
 	var err error
-	// Retry the request if it fails up to the retry count
-	for attempt := 0; attempt < service.RetryCount; attempt++ {
+	// Retry the request if it fails up to the max attempt request count
+	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
 		// Reset the response writer wrapper for each attempt
 		rww = NewResponseWriterWrapper(rw)
 
@@ -174,12 +174,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				d.Services[serviceName] = &service{
 					Name: serviceName,
 					// Default health check values, to be overridden if specified in the Caddyfile
-					HCMethod:         DefaultHCMethod,
-					HCThreshold:      DefaultHCThreshold,
-					HCInterval:       DefaultHCInterval,
-					BlockLagLimit:    DefaultBlockLagLimit,
-					RetryCount:       DefaultRetryCount,
-					CheckedProviders: make(map[string][]healthCheckEntry),
+					HCMethod:            DefaultHCMethod,
+					HCThreshold:         DefaultHCThreshold,
+					HCInterval:          DefaultHCInterval,
+					BlockLagLimit:       DefaultBlockLagLimit,
+					RequestAttemptCount: DefaultRequestAttemptCount,
+					CheckedProviders:    make(map[string][]healthCheckEntry),
 				}
 
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
@@ -252,13 +252,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return err
 						}
 						d.Services[serviceName].BlockLagLimit = int64(limit)
-					case "retry_count":
+					case "request_attempt_count":
 						dispenser.Next()
-						retryCount, err := strconv.Atoi(dispenser.Val())
+						requestAttemptCount, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
 							return err
 						}
-						d.Services[serviceName].RetryCount = retryCount
+						d.Services[serviceName].RequestAttemptCount = requestAttemptCount
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
