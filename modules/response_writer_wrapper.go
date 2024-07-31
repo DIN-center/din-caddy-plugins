@@ -23,7 +23,8 @@ func (rww *ResponseWriterWrapper) WriteHeader(statusCode int) {
 	rww.ResponseWriter.WriteHeader(statusCode)
 }
 
-// Write captures the response body and writes it to the original ResponseWriter.
+// Write captures the response body and writes it to the response writer wrapper.
+// we do not write to the original response writer here because we defer this until after the request is attempted multiple times if needed.
 func (rww *ResponseWriterWrapper) Write(b []byte) (int, error) {
 	return rww.body.Write(b)
 }
