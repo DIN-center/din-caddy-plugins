@@ -71,7 +71,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	// d.startHealthChecks()
+	d.startHealthChecks()
 
 	return nil
 }
@@ -128,6 +128,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Log the retry attempt here if needed
 		// log.Printf("Retrying request to %s", r.RequestURI)
 	}
+
+	rw.Write(rww.body.Bytes())
 
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")

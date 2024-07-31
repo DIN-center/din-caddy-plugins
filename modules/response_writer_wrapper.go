@@ -25,8 +25,7 @@ func (rww *ResponseWriterWrapper) WriteHeader(statusCode int) {
 
 // Write captures the response body and writes it to the original ResponseWriter.
 func (rww *ResponseWriterWrapper) Write(b []byte) (int, error) {
-	rww.body.Write(b) // Capture the response body
-	return rww.ResponseWriter.Write(b)
+	return rww.body.Write(b)
 }
 
 func (rww *ResponseWriterWrapper) ResetBody() {
