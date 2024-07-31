@@ -108,8 +108,8 @@ func (s *service) healthCheck() {
 }
 
 func (s *service) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	values, ok := s.CheckedProviders[providerName]
 	return values, ok
 }
