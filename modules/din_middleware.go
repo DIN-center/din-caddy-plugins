@@ -69,7 +69,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthChecks()
+	// d.startHealthChecks()
 
 	return nil
 }
@@ -92,16 +92,29 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Create a new response writer wrapper to capture the response body and status code
-	rww := NewResponseWriterWrapper(rw)
+	rww := &ResponseWriterWrapper{}
 
-	// Set the providers in the context for the selector to use
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
 	reqStartTime := time.Now()
 
-	// Serve the request
-	err := next.ServeHTTP(rww, r)
+	var err error
+	for attempt := 0; attempt < service.RetryCount; attempt++ {
+		// Reset the response writer wrapper for each attempt
+		rww = NewResponseWriterWrapper(rw)
+
+		// Serve the request
+		err = next.ServeHTTP(rww, r)
+		if err == nil && rww.statusCode == http.StatusOK {
+			// If the request was successful, break out of the loop
+			break
+		}
+		// If the first attempt fails, log the failure and retry
+		// Log the retry attempt here if needed
+		// log.Printf("Retrying request to %s", r.RequestURI)
+	}
+
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
 	}
@@ -164,6 +177,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					HCThreshold:      DefaultHCThreshold,
 					HCInterval:       DefaultHCInterval,
 					BlockLagLimit:    DefaultBlockLagLimit,
+					RetryCount:       DefaultRetryCount,
 					CheckedProviders: make(map[string][]healthCheckEntry),
 				}
 
@@ -237,6 +251,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return err
 						}
 						d.Services[serviceName].BlockLagLimit = int64(limit)
+					case "retry_count":
+						dispenser.Next()
+						retryCount, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return err
+						}
+						d.Services[serviceName].RetryCount = retryCount
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}

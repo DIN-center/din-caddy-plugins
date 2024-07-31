@@ -20,6 +20,7 @@ const (
 	DefaultHCThreshold   = 2
 	DefaultHCInterval    = 5
 	DefaultBlockLagLimit = int64(5)
+	DefaultRetryCount    = 2
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
