@@ -255,10 +255,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() {
 	for _, service := range d.Services {
-		if service.Name == "bsc-mainnet" {
-			service.startHealthcheck()
-		}
-
+		service.startHealthcheck()
 	}
 }
 
