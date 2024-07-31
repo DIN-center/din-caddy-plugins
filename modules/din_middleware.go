@@ -94,7 +94,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Create a new response writer wrapper to capture the response body and status code
-	rww := &ResponseWriterWrapper{}
+	var rww *ResponseWriterWrapper
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
