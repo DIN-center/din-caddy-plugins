@@ -128,11 +128,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Log the retry attempt here if needed
 		// log.Printf("Retrying request to %s", r.RequestURI)
 	}
-
-	rw.Write(rww.body.Bytes())
-
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
+	}
+
+	_, err = rw.Write(rww.body.Bytes())
+	if err != nil {
+		return errors.Wrap(err, "Error writing response body")
 	}
 
 	latency := time.Since(reqStartTime)
