@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
@@ -18,6 +19,8 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
+
+	mu sync.RWMutex
 
 	// Healthcheck configuration
 	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
@@ -104,24 +107,40 @@ func (s *service) healthCheck() {
 	}
 }
 
+func (s *service) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	values, ok := s.CheckedProviders[providerName]
+	return values, ok
+}
+
+func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.CheckedProviders[providerName] = newHealthCheckList
+}
+
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
-	if _, ok := s.CheckedProviders[providerName]; !ok {
-		s.CheckedProviders[providerName] = []healthCheckEntry{healthCheckInput}
+	currentHealthCheckList, ok := s.getCheckedProviderHCList(providerName)
+	if !ok {
+		s.setCheckedProviderHCList(providerName, []healthCheckEntry{healthCheckInput})
 		return
 	}
 
 	// to add a new healthCheckEntry to index 0 of the provider's slice, we need to make a new slice and copy the old slice to the new slice
 	newHealthCheckList := []healthCheckEntry{healthCheckInput}
 
-	// if the old slice is full at 10 entries, we need to remove the last entry and copy the rest of the entries to the new slice
-	if len(s.CheckedProviders[providerName]) == 10 {
-		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName][:9]...)
-		copy(newHealthCheckList[1:], s.CheckedProviders[providerName][:len(s.CheckedProviders[providerName])-1])
+	// if the old slice is full at 10 entries, we need to remove the last entry and append the rest of the entries to the new slice
+	if len(currentHealthCheckList) == 10 {
+		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList[:9]...)
+		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
 	} else {
-		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName]...)
+		// if the old slice is not full, we can copy the old slice to the new slice and add the new entry to index 0
+		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
+		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
 	}
 }
 
