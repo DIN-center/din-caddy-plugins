@@ -28,3 +28,7 @@ func (rww *ResponseWriterWrapper) Write(b []byte) (int, error) {
 	rww.body.Write(b) // Capture the response body
 	return rww.ResponseWriter.Write(b)
 }
+
+func (rww *ResponseWriterWrapper) ResetBody() {
+	rww.body.Reset()
+}

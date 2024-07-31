@@ -1,7 +1,9 @@
 package modules
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -69,7 +71,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthChecks()
+	// d.startHealthChecks()
 
 	return nil
 }
@@ -102,8 +104,19 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	var err error
 	// Retry the request if it fails up to the max attempt request count
 	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
-		// Reset the response writer wrapper for each attempt
 		rww = NewResponseWriterWrapper(rw)
+
+		// If the request fails, reset the request body to the original request body
+		if attempt > 0 {
+			var reqBody []byte
+			if v, ok := repl.Get(RequestBodyKey); ok {
+				reqBody = v.([]byte)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+
+			// Reset the response writer wrapper for each attempt
+			rww.ResetBody()
+		}
 
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
