@@ -123,6 +123,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		}
 		// If the first attempt fails, log the failure and retry
 		// Log the retry attempt here if needed
+		// TODO: add logging via specifying levels using zap.Logger
 		// log.Printf("Retrying request to %s", r.RequestURI)
 	}
 	if err != nil {
