@@ -113,9 +113,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				reqBody = v.([]byte)
 			}
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
-
-			// Reset the response writer wrapper for each attempt
-			rww.ResetBody()
 		}
 
 		// Serve the request

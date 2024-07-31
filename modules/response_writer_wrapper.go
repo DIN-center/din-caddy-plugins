@@ -27,7 +27,3 @@ func (rww *ResponseWriterWrapper) WriteHeader(statusCode int) {
 func (rww *ResponseWriterWrapper) Write(b []byte) (int, error) {
 	return rww.body.Write(b)
 }
-
-func (rww *ResponseWriterWrapper) ResetBody() {
-	rww.body.Reset()
-}
