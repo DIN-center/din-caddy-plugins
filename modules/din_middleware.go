@@ -132,6 +132,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
+	// Write the response body to the original response writer
+	// This is done after the request is attempted multiple times if needed
 	_, err = rw.Write(rww.body.Bytes())
 	if err != nil {
 		return errors.Wrap(err, "Error writing response body")
