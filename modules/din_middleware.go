@@ -111,8 +111,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	var blockNumber int64
-	if len(service.CheckedProviders[provider]) > 0 {
-		blockNumber = service.CheckedProviders[provider][0].blockNumber
+	checkProviderValues, _ := service.getCheckedProviderHCList(provider)
+	// if !ok {
+	// TODO: determine log level for this message
+	// fmt.Println("Provider not found in checked providers list")
+	// }
+	if len(checkProviderValues) > 0 {
+		blockNumber = checkProviderValues[0].blockNumber
 	} else {
 		blockNumber = service.LatestBlockNumber
 	}
