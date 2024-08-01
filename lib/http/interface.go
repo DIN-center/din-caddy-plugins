@@ -1,7 +1,7 @@
 package http
 
 import (
-	"github.com/openrelayxyz/din-caddy-plugins/auth"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 )
 
 type IHTTPClient interface {

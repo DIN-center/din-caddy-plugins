@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	"github.com/openrelayxyz/din-caddy-plugins/auth"
 	"github.com/pkg/errors"
 )
 

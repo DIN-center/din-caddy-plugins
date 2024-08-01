@@ -4,9 +4,9 @@ import (
 	"net/url"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	"github.com/openrelayxyz/din-caddy-plugins/auth/eip4361"
-	"github.com/openrelayxyz/din-caddy-plugins/auth"
 )
 
 type provider struct {
@@ -17,7 +17,7 @@ type provider struct {
 	upstream   *reverseproxy.Upstream
 	httpClient *din_http.HTTPClient
 	Priority   int
-	Auth       *eip4361.EIP4361ClientAuth
+	Auth       *siwe.SIWEClientAuth
 
 	failures     int
 	successes    int

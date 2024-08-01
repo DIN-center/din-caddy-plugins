@@ -1,10 +1,11 @@
-package eip4361
+package siwe
 
 import (
 	"fmt"
-	"testing"
 	"net/http"
 	"net/http/httptest"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	// "github.com/openrelayxyz/din-caddy-plugins/auth"
 )
@@ -31,8 +32,8 @@ func TestClientBasic(t *testing.T) {
 	}
 	signer.GenPrivKey()
 	fmt.Printf("Key: %#x\nAddress: %v", keyBytes, signer.Address)
-	client := NewEIP4361Client(server.URL + "/auth", 16, signer)
-	if err := client.Start(); err != nil {
+	client := NewSIWEClient(server.URL+"/auth", 16, signer)
+	if err := client.Start(nil); err != nil {
 		t.Errorf(err.Error())
 	}
 	req := httptest.NewRequest("GET", "/", nil)

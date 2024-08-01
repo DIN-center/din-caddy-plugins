@@ -1,14 +1,14 @@
 package modules
 
 import (
-	"fmt"
 	"encoding/hex"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-	"io/ioutil"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -19,7 +19,7 @@ import (
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 
-	"github.com/openrelayxyz/din-caddy-plugins/auth/eip4361"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +39,7 @@ var (
 type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
-	logger *zap.Logger
+	logger           *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -53,7 +53,7 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
-	d.logger = context.Logger(d) 
+	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
 	d.PrometheusClient = prom.NewPrometheusClient()
 
@@ -198,15 +198,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "auth":
-									auth := &eip4361.EIP4361ClientAuth{
-										ProviderURL: strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
+									auth := &siwe.SIWEClientAuth{
+										ProviderURL:  strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
 										SessionCount: 16,
 									}
 									for dispenser.NextBlock(nesting + 3) {
 										switch dispenser.Val() {
 										case "type":
 											dispenser.NextBlock(nesting + 3)
-											if dispenser.Val() != "eip4361" {
+											if dispenser.Val() != "siwe" {
 												return fmt.Errorf("unknown auth type")
 											}
 										case "url":
@@ -238,7 +238,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 													}
 												}
 											}
-											auth.Signer = &eip4361.SigningConfig{
+											auth.Signer = &siwe.SigningConfig{
 												PrivateKey: key,
 											}
 											if err := auth.Signer.GenPrivKey(); err != nil {

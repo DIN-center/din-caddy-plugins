@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	auth "github.com/openrelayxyz/din-caddy-plugins/auth"
+	auth "github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 )
 
 // MockIHTTPClient is a mock of IHTTPClient interface.
