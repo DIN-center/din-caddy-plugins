@@ -9,14 +9,19 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 )
 
 // PrometheusClient is a struct that holds the prometheus client
-type PrometheusClient struct{}
+type PrometheusClient struct {
+	logger *zap.Logger
+}
 
 // NewPrometheusClient returns a new prometheus client
-func NewPrometheusClient() *PrometheusClient {
-	return &PrometheusClient{}
+func NewPrometheusClient(logger *zap.Logger) *PrometheusClient {
+	return &PrometheusClient{
+		logger: logger,
+	}
 }
 
 // prometheus metric initialization
@@ -67,6 +72,8 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 	service := strings.TrimPrefix(data.Service, "/")
 	latency := strconv.FormatInt(data.ResLatency.Milliseconds(), 10)
 	status := strconv.Itoa(data.ResStatus)
+
+	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("status", status), zap.String("latency", latency), zap.String("health_status", data.HealthStatus), zap.String("block_number", data.BlockNumber))
 
 	// Increment prometheus metric based on request data
 	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency, data.HealthStatus, data.BlockNumber).Inc()

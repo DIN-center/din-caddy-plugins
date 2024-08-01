@@ -55,7 +55,7 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient()
+	d.PrometheusClient = prom.NewPrometheusClient(d.logger)
 
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
@@ -76,8 +76,11 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 				}
 			}
+			d.logger.Debug("Provider provisioned", zap.String("provider", provider.HttpUrl), zap.String("host", provider.host), zap.Int("priority", provider.Priority), zap.Any("headers", provider.Headers), zap.Any("auth", provider.Auth), zap.Any("upstream", provider.upstream), zap.Any("path", provider.path))
 		}
 	}
+
+	d.logger.Info("Din middleware provisioned")
 
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
@@ -146,6 +149,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Increment prometheus metric based on request data
+	// debug logging of metric is found in here.
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
 		Service:      r.RequestURI,
 		Provider:     provider,
@@ -303,12 +307,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() {
+	d.logger.Info("Starting healthchecks")
 	for _, service := range d.Services {
+		d.logger.Debug("Starting healthcheck for service", zap.String("service", service.Name))
 		service.startHealthcheck()
 	}
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	d.logger.Info("Parsing Caddyfile")
 	err := d.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err

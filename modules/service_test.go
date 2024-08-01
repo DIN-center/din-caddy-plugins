@@ -513,6 +513,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 }
 
 func TestEvaluateCheckedProviders(t *testing.T) {
+	logger := zap.NewNop()
 
 	tests := []struct {
 		name    string
@@ -536,6 +537,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -560,6 +562,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -584,6 +587,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {
