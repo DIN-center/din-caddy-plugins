@@ -61,6 +61,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
+		service.logger = d.logger
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -76,6 +77,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 				}
 			}
+			provider.logger = d.logger
 			d.logger.Debug("Provider provisioned", zap.String("provider", provider.HttpUrl), zap.String("host", provider.host), zap.Int("priority", provider.Priority), zap.Any("headers", provider.Headers), zap.Any("auth", provider.Auth), zap.Any("upstream", provider.upstream), zap.Any("path", provider.path))
 		}
 	}
@@ -309,13 +311,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 func (d *DinMiddleware) startHealthChecks() {
 	d.logger.Info("Starting healthchecks")
 	for _, service := range d.Services {
-		d.logger.Debug("Starting healthcheck for service", zap.String("service", service.Name))
+		d.logger.Info("Starting healthcheck for service", zap.String("service", service.Name))
 		service.startHealthcheck()
 	}
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	d.logger.Info("Parsing Caddyfile")
 	err := d.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err

@@ -40,7 +40,6 @@ func NewService(name string, logger *zap.Logger) *service {
 		HCInterval:       DefaultHCInterval,
 		BlockLagLimit:    DefaultBlockLagLimit,
 		CheckedProviders: make(map[string][]healthCheckEntry),
-		logger:           logger,
 	}
 }
 
@@ -77,7 +76,7 @@ func (s *service) healthCheck() {
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
 			// if there is an error getting the latest block number, mark the provider as a failure
-			s.logger.Error("Error getting latest block number for provider", zap.String("provider", name), zap.Error(err))
+			s.logger.Debug("Error getting latest block number for provider", zap.String("provider", name), zap.Error(err))
 			provider.markPingFailure(s.HCThreshold)
 			continue
 		}
@@ -91,7 +90,7 @@ func (s *service) healthCheck() {
 				provider.markPingWarning()
 			} else {
 				// if the status code is greater than 399, mark the provider as a failure
-				s.logger.Error("Provider returned an error status code", zap.String("provider", name), zap.Int("status_code", statusCode))
+				s.logger.Warn("Provider returned an error status code", zap.String("provider", name), zap.Int("status_code", statusCode))
 				provider.markPingFailure(s.HCThreshold)
 			}
 			continue
@@ -113,7 +112,7 @@ func (s *service) healthCheck() {
 			provider.markHealthy()
 		} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-			s.logger.Warn("Provider is lagging behind", zap.String("provider", name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
+			s.logger.Debug("Provider is lagging behind", zap.String("provider", name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
 			provider.markWarning()
 		}
 
@@ -148,7 +147,7 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 func (s *service) evaluateCheckedProviders() {
 	for providerName, healthCheckList := range s.CheckedProviders {
 		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.Int64("provider_block_number", healthCheckList[0].blockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
+			s.logger.Debug("Provider is lagging behind", zap.String("provider", providerName), zap.Int64("provider_block_number", healthCheckList[0].blockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
 			s.Providers[providerName].markWarning()
 		}
 	}
