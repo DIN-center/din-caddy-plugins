@@ -10,6 +10,7 @@ import (
 	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 type service struct {
@@ -19,6 +20,7 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
+	logger            *zap.Logger
 
 	// Healthcheck configuration
 	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
@@ -26,6 +28,20 @@ type service struct {
 	HCInterval       int                           `json:"healthceck_interval_seconds"`
 	HCThreshold      int                           `json:"healthcheck_threshold"`
 	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
+}
+
+func NewService(name string, logger *zap.Logger) *service {
+	return &service{
+		Name: name,
+
+		// Default health check values, to be overridden if specified in the Caddyfile
+		HCMethod:         DefaultHCMethod,
+		HCThreshold:      DefaultHCThreshold,
+		HCInterval:       DefaultHCInterval,
+		BlockLagLimit:    DefaultBlockLagLimit,
+		CheckedProviders: make(map[string][]healthCheckEntry),
+		logger:           logger,
+	}
 }
 
 func (s *service) startHealthcheck() {

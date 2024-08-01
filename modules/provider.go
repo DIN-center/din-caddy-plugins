@@ -7,6 +7,7 @@ import (
 	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
+	"go.uber.org/zap"
 )
 
 type provider struct {
@@ -18,6 +19,7 @@ type provider struct {
 	httpClient *din_http.HTTPClient
 	Priority   int
 	Auth       *siwe.SIWEClientAuth
+	logger     *zap.Logger
 
 	failures     int
 	successes    int
@@ -25,7 +27,7 @@ type provider struct {
 	quit         chan struct{}
 }
 
-func NewProvider(urlStr string) (*provider, error) {
+func NewProvider(urlStr string, logger *zap.Logger) (*provider, error) {
 	url, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err
@@ -34,6 +36,7 @@ func NewProvider(urlStr string) (*provider, error) {
 		HttpUrl: urlStr,
 		host:    url.Host,
 		Headers: make(map[string]string),
+		logger:  logger,
 	}
 	return p, nil
 }

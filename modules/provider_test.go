@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"go.uber.org/zap"
 )
 
 func TestNewProvider(t *testing.T) {
+	logger := zap.NewNop()
 	tests := []struct {
 		name   string
 		urlstr string
@@ -23,6 +25,7 @@ func TestNewProvider(t *testing.T) {
 				path:     "",
 				Headers:  make(map[string]string),
 				Priority: 0,
+				logger:   logger,
 			},
 			hasErr: false,
 		},
@@ -34,6 +37,7 @@ func TestNewProvider(t *testing.T) {
 				host:     "eth.rpc.test.cloud:443",
 				Headers:  make(map[string]string),
 				Priority: 0,
+				logger:   logger,
 			},
 			hasErr: false,
 		},
@@ -41,7 +45,7 @@ func TestNewProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := NewProvider(tt.urlstr)
+			provider, err := NewProvider(tt.urlstr, logger)
 			if err != nil && !tt.hasErr {
 				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
 			}

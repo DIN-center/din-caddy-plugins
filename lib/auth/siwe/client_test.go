@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"go.uber.org/zap"
 	// "github.com/openrelayxyz/din-caddy-plugins/auth"
 )
 
@@ -33,7 +34,7 @@ func TestClientBasic(t *testing.T) {
 	signer.GenPrivKey()
 	fmt.Printf("Key: %#x\nAddress: %v", keyBytes, signer.Address)
 	client := NewSIWEClient(server.URL+"/auth", 16, signer)
-	if err := client.Start(nil); err != nil {
+	if err := client.Start(zap.NewNop()); err != nil {
 		t.Errorf(err.Error())
 	}
 	req := httptest.NewRequest("GET", "/", nil)

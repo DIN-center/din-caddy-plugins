@@ -170,15 +170,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = &service{
-					Name: serviceName,
-					// Default health check values, to be overridden if specified in the Caddyfile
-					HCMethod:         DefaultHCMethod,
-					HCThreshold:      DefaultHCThreshold,
-					HCInterval:       DefaultHCInterval,
-					BlockLagLimit:    DefaultBlockLagLimit,
-					CheckedProviders: make(map[string][]healthCheckEntry),
-				}
+				d.Services[serviceName] = NewService(serviceName, d.logger)
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -191,7 +183,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							providerObj, err := NewProvider(dispenser.Val())
+							providerObj, err := NewProvider(dispenser.Val(), d.logger)
 							if err != nil {
 								return err
 							}
