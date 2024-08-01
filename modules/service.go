@@ -56,64 +56,55 @@ type healthCheckEntry struct {
 }
 
 func (s *service) healthCheck() {
-	// wait group to wait for all the providers to finish their health checks
-	var wg sync.WaitGroup
 	var blockTime time.Time
+	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
+	for _, provider := range s.Providers {
+		// get the latest block number from the current provider
+		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
+		if err != nil {
+			// if there is an error getting the latest block number, mark the provider as a failure
+			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
+			provider.markPingFailure(s.HCThreshold)
+			continue
+		}
+		blockTime = time.Now()
 
-	for _, currentProvider := range s.Providers {
-		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
-		wg.Add(1) // Increment the WaitGroup counter
-		go func(provider *provider) {
-			defer wg.Done() // Decrement the counter when the goroutine completes
-			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
-			if err != nil {
-				// if there is an error getting the latest block number, mark the provider as a failure
-				// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
-				provider.markPingFailure(s.HCThreshold)
-				return
-			}
-			blockTime = time.Now()
-
-			// Ping Health Check
-			if statusCode > 399 {
-				if statusCode == 429 {
-					// if the status code is 429, mark the provider as a warning
-					provider.markPingWarning()
-				} else {
-					// if the status code is greater than 399, mark the provider as a failure
-					provider.markPingFailure(s.HCThreshold)
-				}
-				return
+		// Ping Health Check
+		if statusCode > 399 {
+			if statusCode == 429 {
+				// if the status code is 429, mark the provider as a warning
+				provider.markPingWarning()
 			} else {
-				provider.markPingSuccess(s.HCThreshold)
+				// if the status code is greater than 399, mark the provider as a failure
+				provider.markPingFailure(s.HCThreshold)
 			}
+			continue
+		} else {
+			provider.markPingSuccess(s.HCThreshold)
+		}
 
-			// Consistency health check
-			if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
-				// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
-				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
-				s.LatestBlockNumber = providerBlockNumber
+		// Consistency health check
+		if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
+			// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
+			// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
+			s.LatestBlockNumber = providerBlockNumber
 
-				provider.markHealthy()
+			provider.markHealthy()
 
-				s.evaluateCheckedProviders()
-			} else if s.LatestBlockNumber == providerBlockNumber {
-				// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
-				provider.markHealthy()
-			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-				provider.markWarning()
-			}
+			s.evaluateCheckedProviders()
+		} else if s.LatestBlockNumber == providerBlockNumber {
+			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
+			provider.markHealthy()
+		} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
+			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
+			provider.markWarning()
+		}
 
-			// TODO: create a check based on time window of a provider's latest block number
+		// TODO: create a check based on time window of a provider's latest block number
 
-			// add the current provider to the checked providers map
-			s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
-		}(currentProvider) // Pass the loop variable to the goroutine
+		// add the current provider to the checked providers map
+		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 	}
-	// Wait for all goroutines to complete
-	wg.Wait()
 }
 
 func (s *service) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
