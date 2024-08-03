@@ -113,20 +113,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		provider = v.(string)
 	}
 
-	var blockNumber int64
-	checkProviderValues, _ := service.getCheckedProviderHCList(provider)
-	// if !ok {
-	// TODO: determine log level for this message
-	// fmt.Println("Provider not found in checked providers list")
-	// }
-	if len(checkProviderValues) > 0 {
-		blockNumber = checkProviderValues[0].blockNumber
-	} else {
-		blockNumber = service.LatestBlockNumber
-	}
-
-	healthStatus := service.Providers[provider].healthStatus.String()
-
 	var reqBody []byte
 	if v, ok := repl.Get(RequestBodyKey); ok {
 		reqBody = v.([]byte)
@@ -139,13 +125,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
-		Service:      r.RequestURI,
-		Provider:     provider,
-		HostName:     r.Host,
-		ResStatus:    rww.statusCode,
-		ResLatency:   latency,
-		HealthStatus: healthStatus,
-		BlockNumber:  strconv.FormatInt(blockNumber, 10),
+		Service:    r.RequestURI,
+		Provider:   provider,
+		HostName:   r.Host,
+		ResStatus:  rww.statusCode,
+		ResLatency: latency,
 	})
 
 	return nil

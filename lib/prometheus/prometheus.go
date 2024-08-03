@@ -32,20 +32,19 @@ func RegisterMetrics() {
 			Name: "din_http_request_count",
 			Help: "Metric for counting din http requests with service, method, provider, and host_name labels",
 		},
-		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency", "health_status", "block_number"},
+		[]string{"s", "m", "p", "h", "rs", "rl"},
+		// s: service, m: method, p: provider, h: host_name, rs: response_status, rl: response_latency
 	)
 	prometheus.MustRegister(DinRequestCount)
 }
 
 type PromRequestMetricData struct {
-	Method       string
-	Service      string
-	Provider     string
-	HostName     string
-	ResStatus    int
-	ResLatency   time.Duration
-	HealthStatus string
-	BlockNumber  string
+	Method     string
+	Service    string
+	Provider   string
+	HostName   string
+	ResStatus  int
+	ResLatency time.Duration
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
@@ -69,5 +68,5 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 	status := strconv.Itoa(data.ResStatus)
 
 	// Increment prometheus metric based on request data
-	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency, data.HealthStatus, data.BlockNumber).Inc()
+	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency).Inc()
 }
