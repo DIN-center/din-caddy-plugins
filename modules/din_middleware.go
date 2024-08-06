@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -98,7 +97,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
-	reqStartTime := time.Now()
+	// reqStartTime := time.Now()
 
 	// Serve the request
 	err := next.ServeHTTP(rww, r)
@@ -106,12 +105,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
-	latency := time.Since(reqStartTime)
+	// latency := time.Since(reqStartTime)
 
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
 	}
+
+	healthStatus := service.Providers[provider].healthStatus.String()
 
 	var reqBody []byte
 	if v, ok := repl.Get(RequestBodyKey); ok {
@@ -125,11 +126,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
-		Service:    r.RequestURI,
-		Provider:   provider,
-		HostName:   r.Host,
-		ResStatus:  rww.statusCode,
-		ResLatency: latency,
+		Service:      r.RequestURI,
+		Provider:     provider,
+		HostName:     r.Host,
+		ResStatus:    rww.statusCode,
+		HealthStatus: healthStatus,
 	})
 
 	return nil
