@@ -97,6 +97,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
+	// TODO: create a prometheus metric for the request latency
 	// reqStartTime := time.Now()
 
 	// Serve the request
