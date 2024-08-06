@@ -35,7 +35,7 @@ func (m *MockIHTTPClient) EXPECT() *MockIHTTPClientMockRecorder {
 }
 
 // Post mocks base method.
-func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.AuthClient) ([]byte, *int, error) {
+func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.IAuthClient) ([]byte, *int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Post", url, headers, payload, auth)
 	ret0, _ := ret[0].([]byte)

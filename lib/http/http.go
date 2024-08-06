@@ -34,7 +34,7 @@ func NewHTTPClient() *HTTPClient {
 	}
 }
 
-func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.AuthClient) ([]byte, *int, error) {
+func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.IAuthClient) ([]byte, *int, error) {
 	// Send the POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {

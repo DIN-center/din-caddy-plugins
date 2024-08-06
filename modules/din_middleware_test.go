@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
 )
@@ -187,6 +188,102 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 					}
 				}
+			}
+		})
+	}
+}
+func TestUnmarshalCaddyfile(t *testing.T) {
+	dinMiddleware := new(DinMiddleware)
+
+	tests := []struct {
+		name      string
+		caddyfile string
+		hasErr    bool
+	}{
+		{
+			name: "Valid Caddyfile",
+			caddyfile: `services {
+				eth {
+					methods eth_blockNumber eth_getBlockByNumber
+					providers {
+						localhost:8000 {
+							headers {
+								Content-Type application/json
+							}
+							priority 1
+						}
+						localhost:8001 {
+							headers {
+								Content-Type application/json
+							}
+							priority 2
+						}
+					}
+					healthcheck_method GET
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+				}
+			}`,
+			hasErr: false,
+		},
+		{
+			name: "Invalid Caddyfile - Missing provider",
+			caddyfile: `services {
+				eth {
+					methods methods eth_blockNumber eth_getBlockByNumber
+					healthcheck_method eth_blockNumber
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+				}
+			}`,
+			hasErr: true,
+		},
+		{
+			name: "Invalid Caddyfile - Invalid 'methods' argument",
+			caddyfile: `services {
+				eth {
+					methods
+					providers {
+						localhost:8000 {
+							headers {
+								Content-Type application/json
+							}
+							priority 1
+						}
+					}
+					healthcheck_method GET
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+				}
+			}`,
+			hasErr: true,
+		},
+		{
+			name: "Invalid Caddyfile - Invalid 'headers' argument",
+			caddyfile: `services {
+				eth {
+					methods eth_blockNumber eth_getBlockByNumber
+					providers {
+						localhost:8000 {
+							headers
+							priority 1
+						}
+					}
+				}
+			}`,
+			hasErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dispenser := caddyfile.NewTestDispenser(tt.caddyfile)
+			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
+			if err != nil && !tt.hasErr {
+				t.Errorf("UnmarshalCaddyfile() = %v, want %v", err, tt.hasErr)
 			}
 		})
 	}

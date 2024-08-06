@@ -50,7 +50,7 @@ func (p *provider) IsAvailableWithWarning() bool {
 	return p.upstream.Available() && p.Warning()
 }
 
-func (p *provider) AuthClient() auth.AuthClient {
+func (p *provider) AuthClient() auth.IAuthClient {
 	if p.Auth == nil {
 		return nil
 	}
