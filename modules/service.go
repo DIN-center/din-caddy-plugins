@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
@@ -18,6 +19,8 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
+
+	mu sync.RWMutex
 
 	// Healthcheck configuration
 	CheckedProviders    map[string][]healthCheckEntry `json:"checked_providers"`
@@ -54,75 +57,100 @@ type healthCheckEntry struct {
 }
 
 func (s *service) healthCheck() {
+	// wait group to wait for all the providers to finish their health checks
+	var wg sync.WaitGroup
 	var blockTime time.Time
-	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
-	for _, provider := range s.Providers {
-		// get the latest block number from the current provider
-		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
-		if err != nil {
-			// if there is an error getting the latest block number, mark the provider as a failure
-			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
-			provider.markPingFailure(s.HCThreshold)
-			continue
-		}
-		blockTime = time.Now()
 
-		// Ping Health Check
-		if statusCode > 399 {
-			if statusCode == 429 {
-				// if the status code is 429, mark the provider as a warning
-				provider.markPingWarning()
-			} else {
-				// if the status code is greater than 399, mark the provider as a failure
+	for _, currentProvider := range s.Providers {
+		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
+		wg.Add(1) // Increment the WaitGroup counter
+		go func(provider *provider) {
+			defer wg.Done() // Decrement the counter when the goroutine completes
+			// get the latest block number from the current provider
+			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
+			if err != nil {
+				// if there is an error getting the latest block number, mark the provider as a failure
+				// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
 				provider.markPingFailure(s.HCThreshold)
+				return
 			}
-			continue
-		} else {
-			provider.markPingSuccess(s.HCThreshold)
-		}
+			blockTime = time.Now()
 
-		// Consistency health check
-		if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
-			// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
-			// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
-			s.LatestBlockNumber = providerBlockNumber
+			// Ping Health Check
+			if statusCode > 399 {
+				if statusCode == 429 {
+					// if the status code is 429, mark the provider as a warning
+					provider.markPingWarning()
+				} else {
+					// if the status code is greater than 399, mark the provider as a failure
+					provider.markPingFailure(s.HCThreshold)
+				}
+				return
+			} else {
+				provider.markPingSuccess(s.HCThreshold)
+			}
 
-			provider.markHealthy()
+			// Consistency health check
+			if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
+				// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
+				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
+				s.LatestBlockNumber = providerBlockNumber
 
-			s.evaluateCheckedProviders()
-		} else if s.LatestBlockNumber == providerBlockNumber {
-			// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
-			provider.markHealthy()
-		} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-			provider.markWarning()
-		}
+				provider.markHealthy()
 
-		// TODO: create a check based on time window of a provider's latest block number
+				s.evaluateCheckedProviders()
+			} else if s.LatestBlockNumber == providerBlockNumber {
+				// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
+				provider.markHealthy()
+			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
+				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
+				provider.markWarning()
+			}
 
-		// add the current provider to the checked providers map
-		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
+			// TODO: create a check based on time window of a provider's latest block number
+
+			// add the current provider to the checked providers map
+			s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
+		}(currentProvider) // Pass the loop variable to the goroutine
 	}
+	// Wait for all goroutines to complete
+	wg.Wait()
+}
+
+func (s *service) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	values, ok := s.CheckedProviders[providerName]
+	return values, ok
+}
+
+func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
-	if _, ok := s.CheckedProviders[providerName]; !ok {
-		s.CheckedProviders[providerName] = []healthCheckEntry{healthCheckInput}
+	currentHealthCheckList, ok := s.getCheckedProviderHCList(providerName)
+	if !ok {
+		s.setCheckedProviderHCList(providerName, []healthCheckEntry{healthCheckInput})
 		return
 	}
 
 	// to add a new healthCheckEntry to index 0 of the provider's slice, we need to make a new slice and copy the old slice to the new slice
 	newHealthCheckList := []healthCheckEntry{healthCheckInput}
 
-	// if the old slice is full at 10 entries, we need to remove the last entry and copy the rest of the entries to the new slice
-	if len(s.CheckedProviders[providerName]) == 10 {
-		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName][:9]...)
-		copy(newHealthCheckList[1:], s.CheckedProviders[providerName][:len(s.CheckedProviders[providerName])-1])
+	// if the old slice is full at 10 entries, we need to remove the last entry and append the rest of the entries to the new slice
+	if len(currentHealthCheckList) == 10 {
+		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList[:9]...)
+		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
 	} else {
-		s.CheckedProviders[providerName] = append(newHealthCheckList, s.CheckedProviders[providerName]...)
+		// if the old slice is not full, we can copy the old slice to the new slice and add the new entry to index 0
+		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
+		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
 	}
 }
 
