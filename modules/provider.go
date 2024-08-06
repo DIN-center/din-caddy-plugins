@@ -27,7 +27,7 @@ type provider struct {
 	quit         chan struct{}
 }
 
-func NewProvider(urlStr string, logger *zap.Logger) (*provider, error) {
+func NewProvider(urlStr string) (*provider, error) {
 	url, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,6 @@ func NewProvider(urlStr string, logger *zap.Logger) (*provider, error) {
 		HttpUrl: urlStr,
 		host:    url.Host,
 		Headers: make(map[string]string),
-		logger:  logger,
 	}
 	return p, nil
 }

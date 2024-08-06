@@ -1,15 +1,12 @@
 package modules
 
 import (
-	reflect "reflect"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"go.uber.org/zap"
 )
 
 func TestNewProvider(t *testing.T) {
-	logger := zap.NewNop()
 	tests := []struct {
 		name   string
 		urlstr string
@@ -25,7 +22,6 @@ func TestNewProvider(t *testing.T) {
 				path:     "",
 				Headers:  make(map[string]string),
 				Priority: 0,
-				logger:   logger,
 			},
 			hasErr: false,
 		},
@@ -37,7 +33,6 @@ func TestNewProvider(t *testing.T) {
 				host:     "eth.rpc.test.cloud:443",
 				Headers:  make(map[string]string),
 				Priority: 0,
-				logger:   logger,
 			},
 			hasErr: false,
 		},
@@ -45,12 +40,24 @@ func TestNewProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := NewProvider(tt.urlstr, logger)
+			provider, err := NewProvider(tt.urlstr)
 			if err != nil && !tt.hasErr {
 				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
 			}
-			if !reflect.DeepEqual(provider, tt.output) {
-				t.Errorf("urlToProviderObject() = %v, want %v", provider, tt.output)
+			if provider.HttpUrl != tt.output.HttpUrl {
+				t.Errorf("HttpUrl = %v, want %v", provider.HttpUrl, tt.output.HttpUrl)
+			}
+			if provider.host != tt.output.host {
+				t.Errorf("host = %v, want %v", provider.host, tt.output.host)
+			}
+			if provider.path != tt.output.path {
+				t.Errorf("path = %v, want %v", provider.path, tt.output.path)
+			}
+			if len(provider.Headers) != len(tt.output.Headers) {
+				t.Errorf("Headers length = %v, want %v", len(provider.Headers), len(tt.output.Headers))
+			}
+			if provider.Priority != tt.output.Priority {
+				t.Errorf("Priority = %v, want %v", provider.Priority, tt.output.Priority)
 			}
 		})
 	}

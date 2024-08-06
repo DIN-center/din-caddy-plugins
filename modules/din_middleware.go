@@ -176,7 +176,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = NewService(serviceName, d.logger)
+				d.Services[serviceName] = NewService(serviceName)
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -189,7 +189,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							providerObj, err := NewProvider(dispenser.Val(), d.logger)
+							providerObj, err := NewProvider(dispenser.Val())
 							if err != nil {
 								return err
 							}

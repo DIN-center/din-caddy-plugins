@@ -30,7 +30,7 @@ type service struct {
 	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
 }
 
-func NewService(name string, logger *zap.Logger) *service {
+func NewService(name string) *service {
 	return &service{
 		Name: name,
 
