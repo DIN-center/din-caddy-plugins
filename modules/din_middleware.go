@@ -156,8 +156,8 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					HCInterval:       DefaultHCInterval,
 					BlockLagLimit:    DefaultBlockLagLimit,
 					CheckedProviders: make(map[string][]healthCheckEntry),
+					Providers:        make(map[string]*provider),
 				}
-
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -197,14 +197,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									}
 								}
 							}
-							if d.Services[serviceName].Providers == nil {
-								d.Services[serviceName].Providers = make(map[string]*provider)
-							}
-
 							d.Services[serviceName].Providers[providerObj.host] = providerObj
-						}
-						if len(d.Services[serviceName].Providers) == 0 {
-							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
 					case "healthcheck_method":
 						dispenser.Next()
@@ -231,6 +224,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
+				}
+				if len(d.Services[serviceName].Providers) == 0 {
+					return dispenser.Errf("expected at least one provider for service %s", serviceName)
 				}
 			}
 		}
