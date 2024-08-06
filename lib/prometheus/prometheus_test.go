@@ -2,7 +2,6 @@ package prometheus
 
 import (
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -31,24 +30,20 @@ func TestHandleRequestMetric(t *testing.T) {
 			name:         "Valid JSON",
 			reqBodyBytes: []byte(`{"method": "eth_getBlockByNumber"}`),
 			data: &PromRequestMetricData{
-				Method:       "POST",
-				Service:      "/ethereum",
-				Provider:     "infura",
-				HostName:     "node1",
-				ResStatus:    200,
-				ResLatency:   100 * time.Millisecond,
-				HealthStatus: "healthy",
-				BlockNumber:  "12345",
+				Method:         "POST",
+				Service:        "/ethereum",
+				Provider:       "infura",
+				HostName:       "node1",
+				ResponseStatus: 200,
+				HealthStatus:   "healthy",
 			},
 			expectedLabels: map[string]string{
-				"service":       "ethereum",
-				"method":        "eth_getBlockByNumber",
-				"provider":      "infura",
-				"host_name":     "node1",
-				"res_status":    "200",
-				"res_latency":   "100",
-				"health_status": "healthy",
-				"block_number":  "12345",
+				"service":         "ethereum",
+				"method":          "eth_getBlockByNumber",
+				"provider":        "infura",
+				"host_name":       "node1",
+				"response_status": "200",
+				"health_status":   "healthy",
 			},
 			expectedValue: 1,
 		},
@@ -56,24 +51,20 @@ func TestHandleRequestMetric(t *testing.T) {
 			name:         "Invalid JSON",
 			reqBodyBytes: []byte(`{"method": invalid}`),
 			data: &PromRequestMetricData{
-				Method:       "POST",
-				Service:      "/ethereum",
-				Provider:     "infura",
-				HostName:     "node1",
-				ResStatus:    200,
-				ResLatency:   100 * time.Millisecond,
-				HealthStatus: "healthy",
-				BlockNumber:  "12345",
+				Method:         "POST",
+				Service:        "/ethereum",
+				Provider:       "infura",
+				HostName:       "node1",
+				ResponseStatus: 200,
+				HealthStatus:   "healthy",
 			},
 			expectedLabels: map[string]string{
-				"service":       "ethereum",
-				"method":        "",
-				"provider":      "infura",
-				"host_name":     "node1",
-				"res_status":    "200",
-				"res_latency":   "100",
-				"health_status": "healthy",
-				"block_number":  "12345",
+				"service":         "ethereum",
+				"method":          "",
+				"provider":        "infura",
+				"host_name":       "node1",
+				"response_status": "200",
+				"health_status":   "healthy",
 			},
 			expectedValue: 1,
 		},
@@ -93,10 +84,8 @@ func TestHandleRequestMetric(t *testing.T) {
 				tt.expectedLabels["method"],
 				tt.expectedLabels["provider"],
 				tt.expectedLabels["host_name"],
-				tt.expectedLabels["res_status"],
-				tt.expectedLabels["res_latency"],
+				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
-				tt.expectedLabels["block_number"],
 			))
 
 			assert.Equal(t, tt.expectedValue, metric, "Metric should be incremented once")
