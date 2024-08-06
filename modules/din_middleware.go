@@ -126,11 +126,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
-		Service:      r.RequestURI,
-		Provider:     provider,
-		HostName:     r.Host,
-		ResStatus:    rww.statusCode,
-		HealthStatus: healthStatus,
+		Service:        r.RequestURI,
+		Provider:       provider,
+		HostName:       r.Host,
+		ResponseStatus: rww.statusCode,
+		HealthStatus:   healthStatus,
 	})
 
 	return nil
