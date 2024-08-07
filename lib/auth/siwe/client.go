@@ -136,7 +136,7 @@ func (c *SIWEClientAuth) Start(logger *zap.Logger) error {
 		var err error
 		c.SessionTokens[i], err = c.GetToken(nil)
 		if err != nil {
-			c.logger.Info("Error establishing session. Will retry in 15 seconds", zap.Int("i", i))
+			c.logger.Info("Error establishing session. Will retry in 15 seconds", zap.Int("i", i), zap.String("error", err.Error()))
 			now := auth.UnixTime(time.Now())
 			c.SessionTokens[i].Expiration = &now
 			c.Renew(i, 15*time.Second)

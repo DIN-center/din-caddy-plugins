@@ -114,8 +114,13 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 }
 
 func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if r.URL.Path == "/auth" {
+	switch r.URL.Path {
+	case "/auth":
 		return d.createSession(rw, r)
+	case "/":
+		// Used for proxy health checks
+		return next.ServeHTTP(rw, r)
+	default:
 	}
 	tokenString := r.Header.Get("x-api-key")
 	if tokenString == "" {
