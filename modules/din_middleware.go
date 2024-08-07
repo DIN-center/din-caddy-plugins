@@ -71,6 +71,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
+			provider.host = url.Host
 			provider.httpClient = httpClient
 			if provider.Auth != nil {
 				if err := provider.Auth.Start(context.Logger(d)); err != nil {
@@ -181,7 +182,16 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = NewService(serviceName)
+				d.Services[serviceName] = &service{
+					Name: serviceName,
+					// Default health check values, to be overridden if specified in the Caddyfile
+					HCMethod:         DefaultHCMethod,
+					HCThreshold:      DefaultHCThreshold,
+					HCInterval:       DefaultHCInterval,
+					BlockLagLimit:    DefaultBlockLagLimit,
+					CheckedProviders: make(map[string][]healthCheckEntry),
+					Providers:        make(map[string]*provider),
+				}
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":

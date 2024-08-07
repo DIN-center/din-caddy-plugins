@@ -72,6 +72,9 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 					d.logger.Error("error signing request", zap.String("err", err.Error()))
 				}
 			}
+			if v := r.Header.Get("din-provider-info"); v != "" {
+				rw.Header().Set("din-provider-info", provider.host)
+			}
 			break
 		}
 	}
