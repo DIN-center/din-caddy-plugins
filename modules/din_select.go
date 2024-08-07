@@ -61,9 +61,13 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
+			if v := r.Header.Get("din-provider-info"); v != "" {
+				rw.Header().Set("din-provider-info", provider.host)
+			}
 			break
 		}
 	}
+
 
 	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {
