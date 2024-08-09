@@ -237,9 +237,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 												switch dispenser.Val() {
 												case "secret_file":
 													dispenser.NextBlock(nesting + 4)
-													key, err = ioutil.ReadFile(dispenser.Val())
+													hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
 													if err != nil {
 														return dispenser.Errf("failed to read secret file: %v", err)
+													}
+													hexKey := string(hexKeyBytes)
+													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
+													key, err = hex.DecodeString(hexKey)
+													if err != nil {
+														return err
 													}
 												case "secret":
 													dispenser.NextBlock(nesting + 4)

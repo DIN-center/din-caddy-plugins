@@ -19,12 +19,23 @@
 				eth {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
-						https://eth.rpc.rivet.cloud:443/key
+						https://din.rivet.cloud:443/eth {
+							auth {
+								type siwe
+								url https://din.rivet.cloud/auth
+								signer {
+									secret_file /run/secret/din-secret-key
+								}
+							}
+						}
 					}
 				}
 				blast-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof eth_getBalanceValues
 					providers {
+						https://blastl2-mainnet.blastapi.io:443/key {
+							priority 2
+						}
 						https://lb.nodies.app:443/v1/key {
 							priority 1
 						}
@@ -39,13 +50,26 @@
 				blast-testnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof eth_getBalanceValues
 					providers {
-						https://lb.nodies.app:443/v1/blast-testnet-key
+						https://lb.nodies.app:443/v1/blast-testnet-key {
+							priority 0
+						}
+						https://blastl2-sepolia.blastapi.io:443/key {
+							priority 1
+						}
 					}
 				}
 				polygon {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof bor_getSignersAtHash bor_getSnapshot bor_getRootHash bor_getAuthor bor_getCurrentValidators bor_getCurrentProposer eth_getTransactionReceiptsByBlock eth_getBorBlockReceipt
 					providers {
-						https://polygon.rpc.rivet.cloud:443/key
+						https://din.rivet.cloud:443/polygon {
+							auth {
+								type siwe
+								url https://din.rivet.cloud/auth
+								signer {
+									secret_file /run/secret/din-secret-key
+								}
+							}
+						}
 						https://polygon-mainnet.blastapi.io:443/key
 						https://api.infstones.com:443/polygon/mainnet/key
 					}
@@ -193,5 +217,4 @@
 	# https://caddyserver.com/docs/metrics#admin-api-metrics
 	metrics /metrics {
 	}
-
 }
