@@ -146,6 +146,20 @@ func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckLi
 	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
+// evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
+func (s *service) evaluateCheckedProviders() {
+	// read lock the checked providers map
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
+	checkedProviders := s.CheckedProviders
+	for providerName, healthCheckList := range checkedProviders {
+		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
+			s.Providers[providerName].markWarning()
+		}
+	}
+}
+
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
@@ -167,15 +181,6 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 		// if the old slice is not full, we can copy the old slice to the new slice and add the new entry to index 0
 		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
 		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
-	}
-}
-
-func (s *service) evaluateCheckedProviders() {
-	for providerName, healthCheckList := range s.CheckedProviders {
-		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			s.logger.Debug("Provider is lagging behind", zap.String("provider", providerName), zap.Int64("provider_block_number", healthCheckList[0].blockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
-			s.Providers[providerName].markWarning()
-		}
 	}
 }
 
