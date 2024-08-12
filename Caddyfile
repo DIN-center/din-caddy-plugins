@@ -24,7 +24,7 @@
 								type siwe
 								url https://din.rivet.cloud/auth
 								signer {
-									secret_file /run/secret/din-secret-key
+									secret_file /run/secrets/din-secret-key
 								}
 							}
 						}
@@ -66,7 +66,7 @@
 								type siwe
 								url https://din.rivet.cloud/auth
 								signer {
-									secret_file /run/secret/din-secret-key
+									secret_file /run/secrets/din-secret-key
 								}
 							}
 						}
