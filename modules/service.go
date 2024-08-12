@@ -129,7 +129,9 @@ func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckLi
 	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
+// evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
 func (s *service) evaluateCheckedProviders() {
+	// read lock the checked providers map
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
