@@ -77,7 +77,7 @@
 				polygon-testnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof bor_getSignersAtHash bor_getSnapshot bor_getRootHash bor_getAuthor bor_getCurrentValidators bor_getCurrentProposer eth_getTransactionReceiptsByBlock eth_getBorBlockReceipt
 					providers {
-						https://polygon-testnet.blastapi.io:443/key
+						https://polygon-amoy.blastapi.io:443/key
 					}
 				}
 				optimism-mainnet {
@@ -158,20 +158,44 @@
 				bsc-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
-						https://bsc-mainnet.core.chainstack.com:443/key
+						https://bsc-mainnet.core.chainstack.com:443/key {
+							priority 1
+						}
+						https://api.infstones.com:443/bsc/mainnet/key {
+							priority 0
+						}
+						https://infura-bsc.liquify.com:443/api=key {
+							priority 0
+						}
+					}
+				}
+				bsc-testnet {
+					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
+					providers {
+						https://bsc-testnet.core.chainstack.com:443/key
 					}
 				}
 				starknet-sepolia {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
-						https://starknet-sepolia.blastapi.io:443/key
+						https://starknet-sepolia.blastapi.io:443/key {
+							priority 0
+						}
+						https://starknet-sepolia.core.chainstack.com:443/key {
+							priority 1
+						}
 					}
 					healthcheck_method starknet_blockNumber
 				}
 				starknet-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
-						https://starknet-mainnet.blastapi.io:443/key
+						https://starknet-mainnet.blastapi.io:443/key {
+							priority 0
+						}
+						https://starknet-mainnet.core.chainstack.com:443/key {
+							priority 1
+						}
 					}
 					healthcheck_method starknet_blockNumber
 				}
@@ -199,17 +223,12 @@
 		# din reverse proxy directive configuration
 		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
 		reverse_proxy {
-			# full lb policy name: http.reverse_proxy.upstreams.din_reverse_proxy_policy
 			lb_policy din_reverse_proxy_policy
-
 			transport http {
 				tls
 				keepalive 10s
 			}
-
-			# full selector policy name: http.reverse_proxy.selection_policies.din_reverse_proxy_policy
 			dynamic din_reverse_proxy_policy
-
 			header_up Host {upstream_hostport}
 		}
 	}
