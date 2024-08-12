@@ -129,12 +129,6 @@ func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckLi
 	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
-func (s *service) getCheckedProvidersMap() map[string][]healthCheckEntry {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.CheckedProviders
-}
-
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
@@ -160,8 +154,10 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 }
 
 func (s *service) evaluateCheckedProviders() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
-	checkedProviders := s.getCheckedProvidersMap()
+	checkedProviders := s.CheckedProviders
 	for providerName, healthCheckList := range checkedProviders {
 		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 			s.Providers[providerName].markWarning()
