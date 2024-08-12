@@ -129,6 +129,18 @@ func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckLi
 	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
+func (s *service) evaluateCheckedProviders() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
+	checkedProviders := s.CheckedProviders
+	for providerName, healthCheckList := range checkedProviders {
+		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
+			s.Providers[providerName].markWarning()
+		}
+	}
+}
+
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
 func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
@@ -150,18 +162,6 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 		// if the old slice is not full, we can copy the old slice to the new slice and add the new entry to index 0
 		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
 		s.setCheckedProviderHCList(providerName, currentHealthCheckList)
-	}
-}
-
-func (s *service) evaluateCheckedProviders() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
-	checkedProviders := s.CheckedProviders
-	for providerName, healthCheckList := range checkedProviders {
-		if healthCheckList[0].blockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-			s.Providers[providerName].markWarning()
-		}
 	}
 }
 
