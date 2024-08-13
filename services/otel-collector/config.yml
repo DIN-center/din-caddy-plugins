@@ -31,13 +31,16 @@ exporters:
       "signoz-access-token": ""
   logging:
     verbosity: detailed
+  googlecloud:
+    log:
+      default_log_name: "opentelemetry.io/collector-exported-log"
 
 service:
   pipelines:
     metrics:
-      receivers: [prometheus]
+      receivers: [prometheus, otlp]
       processors: [batch]
-      exporters: [otlp]
+      exporters: [otlp, goolgecloud]
   telemetry:
     metrics:
       level: detailed
