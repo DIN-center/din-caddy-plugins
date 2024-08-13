@@ -25,6 +25,7 @@ processors:
 exporters:
   otlp:
     endpoint: "ingest.us.signoz.cloud:443"
+    timeout: 30s
     tls:
       insecure: false
     headers:
