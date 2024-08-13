@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 type service struct {
@@ -19,6 +21,7 @@ type service struct {
 	quit              chan struct{}
 	LatestBlockNumber int64 `json:"latest_block_number"`
 	HTTPClient        din_http.IHTTPClient
+	logger            *zap.Logger
 
 	mu sync.RWMutex
 
@@ -28,6 +31,19 @@ type service struct {
 	HCInterval       int                           `json:"healthceck_interval_seconds"`
 	HCThreshold      int                           `json:"healthcheck_threshold"`
 	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
+}
+
+func NewService(name string) *service {
+	return &service{
+		Name: name,
+		// Default health check values, to be overridden if specified in the Caddyfile
+		HCMethod:         DefaultHCMethod,
+		HCThreshold:      DefaultHCThreshold,
+		HCInterval:       DefaultHCInterval,
+		BlockLagLimit:    DefaultBlockLagLimit,
+		CheckedProviders: make(map[string][]healthCheckEntry),
+		Providers:        make(map[string]*provider),
+	}
 }
 
 func (s *service) startHealthcheck() {
@@ -60,16 +76,16 @@ func (s *service) healthCheck() {
 	var wg sync.WaitGroup
 	var blockTime time.Time
 
-	for _, currentProvider := range s.Providers {
+	for name, currentProvider := range s.Providers {
 		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
 		wg.Add(1) // Increment the WaitGroup counter
 		go func(provider *provider) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
 			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
+			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
+				s.logger.Debug("Error getting latest block number for provider", zap.String("provider", name), zap.Error(err))
 				provider.markPingFailure(s.HCThreshold)
 				return
 			}
@@ -79,9 +95,11 @@ func (s *service) healthCheck() {
 			if statusCode > 399 {
 				if statusCode == 429 {
 					// if the status code is 429, mark the provider as a warning
+					s.logger.Warn("Provider is rate limited", zap.String("provider", name))
 					provider.markPingWarning()
 				} else {
 					// if the status code is greater than 399, mark the provider as a failure
+					s.logger.Warn("Provider returned an error status code", zap.String("provider", name), zap.Int("status_code", statusCode))
 					provider.markPingFailure(s.HCThreshold)
 				}
 				return
@@ -94,15 +112,14 @@ func (s *service) healthCheck() {
 				// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
 				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
 				s.LatestBlockNumber = providerBlockNumber
-
 				provider.markHealthy()
-
 				s.evaluateCheckedProviders()
 			} else if s.LatestBlockNumber == providerBlockNumber {
 				// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
+				s.logger.Debug("Provider is lagging behind", zap.String("provider", name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
 				provider.markWarning()
 			}
 
@@ -167,11 +184,11 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 	}
 }
 
-func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string) (int64, int, error) {
+func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, s.HCMethod))
 
 	// Send the POST request
-	resBytes, statusCode, err := s.HTTPClient.Post(httpUrl, headers, []byte(payload))
+	resBytes, statusCode, err := s.HTTPClient.Post(httpUrl, headers, []byte(payload), ac)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}
