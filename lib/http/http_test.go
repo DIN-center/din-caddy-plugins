@@ -5,16 +5,23 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/golang/mock/gomock"
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHTTPClient_Post(t *testing.T) {
+func TestHTTPClientPost(t *testing.T) {
 	// Create a new HTTP client
 	client := NewHTTPClient()
+
+	// Create a mock auth client
+	mockCtrl := gomock.NewController(t)
+	mockAuthClient := auth.NewMockIAuthClient(mockCtrl)
 
 	// Test cases
 	testCases := []struct {
 		name           string
+		authClient     auth.IAuthClient
 		serverResponse string
 		serverStatus   int
 		headers        map[string]string
@@ -24,7 +31,19 @@ func TestHTTPClient_Post(t *testing.T) {
 		expectError    bool
 	}{
 		{
-			name:           "Successful POST request",
+			name:           "Successful POST request, no auth",
+			authClient:     nil,
+			serverResponse: `{"message": "Success"}`,
+			serverStatus:   http.StatusOK,
+			headers:        map[string]string{"X-Custom-Header": "test"},
+			payload:        []byte(`{"key": "value"}`),
+			expectedBody:   []byte(`{"message": "Success"}`),
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name:           "Successful POST request, with auth",
+			authClient:     mockAuthClient,
 			serverResponse: `{"message": "Success"}`,
 			serverStatus:   http.StatusOK,
 			headers:        map[string]string{"X-Custom-Header": "test"},
@@ -35,6 +54,7 @@ func TestHTTPClient_Post(t *testing.T) {
 		},
 		{
 			name:           "Server error",
+			authClient:     nil,
 			serverResponse: `{"error": "Internal Server Error"}`,
 			serverStatus:   http.StatusInternalServerError,
 			headers:        nil,
@@ -47,6 +67,10 @@ func TestHTTPClient_Post(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+
+			if tc.authClient != nil {
+				mockAuthClient.EXPECT().Sign(gomock.Any()).Return(nil)
+			}
 			// Create a test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Check if the custom header is set
@@ -68,7 +92,7 @@ func TestHTTPClient_Post(t *testing.T) {
 			defer server.Close()
 
 			// Make the POST request
-			body, status, err := client.Post(server.URL, tc.headers, tc.payload)
+			body, status, err := client.Post(server.URL, tc.headers, tc.payload, tc.authClient)
 
 			// Check the results
 			if tc.expectError {

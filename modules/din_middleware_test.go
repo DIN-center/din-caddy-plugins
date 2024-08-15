@@ -11,6 +11,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -28,7 +29,6 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 			},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			modInfo := dinMiddleware.CaddyModule()
@@ -113,6 +113,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 func TestDinMiddlewareProvision(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
+	logger := zap.NewNop()
 
 	tests := []struct {
 		name     string
@@ -135,6 +136,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					logger:           logger,
 				},
 			},
 			hasErr: false,
@@ -152,6 +154,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					logger:           logger,
 				},
 				"starknet-mainnet": {
 					Name:        "eth",
@@ -164,6 +167,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 						},
 					},
 					CheckedProviders: map[string][]healthCheckEntry{},
+					logger:           logger,
 				},
 			},
 			hasErr: false,
