@@ -223,6 +223,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: false,
@@ -236,6 +237,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: true,
@@ -257,6 +259,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: true,
