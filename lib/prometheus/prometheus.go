@@ -39,9 +39,9 @@ func RegisterMetrics() {
 	DinHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_health_check_count",
-			Help: "Metric for counting din health checks with service, provider, res_status, res_latency, and block_number labels",
+			Help: "Metric for counting din health checks with service, provider, res_status",
 		},
-		[]string{"service", "provider", "res_status", "res_latency", "block_number"},
+		[]string{"service", "provider", "res_status"},
 	)
 
 	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount)
@@ -83,19 +83,16 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 }
 
 type PromLatestBlockMetricData struct {
-	Service     string
-	Provider    string
-	ResStatus   int
-	ResLatency  time.Duration
-	BlockNumber string
+	Service   string
+	Provider  string
+	ResStatus int
 }
 
 // handleLatestBlockMetric increments prometheus metric based on latest block number health check data
 func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricData) {
 	service := strings.TrimPrefix(data.Service, "/")
-	latency := strconv.FormatInt(data.ResLatency.Milliseconds(), 10)
 	status := strconv.Itoa(data.ResStatus)
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, latency, data.BlockNumber).Inc()
+	DinHealthCheckCount.WithLabelValues(service, data.Provider, status).Inc()
 }

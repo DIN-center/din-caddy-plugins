@@ -64,12 +64,12 @@ func (s *service) healthCheck() {
 		// get the latest block number from the current provider
 		reqStartTime := time.Now()
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
-		latency := time.Since(reqStartTime)
+		// latency := time.Since(reqStartTime)
 		if err != nil {
 			// if there is an error getting the latest block number, mark the provider as a failure
 			// fmt.Println(err, "Error getting latest block number for provider", providerName, "on service", s.Name)
 			provider.markPingFailure(s.HCThreshold)
-			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, 0)
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode)
 			continue
 		}
 		blockTime = time.Now()
@@ -83,7 +83,7 @@ func (s *service) healthCheck() {
 				// if the status code is greater than 399, mark the provider as a failure
 				provider.markPingFailure(s.HCThreshold)
 			}
-			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, 0)
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode)
 			continue
 		} else {
 			provider.markPingSuccess(s.HCThreshold)
@@ -108,20 +108,18 @@ func (s *service) healthCheck() {
 
 		// TODO: create a check based on time window of a provider's latest block number
 
-		s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, latency, providerBlockNumber)
+		s.sendLatestBlockMetric(provider.upstream.Dial, statusCode)
 
 		// add the current provider to the checked providers map
 		s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 	}
 }
 
-func (s *service) sendLatestBlockMetric(providerName string, statusCode int, latency time.Duration, blockNumber int64) {
+func (s *service) sendLatestBlockMetric(providerName string, statusCode int) {
 	s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-		Service:     s.Name,
-		Provider:    providerName,
-		ResStatus:   statusCode,
-		ResLatency:  latency,
-		BlockNumber: strconv.FormatInt(blockNumber, 10),
+		Service:   s.Name,
+		Provider:  providerName,
+		ResStatus: statusCode,
 	})
 }
 
