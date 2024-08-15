@@ -26,23 +26,25 @@ type service struct {
 	mu sync.RWMutex
 
 	// Healthcheck configuration
-	CheckedProviders map[string][]healthCheckEntry `json:"checked_providers"`
-	HCMethod         string                        `json:"healthcheck_method"`
-	HCInterval       int                           `json:"healthceck_interval_seconds"`
-	HCThreshold      int                           `json:"healthcheck_threshold"`
-	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
+	CheckedProviders        map[string][]healthCheckEntry `json:"checked_providers"`
+	HCMethod                string                        `json:"healthcheck_method"`
+	HCInterval              int                           `json:"healthceck_interval_seconds"`
+	HCThreshold             int                           `json:"healthcheck_threshold"`
+	BlockLagLimit           int64                         `json:"healthcheck_blocklag_limit"`
+	MaxRequestPayloadSizeKB int64                         `json:"max_request_payload_size_kb"`
 }
 
 func NewService(name string) *service {
 	return &service{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
-		HCMethod:         DefaultHCMethod,
-		HCThreshold:      DefaultHCThreshold,
-		HCInterval:       DefaultHCInterval,
-		BlockLagLimit:    DefaultBlockLagLimit,
-		CheckedProviders: make(map[string][]healthCheckEntry),
-		Providers:        make(map[string]*provider),
+		HCMethod:                DefaultHCMethod,
+		HCThreshold:             DefaultHCThreshold,
+		HCInterval:              DefaultHCInterval,
+		BlockLagLimit:           DefaultBlockLagLimit,
+		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
+		CheckedProviders:        make(map[string][]healthCheckEntry),
+		Providers:               make(map[string]*provider),
 	}
 }
 

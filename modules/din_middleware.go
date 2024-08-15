@@ -168,16 +168,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = &service{
-					Name: serviceName,
-					// Default health check values, to be overridden if specified in the Caddyfile
-					HCMethod:         DefaultHCMethod,
-					HCThreshold:      DefaultHCThreshold,
-					HCInterval:       DefaultHCInterval,
-					BlockLagLimit:    DefaultBlockLagLimit,
-					CheckedProviders: make(map[string][]healthCheckEntry),
-					Providers:        make(map[string]*provider),
-				}
+				d.Services[serviceName] = NewService(serviceName) // Create a new service object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -297,6 +288,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return err
 						}
 						d.Services[serviceName].BlockLagLimit = int64(limit)
+					case "max_request_payload_size_kb":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return err
+						}
+						d.Services[serviceName].MaxRequestPayloadSizeKB = int64(size)
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
