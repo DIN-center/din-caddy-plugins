@@ -40,6 +40,8 @@ type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
 	logger           *zap.Logger
+
+	testMode bool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -90,7 +92,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthChecks()
+	if !d.testMode {
+		d.startHealthChecks()
+	}
 
 	return nil
 }
