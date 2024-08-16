@@ -62,7 +62,7 @@ func (s *service) healthCheck() {
 	// TODO: check all of the providers simultaneously using async job management for more accurate blocknumber results.
 	for _, provider := range s.Providers {
 		// get the latest block number from the current provider
-		reqStartTime := time.Now()
+		// reqStartTime := time.Now()
 		providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers)
 		// latency := time.Since(reqStartTime)
 		if err != nil {
