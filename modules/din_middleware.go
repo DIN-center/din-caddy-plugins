@@ -55,13 +55,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient(d.logger)
+	promClient := prom.NewPrometheusClient(d.logger)
+	d.PrometheusClient = promClient
 
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
 		service.logger = d.logger
+		service.PrometheusClient = promClient
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
