@@ -115,6 +115,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 func TestDinMiddlewareProvision(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
+	dinMiddleware.testMode = true
 	mockCtrl := gomock.NewController(t)
 	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
 	logger := zap.NewNop()
