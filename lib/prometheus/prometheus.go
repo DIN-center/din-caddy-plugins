@@ -6,17 +6,21 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 )
 
 // PrometheusClient is a struct that holds the prometheus client
-type PrometheusClient struct{}
+type PrometheusClient struct {
+	logger *zap.Logger
+}
 
 // NewPrometheusClient returns a new prometheus client
-func NewPrometheusClient() *PrometheusClient {
-	return &PrometheusClient{}
+func NewPrometheusClient(logger *zap.Logger) *PrometheusClient {
+	return &PrometheusClient{
+		logger: logger,
+	}
 }
 
 // prometheus metric initialization
@@ -31,9 +35,9 @@ func RegisterMetrics() {
 	DinRequestCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_http_request_count",
-			Help: "Metric for counting din http requests with service, method, provider, host_name, res_status, res_latency, health_status, and block_number labels",
+			Help: "Metric for counting the number of requests to the din http server",
 		},
-		[]string{"service", "method", "provider", "host_name", "res_status", "res_latency", "health_status", "block_number"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status"},
 	)
 
 	DinHealthCheckCount = prometheus.NewCounterVec(
@@ -48,14 +52,12 @@ func RegisterMetrics() {
 }
 
 type PromRequestMetricData struct {
-	Method       string
-	Service      string
-	Provider     string
-	HostName     string
-	ResStatus    int
-	ResLatency   time.Duration
-	HealthStatus string
-	BlockNumber  string
+	Method         string
+	Service        string
+	Provider       string
+	HostName       string
+	ResponseStatus int
+	HealthStatus   string
 }
 
 // handleRequestMetric increments prometheus metric based on request data passed in
@@ -75,11 +77,12 @@ func (p *PrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRe
 	}
 
 	service := strings.TrimPrefix(data.Service, "/")
-	latency := strconv.FormatInt(data.ResLatency.Milliseconds(), 10)
-	status := strconv.Itoa(data.ResStatus)
+	status := strconv.Itoa(data.ResponseStatus)
+
+	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("status", status), zap.String("health_status", data.HealthStatus))
 
 	// Increment prometheus metric based on request data
-	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, latency, data.HealthStatus, data.BlockNumber).Inc()
+	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus).Inc()
 }
 
 type PromLatestBlockMetricData struct {

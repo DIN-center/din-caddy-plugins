@@ -9,6 +9,7 @@ import (
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -42,6 +43,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -68,6 +70,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 500,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": 600}`),
@@ -94,6 +97,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -120,6 +124,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 20,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: nil,
@@ -146,6 +151,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 30,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: nil,
@@ -172,6 +178,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 6310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -198,6 +205,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 7310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -229,6 +237,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 5310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -263,6 +272,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 6310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -297,6 +307,7 @@ func TestHealthCheck(t *testing.T) {
 				LatestBlockNumber: 7310269,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 				PrometheusClient:  mockPrometheusClient,
+				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
 				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
@@ -315,14 +326,14 @@ func TestHealthCheck(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.service.Providers))
+			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.service.Providers))
 			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(len(tt.service.Providers))
 
 			tt.service.healthCheck()
 
 			for providerName, provider := range tt.service.Providers {
 				if provider.healthStatus != tt.want[providerName].healthStatus {
-					t.Errorf("service.healthCheck() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
+					t.Errorf("service.healthCheck() %s for %v  = %v, want %v", tt.name, providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
 			}
 		})
@@ -515,6 +526,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 }
 
 func TestEvaluateCheckedProviders(t *testing.T) {
+	logger := zap.NewNop()
 
 	tests := []struct {
 		name    string
@@ -538,6 +550,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -562,6 +575,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {
@@ -586,6 +600,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 						},
 					},
 				},
+				logger: logger,
 			},
 			want: map[string]*provider{
 				"provider1": {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/pkg/errors"
 )
 
@@ -33,7 +34,7 @@ func NewHTTPClient() *HTTPClient {
 	}
 }
 
-func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte) ([]byte, *int, error) {
+func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.IAuthClient) ([]byte, *int, error) {
 	// Send the POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
@@ -43,6 +44,11 @@ func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte)
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+	if auth != nil {
+		if err := auth.Sign(req); err != nil {
+			return nil, nil, errors.Wrap(err, "Error authenticating POST request")
+		}
 	}
 	res, err := h.httpClient.Do(req)
 	if err != nil {

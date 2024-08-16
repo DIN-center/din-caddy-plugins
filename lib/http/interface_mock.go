@@ -8,6 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	auth "github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 )
 
 // MockIHTTPClient is a mock of IHTTPClient interface.
@@ -34,9 +35,9 @@ func (m *MockIHTTPClient) EXPECT() *MockIHTTPClientMockRecorder {
 }
 
 // Post mocks base method.
-func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []byte) ([]byte, *int, error) {
+func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.IAuthClient) ([]byte, *int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Post", url, headers, payload)
+	ret := m.ctrl.Call(m, "Post", url, headers, payload, auth)
 	ret0, _ := ret[0].([]byte)
 	ret1, _ := ret[1].(*int)
 	ret2, _ := ret[2].(error)
@@ -44,7 +45,7 @@ func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []
 }
 
 // Post indicates an expected call of Post.
-func (mr *MockIHTTPClientMockRecorder) Post(url, headers, payload interface{}) *gomock.Call {
+func (mr *MockIHTTPClientMockRecorder) Post(url, headers, payload, auth interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Post", reflect.TypeOf((*MockIHTTPClient)(nil).Post), url, headers, payload)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Post", reflect.TypeOf((*MockIHTTPClient)(nil).Post), url, headers, payload, auth)
 }

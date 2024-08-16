@@ -9,6 +9,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"go.uber.org/zap"
+	// prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 )
 
 var (
@@ -22,6 +24,7 @@ var (
 
 type DinSelect struct {
 	selector reverseproxy.Selector
+	logger   *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -35,6 +38,9 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the selector for use.
 // It is called only once, when the server is starting.
 func (d *DinSelect) Provision(context caddy.Context) error {
+	d.logger = context.Logger(d)
+	d.logger.Info("Provisioning DinSelect")
+
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
 	selector.Provision(context)
 	d.selector = selector
@@ -61,9 +67,19 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
+			if provider.Auth != nil {
+				if err := provider.Auth.Sign(r); err != nil {
+					d.logger.Error("error signing request", zap.String("err", err.Error()))
+				}
+			}
+			if v := r.Header.Get("din-provider-info"); v != "" {
+				rw.Header().Set("din-provider-info", provider.host)
+			}
 			break
 		}
 	}
+
+	d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
 
 	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {

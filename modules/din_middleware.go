@@ -1,12 +1,13 @@
 package modules
 
 import (
+	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -16,6 +17,9 @@ import (
 	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
+
+	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
+	"go.uber.org/zap"
 )
 
 var (
@@ -34,6 +38,7 @@ var (
 type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
+	logger           *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -47,10 +52,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	d.logger = context.Logger(d)
+	// Initialize the prometheus client on the din middleware object
+	d.PrometheusClient = prom.NewPrometheusClient(d.logger)
+
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
+		service.logger = d.logger
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -60,8 +70,19 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			}
 			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
 			provider.path = url.Path
+			provider.host = url.Host
+			provider.httpClient = httpClient
+			if provider.Auth != nil {
+				if err := provider.Auth.Start(context.Logger(d)); err != nil {
+					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
+				}
+			}
+			provider.logger = d.logger
+			d.logger.Debug("Provider provisioned", zap.String("provider", provider.HttpUrl), zap.String("host", provider.host), zap.Int("priority", provider.Priority), zap.Any("headers", provider.Headers), zap.Any("auth", provider.Auth), zap.Any("upstream", provider.upstream), zap.Any("path", provider.path))
 		}
 	}
+
+	d.logger.Info("Din middleware provisioned")
 
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
@@ -95,7 +116,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
-	reqStartTime := time.Now()
+	// TODO: create a prometheus metric for the request latency
+	// reqStartTime := time.Now()
 
 	// Serve the request
 	err := next.ServeHTTP(rww, r)
@@ -103,23 +125,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
-	latency := time.Since(reqStartTime)
+	// latency := time.Since(reqStartTime)
 
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
-	}
-
-	var blockNumber int64
-	checkProviderValues, _ := service.getCheckedProviderHCList(provider)
-	// if !ok {
-	// TODO: determine log level for this message
-	// fmt.Println("Provider not found in checked providers list")
-	// }
-	if len(checkProviderValues) > 0 {
-		blockNumber = checkProviderValues[0].blockNumber
-	} else {
-		blockNumber = service.LatestBlockNumber
 	}
 
 	healthStatus := service.Providers[provider].healthStatus.String()
@@ -135,14 +145,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Increment prometheus metric based on request data
+	// debug logging of metric is found in here.
 	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
-		Service:      r.RequestURI,
-		Provider:     provider,
-		HostName:     r.Host,
-		ResStatus:    rww.statusCode,
-		ResLatency:   latency,
-		HealthStatus: healthStatus,
-		BlockNumber:  strconv.FormatInt(blockNumber, 10),
+		Service:        r.RequestURI,
+		Provider:       provider,
+		HostName:       r.Host,
+		ResponseStatus: rww.statusCode,
+		HealthStatus:   healthStatus,
 	})
 
 	return nil
@@ -151,7 +160,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	// Initialize the prometheus client on the din middleware object
-	promClient := prom.NewPrometheusClient()
+	promClient := prom.NewPrometheusClient(d.logger)
 
 	var err error
 	if d.Services == nil {
@@ -171,8 +180,8 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					BlockLagLimit:    DefaultBlockLagLimit,
 					CheckedProviders: make(map[string][]healthCheckEntry),
 					PrometheusClient: promClient,
+					Providers:        make(map[string]*provider),
 				}
-
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -185,15 +194,71 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
-							providerObj := &provider{
-								Headers: make(map[string]string),
-							}
 							providerObj, err := NewProvider(dispenser.Val())
 							if err != nil {
 								return err
 							}
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
+								case "auth":
+									auth := &siwe.SIWEClientAuth{
+										ProviderURL:  strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
+										SessionCount: 16,
+									}
+									for dispenser.NextBlock(nesting + 3) {
+										switch dispenser.Val() {
+										case "type":
+											dispenser.NextBlock(nesting + 3)
+											if dispenser.Val() != "siwe" {
+												return fmt.Errorf("unknown auth type")
+											}
+										case "url":
+											dispenser.NextBlock(nesting + 3)
+											auth.ProviderURL = dispenser.Val()
+										case "sessions":
+											dispenser.NextBlock(nesting + 3)
+											auth.SessionCount, err = strconv.Atoi(dispenser.Val())
+											if err != nil {
+												return err
+											}
+										case "signer":
+											var key []byte
+											for dispenser.NextBlock(nesting + 4) {
+												switch dispenser.Val() {
+												case "secret_file":
+													dispenser.NextBlock(nesting + 4)
+													hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
+													if err != nil {
+														return dispenser.Errf("failed to read secret file: %v", err)
+													}
+													hexKey := string(hexKeyBytes)
+													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
+													key, err = hex.DecodeString(hexKey)
+													if err != nil {
+														return err
+													}
+												case "secret":
+													dispenser.NextBlock(nesting + 4)
+													hexKey := dispenser.Val()
+													hexKey = strings.TrimPrefix(hexKey, "0x")
+													key, err = hex.DecodeString(hexKey)
+													if err != nil {
+														return err
+													}
+												}
+											}
+											auth.Signer = &siwe.SigningConfig{
+												PrivateKey: key,
+											}
+											if err := auth.Signer.GenPrivKey(); err != nil {
+												return err
+											}
+										}
+									}
+									if auth.Signer == nil {
+										return fmt.Errorf("signer must be set")
+									}
+									providerObj.Auth = auth
 								case "headers":
 									for dispenser.NextBlock(nesting + 3) {
 										k := dispenser.Val()
@@ -212,14 +277,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									}
 								}
 							}
-							if d.Services[serviceName].Providers == nil {
-								d.Services[serviceName].Providers = make(map[string]*provider)
-							}
-
 							d.Services[serviceName].Providers[providerObj.host] = providerObj
-						}
-						if len(d.Services[serviceName].Providers) == 0 {
-							return dispenser.Errf("expected at least one provider for service %s", serviceName)
 						}
 					case "healthcheck_method":
 						dispenser.Next()
@@ -247,6 +305,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
 				}
+				if len(d.Services[serviceName].Providers) == 0 {
+					return dispenser.Errf("expected at least one provider for service %s", serviceName)
+				}
 			}
 		}
 	}
@@ -255,7 +316,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() {
+	d.logger.Info("Starting healthchecks")
 	for _, service := range d.Services {
+		d.logger.Info("Starting healthcheck for service", zap.String("service", service.Name))
 		service.startHealthcheck()
 	}
 }
