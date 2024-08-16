@@ -134,5 +134,5 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("status", status))
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(service, data.Provider, status).Inc()
+	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus).Inc()
 }

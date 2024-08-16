@@ -162,9 +162,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
-	// Initialize the prometheus client on the din middleware object
-	promClient := prom.NewPrometheusClient(d.logger)
-
 	var err error
 	if d.Services == nil {
 		d.Services = make(map[string]*service)
@@ -174,17 +171,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = &service{
-					Name: serviceName,
-					// Default health check values, to be overridden if specified in the Caddyfile
-					HCMethod:         DefaultHCMethod,
-					HCThreshold:      DefaultHCThreshold,
-					HCInterval:       DefaultHCInterval,
-					BlockLagLimit:    DefaultBlockLagLimit,
-					CheckedProviders: make(map[string][]healthCheckEntry),
-					PrometheusClient: promClient,
-					Providers:        make(map[string]*provider),
-				}
+				d.Services[serviceName] = NewService(serviceName)
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
