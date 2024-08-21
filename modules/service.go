@@ -89,7 +89,7 @@ func (s *service) healthCheck() {
 				// if there is an error getting the latest block number, mark the provider as a failure
 				s.logger.Debug("Error getting latest block number for provider", zap.String("provider", serviceName), zap.Error(err))
 				provider.markPingFailure(s.HCThreshold)
-				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
 			}
 			blockTime = time.Now()
@@ -105,7 +105,7 @@ func (s *service) healthCheck() {
 					s.logger.Warn("Provider returned an error status code", zap.String("provider", serviceName), zap.Int("status_code", statusCode))
 					provider.markPingFailure(s.HCThreshold)
 				}
-				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
 			} else {
 				provider.markPingSuccess(s.HCThreshold)
@@ -128,7 +128,7 @@ func (s *service) healthCheck() {
 			}
 
 			// TODO: create a check based on time window of a provider's latest block number
-			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
 			// add the current provider to the checked providers map
 			s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
@@ -138,12 +138,13 @@ func (s *service) healthCheck() {
 	wg.Wait()
 }
 
-func (s *service) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string) {
+func (s *service) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
 	s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
 		Service:        s.Name,
 		Provider:       providerName,
 		ResponseStatus: statusCode,
 		HealthStatus:   healthStatus,
+		BlockNumber:    providerBlockNumber,
 	})
 }
 

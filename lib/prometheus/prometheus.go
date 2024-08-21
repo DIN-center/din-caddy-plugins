@@ -30,6 +30,7 @@ var (
 	DinRequestCount                *prometheus.CounterVec
 	DinRequestDurationMilliseconds *prometheus.HistogramVec
 	DinRequestBodyBytes            *prometheus.HistogramVec
+	DinProviderBlockNumber         *prometheus.GaugeVec
 
 	// Din Health Check Metrics
 	DinHealthCheckCount *prometheus.CounterVec
@@ -63,6 +64,14 @@ func RegisterMetrics() {
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status"},
 	)
 
+	DinProviderBlockNumber = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "din_http_provider_block_number",
+			Help: "Metric for measuring the latest block number of the request",
+		},
+		[]string{"service", "provider"},
+	)
+
 	// Register health check count metric for din health checks
 	DinHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -72,7 +81,7 @@ func RegisterMetrics() {
 		[]string{"service", "provider", "response_status", "health_status"},
 	)
 
-	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes)
+	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinProviderBlockNumber)
 }
 
 type PromRequestMetricData struct {
@@ -124,6 +133,7 @@ type PromLatestBlockMetricData struct {
 	Provider       string
 	ResponseStatus int
 	HealthStatus   string
+	BlockNumber    int64
 }
 
 // handleLatestBlockMetric increments prometheus metric based on latest block number health check data
@@ -135,4 +145,7 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 
 	// Increment prometheus metric based on request data
 	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus).Inc()
+
+	// Set the latest block number for the provider
+	DinProviderBlockNumber.WithLabelValues(service, data.Provider).Set(float64(data.BlockNumber))
 }
