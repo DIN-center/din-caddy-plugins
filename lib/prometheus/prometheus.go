@@ -30,10 +30,10 @@ var (
 	DinRequestCount                *prometheus.CounterVec
 	DinRequestDurationMilliseconds *prometheus.HistogramVec
 	DinRequestBodyBytes            *prometheus.HistogramVec
-	DinProviderBlockNumber         *prometheus.GaugeVec
 
 	// Din Health Check Metrics
-	DinHealthCheckCount *prometheus.CounterVec
+	DinHealthCheckCount    *prometheus.CounterVec
+	DinProviderBlockNumber *prometheus.GaugeVec
 )
 
 // RegisterMetrics registers the prometheus metrics
