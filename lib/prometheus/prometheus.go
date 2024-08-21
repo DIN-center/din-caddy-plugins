@@ -101,7 +101,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	}
 	err := json.Unmarshal(reqBodyBytes, &requestBody)
 	if err != nil {
-		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("status", http.StatusBadRequest))
+		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("response_status", http.StatusBadRequest))
 	}
 	var method string
 	if requestBody.Method != "" {
@@ -115,7 +115,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 
 	reqBodyByteSize := len(reqBodyBytes)
 
-	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize))
+	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize))
 
 	// Increment prometheus counter metric based on request data
 	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus).Inc()
@@ -140,7 +140,7 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	service := strings.TrimPrefix(data.Service, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
-	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("status", status), zap.String("health_status", data.HealthStatus))
+	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus))
 
 	// Increment prometheus metric based on request data
 	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus).Inc()
