@@ -41,6 +41,8 @@ type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
 	logger           *zap.Logger
+
+	testMode bool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -56,13 +58,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient(d.logger)
+	promClient := prom.NewPrometheusClient(d.logger)
+	d.PrometheusClient = promClient
 
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
 		service.logger = d.logger
+		service.PrometheusClient = promClient
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -89,7 +93,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthChecks()
+	if !d.testMode {
+		d.startHealthChecks()
+	}
 
 	return nil
 }
@@ -200,17 +206,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = &service{
-					Name: serviceName,
-					// Default health check values, to be overridden if specified in the Caddyfile
-					HCMethod:            DefaultHCMethod,
-					HCThreshold:         DefaultHCThreshold,
-					HCInterval:          DefaultHCInterval,
-					BlockLagLimit:       DefaultBlockLagLimit,
-					RequestAttemptCount: DefaultRequestAttemptCount,
-					CheckedProviders:    make(map[string][]healthCheckEntry),
-					Providers:           make(map[string]*provider),
-				}
+				d.Services[serviceName] = NewService(serviceName)
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
