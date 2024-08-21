@@ -87,7 +87,7 @@ func (s *service) healthCheck() {
 			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				s.logger.Debug("Error getting latest block number for provider", zap.String("provider", serviceName), zap.Error(err))
+				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", serviceName), zap.Error(err))
 				provider.markPingFailure(s.HCThreshold)
 				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
@@ -123,7 +123,7 @@ func (s *service) healthCheck() {
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-				s.logger.Debug("Provider is lagging behind", zap.String("provider", serviceName), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
+				s.logger.Warn("Provider is lagging behind", zap.String("provider", serviceName), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
 				provider.markWarning()
 			}
 
