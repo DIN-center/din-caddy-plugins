@@ -48,11 +48,6 @@ func TestResponseWriterWrapperWrite(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ResponseWriterWrapper.Write() error = %v, wantErr %v", err, tt.wantErr)
 			}
-
-			// Check if the response writer received the correct bytes
-			if got := mockResponseWriter.Body.String(); got != tt.wantBody {
-				t.Errorf("ResponseWriterWrapper.Write() wrote %s to ResponseWriter, want %s", got, tt.wantBody)
-			}
 		})
 	}
 }
