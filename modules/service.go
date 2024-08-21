@@ -35,6 +35,9 @@ type service struct {
 	BlockLagLimit    int64                         `json:"healthcheck_blocklag_limit"`
 }
 
+// NewService creates a new service with the given name
+// Only put values in the struct definition that are constant
+// Don't kick off any Background processes here
 func NewService(name string) *service {
 	return &service{
 		Name: name,
