@@ -2,6 +2,7 @@ package prometheus
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -24,6 +25,7 @@ func TestHandleRequestMetric(t *testing.T) {
 	tests := []struct {
 		name           string
 		reqBodyBytes   []byte
+		duration       time.Duration
 		data           *PromRequestMetricData
 		expectedLabels map[string]string
 		expectedValue  float64
@@ -31,6 +33,7 @@ func TestHandleRequestMetric(t *testing.T) {
 		{
 			name:         "Valid JSON",
 			reqBodyBytes: []byte(`{"method": "eth_getBlockByNumber"}`),
+			duration:     1 * time.Second,
 			data: &PromRequestMetricData{
 				Method:         "POST",
 				Service:        "/ethereum",
@@ -52,6 +55,7 @@ func TestHandleRequestMetric(t *testing.T) {
 		{
 			name:         "Invalid JSON",
 			reqBodyBytes: []byte(`{"method": invalid}`),
+			duration:     1 * time.Second,
 			data: &PromRequestMetricData{
 				Method:         "POST",
 				Service:        "/ethereum",
@@ -75,7 +79,7 @@ func TestHandleRequestMetric(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Call the function
-			client.HandleRequestMetric(tt.reqBodyBytes, tt.data)
+			client.HandleRequestMetrics(tt.data, tt.reqBodyBytes, tt.duration)
 
 			// Use testutil to check if the metric exists with the expected labels and value
 			_, err := registry.Gather()

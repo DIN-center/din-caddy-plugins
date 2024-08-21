@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -93,6 +94,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
+	// Skips if test mode is enabled.
 	if !d.testMode {
 		d.startHealthChecks()
 	}
@@ -124,7 +126,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
 	// TODO: create a prometheus metric for the request latency
-	// reqStartTime := time.Now()
+	reqStartTime := time.Now()
 
 	var err error
 	// Retry the request if it fails up to the max attempt request count
@@ -153,6 +155,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
+	duration := time.Since(reqStartTime)
 	// Write the response body and status to the original response writer
 	// This is done after the request is attempted multiple times if needed
 	if rww != nil {
@@ -162,8 +165,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-
-	// latency := time.Since(reqStartTime)
 
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
@@ -184,13 +185,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	// debug logging of metric is found in here.
-	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
+	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Service:        r.RequestURI,
 		Provider:       provider,
 		HostName:       r.Host,
 		ResponseStatus: rww.statusCode,
 		HealthStatus:   healthStatus,
-	})
+	}, reqBody, duration)
 
 	return nil
 }

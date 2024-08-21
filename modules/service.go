@@ -86,15 +86,15 @@ func (s *service) healthCheck() {
 	for name, currentProvider := range s.Providers {
 		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
 		wg.Add(1) // Increment the WaitGroup counter
-		go func(serviceName string, provider *provider) {
+		go func(providerName string, provider *provider) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
 			// get the latest block number from the current provider
 			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				s.logger.Debug("Error getting latest block number for provider", zap.String("provider", serviceName), zap.Error(err))
+				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("service", s.Name), zap.Error(err))
 				provider.markPingFailure(s.HCThreshold)
-				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
 			}
 			blockTime = time.Now()
@@ -103,14 +103,14 @@ func (s *service) healthCheck() {
 			if statusCode > 399 {
 				if statusCode == 429 {
 					// if the status code is 429, mark the provider as a warning
-					s.logger.Warn("Provider is rate limited", zap.String("provider", serviceName))
+					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("service", s.Name))
 					provider.markPingWarning()
 				} else {
 					// if the status code is greater than 399, mark the provider as a failure
-					s.logger.Warn("Provider returned an error status code", zap.String("provider", serviceName), zap.Int("status_code", statusCode))
+					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int("status_code", statusCode))
 					provider.markPingFailure(s.HCThreshold)
 				}
-				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
 			} else {
 				provider.markPingSuccess(s.HCThreshold)
@@ -128,12 +128,12 @@ func (s *service) healthCheck() {
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-				s.logger.Debug("Provider is lagging behind", zap.String("provider", serviceName), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
+				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
 				provider.markWarning()
 			}
 
 			// TODO: create a check based on time window of a provider's latest block number
-			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String())
+			s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
 			// add the current provider to the checked providers map
 			s.addHealthCheckToCheckedProviderList(provider.upstream.Dial, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
@@ -143,12 +143,13 @@ func (s *service) healthCheck() {
 	wg.Wait()
 }
 
-func (s *service) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string) {
+func (s *service) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
 	s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
 		Service:        s.Name,
 		Provider:       providerName,
 		ResponseStatus: statusCode,
 		HealthStatus:   healthStatus,
+		BlockNumber:    providerBlockNumber,
 	})
 }
 

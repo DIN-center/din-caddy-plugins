@@ -1,6 +1,8 @@
 package prometheus
 
+import "time"
+
 type IPrometheusClient interface {
-	HandleRequestMetric(reqBodyBytes []byte, data *PromRequestMetricData)
+	HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration)
 	HandleLatestBlockMetric(data *PromLatestBlockMetricData)
 }

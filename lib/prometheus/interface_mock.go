@@ -6,6 +6,7 @@ package prometheus
 
 import (
 	reflect "reflect"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 )
@@ -45,14 +46,14 @@ func (mr *MockIPrometheusClientMockRecorder) HandleLatestBlockMetric(data interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleLatestBlockMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleLatestBlockMetric), data)
 }
 
-// HandleRequestMetric mocks base method.
-func (m *MockIPrometheusClient) HandleRequestMetric(reqBodyBytes []byte, data *PromRequestMetricData) {
+// HandleRequestMetrics mocks base method.
+func (m *MockIPrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "HandleRequestMetric", reqBodyBytes, data)
+	m.ctrl.Call(m, "HandleRequestMetrics", data, reqBodyBytes, duration)
 }
 
-// HandleRequestMetric indicates an expected call of HandleRequestMetric.
-func (mr *MockIPrometheusClientMockRecorder) HandleRequestMetric(reqBodyBytes, data interface{}) *gomock.Call {
+// HandleRequestMetrics indicates an expected call of HandleRequestMetrics.
+func (mr *MockIPrometheusClientMockRecorder) HandleRequestMetrics(data, reqBodyBytes, duration interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleRequestMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleRequestMetric), reqBodyBytes, data)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleRequestMetrics", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleRequestMetrics), data, reqBodyBytes, duration)
 }
