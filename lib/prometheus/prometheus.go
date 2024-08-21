@@ -2,7 +2,6 @@ package prometheus
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -102,7 +101,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	}
 	err := json.Unmarshal(reqBodyBytes, &requestBody)
 	if err != nil {
-		fmt.Printf("Error decoding request body: %v", http.StatusBadRequest)
+		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("status", http.StatusBadRequest))
 	}
 	var method string
 	if requestBody.Method != "" {
