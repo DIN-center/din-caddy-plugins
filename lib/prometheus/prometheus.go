@@ -2,9 +2,7 @@ package prometheus
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +18,10 @@ type PrometheusClient struct {
 }
 
 // NewPrometheusClient returns a new prometheus client
-func NewPrometheusClient(logger *zap.Logger) *PrometheusClient {
+func NewPrometheusClient(logger *zap.Logger, machineId string) *PrometheusClient {
 	return &PrometheusClient{
 		logger:    logger,
-		machineID: getMachineId(),
+		machineID: machineId,
 	}
 }
 
@@ -105,7 +103,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	}
 	err := json.Unmarshal(reqBodyBytes, &requestBody)
 	if err != nil {
-		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("response_status", http.StatusBadRequest))
+		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("response_status", http.StatusBadRequest), zap.String("machine_id", p.machineID))
 	}
 	var method string
 	if requestBody.Method != "" {
@@ -151,16 +149,4 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 
 	// Set the latest block number for the provider
 	DinProviderBlockNumber.WithLabelValues(service, data.Provider, p.machineID).Set(float64(data.BlockNumber))
-}
-
-// Util Functions
-
-// getMachineId returns a unique string for the current running process
-func getMachineId() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "UNKNOWN"
-	}
-	currentPid := os.Getpid()
-	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }

@@ -17,7 +17,7 @@ func TestMain(m *testing.M) {
 func TestHandleRequestMetric(t *testing.T) {
 
 	// Initialize the prometheus client
-	client := NewPrometheusClient(zap.NewNop())
+	client := NewPrometheusClient(zap.NewNop(), "test-machine-id")
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()
@@ -106,7 +106,7 @@ func TestHandleRequestMetric(t *testing.T) {
 
 func TestHandleLatestBlockMetric(t *testing.T) {
 	// Initialize the prometheus client
-	client := NewPrometheusClient(zap.NewNop())
+	client := NewPrometheusClient(zap.NewNop(), "test-machine-id")
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()

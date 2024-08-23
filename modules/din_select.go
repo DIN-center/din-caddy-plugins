@@ -39,7 +39,6 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
-	d.logger.Info("Provisioning DinSelect")
 
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
 	selector.Provision(context)
@@ -69,7 +68,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			}
 			if provider.Auth != nil {
 				if err := provider.Auth.Sign(r); err != nil {
-					d.logger.Error("error signing request", zap.String("err", err.Error()))
+					d.logger.Error("error signing request", zap.String("err", err.Error()), zap.String("machine_id", getMachineId()))
 				}
 			}
 			if v := r.Header.Get("din-provider-info"); v != "" {

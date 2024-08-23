@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,7 @@ type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
 	logger           *zap.Logger
+	machineID        string
 
 	testMode bool
 }
@@ -57,9 +59,10 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	d.machineID = getMachineId()
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
-	promClient := prom.NewPrometheusClient(d.logger)
+	promClient := prom.NewPrometheusClient(d.logger, d.machineID)
 	d.PrometheusClient = promClient
 
 	// Initialize the HTTP client for each service and provider
@@ -68,6 +71,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		service.HTTPClient = httpClient
 		service.logger = d.logger
 		service.PrometheusClient = promClient
+		service.machineID = d.machineID
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -81,7 +85,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			provider.httpClient = httpClient
 			if provider.Auth != nil {
 				if err := provider.Auth.Start(context.Logger(d)); err != nil {
-					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
+					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
 				}
 			}
 			provider.logger = d.logger
@@ -89,7 +93,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		}
 	}
 
-	d.logger.Info("Din middleware provisioned")
+	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
 
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
@@ -349,9 +353,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 
 // StartHealthchecks starts a background goroutine to monitor all of the services' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() {
-	d.logger.Info("Starting healthchecks")
+	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
 	for _, service := range d.Services {
-		d.logger.Info("Starting healthcheck for service", zap.String("service", service.Name))
+		d.logger.Info("Starting healthcheck for service", zap.String("service", service.Name), zap.String("machine_id", d.machineID))
 		service.startHealthcheck()
 	}
 }
@@ -369,4 +373,14 @@ func (d DinMiddleware) closeAll() {
 	for _, service := range d.Services {
 		service.close()
 	}
+}
+
+// getMachineId returns a unique string for the current running process
+func getMachineId() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	currentPid := os.Getpid()
+	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }

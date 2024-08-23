@@ -24,6 +24,7 @@ type service struct {
 	HTTPClient        din_http.IHTTPClient
 	PrometheusClient  prom.IPrometheusClient
 	logger            *zap.Logger
+	machineID         string
 
 	mu sync.RWMutex
 
@@ -92,7 +93,7 @@ func (s *service) healthCheck() {
 			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("service", s.Name), zap.Error(err))
+				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("service", s.Name), zap.Error(err), zap.String("machine_id", s.machineID))
 				provider.markPingFailure(s.HCThreshold)
 				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
@@ -103,11 +104,11 @@ func (s *service) healthCheck() {
 			if statusCode > 399 {
 				if statusCode == 429 {
 					// if the status code is 429, mark the provider as a warning
-					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("service", s.Name))
+					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("service", s.Name), zap.String("machine_id", s.machineID))
 					provider.markPingWarning()
 				} else {
 					// if the status code is greater than 399, mark the provider as a failure
-					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int("status_code", statusCode))
+					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int("status_code", statusCode), zap.String("machine_id", s.machineID))
 					provider.markPingFailure(s.HCThreshold)
 				}
 				s.sendLatestBlockMetric(provider.upstream.Dial, statusCode, provider.healthStatus.String(), providerBlockNumber)
@@ -128,7 +129,7 @@ func (s *service) healthCheck() {
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
 				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber))
+				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber), zap.String("machine_id", s.machineID))
 				provider.markWarning()
 			}
 
