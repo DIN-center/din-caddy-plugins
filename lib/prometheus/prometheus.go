@@ -2,7 +2,9 @@ package prometheus
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,13 +15,15 @@ import (
 
 // PrometheusClient is a struct that holds the prometheus client
 type PrometheusClient struct {
-	logger *zap.Logger
+	logger    *zap.Logger
+	machineID string
 }
 
 // NewPrometheusClient returns a new prometheus client
 func NewPrometheusClient(logger *zap.Logger) *PrometheusClient {
 	return &PrometheusClient{
-		logger: logger,
+		logger:    logger,
+		machineID: getMachineId(),
 	}
 }
 
@@ -43,7 +47,7 @@ func RegisterMetrics() {
 			Name: "din_http_request_count",
 			Help: "Metric for counting the number of requests to the din http server",
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id"},
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -51,7 +55,7 @@ func RegisterMetrics() {
 			Help:    "Metric for measuring the duration of requests to the din http server",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id"},
 	)
 
 	DinRequestBodyBytes = prometheus.NewHistogramVec(
@@ -60,7 +64,7 @@ func RegisterMetrics() {
 			Help:    "Metric for measuring the size of the request body in bytes",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id"},
 	)
 
 	DinProviderBlockNumber = prometheus.NewGaugeVec(
@@ -68,7 +72,7 @@ func RegisterMetrics() {
 			Name: "din_http_provider_block_number",
 			Help: "Metric for measuring the latest block number of the request",
 		},
-		[]string{"service", "provider"},
+		[]string{"service", "provider", "machine_id"},
 	)
 
 	// Register health check count metric for din health checks
@@ -77,7 +81,7 @@ func RegisterMetrics() {
 			Name: "din_health_check_count",
 			Help: "Metric for counting din health checks with service, provider, response_status and health_status",
 		},
-		[]string{"service", "provider", "response_status", "health_status"},
+		[]string{"service", "provider", "response_status", "health_status", "machine_id"},
 	)
 
 	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinProviderBlockNumber)
@@ -115,16 +119,16 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 
 	reqBodyByteSize := len(reqBodyBytes)
 
-	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize))
+	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus counter metric based on request data
-	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus).Inc()
+	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus).Observe(float64(durationMS))
+	DinRequestDurationMilliseconds.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
 
 	// Observe prometheus histogram based on request body size and data
-	DinRequestBodyBytes.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus).Observe(float64(reqBodyByteSize))
+	DinRequestBodyBytes.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
 }
 
 type PromLatestBlockMetricData struct {
@@ -140,11 +144,23 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	service := strings.TrimPrefix(data.Service, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
-	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus))
+	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus).Inc()
+	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus, p.machineID).Inc()
 
 	// Set the latest block number for the provider
-	DinProviderBlockNumber.WithLabelValues(service, data.Provider).Set(float64(data.BlockNumber))
+	DinProviderBlockNumber.WithLabelValues(service, data.Provider, p.machineID).Set(float64(data.BlockNumber))
+}
+
+// Util Functions
+
+// getMachineId returns a unique string for the current running process
+func getMachineId() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	currentPid := os.Getpid()
+	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
