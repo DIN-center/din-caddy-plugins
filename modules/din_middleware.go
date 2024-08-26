@@ -1,13 +1,16 @@
 package modules
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -39,6 +42,8 @@ type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
 	logger           *zap.Logger
+
+	testMode bool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -54,13 +59,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
-	d.PrometheusClient = prom.NewPrometheusClient(d.logger)
+	promClient := prom.NewPrometheusClient(d.logger)
+	d.PrometheusClient = promClient
 
 	// Initialize the HTTP client for each service and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, service := range d.Services {
 		service.HTTPClient = httpClient
 		service.logger = d.logger
+		service.PrometheusClient = promClient
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range service.Providers {
@@ -87,7 +94,10 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the service object,
 	// and updates the provider's health status accordingly.
-	d.startHealthChecks()
+	// Skips if test mode is enabled.
+	if !d.testMode {
+		d.startHealthChecks()
+	}
 
 	return nil
 }
@@ -110,22 +120,51 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Create a new response writer wrapper to capture the response body and status code
-	rww := NewResponseWriterWrapper(rw)
+	var rww *ResponseWriterWrapper
 
-	// Set the providers in the context for the selector to use
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
 	// TODO: create a prometheus metric for the request latency
-	// reqStartTime := time.Now()
+	reqStartTime := time.Now()
 
-	// Serve the request
-	err := next.ServeHTTP(rww, r)
+	var err error
+	// Retry the request if it fails up to the max attempt request count
+	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
+		rww = NewResponseWriterWrapper(rw)
+
+		// If the request fails, reset the request body to the original request body
+		if attempt > 0 {
+			var reqBody []byte
+			if v, ok := repl.Get(RequestBodyKey); ok {
+				reqBody = v.([]byte)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+		}
+
+		// Serve the request
+		err = next.ServeHTTP(rww, r)
+		if err == nil && rww.statusCode == http.StatusOK {
+			// If the request was successful, break out of the loop
+			break
+		}
+		// If the first attempt fails, log the failure and retry
+		d.logger.Debug("Retrying request", zap.String("service", servicePath), zap.Int("attempt", attempt), zap.Int("status", rww.statusCode))
+	}
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
-	// latency := time.Since(reqStartTime)
+	duration := time.Since(reqStartTime)
+	// Write the response body and status to the original response writer
+	// This is done after the request is attempted multiple times if needed
+	if rww != nil {
+		rww.ResponseWriter.WriteHeader(rww.statusCode)
+		_, err = rw.Write(rww.body.Bytes())
+		if err != nil {
+			return errors.Wrap(err, "Error writing response body")
+		}
+	}
 
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
@@ -146,13 +185,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Increment prometheus metric based on request data
 	// debug logging of metric is found in here.
-	d.PrometheusClient.HandleRequestMetric(reqBody, &prom.PromRequestMetricData{
+	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Service:        r.RequestURI,
 		Provider:       provider,
 		HostName:       r.Host,
 		ResponseStatus: rww.statusCode,
 		HealthStatus:   healthStatus,
-	})
+	}, reqBody, duration)
 
 	return nil
 }
@@ -296,6 +335,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return err
 						}
 						d.Services[serviceName].MaxRequestPayloadSizeKB = int64(size)
+					case "request_attempt_count":
+						dispenser.Next()
+						requestAttemptCount, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return err
+						}
+						d.Services[serviceName].RequestAttemptCount = requestAttemptCount
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
