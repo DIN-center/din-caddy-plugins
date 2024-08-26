@@ -1,38 +1,38 @@
 # yamllint disable rule:line-length rule:comments-indentation rule:comments
 ---
-name: Coverage Tests
-
-'on':
-  pull_request:
-
-jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    env:
-      GOPRIVATE: github.com/openrelayxyz
-      MIN_COVER: 66
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          cache: true
-          cache-dependency-path: go.sum
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Test Build
-        run: |
-          go mod tidy
-
-      - name: Package Unit Tests
-        run: |
-          go test -count=1 -covermode=count -coverprofile=coverage.out ./...
-          go tool cover -func coverage.out
-          echo "PER_COVER=`go tool cover -func coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}'`" >> $GITHUB_ENV
-
-      # TODO: Uncomment this block to enforce minimum coverage, not enough tests yet
-      # - name: Package Low Coverage
-      #   if: ${{ env.PER_COVER < env.MIN_COVER }}
-      #   run: exit(1)
+    name: Coverage Tests
+    
+    'on':
+      pull_request:
+    
+    jobs:
+      unit-tests:
+        runs-on: ubuntu-latest
+        env:
+          GOPRIVATE: github.com/openrelayxyz
+          MIN_COVER: 66
+        steps:
+          - uses: actions/checkout@v3
+    
+          - name: Set up Go
+            uses: actions/setup-go@v4
+            with:
+              cache: true
+              cache-dependency-path: go.sum
+              go-version-file: go.mod
+              check-latest: true
+    
+          - name: Test Build
+            run: |
+              go mod tidy
+    
+          - name: Package Unit Tests
+            run: |
+              go test -count=1 -covermode=count -coverprofile=coverage.out ./...
+              go tool cover -func coverage.out
+              echo "PER_COVER=`go tool cover -func coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}'`" >> $GITHUB_ENV
+    
+          # TODO: Uncomment this block to enforce minimum coverage, not enough tests yet
+          # - name: Package Low Coverage
+          #   if: ${{ env.PER_COVER < env.MIN_COVER }}
+          #   run: exit(1)

@@ -1,0 +1,35 @@
+# Caddyfile for Din e2e testing
+:8000 {
+	route /* {
+		# middleware declaration
+		din {
+			# middleware configurtion data, read by DinMiddleware.UnmarshalCaddyfile()
+			services {
+				eth {
+					providers {
+						https://eth.llamarpc.com:443 {
+							priority 0
+						}
+						https://ethereum-rpc.publicnode.com:443 {
+							priority 0
+						}
+						https://eth.rpc.blxrbdn.com:443 {
+							priority 0
+						}
+					}
+				}
+			}
+		}
+		# din reverse proxy directive configuration
+		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+		reverse_proxy {
+			lb_policy din_reverse_proxy_policy
+			transport http {
+				tls
+				keepalive 10s
+			}
+			dynamic din_reverse_proxy_policy
+			header_up Host {upstream_hostport}
+		}
+	}
+}
