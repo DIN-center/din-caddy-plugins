@@ -89,7 +89,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 				}
 			}
 			provider.logger = d.logger
-			d.logger.Debug("Provider provisioned", zap.String("provider", provider.HttpUrl), zap.String("host", provider.host), zap.Int("priority", provider.Priority), zap.Any("headers", provider.Headers), zap.Any("auth", provider.Auth), zap.Any("upstream", provider.upstream), zap.Any("path", provider.path))
+			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 		}
 	}
 
