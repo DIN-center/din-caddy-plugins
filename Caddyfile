@@ -8,6 +8,16 @@
 	}
 	# metrics port
 	admin :2019
+	# logging configuration
+	# https://caddyserver.com/docs/caddyfile/directives/log#file
+	log {
+		output file caddy.log {
+			format json
+			roll_size 100mb
+			roll_keep 2
+			roll_keep_for 3d
+		}
+	}
 }
 # caddy server main port
 :8000 {

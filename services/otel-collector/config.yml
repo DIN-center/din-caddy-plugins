@@ -7,7 +7,7 @@ receivers:
         - job_name: 'din-caddy-metrics-collector'
           scrape_interval: 60s #default 60s
           static_configs:
-            - targets: ['din-caddy:2019'] ##TODO: Needs to be updated with the actual docker container name
+            - targets: ['din-caddy:2019']
   otlp:
     # https://github.com/open-telemetry/opentelemetry-collector/tree/main/receiver/otlpreceiver
     protocols:
@@ -17,10 +17,20 @@ receivers:
           allowed_origins:
             - "http://*"
             - "https://*"
+  filelog:
+    include: [/srv/caddy.log]
+    start_at: beginning # This ensures that the collector starts reading from the beginning of the log file
+    operators:
+      - type: json_parser
+        id: caddy_log_parser
 
 processors:
   batch:
     # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
 
 exporters:
   otlp:
@@ -38,6 +48,10 @@ service:
     metrics:
       receivers: [prometheus]
       processors: [batch]
+      exporters: [otlp]
+    logs:
+      receivers: [filelog]
+      processors: [memory_limiter, batch]
       exporters: [otlp]
   telemetry:
     metrics:
