@@ -14,7 +14,7 @@
 		output file caddy.log {
 			format json
 			roll_size 100mb
-			roll_keep 1
+			roll_keep 2
 			roll_keep_for 3d
 		}
 	}
