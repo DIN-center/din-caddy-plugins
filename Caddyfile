@@ -15,7 +15,7 @@
 			format json
 			roll_size 100mb
 			roll_keep 2
-			roll_keep_for 1h
+			roll_keep_for 3d
 		}
 	}
 }
