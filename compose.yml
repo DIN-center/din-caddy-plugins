@@ -11,7 +11,7 @@ services:
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
       - ./caddy-data:/srv
-    command: /bin/sh -c "chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile"
+    command: /bin/sh -c "touch /srv/caddy.log && chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile"
     environment:
       - OTEL_SERVICE_NAME=din-caddy
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
