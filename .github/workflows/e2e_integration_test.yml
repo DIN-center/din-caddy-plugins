@@ -20,10 +20,6 @@ jobs:
                 export GOBIN=$HOME/go/bin
                 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
-            - name: Build Caddy with xcaddy
-              run: |
-                $HOME/go/bin/xcaddy build
-
             - name: Use Custom Caddyfile and Run Caddy
               run: |
                 $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
