@@ -110,7 +110,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 // It checks if the service path is defined in the services map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
-
 	service, ok := d.Services[servicePath]
 	if !ok {
 		if servicePath == "" {
@@ -129,32 +128,52 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
+	var reqBody []byte
+	if v, ok := repl.Get(RequestBodyKey); ok {
+		reqBody = v.([]byte)
+	}
+
+	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
+	if len(reqBody) == 0 {
+		return nil
+	} else if (len(reqBody) / 1024) > int(service.MaxRequestPayloadSizeKB) {
+		// If the request payload is too large, return an error
+		rw.WriteHeader(http.StatusRequestEntityTooLarge)
+		rw.Write([]byte("Request payload too large\n"))
+		return fmt.Errorf("request payload too large")
+	}
+
 	// TODO: create a prometheus metric for the request latency
 	reqStartTime := time.Now()
 
 	var err error
 	// Retry the request if it fails up to the max attempt request count
 	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
+		fmt.Println(1)
 		rww = NewResponseWriterWrapper(rw)
 
 		// If the request fails, reset the request body to the original request body
 		if attempt > 0 {
+			fmt.Println(2)
 			var reqBody []byte
 			if v, ok := repl.Get(RequestBodyKey); ok {
 				reqBody = v.([]byte)
 			}
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
 		}
-
+		fmt.Println(3)
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
 		if err == nil && rww.statusCode == http.StatusOK {
 			// If the request was successful, break out of the loop
+			fmt.Println(4)
 			break
 		}
+		fmt.Println(5)
 		// If the first attempt fails, log the failure and retry
 		d.logger.Debug("Retrying request", zap.String("service", servicePath), zap.Int("attempt", attempt), zap.Int("status", rww.statusCode))
 	}
+	fmt.Println(6)
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
 	}
@@ -169,24 +188,18 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-
+	fmt.Println(7)
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
 	}
-
+	fmt.Println(8)
 	healthStatus := service.Providers[provider].healthStatus.String()
 
-	var reqBody []byte
-	if v, ok := repl.Get(RequestBodyKey); ok {
-		reqBody = v.([]byte)
-	}
-
-	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
-	if len(reqBody) == 0 {
+	if d.testMode {
 		return nil
 	}
-
+	fmt.Println(9)
 	// Increment prometheus metric based on request data
 	// debug logging of metric is found in here.
 	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{

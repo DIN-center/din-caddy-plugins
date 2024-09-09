@@ -11,6 +11,7 @@ const (
 	// Module Context Key constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
 	RequestProviderKey     = "request_provider"
+	RequestServiceKey      = "request_service"
 	RequestBodyKey         = "request_body"
 	HealthStatusKey        = "health_status"
 	BlockNumberKey         = "block_number"
