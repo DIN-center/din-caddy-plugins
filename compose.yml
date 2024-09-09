@@ -10,6 +10,8 @@ services:
       - 8000:8000
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
+      - ./caddy-data:/srv
+    command: /bin/sh -c "chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile"
     environment:
       - OTEL_SERVICE_NAME=din-caddy
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -21,6 +23,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.99.0
     volumes:
       - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
+      - ./caddy-data:/srv
     ports:
       - 4317:4317
       - 8888:8888 # for Prometheus metrics /metrics
