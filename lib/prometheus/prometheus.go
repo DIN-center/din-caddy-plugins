@@ -142,7 +142,7 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	service := strings.TrimPrefix(data.Service, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
-	// p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus metric based on request data
 	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus, p.machineID).Inc()
