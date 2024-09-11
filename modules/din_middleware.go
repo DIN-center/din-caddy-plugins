@@ -45,7 +45,12 @@ type DinMiddleware struct {
 	logger           *zap.Logger
 	machineID        string
 
-	testMode bool
+	testMode           bool
+	dinRegistryEnabled bool
+
+	RegistrySyncIntervalSecs int
+
+	quit chan struct{}
 }
 
 // CaddyModule returns the Caddy module information.
@@ -64,6 +69,8 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(d.logger, d.machineID)
 	d.PrometheusClient = promClient
+	d.quit = make(chan struct{})
+	d.RegistrySyncIntervalSecs = DefaultRegistrySyncIntervalSecs
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
@@ -106,7 +113,18 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// and updates the provider's health status accordingly.
 	// Skips if test mode is enabled.
 	if !d.testMode {
+		// Start the latest block number polling for each provider in each network.
+		// This is done in a goroutine that sets the latest block number in the service object,
+		// and updates the provider's health status accordingly.
 		d.startHealthChecks()
+
+		// Pull data from the din registry
+		// This will pull the latest services and providers from the din registry and update the services and providers in the middleware object
+		// This is done in a goroutine that sets the latest services and providers in the service map
+		if d.dinRegistryEnabled {
+			d.logger.Info("Din registry is enabled, pulling data from the registry")
+			d.startRegistrySync()
+		}
 	}
 
 	return nil
@@ -386,6 +404,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					return dispenser.Errf("expected at least one provider for network %s", networkName)
 				}
 			}
+		case "din_registry_enabled":
+			dinRegistryEnabledVal := dispenser.Val()
+			// Convert string to bool
+			boolValue, err := strconv.ParseBool(dinRegistryEnabledVal)
+			if err != nil {
+				return dispenser.Errf("Error converting string to bool: %v", err)
+			}
+			d.dinRegistryEnabled = boolValue
 		}
 	}
 	return nil
@@ -398,6 +424,30 @@ func (d *DinMiddleware) startHealthChecks() {
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
 	}
+}
+
+func (d *DinMiddleware) startRegistrySync() {
+	d.getDataFromRegistry()
+	// Start a ticker to pull data from the registry at a set interval
+	// TODO: This will most likely be replaced with a block number syncing method.
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistrySyncIntervalSecs))
+	go func() {
+		// Keep an index for RPC request IDs
+		for i := 0; ; i++ {
+			select {
+			case <-d.quit:
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				// Set up the healthcheck request with authentication for this provider.
+				d.getDataFromRegistry()
+			}
+		}
+	}()
+}
+
+func (d *DinMiddleware) getDataFromRegistry() {
+
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -423,4 +473,8 @@ func getMachineId() string {
 	}
 	currentPid := os.Getpid()
 	return fmt.Sprintf("@%s:%d", hostname, currentPid)
+}
+
+func (d DinMiddleware) close() {
+	close(d.quit)
 }
