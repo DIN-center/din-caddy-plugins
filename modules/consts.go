@@ -9,11 +9,12 @@ const (
 	Unhealthy
 
 	// Module Context Key constants
-	DinUpstreamsContextKey = "din.internal.upstreams"
-	RequestProviderKey     = "request_provider"
-	RequestBodyKey         = "request_body"
-	HealthStatusKey        = "health_status"
-	BlockNumberKey         = "block_number"
+	DinUpstreamsContextKey          = "din.internal.upstreams"
+	RequestProviderKey              = "request_provider"
+	RequestBodyKey                  = "request_body"
+	HealthStatusKey                 = "health_status"
+	BlockNumberKey                  = "block_number"
+	DefaultRegistrySyncIntervalSecs = 30
 
 	// Health check constants
 	DefaultHCMethod            = "eth_blockNumber"
