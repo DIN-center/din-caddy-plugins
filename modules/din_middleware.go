@@ -21,9 +21,10 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	"go.uber.org/zap"
+	dingo "github.com/DIN-center/din-sc"
 )
 
 var (
@@ -427,6 +428,7 @@ func (d *DinMiddleware) startHealthChecks() {
 }
 
 func (d *DinMiddleware) startRegistrySync() {
+	dingo.GetDinRegistryClient().SetLogger(d.logger)
 	d.getDataFromRegistry()
 	// Start a ticker to pull data from the registry at a set interval
 	// TODO: This will most likely be replaced with a block number syncing method.
