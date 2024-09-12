@@ -22,6 +22,7 @@ import (
 	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 
+	dingo "github.com/DIN-center/din-sc"
 	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
 )
@@ -384,6 +385,7 @@ func (d *DinMiddleware) startHealthChecks() {
 }
 
 func (d *DinMiddleware) startRegistrySync() {
+	dingo.GetDinRegistryClient().SetLogger(d.logger)
 	d.getDataFromRegistry()
 	// Start a ticker to pull data from the registry at a set interval
 	// TODO: This will most likely be replaced with a block number syncing method.
