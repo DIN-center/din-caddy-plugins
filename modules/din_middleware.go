@@ -344,7 +344,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 						d.Services[serviceName].BlockLagLimit = int64(limit)
 					case "max_request_payload_size_kb":
-						// TODO: still need to implement this
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
