@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"go.uber.org/zap"
-	// "github.com/openrelayxyz/din-caddy-plugins/auth"
+	// "github.com/DIN-center/din-caddy-plugins/auth"
 )
 
 // Headers    map[string]string `json:"headers`

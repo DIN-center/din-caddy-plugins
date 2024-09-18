@@ -1,11 +1,11 @@
 package din
 
 import (
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	mod "github.com/DIN-center/din-caddy-plugins/modules"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
-	mod "github.com/openrelayxyz/din-caddy-plugins/modules"
 )
 
 func init() {

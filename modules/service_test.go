@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )

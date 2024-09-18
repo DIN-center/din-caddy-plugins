@@ -3,10 +3,10 @@ package modules
 import (
 	"net/url"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
 	"go.uber.org/zap"
 )
 

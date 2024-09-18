@@ -9,7 +9,7 @@
       unit-tests:
         runs-on: ubuntu-latest
         env:
-          GOPRIVATE: github.com/openrelayxyz
+          GOPRIVATE: github.com/DIN-center
           MIN_COVER: 66
         steps:
           - uses: actions/checkout@v3

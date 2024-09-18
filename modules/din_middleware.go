@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
+	dingo "github.com/DIN-center/din-caddy-plugins/lib/dingo"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 
-	dingo "github.com/DIN-center/din-sc"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
 )
 
@@ -43,11 +43,12 @@ var (
 type DinMiddleware struct {
 	Services         map[string]*service `json:"services"`
 	PrometheusClient *prom.PrometheusClient
+	DingoClient      *dingo.DingoClient
 	logger           *zap.Logger
 	machineID        string
 
 	testMode           bool
-	dinRegistryEnabled bool
+	DinRegistryEnabled bool
 
 	RegistrySyncIntervalSecs int
 
@@ -65,12 +66,20 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	var err error
+
 	d.machineID = getMachineId()
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(d.logger, d.machineID)
 	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
+
+	// Initialize the dinRegistry
+	d.DingoClient, err = dingo.NewDingoClient(d.logger)
+	if err != nil {
+		return err
+	}
 	d.RegistrySyncIntervalSecs = DefaultRegistrySyncIntervalSecs
 
 	// Initialize the HTTP client for each service and provider
@@ -113,7 +122,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		// Pull data from the din registry
 		// This will pull the latest services and providers from the din registry and update the services and providers in the middleware object
 		// This is done in a goroutine that sets the latest services and providers in the service map
-		if d.dinRegistryEnabled {
+		if d.DinRegistryEnabled {
 			d.logger.Info("Din registry is enabled, pulling data from the registry")
 			d.startRegistrySync()
 		}
@@ -363,13 +372,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				}
 			}
 		case "din_registry_enabled":
+			dispenser.Next()
 			dinRegistryEnabledVal := dispenser.Val()
 			// Convert string to bool
 			boolValue, err := strconv.ParseBool(dinRegistryEnabledVal)
 			if err != nil {
 				return dispenser.Errf("Error converting string to bool: %v", err)
 			}
-			d.dinRegistryEnabled = boolValue
+			d.DinRegistryEnabled = boolValue
 		}
 	}
 	return nil
@@ -385,8 +395,7 @@ func (d *DinMiddleware) startHealthChecks() {
 }
 
 func (d *DinMiddleware) startRegistrySync() {
-	dingo.GetDinRegistryClient().SetLogger(d.logger)
-	d.getDataFromRegistry()
+	d.DingoClient.GetDataFromRegistry()
 	// Start a ticker to pull data from the registry at a set interval
 	// TODO: This will most likely be replaced with a block number syncing method.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistrySyncIntervalSecs))
@@ -399,14 +408,10 @@ func (d *DinMiddleware) startRegistrySync() {
 				return
 			case <-ticker.C:
 				// Set up the healthcheck request with authentication for this provider.
-				d.getDataFromRegistry()
+				d.DingoClient.GetDataFromRegistry()
 			}
 		}
 	}()
-}
-
-func (d *DinMiddleware) getDataFromRegistry() {
-
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {

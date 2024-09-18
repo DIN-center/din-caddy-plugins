@@ -9,7 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/pkg/errors"
 )
 
