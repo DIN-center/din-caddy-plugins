@@ -12,12 +12,12 @@ import (
 
 func main() {
 	url := os.Args[1]
-	keyFile := os.Args[2]
+	privateKeyFile := os.Args[2]
 
-	// Read the key file
-	hexKeyBytes, err := os.ReadFile(keyFile)
+	// Read the private key file
+	hexKeyBytes, err := os.ReadFile(privateKeyFile)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to read secret key file: %v", err.Error()))
+		panic(fmt.Sprintf("Failed to read private key file: %v", err.Error()))
 	}
 	// Trim the 0x prefix and any whitespace
 	hexKey := string(hexKeyBytes)
