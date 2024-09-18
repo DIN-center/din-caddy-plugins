@@ -2,7 +2,6 @@ package modules
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	reflect "reflect"
@@ -50,6 +49,17 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 	dinMiddleware.testMode = true
 
+	// Large payload to test max request payload size. This is greater than 1KB.
+	largePayload := `{";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;":";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;"}`
+
 	now := time.Now()
 
 	test := []struct {
@@ -86,7 +96,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		},
 		{
 			name:     "unsuccesful request, payload too large",
-			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`)),
+			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload)),
 			provider: "localhost:8000",
 			services: map[string]*service{
 				"eth": {
@@ -104,7 +114,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 							},
 						},
 					},
-					MaxRequestPayloadSizeKB: -1,
+					MaxRequestPayloadSizeKB: 0,
 				},
 			},
 			hasErr: true,
@@ -134,13 +144,13 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(RequestProviderKey, tt.provider)
 
-			bodyBytes, err := io.ReadAll(tt.request.Body)
-			if err != nil {
-				t.Errorf("ServeHTTP() = %v, want %v", err, nil)
-			}
-			repl.Set(RequestBodyKey, bodyBytes)
+			// bodyBytes, err := io.ReadAll(tt.request.Body)
+			// if err != nil {
+			// 	t.Errorf("ServeHTTP() = %v, want %v", err, nil)
+			// }
+			// repl.Set(RequestBodyKey, bodyBytes)
 
-			err = dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 			if err == nil && tt.hasErr {
 				t.Errorf("ServeHTTP() = %v, want %v", err, tt.hasErr)
 			} else if err != nil && !tt.hasErr {
