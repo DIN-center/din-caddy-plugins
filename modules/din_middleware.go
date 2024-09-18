@@ -109,6 +109,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the service path is defined in the services map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	// Caddy replacer is used to set the context for the request
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
 	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 	service, ok := d.Services[servicePath]
 	if !ok {
@@ -122,26 +125,31 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 
-	// Create a new response writer wrapper to capture the response body and status code
-	var rww *ResponseWriterWrapper
-
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set(DinUpstreamsContextKey, service.Providers)
-	var reqBody []byte
-	if v, ok := repl.Get(RequestBodyKey); ok {
-		reqBody = v.([]byte)
+	// Read request body and save in context
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil
 	}
-	if (len(reqBody) / 1024) > int(service.MaxRequestPayloadSizeKB) {
+	repl.Set(RequestBodyKey, bodyBytes)
+	// Set request body back to original state
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Check if the request payload is too large
+	if (len(bodyBytes) / 1024) > int(service.MaxRequestPayloadSizeKB) {
 		// If the request payload is too large, return an error
 		rw.WriteHeader(http.StatusRequestEntityTooLarge)
 		rw.Write([]byte("Request payload too large\n"))
 		return fmt.Errorf("request payload too large")
 	}
 
-	// TODO: create a prometheus metric for the request latency
+	// Create a new response writer wrapper to capture the response body and status code
+	var rww *ResponseWriterWrapper
+
+	// Set the upstreams in the context for the request
+	repl.Set(DinUpstreamsContextKey, service.Providers)
+
 	reqStartTime := time.Now()
 
-	var err error
 	// Retry the request if it fails up to the max attempt request count
 	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
@@ -184,7 +192,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	healthStatus := service.Providers[provider].healthStatus.String()
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
-	if len(reqBody) == 0 {
+	if len(bodyBytes) == 0 {
 		return nil
 	}
 
@@ -199,7 +207,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		HostName:       r.Host,
 		ResponseStatus: rww.statusCode,
 		HealthStatus:   healthStatus,
-	}, reqBody, duration)
+	}, bodyBytes, duration)
 
 	return nil
 }
