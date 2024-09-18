@@ -262,7 +262,6 @@
 					healthcheck_method getBlockHeight
 				}
 			}
-			din_registry_enabled true
 		}
 		# din reverse proxy directive configuration
 		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
