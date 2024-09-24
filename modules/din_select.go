@@ -1,8 +1,6 @@
 package modules
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"net/url"
 
@@ -85,16 +83,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		return selectedUpstream
 	}
 
-	// Read request body for passing to metric middleware
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil
-	}
 	repl.Set(RequestProviderKey, selectedUpstream.Dial)
-	repl.Set(RequestBodyKey, bodyBytes)
-
-	// Set request body back to original state
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	return selectedUpstream
 }

@@ -109,8 +109,10 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the service path is defined in the services map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	servicePath := strings.TrimPrefix(r.URL.Path, "/")
+	// Caddy replacer is used to set the context for the request
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+	servicePath := strings.TrimPrefix(r.URL.Path, "/")
 	service, ok := d.Services[servicePath]
 	if !ok {
 		if servicePath == "" {
@@ -123,16 +125,31 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("service undefined")
 	}
 
+	// Read request body and save in context
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil
+	}
+	repl.Set(RequestBodyKey, bodyBytes)
+	// Set request body back to original state
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Check if the request payload is too large
+	if (len(bodyBytes) / 1024) > int(service.MaxRequestPayloadSizeKB) {
+		// If the request payload is too large, return an error
+		rw.WriteHeader(http.StatusRequestEntityTooLarge)
+		rw.Write([]byte("Request payload too large\n"))
+		return fmt.Errorf("request payload too large")
+	}
+
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	// Set the upstreams in the context for the request
 	repl.Set(DinUpstreamsContextKey, service.Providers)
 
-	// TODO: create a prometheus metric for the request latency
 	reqStartTime := time.Now()
 
-	var err error
 	// Retry the request if it fails up to the max attempt request count
 	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
@@ -145,7 +162,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			}
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
 		}
-
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
 		if err == nil && rww.statusCode == http.StatusOK {
@@ -169,24 +185,20 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-
 	var provider string
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
 	}
-
 	healthStatus := service.Providers[provider].healthStatus.String()
 
-	var reqBody []byte
-	if v, ok := repl.Get(RequestBodyKey); ok {
-		reqBody = v.([]byte)
-	}
-
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
-	if len(reqBody) == 0 {
+	if len(bodyBytes) == 0 {
 		return nil
 	}
 
+	if d.testMode {
+		return nil
+	}
 	// Increment prometheus metric based on request data
 	// debug logging of metric is found in here.
 	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
@@ -195,7 +207,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		HostName:       r.Host,
 		ResponseStatus: rww.statusCode,
 		HealthStatus:   healthStatus,
-	}, reqBody, duration)
+	}, bodyBytes, duration)
 
 	return nil
 }
@@ -211,7 +223,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "services":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				serviceName := dispenser.Val()
-				d.Services[serviceName] = NewService(serviceName)
+				d.Services[serviceName] = NewService(serviceName) // Create a new service object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -331,6 +343,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return err
 						}
 						d.Services[serviceName].BlockLagLimit = int64(limit)
+					case "max_request_payload_size_kb":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return err
+						}
+						d.Services[serviceName].MaxRequestPayloadSizeKB = int64(size)
 					case "request_attempt_count":
 						dispenser.Next()
 						requestAttemptCount, err := strconv.Atoi(dispenser.Val())

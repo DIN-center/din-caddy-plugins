@@ -29,12 +29,13 @@ type service struct {
 	mu sync.RWMutex
 
 	// Healthcheck configuration
-	CheckedProviders    map[string][]healthCheckEntry `json:"checked_providers"`
-	HCMethod            string                        `json:"healthcheck_method"`
-	HCInterval          int                           `json:"healthcheck_interval_seconds"`
-	HCThreshold         int                           `json:"healthcheck_threshold"`
-	BlockLagLimit       int64                         `json:"healthcheck_blocklag_limit"`
-	RequestAttemptCount int                           `json:"request_attempt_count"`
+	CheckedProviders        map[string][]healthCheckEntry `json:"checked_providers"`
+	HCMethod                string                        `json:"healthcheck_method"`
+	HCInterval              int                           `json:"healthcheck_interval_seconds"`
+	HCThreshold             int                           `json:"healthcheck_threshold"`
+	BlockLagLimit           int64                         `json:"healthcheck_blocklag_limit"`
+	MaxRequestPayloadSizeKB int64                         `json:"max_request_payload_size_kb"`
+	RequestAttemptCount     int                           `json:"request_attempt_count"`
 }
 
 // NewService creates a new service with the given name
@@ -44,13 +45,15 @@ func NewService(name string) *service {
 	return &service{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
-		HCMethod:            DefaultHCMethod,
-		HCThreshold:         DefaultHCThreshold,
-		HCInterval:          DefaultHCInterval,
-		BlockLagLimit:       DefaultBlockLagLimit,
-		RequestAttemptCount: DefaultRequestAttemptCount,
-		CheckedProviders:    make(map[string][]healthCheckEntry),
-		Providers:           make(map[string]*provider),
+		HCMethod:                DefaultHCMethod,
+		HCThreshold:             DefaultHCThreshold,
+		HCInterval:              DefaultHCInterval,
+		BlockLagLimit:           DefaultBlockLagLimit,
+		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
+		RequestAttemptCount:     DefaultRequestAttemptCount,
+
+		CheckedProviders: make(map[string][]healthCheckEntry),
+		Providers:        make(map[string]*provider),
 	}
 }
 
