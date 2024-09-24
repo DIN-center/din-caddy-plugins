@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/golang/mock/gomock"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"go.uber.org/zap"
 )
 

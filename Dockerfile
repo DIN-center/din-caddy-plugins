@@ -12,7 +12,7 @@ COPY *.go go.* /din-plugins/
 COPY lib/ /din-plugins/lib/
 COPY modules/ /din-plugins/modules/
 
-RUN xcaddy build --with github.com/openrelayxyz/din-caddy-plugins=/din-plugins
+RUN xcaddy build --with github.com/DIN-center/din-caddy-plugins=/din-plugins
 
 FROM caddy:2.7.6
 

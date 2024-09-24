@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
 )

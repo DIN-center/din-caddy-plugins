@@ -1,6 +1,6 @@
-module github.com/openrelayxyz/din-caddy-plugins
+module github.com/DIN-center/din-caddy-plugins
 
-go 1.21.3
+go 1.21.6
 
 require (
 	github.com/aws/aws-sdk-go v1.53.18
@@ -13,10 +13,7 @@ require (
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.25.0
-
 )
-
-// replace github.com/DIN-center/din-sc/apps/din-go => git@github.com:DIN-center/din-sc.git/apps/din-go
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect

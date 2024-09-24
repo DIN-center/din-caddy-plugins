@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/golang/mock/gomock"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/stretchr/testify/assert"
 )
 

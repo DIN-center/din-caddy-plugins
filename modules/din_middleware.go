@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
 )
 

@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
-	din_http "github.com/openrelayxyz/din-caddy-plugins/lib/http"
-	prom "github.com/openrelayxyz/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )

@@ -13,10 +13,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/openrelayxyz/din-caddy-plugins/lib/auth"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
 )
