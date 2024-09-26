@@ -494,6 +494,11 @@ func (d *DinMiddleware) startHealthChecks() {
 	}
 }
 
+// startRegistrySync initiates a periodic synchronization process with the registry. It retrieves data from the
+// registry and processes it immediately. A ticker is started to poll the latest block number from the
+// Linea network at regular intervals (default 60 seconds). If the latest block number has moved beyond
+// the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
+// goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
 	registryData, err := d.DingoClient.GetDataFromRegistry()
 	if err != nil {
