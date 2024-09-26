@@ -8,13 +8,15 @@ const (
 	Warning
 	Unhealthy
 
+	LineaMainnet = "linea-mainnet"
+	LineaSepolia = "linea-sepolia"
+
 	// Module Context Key constants
-	DinUpstreamsContextKey          = "din.internal.upstreams"
-	RequestProviderKey              = "request_provider"
-	RequestBodyKey                  = "request_body"
-	HealthStatusKey                 = "health_status"
-	BlockNumberKey                  = "block_number"
-	DefaultRegistrySyncIntervalSecs = 30
+	DinUpstreamsContextKey = "din.internal.upstreams"
+	RequestProviderKey     = "request_provider"
+	RequestBodyKey         = "request_body"
+	HealthStatusKey        = "health_status"
+	BlockNumberKey         = "block_number"
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
@@ -23,6 +25,11 @@ const (
 	DefaultBlockLagLimit           = int64(5)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
+
+	// Registry constants
+	DefaultRegistryBlockCheckInterval = int64(60)
+	DefaultRegistryBlockEpoch         = int64(2000)
+	DefaultRegistryEnv                = LineaMainnet
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
