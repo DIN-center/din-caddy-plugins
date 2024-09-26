@@ -327,7 +327,10 @@
 					healthcheck_method getBlockHeight
 				}
 			}
-			din_registry_enabled true
+			din_registry {
+				registry_enabled false
+				registry_env linea-sepolia
+			}
 		}
 		# din reverse proxy directive configuration
 		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
