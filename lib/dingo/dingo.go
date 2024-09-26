@@ -2,7 +2,6 @@ package dingo
 
 import (
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -23,11 +22,11 @@ func NewDingoClient(logger *zap.Logger) (*DingoClient, error) {
 	}, nil
 }
 
-func (d *DingoClient) GetDataFromRegistry() {
-	networks, err := d.Client.GetRegistryData()
+func (d *DingoClient) GetDataFromRegistry() (*din.DinRegistryData, error) {
+	registryData, err := d.Client.GetRegistryData()
 	if err != nil {
-		d.logger.Error("Failed to get all networks", zap.Error(err))
-		return
+		return nil, errors.Wrap(err, "failed to get registry data")
 	}
-	spew.Dump(networks)
+	d.logger.Debug("Got data from registry", zap.Any("data", registryData))
+	return registryData, nil
 }

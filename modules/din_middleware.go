@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	dingo "github.com/DIN-center/din-caddy-plugins/lib/dingo"
+
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
@@ -34,7 +36,6 @@ var (
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
-	// TODO: validate provision step
 	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
 )
 
@@ -45,10 +46,14 @@ type DinMiddleware struct {
 	logger           *zap.Logger
 	machineID        string
 
-	testMode           bool
-	DinRegistryEnabled bool
+	testMode bool
 
-	RegistrySyncIntervalSecs int
+	// DIN Registry configuration
+	RegistryEnabled                     bool
+	RegistryBlockCheckInterval          int64
+	RegistryBlockEpoch                  int64
+	RegistryLastUpdatedEpochBlockNumber int64
+	RegistryEnv                         string
 
 	quit chan struct{}
 }
@@ -66,6 +71,7 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 func (d *DinMiddleware) Provision(context caddy.Context) error {
 	var err error
 
+	// TODO: abstract these default initializations to a separate function
 	d.machineID = getMachineId()
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
@@ -78,7 +84,13 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	if err != nil {
 		return err
 	}
-	d.RegistrySyncIntervalSecs = DefaultRegistrySyncIntervalSecs
+	d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	if d.RegistryBlockEpoch == 0 {
+		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
+	}
+	if d.RegistryEnv == "" {
+		d.RegistryEnv = DefaultRegistryEnv
+	}
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
@@ -129,7 +141,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		// Pull data from the din registry
 		// This will pull the latest services and providers from the din registry and update the services and providers in the middleware object
 		// This is done in a goroutine that sets the latest services and providers in the service map
-		if d.DinRegistryEnabled {
+		if d.RegistryEnabled {
 			d.logger.Info("Din registry is enabled, pulling data from the registry")
 			d.startRegistrySync()
 		}
@@ -412,17 +424,37 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					return dispenser.Errf("expected at least one provider for network %s", networkName)
 				}
 			}
-		case "din_registry_enabled":
-			dispenser.Next()
-			dinRegistryEnabledVal := dispenser.Val()
-			// Convert string to bool
-			boolValue, err := strconv.ParseBool(dinRegistryEnabledVal)
-			if err != nil {
-				return dispenser.Errf("Error converting string to bool: %v", err)
+		case "din_registry":
+			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
+				switch dispenser.Val() {
+				case "registry_enabled":
+					dispenser.Next()
+					registryEnabledVal := dispenser.Val()
+					// Convert string to bool
+					boolValue, err := strconv.ParseBool(registryEnabledVal)
+					if err != nil {
+						return dispenser.Errf("Error converting string to bool: %v", err)
+					}
+					d.RegistryEnabled = boolValue
+				case "registry_block_epoch":
+					dispenser.Next()
+					dinRegistryBlockEpochlVal := dispenser.Val()
+					// Convert string to int
+					intValue, err := strconv.Atoi(dinRegistryBlockEpochlVal)
+					if err != nil {
+						return dispenser.Errf("Error converting string to int: %v", err)
+					}
+					d.RegistryBlockEpoch = int64(intValue)
+				case "registry_env":
+					dispenser.Next()
+					registryEnvVal := dispenser.Val()
+					d.RegistryEnv = registryEnvVal
+				}
 			}
-			d.DinRegistryEnabled = boolValue
 		}
+
 	}
+
 	return nil
 }
 
@@ -436,10 +468,14 @@ func (d *DinMiddleware) startHealthChecks() {
 }
 
 func (d *DinMiddleware) startRegistrySync() {
-	d.DingoClient.GetDataFromRegistry()
-	// Start a ticker to pull data from the registry at a set interval
-	// TODO: This will most likely be replaced with a block number syncing method.
-	ticker := time.NewTicker(time.Second * time.Duration(d.RegistrySyncIntervalSecs))
+	registryData, err := d.DingoClient.GetDataFromRegistry()
+	if err != nil {
+		d.logger.Error("Failed to get data from registry", zap.Error(err))
+	}
+	d.processRegistryData(registryData, int64(0))
+	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
+	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	go func() {
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {
@@ -448,11 +484,36 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				// Set up the healthcheck request with authentication for this provider.
-				d.DingoClient.GetDataFromRegistry()
+				if d.Services[d.RegistryEnv] == nil {
+					d.logger.Error("Service not found in middleware object", zap.String("service", d.RegistryEnv))
+					continue
+				}
+
+				// Get the latest block number from the linea network
+				latestBlockNumber := d.Services[d.RegistryEnv].LatestBlockNumber
+
+				// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
+				latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
+
+				d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch), zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch), zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("mod", (latestBlockNumber-d.RegistryLastUpdatedEpochBlockNumber)%d.RegistryBlockEpoch))
+
+				// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the services and providers.
+				if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber%d.RegistryBlockEpoch >= 1 {
+					registryData, err := d.DingoClient.GetDataFromRegistry()
+					if err != nil {
+						d.logger.Error("Failed to get data from registry", zap.Error(err))
+					}
+					d.processRegistryData(registryData, latestBlockFloorByEpoch)
+				}
 			}
 		}
 	}()
+}
+
+// TODO: finish this.
+func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData, latestBlockNumber int64) {
+	d.logger.Debug("Processing registry data")
+	d.RegistryLastUpdatedEpochBlockNumber = latestBlockNumber
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -468,6 +529,7 @@ func (d DinMiddleware) closeAll() {
 	for _, network := range d.Networks {
 		network.close()
 	}
+	d.close()
 }
 
 // getMachineId returns a unique string for the current running process
