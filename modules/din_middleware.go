@@ -95,7 +95,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
 
-	// Initialize the dinRegistry
+	// Initialize the din registry configuration values
 	d.DingoClient, err = dingo.NewDingoClient(d.logger)
 	if err != nil {
 		return err
