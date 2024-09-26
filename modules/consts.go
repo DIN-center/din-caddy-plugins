@@ -17,11 +17,12 @@ const (
 	DefaultRegistrySyncIntervalSecs = 30
 
 	// Health check constants
-	DefaultHCMethod            = "eth_blockNumber"
-	DefaultHCThreshold         = 2
-	DefaultHCInterval          = 5
-	DefaultBlockLagLimit       = int64(5)
-	DefaultRequestAttemptCount = 5
+	DefaultHCMethod                = "eth_blockNumber"
+	DefaultHCThreshold             = 2
+	DefaultHCInterval              = 5
+	DefaultBlockLagLimit           = int64(5)
+	DefaultMaxRequestPayloadSizeKB = int64(4096)
+	DefaultRequestAttemptCount     = 5
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523

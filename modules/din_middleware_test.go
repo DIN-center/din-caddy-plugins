@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	reflect "reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,18 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 
 func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
+	dinMiddleware.testMode = true
+
+	// Large payload to test max request payload size. This is greater than 1KB.
+	largePayload := `{";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;":";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;"}`
 
 	now := time.Now()
 
@@ -58,7 +71,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	}{
 		{
 			name:     "successful request",
-			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
+			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`)),
 			provider: "localhost:8000",
 			services: map[string]*service{
 				"eth": {
@@ -76,9 +89,35 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 							},
 						},
 					},
+					MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 				},
 			},
 			hasErr: false,
+		},
+		{
+			name:     "unsuccesful request, payload too large",
+			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload)),
+			provider: "localhost:8000",
+			services: map[string]*service{
+				"eth": {
+					Name: "eth",
+					Providers: map[string]*provider{
+						"localhost:8000": {
+							healthStatus: Healthy,
+						},
+					},
+					CheckedProviders: map[string][]healthCheckEntry{
+						"localhost:8000": {
+							{
+								blockNumber: 1,
+								timestamp:   &now,
+							},
+						},
+					},
+					MaxRequestPayloadSizeKB: 0,
+				},
+			},
+			hasErr: true,
 		},
 		{
 			name:    "unsuccessful request, path not found",
@@ -105,8 +144,16 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(RequestProviderKey, tt.provider)
 
+			// bodyBytes, err := io.ReadAll(tt.request.Body)
+			// if err != nil {
+			// 	t.Errorf("ServeHTTP() = %v, want %v", err, nil)
+			// }
+			// repl.Set(RequestBodyKey, bodyBytes)
+
 			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
-			if err != nil && !tt.hasErr {
+			if err == nil && tt.hasErr {
+				t.Errorf("ServeHTTP() = %v, want %v", err, tt.hasErr)
+			} else if err != nil && !tt.hasErr {
 				t.Errorf("ServeHTTP() = %v, want %v", err, tt.hasErr)
 			}
 		})
@@ -232,6 +279,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: false,
@@ -245,6 +293,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: true,
@@ -266,6 +315,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
 				}
 			}`,
 			hasErr: true,
