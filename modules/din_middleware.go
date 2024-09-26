@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +22,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
@@ -40,21 +40,37 @@ var (
 )
 
 type DinMiddleware struct {
-	Networks         map[string]*network `json:"networks"`
-	PrometheusClient *prom.PrometheusClient
-	DingoClient      *dingo.DingoClient
-	logger           *zap.Logger
-	machineID        string
+	// A map of network paths to networks objects
+	Networks map[string]*network `json:"networks"`
 
+	// The prometheus client object
+	PrometheusClient *prom.PrometheusClient
+
+	// The di-ngo client object
+	DingoClient *dingo.DingoClient
+
+	logger *zap.Logger
+
+	// The unique machine ID for the current running server instance
+	machineID string
+
+	// Test mode flag, should only be used for unit/integration testing purposes.
 	testMode bool
 
 	// DIN Registry configuration
-	RegistryEnabled                     bool
-	RegistryBlockCheckInterval          int64
-	RegistryBlockEpoch                  int64
+	// The flag to enable or disable the din registry
+	RegistryEnabled bool
+	// The interval in seconds to check the latest block number from the registry
+	RegistryBlockCheckInterval int64
+	// The epoch in blocks to check the latest block number from the registry.
+	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
+	RegistryBlockEpoch int64
+	// The block number in which the registry was updated last
 	RegistryLastUpdatedEpochBlockNumber int64
-	RegistryEnv                         string
+	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
+	RegistryEnv string
 
+	// The channel to quit the goroutines
 	quit chan struct{}
 }
 
@@ -84,7 +100,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	if err != nil {
 		return err
 	}
-	d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	if d.RegistryBlockCheckInterval == 0 {
+		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	}
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
 	}
@@ -328,7 +346,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 												switch dispenser.Val() {
 												case "secret_file":
 													dispenser.NextBlock(nesting + 4)
-													hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
+													hexKeyBytes, err := os.ReadFile(dispenser.Val())
 													if err != nil {
 														return dispenser.Errf("failed to read secret file: %v", err)
 													}
@@ -438,13 +456,22 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					d.RegistryEnabled = boolValue
 				case "registry_block_epoch":
 					dispenser.Next()
-					dinRegistryBlockEpochlVal := dispenser.Val()
-					// Convert string to int
-					intValue, err := strconv.Atoi(dinRegistryBlockEpochlVal)
+					registryBlockEpochlVal := dispenser.Val()
+					// Convert string to int64
+					intValue, err := strconv.Atoi(registryBlockEpochlVal)
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
 					d.RegistryBlockEpoch = int64(intValue)
+				case "registry_block_check_interval":
+					dispenser.Next()
+					registryBlockCheckIntervalVal := dispenser.Val()
+					// Convert string to int64
+					intValue, err := strconv.Atoi(registryBlockCheckIntervalVal)
+					if err != nil {
+						return dispenser.Errf("Error converting string to int: %v", err)
+					}
+					d.RegistryBlockCheckInterval = int64(intValue)
 				case "registry_env":
 					dispenser.Next()
 					registryEnvVal := dispenser.Val()
@@ -484,8 +511,9 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
+				// Check if the linea network exists in the middleware object
 				if d.Services[d.RegistryEnv] == nil {
-					d.logger.Error("Service not found in middleware object", zap.String("service", d.RegistryEnv))
+					d.logger.Error("Service not found in middleware object. Registry data cannot be retrieved", zap.String("service", d.RegistryEnv))
 					continue
 				}
 
