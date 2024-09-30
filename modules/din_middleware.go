@@ -79,7 +79,13 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			if err != nil {
 				return err
 			}
-			provider.upstream = &reverseproxy.Upstream{Dial: url.Host}
+
+			dialHost := url.Host
+			if url.Scheme == "https" && url.Port() == "" {
+				dialHost = url.Host + ":443"
+			}
+
+			provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
 			provider.path = url.Path
 			provider.host = url.Host
 			provider.httpClient = httpClient
