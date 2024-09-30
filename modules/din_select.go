@@ -72,6 +72,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 			if v := r.Header.Get("din-provider-info"); v != "" {
 				rw.Header().Set("din-provider-info", provider.host)
 			}
+			repl.Set(RequestProviderKey, provider.host)
 			break
 		}
 	}
@@ -82,8 +83,6 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	if r.Body == nil {
 		return selectedUpstream
 	}
-
-	repl.Set(RequestProviderKey, selectedUpstream.Dial)
 
 	return selectedUpstream
 }
