@@ -47,7 +47,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The di-ngo client object
-	DingoClient *dingo.DingoClient
+	DingoClient dingo.IDingoClient
 
 	logger *zap.Logger
 
@@ -500,6 +500,7 @@ func (d *DinMiddleware) startHealthChecks() {
 // the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
+	// Get the initial registry data
 	registryData, err := d.DingoClient.GetDataFromRegistry()
 	if err != nil {
 		d.logger.Error("Failed to get data from registry", zap.Error(err))
@@ -516,37 +517,44 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				// Check if the linea network exists in the middleware object
-				if d.Services[d.RegistryEnv] == nil {
-					d.logger.Error("Service not found in middleware object. Registry data cannot be retrieved", zap.String("service", d.RegistryEnv))
-					continue
-				}
-
-				// Get the latest block number from the linea network
-				latestBlockNumber := d.Services[d.RegistryEnv].LatestBlockNumber
-
-				// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
-				latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
-
-				d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch), zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch), zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("mod", (latestBlockNumber-d.RegistryLastUpdatedEpochBlockNumber)%d.RegistryBlockEpoch))
-
-				// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the services and providers.
-				if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber%d.RegistryBlockEpoch >= 1 {
-					registryData, err := d.DingoClient.GetDataFromRegistry()
-					if err != nil {
-						d.logger.Error("Failed to get data from registry", zap.Error(err))
-					}
-					d.processRegistryData(registryData, latestBlockFloorByEpoch)
-				}
+				d.syncRegistryWithLatestBlock()
 			}
 		}
 	}()
 }
 
+func (d *DinMiddleware) syncRegistryWithLatestBlock() {
+	// Check if the linea network exists in the middleware object
+	if d.Services[d.RegistryEnv] == nil {
+		d.logger.Error("Service not found in middleware object. Registry data cannot be retrieved", zap.String("service", d.RegistryEnv))
+		return
+	}
+
+	// Get the latest block number from the linea network
+	latestBlockNumber := d.Services[d.RegistryEnv].LatestBlockNumber
+
+	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
+	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
+
+	d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch),
+		zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
+		zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber),
+	)
+
+	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the services and providers.
+	if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
+		registryData, err := d.DingoClient.GetDataFromRegistry()
+		if err != nil {
+			d.logger.Error("Failed to get data from registry", zap.Error(err))
+		}
+		d.processRegistryData(registryData, latestBlockFloorByEpoch)
+	}
+}
+
 // TODO: finish this.
-func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData, latestBlockNumber int64) {
+func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData, latestBlockFloorByEpoch int64) {
 	d.logger.Debug("Processing registry data")
-	d.RegistryLastUpdatedEpochBlockNumber = latestBlockNumber
+	d.RegistryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
