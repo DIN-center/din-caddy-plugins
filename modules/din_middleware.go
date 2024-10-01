@@ -160,13 +160,18 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	for attempt := 0; attempt < service.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
 
-		// If the request fails, reset the request body to the original request body
+		// If the request fails, reset the request body and custom header if its present to the original request state
 		if attempt > 0 {
 			var reqBody []byte
 			if v, ok := repl.Get(RequestBodyKey); ok {
 				reqBody = v.([]byte)
 			}
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+
+			// Remove the custom header if it was set
+			if rww.Header().Get(DinProviderInfo) != "" {
+				rww.Header().Del(DinProviderInfo)
+			}
 		}
 		// Serve the request
 		err = next.ServeHTTP(rww, r)

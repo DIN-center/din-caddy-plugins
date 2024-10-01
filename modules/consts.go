@@ -25,6 +25,9 @@ const (
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
+
+	// Request/Response Header Keys
+	DinProviderInfo = "din-provider-info"
 )
 
 // String method to convert MyEnum to string
