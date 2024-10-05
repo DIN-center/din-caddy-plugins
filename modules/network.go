@@ -26,7 +26,7 @@ type network struct {
 	logger            *zap.Logger
 	machineID         string
 
-	mu sync.RWMutex
+	healthCheckListMutex sync.RWMutex
 
 	// Healthcheck configuration
 	CheckedProviders        map[string][]healthCheckEntry `json:"checked_providers"`

@@ -410,7 +410,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			dinMiddleware.Services = map[string]*service{
+			dinMiddleware.Networks = map[string]*network{
 				LineaMainnet: {
 					LatestBlockNumber: tt.latestBlockNumber,
 				},

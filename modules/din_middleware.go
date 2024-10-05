@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	dingo "github.com/DIN-center/din-caddy-plugins/lib/dingo"
@@ -40,8 +41,9 @@ var (
 )
 
 type DinMiddleware struct {
-	// A map of network paths to networks objects
+	// A map of network paths to network objects
 	Networks map[string]*network `json:"networks"`
+	mu       sync.RWMutex
 
 	// The prometheus client object
 	PrometheusClient *prom.PrometheusClient
@@ -152,13 +154,13 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Skips if test mode is enabled.
 	if !d.testMode {
 		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the service object,
+		// This is done in a goroutine that sets the latest block number in the network object,
 		// and updates the provider's health status accordingly.
 		d.startHealthChecks()
 
 		// Pull data from the din registry
-		// This will pull the latest services and providers from the din registry and update the services and providers in the middleware object
-		// This is done in a goroutine that sets the latest services and providers in the service map
+		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
+		// This is done in a goroutine that sets the latest networks and providers in the network map
 		if d.RegistryEnabled {
 			d.logger.Info("Din registry is enabled, pulling data from the registry")
 			d.startRegistrySync()
@@ -265,7 +267,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			d.logger.Warn("Request failed", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
 		}
 	}
-
 	healthStatus := network.Providers[provider].healthStatus.String()
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
@@ -525,13 +526,13 @@ func (d *DinMiddleware) startRegistrySync() {
 
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 	// Check if the linea network exists in the middleware object
-	if d.Services[d.RegistryEnv] == nil {
-		d.logger.Error("Service not found in middleware object. Registry data cannot be retrieved", zap.String("service", d.RegistryEnv))
+	if d.Networks[d.RegistryEnv] == nil {
+		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
 		return
 	}
 
 	// Get the latest block number from the linea network
-	latestBlockNumber := d.Services[d.RegistryEnv].LatestBlockNumber
+	latestBlockNumber := d.Networks[d.RegistryEnv].LatestBlockNumber
 
 	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
 	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
@@ -541,7 +542,7 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 		zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber),
 	)
 
-	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the services and providers.
+	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
 	if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
 		registryData, err := d.DingoClient.GetDataFromRegistry()
 		if err != nil {
