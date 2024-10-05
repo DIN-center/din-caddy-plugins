@@ -549,13 +549,16 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 			d.logger.Error("Failed to get data from registry", zap.Error(err))
 		}
 		d.processRegistryData(registryData, latestBlockFloorByEpoch)
+
+		// Update the last updated block number
+		d.RegistryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
+
 	}
 }
 
 // TODO: finish this.
 func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData, latestBlockFloorByEpoch int64) {
 	d.logger.Debug("Processing registry data")
-	d.RegistryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
 }
 
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
