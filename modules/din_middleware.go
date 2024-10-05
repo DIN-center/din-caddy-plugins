@@ -156,7 +156,10 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		// Start the latest block number polling for each provider in each network.
 		// This is done in a goroutine that sets the latest block number in the network object,
 		// and updates the provider's health status accordingly.
-		d.startHealthChecks()
+		err := d.startHealthChecks()
+		if err != nil {
+			return err
+		}
 
 		// Pull data from the din registry
 		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
@@ -177,8 +180,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, ok := d.Networks[networkPath]
-	if !ok {
+	network, err := d.GetNetwork(networkPath)
+	if err != nil {
 		if networkPath == "" {
 			rw.WriteHeader(200)
 			rw.Write([]byte("{}"))
@@ -487,12 +490,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 }
 
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
-func (d *DinMiddleware) startHealthChecks() {
+func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
-	for _, network := range d.Networks {
+	networks := d.GetNetworks()
+	for _, network := range networks {
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
 	}
+	return nil
 }
 
 // startRegistrySync initiates a periodic synchronization process with the registry. It retrieves data from the
@@ -526,13 +531,13 @@ func (d *DinMiddleware) startRegistrySync() {
 
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 	// Check if the linea network exists in the middleware object
-	if d.Networks[d.RegistryEnv] == nil {
+	network, err := d.GetNetwork(d.RegistryEnv)
+	if err != nil {
 		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
 		return
 	}
-
 	// Get the latest block number from the linea network
-	latestBlockNumber := d.Networks[d.RegistryEnv].LatestBlockNumber
+	latestBlockNumber := network.LatestBlockNumber
 
 	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
 	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
@@ -570,8 +575,31 @@ func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 	return d, nil
 }
 
-func (d DinMiddleware) closeAll() {
-	for _, network := range d.Networks {
+func (d *DinMiddleware) GetNetwork(networkName string) (*network, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	n, ok := d.Networks[networkName]
+	if !ok {
+		return nil, fmt.Errorf("network not found")
+	}
+	return n, nil
+}
+
+func (d *DinMiddleware) GetNetworks() []*network {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	networks := make([]*network, 0)
+	for _, n := range d.Networks {
+		networks = append(networks, n)
+	}
+	return networks
+}
+
+func (d *DinMiddleware) closeAll() {
+	networks := d.GetNetworks()
+	for _, network := range networks {
 		network.close()
 	}
 	d.close()
@@ -587,6 +615,6 @@ func getMachineId() string {
 	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
 
-func (d DinMiddleware) close() {
+func (d *DinMiddleware) close() {
 	close(d.quit)
 }
