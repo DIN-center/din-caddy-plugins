@@ -25,13 +25,13 @@ func TestHealthCheck(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		service             *service
+		network             *network
 		latestBlockResponse postResponse
 		want                map[string]*provider
 	}{
 		{
 			name: "1 provider, successful response, has newer blocks, marked healthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -58,7 +58,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, successful response, has newer blocks, marked healthy, int result response",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -85,7 +85,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, successful response, 429 too many request status, mark warning",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -112,7 +112,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, GetLatestBlockNumber fails, marked unhealthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -139,7 +139,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, successful response, error code 400 marked unhealthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -166,7 +166,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, successful response, has equal block number, marked healthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -193,7 +193,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "1 provider, successful response, has smaller block number, marked warning",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -220,7 +220,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "2 providers, successful response, both have newer blocks, both marked healthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -255,7 +255,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "2 providers, successful response, both have equal blocks, both marked healthy",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -290,7 +290,7 @@ func TestHealthCheck(t *testing.T) {
 		},
 		{
 			name: "2 providers, successful response, both have older blocks, both marked warning",
-			service: &service{
+			network: &network{
 				HTTPClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
@@ -326,14 +326,14 @@ func TestHealthCheck(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.service.Providers))
-			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(len(tt.service.Providers)).Times(len(tt.service.Providers))
+			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.network.Providers))
+			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(len(tt.network.Providers)).Times(len(tt.network.Providers))
 
-			tt.service.healthCheck()
+			tt.network.healthCheck()
 
-			for providerName, provider := range tt.service.Providers {
+			for providerName, provider := range tt.network.Providers {
 				if provider.healthStatus != tt.want[providerName].healthStatus {
-					t.Errorf("service.healthCheck() %s for %v  = %v, want %v", tt.name, providerName, provider.healthStatus, tt.want[providerName].healthStatus)
+					t.Errorf("network.healthCheck() %s for %v  = %v, want %v", tt.name, providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
 			}
 		})
@@ -346,14 +346,14 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		service          *service
+		network          *network
 		providerName     string
 		healthCheckInput healthCheckEntry
 		want             []healthCheckEntry
 	}{
 		{
 			name: "health check entry added to empty list",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{},
@@ -375,7 +375,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 		},
 		{
 			name: "health check entry added to a populated list",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{},
@@ -408,7 +408,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 		},
 		{
 			name: "health check entry added to a populated list of 10",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{},
@@ -511,14 +511,14 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.service.addHealthCheckToCheckedProviderList(tt.providerName, tt.healthCheckInput)
+			tt.network.addHealthCheckToCheckedProviderList(tt.providerName, tt.healthCheckInput)
 
-			if len(tt.service.CheckedProviders[tt.providerName]) != len(tt.want) {
-				t.Errorf("service.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.service.CheckedProviders[tt.providerName]), len(tt.want))
+			if len(tt.network.CheckedProviders[tt.providerName]) != len(tt.want) {
+				t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.network.CheckedProviders[tt.providerName]), len(tt.want))
 			}
 			if len(tt.want) > 0 {
-				if tt.service.CheckedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
-					t.Errorf("service.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.service.CheckedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
+				if tt.network.CheckedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
+					t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.network.CheckedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
 				}
 			}
 		})
@@ -530,12 +530,12 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		service *service
+		network *network
 		want    map[string]*provider
 	}{
 		{
 			name: "1 provider, has older block, marked Warning",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						healthStatus: Healthy,
@@ -560,7 +560,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 		},
 		{
 			name: "1 provider, has newer block, marked healthy",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						healthStatus: Healthy,
@@ -585,7 +585,7 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 		},
 		{
 			name: "1 provider, has equal block, marked healthy",
-			service: &service{
+			network: &network{
 				Providers: map[string]*provider{
 					"provider1": {
 						healthStatus: Healthy,
@@ -612,11 +612,11 @@ func TestEvaluateCheckedProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.service.evaluateCheckedProviders()
+			tt.network.evaluateCheckedProviders()
 
-			for providerName, provider := range tt.service.Providers {
+			for providerName, provider := range tt.network.Providers {
 				if provider.healthStatus != tt.want[providerName].healthStatus {
-					t.Errorf("service.evaluateCheckedProviders() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
+					t.Errorf("network.evaluateCheckedProviders() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
 			}
 		})
