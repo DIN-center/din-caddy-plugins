@@ -562,7 +562,58 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 }
 
 // TODO: finish this.
-func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData, latestBlockFloorByEpoch int64) {
+func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData) {
+	for _, regNetwork := range registryData.Networks {
+		// Check if the network is provisioned
+		if regNetwork.NetworkConfig == nil || !regNetwork.NetworkConfig.IsProvisioned {
+			continue
+		}
+		var network *network
+		// Check if the network exists in the middleware object
+		network, err := d.GetNetwork(regNetwork.ProxyName)
+		if err != nil {
+			// If the network does not exist, create a new network object and use the registry values as the initial values
+			network = NewNetwork(regNetwork.ProxyName)
+		}
+
+		// Set registry network config values.
+		// network.HCMethod = regNetwork.NetworkConfig.HealthcheckMethodBit
+		network.HCInterval = int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
+		network.BlockLagLimit = int64(regNetwork.NetworkConfig.BlockLagLimit)
+		network.MaxRequestPayloadSizeKB = int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
+		network.RequestAttemptCount = int(regNetwork.NetworkConfig.RequestAttemptCount)
+
+		for _, regProvider := range regNetwork.Providers {
+			// Check if the provider exists in the network object
+			// TODO: FINISH
+			provider, ok := network.Providers[]
+			if !ok {
+				// If the provider does not exist, create a new provider object and use the registry values as the initial values
+				provider = NewProvider(regProvider.HttpUrl)
+			}
+
+			// Set registry provider config values.
+			provider.Priority = int(regProvider.Priority)
+			provider.Auth = nil
+			if regProvider.Auth != nil {
+				provider.Auth = &siwe.SIWEClientAuth{
+					ProviderURL:  regProvider.Auth.ProviderURL,
+					SessionCount: int(regProvider.Auth.SessionCount),
+					Signer: &siwe.SigningConfig{
+						PrivateKey: regProvider.Auth.Signer.PrivateKey,
+					},
+				}
+			}
+			provider.Headers = regProvider.Headers
+			provider.HttpUrl = regProvider.HttpUrl
+
+			// Update the provider object with the new data from the registry
+		}
+
+		// Update the network object with the new data from the registry
+		// TODO: use mutext to lock the network object and update the values
+		d.Networks[regNetwork.ProxyName] = network
+	}
 	d.logger.Debug("Processing registry data")
 }
 
