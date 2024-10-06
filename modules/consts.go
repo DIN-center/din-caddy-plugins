@@ -30,6 +30,7 @@ const (
 	DefaultRegistryBlockCheckInterval = int64(60)
 	DefaultRegistryBlockEpoch         = int64(2000)
 	DefaultRegistryEnv                = LineaMainnet
+	DefaultRegistryPriority           = 0
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
