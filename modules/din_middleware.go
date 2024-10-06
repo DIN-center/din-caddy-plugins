@@ -99,7 +99,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.quit = make(chan struct{})
 
 	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(d.logger)
+	d.DingoClient, err = din.NewDinClient()
 	if err != nil {
 		return err
 	}
@@ -522,7 +522,7 @@ func (d *DinMiddleware) startRegistrySync() {
 	// Get the initial registry data
 	registryData, err := d.DingoClient.GetRegistryData()
 	if err != nil {
-		d.logger.Error("Failed to get data from registry", zap.Error(err))
+		d.logger.Error("Failed to initialize registry sync", zap.Error(err))
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
