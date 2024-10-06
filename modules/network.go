@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type service struct {
+type network struct {
 	Name              string               `json:"name"`
 	Providers         map[string]*provider `json:"providers"`
 	Methods           []*string            `json:"methods"`
@@ -38,11 +38,11 @@ type service struct {
 	RequestAttemptCount     int                           `json:"request_attempt_count"`
 }
 
-// NewService creates a new service with the given name
+// NewNetwork creates a new network with the given name
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewService(name string) *service {
-	return &service{
+func NewNetwork(name string) *network {
+	return &network{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCMethod:                DefaultHCMethod,
@@ -57,7 +57,7 @@ func NewService(name string) *service {
 	}
 }
 
-func (s *service) startHealthcheck() {
+func (s *network) startHealthcheck() {
 	s.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(s.HCInterval))
 	go func() {
@@ -82,7 +82,7 @@ type healthCheckEntry struct {
 	timestamp   *time.Time
 }
 
-func (s *service) healthCheck() {
+func (s *network) healthCheck() {
 	// wait group to wait for all the providers to finish their health checks
 	var wg sync.WaitGroup
 	var blockTime time.Time
@@ -96,7 +96,7 @@ func (s *service) healthCheck() {
 			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("service", s.Name), zap.Error(err), zap.String("machine_id", s.machineID))
+				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", s.Name), zap.Error(err), zap.String("machine_id", s.machineID))
 				provider.markPingFailure(s.HCThreshold)
 				s.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
@@ -107,11 +107,11 @@ func (s *service) healthCheck() {
 			if statusCode > 399 {
 				if statusCode == 429 {
 					// if the status code is 429, mark the provider as a warning
-					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("service", s.Name), zap.String("machine_id", s.machineID))
+					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", s.Name), zap.String("machine_id", s.machineID))
 					provider.markPingWarning()
 				} else {
 					// if the status code is greater than 399, mark the provider as a failure
-					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int("status_code", statusCode), zap.String("machine_id", s.machineID))
+					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", s.Name), zap.Int("status_code", statusCode), zap.String("machine_id", s.machineID))
 					provider.markPingFailure(s.HCThreshold)
 				}
 				s.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
@@ -122,17 +122,17 @@ func (s *service) healthCheck() {
 
 			// Consistency health check
 			if s.LatestBlockNumber == 0 || s.LatestBlockNumber < providerBlockNumber {
-				// if the current provider's latest block number is greater than the service's latest block number, update the service's latest block number,
+				// if the current provider's latest block number is greater than the network's latest block number, update the network's latest block number,
 				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
 				s.LatestBlockNumber = providerBlockNumber
 				provider.markHealthy()
 				s.evaluateCheckedProviders()
 			} else if s.LatestBlockNumber == providerBlockNumber {
-				// if the current provider's latest block number is equal to the service's latest block number, set the current provider to healthy
+				// if the current provider's latest block number is equal to the network's latest block number, set the current provider to healthy
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.LatestBlockNumber {
-				// if the current provider's latest block number is below the service's latest block number by more than the acceptable threshold, set the current provider to warning
-				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("service", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("service_block_number", s.LatestBlockNumber), zap.String("machine_id", s.machineID))
+				// if the current provider's latest block number is below the network's latest block number by more than the acceptable threshold, set the current provider to warning
+				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", s.LatestBlockNumber), zap.String("machine_id", s.machineID))
 				provider.markWarning()
 			}
 
@@ -147,9 +147,9 @@ func (s *service) healthCheck() {
 	wg.Wait()
 }
 
-func (s *service) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
+func (s *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
 	s.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-		Service:        s.Name,
+		Network:        s.Name,
 		Provider:       providerName,
 		ResponseStatus: statusCode,
 		HealthStatus:   healthStatus,
@@ -157,21 +157,21 @@ func (s *service) sendLatestBlockMetric(providerName string, statusCode int, hea
 	})
 }
 
-func (s *service) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
+func (s *network) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	values, ok := s.CheckedProviders[providerName]
 	return values, ok
 }
 
-func (s *service) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
+func (s *network) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.CheckedProviders[providerName] = newHealthCheckList
 }
 
 // evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
-func (s *service) evaluateCheckedProviders() {
+func (s *network) evaluateCheckedProviders() {
 	// read lock the checked providers map
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -186,7 +186,7 @@ func (s *service) evaluateCheckedProviders() {
 
 // addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
 // the list will not exceed 10 entries
-func (s *service) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
+func (s *network) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
 	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
 	currentHealthCheckList, ok := s.getCheckedProviderHCList(providerName)
 	if !ok {
@@ -208,7 +208,7 @@ func (s *service) addHealthCheckToCheckedProviderList(providerName string, healt
 	}
 }
 
-func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
+func (s *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, s.HCMethod))
 
 	// Send the POST request
@@ -218,7 +218,7 @@ func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string
 	}
 
 	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return 0, *statusCode, errors.New("Service Unavailable")
+		return 0, *statusCode, errors.New("Network Unavailable")
 	}
 
 	// response struct
@@ -255,6 +255,6 @@ func (s *service) getLatestBlockNumber(httpUrl string, headers map[string]string
 	return blockNumber, *statusCode, nil
 }
 
-func (s *service) close() {
+func (s *network) close() {
 	close(s.quit)
 }

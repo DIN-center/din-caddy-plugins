@@ -77,7 +77,7 @@ func RegisterMetrics() {
 	DinHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_health_check_count",
-			Help: "Metric for counting din health checks with service, provider, response_status and health_status",
+			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
 		[]string{"service", "provider", "response_status", "health_status", "machine_id"},
 	)
@@ -87,7 +87,7 @@ func RegisterMetrics() {
 
 type PromRequestMetricData struct {
 	Method         string
-	Service        string
+	Network        string
 	Provider       string
 	HostName       string
 	ResponseStatus int
@@ -110,27 +110,27 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 		method = requestBody.Method
 	}
 
-	service := strings.TrimPrefix(data.Service, "/")
+	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
 	durationMS := duration.Milliseconds()
 
 	reqBodyByteSize := len(reqBodyBytes)
 
-	p.logger.Debug("Request metric data", zap.String("service", service), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus counter metric based on request data
-	DinRequestCount.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
+	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
+	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
 
 	// Observe prometheus histogram based on request body size and data
-	DinRequestBodyBytes.WithLabelValues(service, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
+	DinRequestBodyBytes.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
 }
 
 type PromLatestBlockMetricData struct {
-	Service        string
+	Network        string
 	Provider       string
 	ResponseStatus int
 	HealthStatus   string
@@ -139,14 +139,14 @@ type PromLatestBlockMetricData struct {
 
 // handleLatestBlockMetric increments prometheus metric based on latest block number health check data
 func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricData) {
-	service := strings.TrimPrefix(data.Service, "/")
+	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
-	p.logger.Debug("Latest block metric data", zap.String("service", service), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(service, data.Provider, status, data.HealthStatus, p.machineID).Inc()
+	DinHealthCheckCount.WithLabelValues(network, data.Provider, status, data.HealthStatus, p.machineID).Inc()
 
 	// Set the latest block number for the provider
-	DinProviderBlockNumber.WithLabelValues(service, data.Provider, p.machineID).Set(float64(data.BlockNumber))
+	DinProviderBlockNumber.WithLabelValues(network, data.Provider, p.machineID).Set(float64(data.BlockNumber))
 }
