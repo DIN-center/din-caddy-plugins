@@ -60,11 +60,11 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
-					Priority: 0,
+					priority: 0,
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
-					Priority: 0,
+					priority: 0,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -75,12 +75,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Healthy,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Healthy,
 				},
 			},
@@ -92,12 +92,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Healthy,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Warning,
 				},
 			},
@@ -109,12 +109,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Warning,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Warning,
 				},
 			},
@@ -126,12 +126,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Warning,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Unhealthy,
 				},
 			},
@@ -143,11 +143,11 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
-					Priority: 1,
+					priority: 1,
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
-					Priority: 1,
+					priority: 1,
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -158,12 +158,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Healthy,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     1,
+					priority:     1,
 					healthStatus: Healthy,
 				},
 			},
@@ -175,12 +175,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Warning,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     1,
+					priority:     1,
 					healthStatus: Healthy,
 				},
 			},
@@ -192,12 +192,12 @@ func TestGetDinUpstreams(t *testing.T) {
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream:     upstream1,
-					Priority:     0,
+					priority:     0,
 					healthStatus: Unhealthy,
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
-					Priority:     1,
+					priority:     1,
 					healthStatus: Unhealthy,
 				},
 			},

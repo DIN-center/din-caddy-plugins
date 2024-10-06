@@ -17,11 +17,11 @@ func TestNewProvider(t *testing.T) {
 			name:   "passing localhost",
 			urlstr: "http://localhost:8080",
 			output: &provider{
-				HttpUrl:  "http://localhost:8080",
+				httpUrl:  "http://localhost:8080",
 				host:     "localhost:8080",
 				path:     "",
 				headers:  make(map[string]string),
-				Priority: 0,
+				priority: 0,
 			},
 			hasErr: false,
 		},
@@ -29,10 +29,10 @@ func TestNewProvider(t *testing.T) {
 			name:   "passing fullurl with key",
 			urlstr: "https://eth.rpc.test.cloud:443/key",
 			output: &provider{
-				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
+				httpUrl:  "https://eth.rpc.test.cloud:443/key",
 				host:     "eth.rpc.test.cloud:443",
 				headers:  make(map[string]string),
-				Priority: 0,
+				priority: 0,
 			},
 			hasErr: false,
 		},
@@ -44,8 +44,8 @@ func TestNewProvider(t *testing.T) {
 			if err != nil && !tt.hasErr {
 				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
 			}
-			if provider.HttpUrl != tt.output.HttpUrl {
-				t.Errorf("HttpUrl = %v, want %v", provider.HttpUrl, tt.output.HttpUrl)
+			if provider.httpUrl != tt.output.httpUrl {
+				t.Errorf("HttpUrl = %v, want %v", provider.httpUrl, tt.output.httpUrl)
 			}
 			if provider.host != tt.output.host {
 				t.Errorf("host = %v, want %v", provider.host, tt.output.host)
@@ -56,8 +56,8 @@ func TestNewProvider(t *testing.T) {
 			if len(provider.headers) != len(tt.output.headers) {
 				t.Errorf("Headers length = %v, want %v", len(provider.headers), len(tt.output.headers))
 			}
-			if provider.Priority != tt.output.Priority {
-				t.Errorf("Priority = %v, want %v", provider.Priority, tt.output.Priority)
+			if provider.priority != tt.output.priority {
+				t.Errorf("priority = %v, want %v", provider.priority, tt.output.priority)
 			}
 		})
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 type network struct {
-	Name              string `json:"name"`
+	name              string
 	quit              chan struct{}
 	latestBlockNumber int64
 	httpClient        din_http.IHTTPClient
@@ -24,11 +24,12 @@ type network struct {
 	logger            *zap.Logger
 	machineID         string
 
+	// internal health check values
 	healthCheckListMutex sync.RWMutex
 	hcThreshold          int
 	checkedProviders     map[string][]healthCheckEntry
 
-	// Registry configurations
+	// Registry values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
 	HCMethod                string               `json:"healthcheck_method"`
@@ -43,7 +44,7 @@ type network struct {
 // Don't kick off any Background processes here
 func NewNetwork(name string) *network {
 	return &network{
-		Name: name,
+		name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCMethod:                DefaultHCMethod,
 		hcThreshold:             DefaultHCThreshold,
@@ -93,10 +94,10 @@ func (s *network) healthCheck() {
 		go func(providerName string, provider *provider) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
 			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.HttpUrl, provider.headers, provider.AuthClient())
+			providerBlockNumber, statusCode, err := s.getLatestBlockNumber(provider.httpUrl, provider.headers, provider.AuthClient())
 			if err != nil {
 				// if there is an error getting the latest block number, mark the provider as a failure
-				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", s.Name), zap.Error(err), zap.String("machine_id", s.machineID))
+				s.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", s.name), zap.Error(err), zap.String("machine_id", s.machineID))
 				provider.markPingFailure(s.hcThreshold)
 				s.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 				return
@@ -107,11 +108,11 @@ func (s *network) healthCheck() {
 			if statusCode > 399 {
 				if statusCode == 429 {
 					// if the status code is 429, mark the provider as a warning
-					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", s.Name), zap.String("machine_id", s.machineID))
+					s.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", s.name), zap.String("machine_id", s.machineID))
 					provider.markPingWarning()
 				} else {
 					// if the status code is greater than 399, mark the provider as a failure
-					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", s.Name), zap.Int("status_code", statusCode), zap.String("machine_id", s.machineID))
+					s.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", s.name), zap.Int("status_code", statusCode), zap.String("machine_id", s.machineID))
 					provider.markPingFailure(s.hcThreshold)
 				}
 				s.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
@@ -132,7 +133,7 @@ func (s *network) healthCheck() {
 				provider.markHealthy()
 			} else if providerBlockNumber+s.BlockLagLimit < s.latestBlockNumber {
 				// if the current provider's latest block number is below the network's latest block number by more than the acceptable threshold, set the current provider to warning
-				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", s.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", s.latestBlockNumber), zap.String("machine_id", s.machineID))
+				s.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", s.name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", s.latestBlockNumber), zap.String("machine_id", s.machineID))
 				provider.markWarning()
 			}
 
@@ -149,7 +150,7 @@ func (s *network) healthCheck() {
 
 func (s *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
 	s.prometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-		Network:        s.Name,
+		Network:        s.name,
 		Provider:       providerName,
 		ResponseStatus: statusCode,
 		HealthStatus:   healthStatus,

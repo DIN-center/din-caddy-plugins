@@ -42,7 +42,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < len(providers); priority++ {
 		for _, p := range providers {
-			if p.Priority == priority && p.Available() {
+			if p.priority == priority && p.Available() {
 				upstreamPool = append(upstreamPool, p.upstream)
 			}
 		}
@@ -56,7 +56,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 	if len(upstreamPool) == 0 {
 		for priority := 0; priority < len(providers); priority++ {
 			for _, p := range providers {
-				if p.Priority == priority && p.IsAvailableWithWarning() {
+				if p.priority == priority && p.IsAvailableWithWarning() {
 					upstreamPool = append(upstreamPool, p.upstream)
 				}
 			}

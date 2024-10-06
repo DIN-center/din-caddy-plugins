@@ -11,22 +11,22 @@ import (
 )
 
 type provider struct {
-	HttpUrl    string `json:"http.url"`
-	path       string
-	host       string
-	headers    map[string]string
-	Methods    []*string `json:"methods"`
-	upstream   *reverseproxy.Upstream
-	httpClient *din_http.HTTPClient
-	Priority   int `json:"priority"`
-
-	Auth   *siwe.SIWEClientAuth
-	logger *zap.Logger
-
+	httpUrl      string
+	path         string
+	host         string
+	headers      map[string]string
+	upstream     *reverseproxy.Upstream
+	httpClient   *din_http.HTTPClient
+	logger       *zap.Logger
 	failures     int
 	successes    int
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
+	priority     int
 	quit         chan struct{}
+
+	// Registry Configuration Values
+	Methods []*string            `json:"methods"`
+	Auth    *siwe.SIWEClientAuth `json:"auth"`
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -35,7 +35,7 @@ func NewProvider(urlStr string) (*provider, error) {
 		return nil, err
 	}
 	p := &provider{
-		HttpUrl: urlStr,
+		httpUrl: urlStr,
 		host:    url.Host,
 		headers: make(map[string]string),
 	}
