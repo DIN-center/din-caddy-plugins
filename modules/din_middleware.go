@@ -126,7 +126,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range network.Providers {
-			url, err := url.Parse(provider.HttpUrl)
+			url, err := url.Parse(provider.httpUrl)
 			if err != nil {
 				return err
 			}
@@ -142,11 +142,11 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			provider.httpClient = httpClient
 			if provider.Auth != nil {
 				if err := provider.Auth.Start(context.Logger(d)); err != nil {
-					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
+					d.logger.Warn("Error starting authentication", zap.String("provider", provider.httpUrl), zap.String("machine_id", d.machineID))
 				}
 			}
 			provider.logger = d.logger
-			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.httpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.priority), zap.Any("Headers", provider.headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 		}
 	}
 
@@ -330,7 +330,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 								switch dispenser.Val() {
 								case "auth":
 									auth := &siwe.SIWEClientAuth{
-										ProviderURL:  strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
+										ProviderURL:  strings.TrimSuffix(providerObj.httpUrl, "/") + "/auth",
 										SessionCount: 16,
 									}
 									for dispenser.NextBlock(nesting + 3) {
@@ -399,7 +399,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									}
 								case "priority":
 									dispenser.NextBlock(nesting + 2)
-									providerObj.Priority, err = strconv.Atoi(dispenser.Val())
+									providerObj.priority, err = strconv.Atoi(dispenser.Val())
 									if err != nil {
 										return err
 									}
@@ -507,7 +507,7 @@ func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
 	networks := d.GetNetworks()
 	for _, network := range networks {
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+		d.logger.Info("Starting healthcheck for network", zap.String("network", network.name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
 	}
 	return nil

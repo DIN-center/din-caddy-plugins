@@ -75,7 +75,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					Name: "eth",
+					name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
@@ -100,7 +100,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					Name: "eth",
+					name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
@@ -176,15 +176,15 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			name: "Provision() populated 1 network, 2 upstreams successful for ethereum runtime",
 			networks: map[string]*network{
 				"eth": {
-					Name:        "eth",
+					name:        "eth",
 					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/eth",
+							httpUrl: "http://localhost:8000/eth",
 						},
 						"localhost:8001": {
-							HttpUrl: "http://localhost:8001/eth",
+							httpUrl: "http://localhost:8001/eth",
 						},
 					},
 					checkedProviders: map[string][]healthCheckEntry{},
@@ -198,12 +198,12 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			name: "Provision() populated 2 network, 1 upstreams successful",
 			networks: map[string]*network{
 				"eth": {
-					Name:        "eth",
+					name:        "eth",
 					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/eth",
+							httpUrl: "http://localhost:8000/eth",
 						},
 					},
 					checkedProviders: map[string][]healthCheckEntry{},
@@ -211,13 +211,13 @@ func TestDinMiddlewareProvision(t *testing.T) {
 					logger:           logger,
 				},
 				"starknet-mainnet": {
-					Name:        "eth",
+					name:        "eth",
 					HCMethod:    "starknet_blockNumber",
 					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/starknet-mainnet",
+							httpUrl: "http://localhost:8000/starknet-mainnet",
 						},
 					},
 					checkedProviders: map[string][]healthCheckEntry{},
