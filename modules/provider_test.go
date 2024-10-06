@@ -20,7 +20,7 @@ func TestNewProvider(t *testing.T) {
 				HttpUrl:  "http://localhost:8080",
 				host:     "localhost:8080",
 				path:     "",
-				Headers:  make(map[string]string),
+				headers:  make(map[string]string),
 				Priority: 0,
 			},
 			hasErr: false,
@@ -31,7 +31,7 @@ func TestNewProvider(t *testing.T) {
 			output: &provider{
 				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
 				host:     "eth.rpc.test.cloud:443",
-				Headers:  make(map[string]string),
+				headers:  make(map[string]string),
 				Priority: 0,
 			},
 			hasErr: false,
@@ -53,8 +53,8 @@ func TestNewProvider(t *testing.T) {
 			if provider.path != tt.output.path {
 				t.Errorf("path = %v, want %v", provider.path, tt.output.path)
 			}
-			if len(provider.Headers) != len(tt.output.Headers) {
-				t.Errorf("Headers length = %v, want %v", len(provider.Headers), len(tt.output.Headers))
+			if len(provider.headers) != len(tt.output.headers) {
+				t.Errorf("Headers length = %v, want %v", len(provider.headers), len(tt.output.headers))
 			}
 			if provider.Priority != tt.output.Priority {
 				t.Errorf("Priority = %v, want %v", provider.Priority, tt.output.Priority)

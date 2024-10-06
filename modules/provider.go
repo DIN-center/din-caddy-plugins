@@ -14,11 +14,11 @@ type provider struct {
 	HttpUrl    string `json:"http.url"`
 	path       string
 	host       string
-	Headers    map[string]string
+	headers    map[string]string
 	Methods    []*string `json:"methods"`
 	upstream   *reverseproxy.Upstream
 	httpClient *din_http.HTTPClient
-	Priority   int
+	Priority   int `json:"priority"`
 
 	Auth   *siwe.SIWEClientAuth
 	logger *zap.Logger
@@ -37,7 +37,7 @@ func NewProvider(urlStr string) (*provider, error) {
 	p := &provider{
 		HttpUrl: urlStr,
 		host:    url.Host,
-		Headers: make(map[string]string),
+		headers: make(map[string]string),
 	}
 	return p, nil
 }

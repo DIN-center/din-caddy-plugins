@@ -13,9 +13,9 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
-		RegistryEnv:                         LineaMainnet,
+		registryEnv:                         LineaMainnet,
 		RegistryBlockEpoch:                  10,
-		RegistryLastUpdatedEpochBlockNumber: 40,
+		registryLastUpdatedEpochBlockNumber: 40,
 		logger:                              logger,
 		DingoClient:                         mockDingoClient,
 	}
@@ -69,10 +69,10 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 
 			dinMiddleware.Networks = map[string]*network{
 				LineaMainnet: {
-					LatestBlockNumber: tt.latestBlockNumber,
+					latestBlockNumber: tt.latestBlockNumber,
 				},
 			}
-			dinMiddleware.RegistryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
+			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
 			// Check if update was called as expected
 			if tt.expectedUpdateCall {
@@ -81,9 +81,9 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			// Call the function
 			dinMiddleware.syncRegistryWithLatestBlock()
 
-			// Validate that RegistryLastUpdatedEpochBlockNumber is updated correctly
-			if dinMiddleware.RegistryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
-				t.Errorf("Expected RegistryLastUpdatedEpochBlockNumber = %v, got %v", tt.expectedBlockFloorByEpoch, dinMiddleware.RegistryLastUpdatedEpochBlockNumber)
+			// Validate that registryLastUpdatedEpochBlockNumber is updated correctly
+			if dinMiddleware.registryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
+				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v", tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
 			}
 		})
 	}
