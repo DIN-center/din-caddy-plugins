@@ -9,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	dingo "github.com/DIN-center/din-caddy-plugins/lib/dingo"
-	dinsdk "github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
@@ -354,7 +353,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	logger := zap.NewNop()
 	mockCtrl := gomock.NewController(t)
-	mockDingoClient := dingo.NewMockIDingoClient(mockCtrl)
+	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
 		RegistryEnv:                         LineaMainnet,
 		RegistryBlockEpoch:                  10,
@@ -419,7 +418,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 
 			// Check if update was called as expected
 			if tt.expectedUpdateCall {
-				mockDingoClient.EXPECT().GetDataFromRegistry().Return(&dinsdk.DinRegistryData{}, nil).Times(1)
+				mockDingoClient.EXPECT().GetRegistryData().Return(&din.DinRegistryData{}, nil).Times(1)
 			}
 			// Call the function
 			dinMiddleware.syncRegistryWithLatestBlock()

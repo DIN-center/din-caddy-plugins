@@ -158,23 +158,23 @@ func (n *network) sendLatestBlockMetric(providerName string, statusCode int, hea
 }
 
 func (n *network) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.healthCheckListMutex.RLock()
+	defer n.healthCheckListMutex.RUnlock()
 	values, ok := n.CheckedProviders[providerName]
 	return values, ok
 }
 
 func (n *network) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.healthCheckListMutex.Lock()
+	defer n.healthCheckListMutex.Unlock()
 	n.CheckedProviders[providerName] = newHealthCheckList
 }
 
 // evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
 func (n *network) evaluateCheckedProviders() {
 	// read lock the checked providers map
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.healthCheckListMutex.RLock()
+	defer n.healthCheckListMutex.RUnlock()
 	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
 	checkedProviders := n.CheckedProviders
 	for providerName, healthCheckList := range checkedProviders {

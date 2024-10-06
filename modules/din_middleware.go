@@ -13,10 +13,9 @@ import (
 	"sync"
 	"time"
 
-	dingo "github.com/DIN-center/din-caddy-plugins/lib/dingo"
-
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -49,7 +48,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The di-ngo client object
-	DingoClient dingo.IDingoClient
+	DingoClient din.IDingoClient
 
 	logger *zap.Logger
 
@@ -71,6 +70,8 @@ type DinMiddleware struct {
 	RegistryLastUpdatedEpochBlockNumber int64
 	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
 	RegistryEnv string
+	// The priority of the registry providers
+	RegistryPriority int
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -98,7 +99,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.quit = make(chan struct{})
 
 	// Initialize the din registry configuration values
-	d.DingoClient, err = dingo.NewDingoClient(d.logger)
+	d.DingoClient, err = din.NewDinClient(d.logger)
 	if err != nil {
 		return err
 	}
@@ -110,6 +111,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	}
 	if d.RegistryEnv == "" {
 		d.RegistryEnv = DefaultRegistryEnv
+	}
+	if d.RegistryPriority == 0 {
+		d.RegistryPriority = DefaultRegistryPriority
 	}
 
 	// Initialize the HTTP client for each network and provider
@@ -180,8 +184,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, err := d.GetNetwork(networkPath)
-	if err != nil {
+	network, ok := d.GetNetwork(networkPath)
+	if !ok {
+		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
 		if networkPath == "" {
 			rw.WriteHeader(200)
 			rw.Write([]byte("{}"))
@@ -480,6 +485,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					dispenser.Next()
 					registryEnvVal := dispenser.Val()
 					d.RegistryEnv = registryEnvVal
+				case "registry_priority":
+					dispenser.Next()
+					registryPriorityVal := dispenser.Val()
+					intValue, err := strconv.Atoi(registryPriorityVal)
+					if err != nil {
+						return dispenser.Errf("Error converting string to int: %v", err)
+					}
+					d.RegistryPriority = intValue
 				}
 			}
 		}
@@ -507,11 +520,11 @@ func (d *DinMiddleware) startHealthChecks() error {
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
 	// Get the initial registry data
-	registryData, err := d.DingoClient.GetDataFromRegistry()
+	registryData, err := d.DingoClient.GetRegistryData()
 	if err != nil {
 		d.logger.Error("Failed to get data from registry", zap.Error(err))
 	}
-	d.processRegistryData(registryData, int64(0))
+	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
@@ -529,94 +542,6 @@ func (d *DinMiddleware) startRegistrySync() {
 	}()
 }
 
-func (d *DinMiddleware) syncRegistryWithLatestBlock() {
-	// Check if the linea network exists in the middleware object
-	network, err := d.GetNetwork(d.RegistryEnv)
-	if err != nil {
-		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
-		return
-	}
-	// Get the latest block number from the linea network
-	latestBlockNumber := network.LatestBlockNumber
-
-	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
-	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
-
-	d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch),
-		zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
-		zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber),
-	)
-
-	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
-	if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
-		registryData, err := d.DingoClient.GetDataFromRegistry()
-		if err != nil {
-			d.logger.Error("Failed to get data from registry", zap.Error(err))
-		}
-		d.processRegistryData(registryData, latestBlockFloorByEpoch)
-
-		// Update the last updated block number
-		d.RegistryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
-
-	}
-}
-
-// TODO: finish this.
-func (d *DinMiddleware) processRegistryData(registryData *dinsdk.DinRegistryData) {
-	for _, regNetwork := range registryData.Networks {
-		// Check if the network is provisioned
-		if regNetwork.NetworkConfig == nil || !regNetwork.NetworkConfig.IsProvisioned {
-			continue
-		}
-		var network *network
-		// Check if the network exists in the middleware object
-		network, err := d.GetNetwork(regNetwork.ProxyName)
-		if err != nil {
-			// If the network does not exist, create a new network object and use the registry values as the initial values
-			network = NewNetwork(regNetwork.ProxyName)
-		}
-
-		// Set registry network config values.
-		// network.HCMethod = regNetwork.NetworkConfig.HealthcheckMethodBit
-		network.HCInterval = int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
-		network.BlockLagLimit = int64(regNetwork.NetworkConfig.BlockLagLimit)
-		network.MaxRequestPayloadSizeKB = int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
-		network.RequestAttemptCount = int(regNetwork.NetworkConfig.RequestAttemptCount)
-
-		for _, regProvider := range regNetwork.Providers {
-			// Check if the provider exists in the network object
-			// TODO: FINISH
-			provider, ok := network.Providers[]
-			if !ok {
-				// If the provider does not exist, create a new provider object and use the registry values as the initial values
-				provider = NewProvider(regProvider.HttpUrl)
-			}
-
-			// Set registry provider config values.
-			provider.Priority = int(regProvider.Priority)
-			provider.Auth = nil
-			if regProvider.Auth != nil {
-				provider.Auth = &siwe.SIWEClientAuth{
-					ProviderURL:  regProvider.Auth.ProviderURL,
-					SessionCount: int(regProvider.Auth.SessionCount),
-					Signer: &siwe.SigningConfig{
-						PrivateKey: regProvider.Auth.Signer.PrivateKey,
-					},
-				}
-			}
-			provider.Headers = regProvider.Headers
-			provider.HttpUrl = regProvider.HttpUrl
-
-			// Update the provider object with the new data from the registry
-		}
-
-		// Update the network object with the new data from the registry
-		// TODO: use mutext to lock the network object and update the values
-		d.Networks[regNetwork.ProxyName] = network
-	}
-	d.logger.Debug("Processing registry data")
-}
-
 func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	err := d.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
@@ -624,28 +549,6 @@ func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 	}
 
 	return d, nil
-}
-
-func (d *DinMiddleware) GetNetwork(networkName string) (*network, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	n, ok := d.Networks[networkName]
-	if !ok {
-		return nil, fmt.Errorf("network not found")
-	}
-	return n, nil
-}
-
-func (d *DinMiddleware) GetNetworks() []*network {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	networks := make([]*network, 0)
-	for _, n := range d.Networks {
-		networks = append(networks, n)
-	}
-	return networks
 }
 
 func (d *DinMiddleware) closeAll() {

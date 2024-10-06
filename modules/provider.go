@@ -15,11 +15,13 @@ type provider struct {
 	path       string
 	host       string
 	Headers    map[string]string
+	Methods    []*string `json:"methods"`
 	upstream   *reverseproxy.Upstream
 	httpClient *din_http.HTTPClient
 	Priority   int
-	Auth       *siwe.SIWEClientAuth
-	logger     *zap.Logger
+
+	Auth   *siwe.SIWEClientAuth
+	logger *zap.Logger
 
 	failures     int
 	successes    int

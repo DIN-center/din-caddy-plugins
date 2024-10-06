@@ -1,9 +1,11 @@
 module github.com/DIN-center/din-caddy-plugins
 
-go 1.21.6
+go 1.22
+
+toolchain go1.22.8
 
 require (
-	github.com/DIN-center/din-sc/apps/din-go v0.0.0-00010101000000-000000000000
+	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20240925201048-ab3f670ef929
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.7
@@ -13,7 +15,7 @@ require (
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.9.0
-	go.uber.org/zap v1.25.0
+	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -126,7 +128,7 @@ require (
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/term v0.19.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.20.0 // indirect
