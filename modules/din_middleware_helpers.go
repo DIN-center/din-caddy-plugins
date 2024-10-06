@@ -7,24 +7,24 @@ import (
 
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 	// Check if the linea network exists in the middleware object
-	network, ok := d.GetNetwork(d.RegistryEnv)
+	network, ok := d.GetNetwork(d.registryEnv)
 	if !ok {
-		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
+		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.registryEnv))
 		return
 	}
 	// Get the latest block number from the linea network
-	latestBlockNumber := network.LatestBlockNumber
+	latestBlockNumber := network.latestBlockNumber
 
 	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
 	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
 
 	d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch),
 		zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
-		zap.Int64("last_updated_block_number", d.RegistryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber),
+		zap.Int64("last_updated_block_number", d.registryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber),
 	)
 
 	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
-	if latestBlockFloorByEpoch-d.RegistryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
+	if latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
 		registryData, err := d.DingoClient.GetRegistryData()
 		if err != nil {
 			d.logger.Error("Failed to get data from registry", zap.Error(err))
@@ -32,7 +32,7 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 		d.processRegistryData(registryData)
 
 		// Update the last updated block number
-		d.RegistryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
+		d.registryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
 
 	}
 }
@@ -111,7 +111,7 @@ func (d *DinMiddleware) AddNetworkFromRegistry(regNetwork *din.Network) error {
 			}
 
 			// set the provider priority to the registry priority
-			provider.Priority = d.RegistryPriority
+			provider.Priority = d.registryPriority
 
 			// Get the network service methods from the din registry
 			networkServiceMethods, err := d.DingoClient.GetNetworkServiceMethods(networkService.Address)
@@ -137,12 +137,39 @@ func (d *DinMiddleware) UpdateNetworkWithRegistryData(regNetwork *din.Network) e
 	return nil
 }
 
+func (d *DinMiddleware) SetNetworkConfigValues(network *network) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return nil
+}
+
 func (d *DinMiddleware) GetNetwork(networkName string) (*network, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	n, ok := d.Networks[networkName]
 	return n, ok
+}
+
+func (d *DinMiddleware) GetNetworkCopy(networkName string) *network {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	networkCopy := NewNetwork(networkName)
+
+	n, ok := d.Networks[networkName]
+	if !ok {
+		return nil
+	}
+	networkCopy.HCMethod = n.HCMethod
+	networkCopy.HCInterval = n.HCInterval
+	networkCopy.BlockLagLimit = n.BlockLagLimit
+	networkCopy.MaxRequestPayloadSizeKB = n.MaxRequestPayloadSizeKB
+	networkCopy.RequestAttemptCount = n.RequestAttemptCount
+
+	networkCopy.Providers = n.Providers
+	networkCopy.Methods = n.Methods
+	return networkCopy
 }
 
 func (d *DinMiddleware) GetNetworks() []*network {

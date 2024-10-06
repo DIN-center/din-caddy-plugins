@@ -81,7 +81,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 							healthStatus: Healthy,
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{
+					checkedProviders: map[string][]healthCheckEntry{
 						"localhost:8000": {
 							{
 								blockNumber: 1,
@@ -106,7 +106,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 							healthStatus: Healthy,
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{
+					checkedProviders: map[string][]healthCheckEntry{
 						"localhost:8000": {
 							{
 								blockNumber: 1,
@@ -177,7 +177,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name:        "eth",
-					HCThreshold: 2,
+					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
@@ -187,8 +187,8 @@ func TestDinMiddlewareProvision(t *testing.T) {
 							HttpUrl: "http://localhost:8001/eth",
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
+					checkedProviders: map[string][]healthCheckEntry{},
+					prometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 			},
@@ -199,29 +199,29 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name:        "eth",
-					HCThreshold: 2,
+					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							HttpUrl: "http://localhost:8000/eth",
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
+					checkedProviders: map[string][]healthCheckEntry{},
+					prometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 				"starknet-mainnet": {
 					Name:        "eth",
 					HCMethod:    "starknet_blockNumber",
-					HCThreshold: 2,
+					hcThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							HttpUrl: "http://localhost:8000/starknet-mainnet",
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
+					checkedProviders: map[string][]healthCheckEntry{},
+					prometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 			},
