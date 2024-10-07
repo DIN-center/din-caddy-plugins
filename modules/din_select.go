@@ -61,7 +61,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		if selectedUpstream == provider.upstream {
 			r.URL.RawPath = provider.path
 			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range provider.headers {
+			for k, v := range provider.Headers {
 				r.Header.Add(k, v)
 			}
 			if provider.Auth != nil {
