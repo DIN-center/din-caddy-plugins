@@ -38,7 +38,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			duration:     1 * time.Second,
 			data: &PromRequestMetricData{
 				Method:         "POST",
-				Service:        "/ethereum",
+				Network:        "/ethereum",
 				Provider:       "infura",
 				HostName:       "node1",
 				ResponseStatus: 200,
@@ -61,7 +61,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			duration:     1 * time.Second,
 			data: &PromRequestMetricData{
 				Method:         "POST",
-				Service:        "/ethereum",
+				Network:        "/ethereum",
 				Provider:       "infura",
 				HostName:       "node1",
 				ResponseStatus: 200,
@@ -120,7 +120,7 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 		{
 			name: "Valid Data",
 			data: &PromLatestBlockMetricData{
-				Service:        "/ethereum",
+				Network:        "/ethereum",
 				Provider:       "infura",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
@@ -137,7 +137,7 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 		{
 			name: "Invalid Data",
 			data: &PromLatestBlockMetricData{
-				Service:        "/ethereum",
+				Network:        "/ethereum",
 				Provider:       "infura",
 				ResponseStatus: 500,
 				HealthStatus:   "unhealthy",

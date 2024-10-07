@@ -66,14 +66,14 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		name     string
 		request  *http.Request
 		provider string
-		services map[string]*service
+		networks map[string]*network
 		hasErr   bool
 	}{
 		{
 			name:     "successful request",
 			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`)),
 			provider: "localhost:8000",
-			services: map[string]*service{
+			networks: map[string]*network{
 				"eth": {
 					Name: "eth",
 					Providers: map[string]*provider{
@@ -98,7 +98,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			name:     "unsuccesful request, payload too large",
 			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload)),
 			provider: "localhost:8000",
-			services: map[string]*service{
+			networks: map[string]*network{
 				"eth": {
 					Name: "eth",
 					Providers: map[string]*provider{
@@ -122,22 +122,22 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		{
 			name:    "unsuccessful request, path not found",
 			request: httptest.NewRequest("GET", "http://localhost:8000/xxx", nil),
-			services: map[string]*service{
+			networks: map[string]*network{
 				"eth": {},
 			},
 			hasErr: true,
 		},
 		{
-			name:     "unsuccessful request, service map is empty",
+			name:     "unsuccessful request, network map is empty",
 			request:  httptest.NewRequest("GET", "http://localhost:8000/eth", nil),
-			services: map[string]*service{},
+			networks: map[string]*network{},
 			hasErr:   true,
 		},
 	}
 
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
-			dinMiddleware.Services = tt.services
+			dinMiddleware.Networks = tt.networks
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			rw := httptest.NewRecorder()
 
@@ -169,12 +169,12 @@ func TestDinMiddlewareProvision(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		services map[string]*service
+		networks map[string]*network
 		hasErr   bool
 	}{
 		{
-			name: "Provision() populated 1 service, 2 upstreams successful for ethereum runtime",
-			services: map[string]*service{
+			name: "Provision() populated 1 network, 2 upstreams successful for ethereum runtime",
+			networks: map[string]*network{
 				"eth": {
 					Name:        "eth",
 					HCThreshold: 2,
@@ -195,8 +195,8 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			hasErr: false,
 		},
 		{
-			name: "Provision() populated 2 service, 1 upstreams successful",
-			services: map[string]*service{
+			name: "Provision() populated 2 network, 1 upstreams successful",
+			networks: map[string]*network{
 				"eth": {
 					Name:        "eth",
 					HCThreshold: 2,
@@ -231,15 +231,15 @@ func TestDinMiddlewareProvision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dinMiddleware.Services = tt.services
+			dinMiddleware.Networks = tt.networks
 			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).AnyTimes()
 			err := dinMiddleware.Provision(caddy.Context{})
 			if err != nil && !tt.hasErr {
 				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 			}
 
-			for _, services := range dinMiddleware.Services {
-				for _, provider := range services.Providers {
+			for _, networks := range dinMiddleware.Networks {
+				for _, provider := range networks.Providers {
 					if provider.upstream.Dial == "" || provider.path == "" {
 						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
 					}
@@ -258,7 +258,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 	}{
 		{
 			name: "Valid Caddyfile",
-			caddyfile: `services {
+			caddyfile: `networks {
 				eth {
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
@@ -286,7 +286,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 		},
 		{
 			name: "Invalid Caddyfile - Missing provider",
-			caddyfile: `services {
+			caddyfile: `networks {
 				eth {
 					methods methods eth_blockNumber eth_getBlockByNumber
 					healthcheck_method eth_blockNumber
@@ -300,7 +300,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 		},
 		{
 			name: "Invalid Caddyfile - Invalid 'methods' argument",
-			caddyfile: `services {
+			caddyfile: `networks {
 				eth {
 					methods
 					providers {
@@ -322,7 +322,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 		},
 		{
 			name: "Invalid Caddyfile - Invalid 'headers' argument",
-			caddyfile: `services {
+			caddyfile: `networks {
 				eth {
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
