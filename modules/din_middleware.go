@@ -560,6 +560,7 @@ func (d *DinMiddleware) startRegistrySync() {
 		}
 	}()
 }
+
 func (d *DinMiddleware) closeAll() {
 	networks := d.getNetworks()
 	for _, network := range networks {
@@ -570,4 +571,14 @@ func (d *DinMiddleware) closeAll() {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
+}
+
+// getMachineId returns a unique string for the current running process
+func getMachineId() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	currentPid := os.Getpid()
+	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
