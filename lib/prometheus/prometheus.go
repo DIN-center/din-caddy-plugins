@@ -123,10 +123,12 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
+	// Disabled to avoid high metric count on prometheus
+	// DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
 
 	// Observe prometheus histogram based on request body size and data
-	DinRequestBodyBytes.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
+	// Disabled to avoid high metric count on prometheus
+	// DinRequestBodyBytes.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
 }
 
 type PromLatestBlockMetricData struct {
@@ -148,5 +150,6 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	DinHealthCheckCount.WithLabelValues(network, data.Provider, status, data.HealthStatus, p.machineID).Inc()
 
 	// Set the latest block number for the provider
-	DinProviderBlockNumber.WithLabelValues(network, data.Provider, p.machineID).Set(float64(data.BlockNumber))
+	// Disabled to avoid high metric count on prometheus
+	// DinProviderBlockNumber.WithLabelValues(network, data.Provider, p.machineID).Set(float64(data.BlockNumber))
 }
