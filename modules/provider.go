@@ -11,17 +11,17 @@ import (
 )
 
 type provider struct {
-	httpUrl      string
+	HttpUrl      string
 	path         string
 	host         string
-	headers      map[string]string
+	Headers      map[string]string
 	upstream     *reverseproxy.Upstream
 	httpClient   *din_http.HTTPClient
 	logger       *zap.Logger
 	failures     int
 	successes    int
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
-	priority     int
+	Priority     int
 	quit         chan struct{}
 
 	// Registry Configuration Values
@@ -35,9 +35,9 @@ func NewProvider(urlStr string) (*provider, error) {
 		return nil, err
 	}
 	p := &provider{
-		httpUrl: urlStr,
+		HttpUrl: urlStr,
 		host:    url.Host,
-		headers: make(map[string]string),
+		Headers: make(map[string]string),
 	}
 	return p, nil
 }

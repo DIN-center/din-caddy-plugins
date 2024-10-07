@@ -32,7 +32,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has newer blocks, marked healthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -41,8 +41,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 5000000,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -59,7 +59,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has newer blocks, marked healthy, int result response",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -68,8 +68,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 500,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -86,7 +86,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, 429 too many request status, mark warning",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -95,8 +95,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 5000000,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -113,7 +113,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, GetlatestBlockNumber fails, marked unhealthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -122,8 +122,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 20,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -140,7 +140,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, error code 400 marked unhealthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -149,8 +149,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 30,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -167,7 +167,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has equal block number, marked healthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -176,8 +176,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 6310269,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -194,7 +194,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "1 provider, successful response, has smaller block number, marked warning",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -203,8 +203,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 7310269,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -221,7 +221,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have newer blocks, both marked healthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -235,8 +235,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 5310269,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -256,7 +256,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have equal blocks, both marked healthy",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -270,8 +270,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 6310269,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -291,7 +291,7 @@ func TestHealthCheck(t *testing.T) {
 		{
 			name: "2 providers, successful response, both have older blocks, both marked warning",
 			network: &network{
-				httpClient: mockHttpClient,
+				HttpClient: mockHttpClient,
 				Providers: map[string]*provider{
 					"provider1": {
 						upstream: &reverseproxy.Upstream{
@@ -305,8 +305,8 @@ func TestHealthCheck(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 7310269,
-				checkedProviders:  map[string][]healthCheckEntry{},
-				prometheusClient:  mockPrometheusClient,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+				PrometheusClient:  mockPrometheusClient,
 				logger:            zap.NewNop(),
 			},
 			latestBlockResponse: postResponse{
@@ -359,7 +359,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 						upstream: &reverseproxy.Upstream{},
 					},
 				},
-				checkedProviders: map[string][]healthCheckEntry{},
+				CheckedProviders: map[string][]healthCheckEntry{},
 			},
 			providerName: "provider1",
 			healthCheckInput: healthCheckEntry{
@@ -381,7 +381,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 						upstream: &reverseproxy.Upstream{},
 					},
 				},
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 1,
@@ -414,7 +414,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 						upstream: &reverseproxy.Upstream{},
 					},
 				},
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 10,
@@ -513,12 +513,12 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.network.addHealthCheckToCheckedProviderList(tt.providerName, tt.healthCheckInput)
 
-			if len(tt.network.checkedProviders[tt.providerName]) != len(tt.want) {
-				t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.network.checkedProviders[tt.providerName]), len(tt.want))
+			if len(tt.network.CheckedProviders[tt.providerName]) != len(tt.want) {
+				t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.network.CheckedProviders[tt.providerName]), len(tt.want))
 			}
 			if len(tt.want) > 0 {
-				if tt.network.checkedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
-					t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.network.checkedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
+				if tt.network.CheckedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
+					t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.network.CheckedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
 				}
 			}
 		})
@@ -542,7 +542,7 @@ func TestEvaluatecheckedProviders(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 1,
@@ -567,7 +567,7 @@ func TestEvaluatecheckedProviders(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 20,
@@ -592,7 +592,7 @@ func TestEvaluatecheckedProviders(t *testing.T) {
 					},
 				},
 				latestBlockNumber: 10,
-				checkedProviders: map[string][]healthCheckEntry{
+				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {
 						{
 							blockNumber: 10,

@@ -75,13 +75,13 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					name: "eth",
+					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
 						},
 					},
-					checkedProviders: map[string][]healthCheckEntry{
+					CheckedProviders: map[string][]healthCheckEntry{
 						"localhost:8000": {
 							{
 								blockNumber: 1,
@@ -100,13 +100,13 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					name: "eth",
+					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
 						},
 					},
-					checkedProviders: map[string][]healthCheckEntry{
+					CheckedProviders: map[string][]healthCheckEntry{
 						"localhost:8000": {
 							{
 								blockNumber: 1,
@@ -176,19 +176,19 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			name: "Provision() populated 1 network, 2 upstreams successful for ethereum runtime",
 			networks: map[string]*network{
 				"eth": {
-					name:        "eth",
-					hcThreshold: 2,
+					Name:        "eth",
+					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							httpUrl: "http://localhost:8000/eth",
+							HttpUrl: "http://localhost:8000/eth",
 						},
 						"localhost:8001": {
-							httpUrl: "http://localhost:8001/eth",
+							HttpUrl: "http://localhost:8001/eth",
 						},
 					},
-					checkedProviders: map[string][]healthCheckEntry{},
-					prometheusClient: mockPrometheusClient,
+					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 			},
@@ -198,30 +198,30 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			name: "Provision() populated 2 network, 1 upstreams successful",
 			networks: map[string]*network{
 				"eth": {
-					name:        "eth",
-					hcThreshold: 2,
+					Name:        "eth",
+					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							httpUrl: "http://localhost:8000/eth",
+							HttpUrl: "http://localhost:8000/eth",
 						},
 					},
-					checkedProviders: map[string][]healthCheckEntry{},
-					prometheusClient: mockPrometheusClient,
+					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 				"starknet-mainnet": {
-					name:        "eth",
+					Name:        "eth",
 					HCMethod:    "starknet_blockNumber",
-					hcThreshold: 2,
+					HCThreshold: 2,
 					HCInterval:  5,
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							httpUrl: "http://localhost:8000/starknet-mainnet",
+							HttpUrl: "http://localhost:8000/starknet-mainnet",
 						},
 					},
-					checkedProviders: map[string][]healthCheckEntry{},
-					prometheusClient: mockPrometheusClient,
+					CheckedProviders: map[string][]healthCheckEntry{},
+					PrometheusClient: mockPrometheusClient,
 					logger:           logger,
 				},
 			},

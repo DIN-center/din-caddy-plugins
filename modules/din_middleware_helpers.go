@@ -7,9 +7,9 @@ import (
 
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 	// Check if the linea network exists in the middleware object
-	network, ok := d.GetNetwork(d.registryEnv)
+	network, ok := d.GetNetwork(d.RegistryEnv)
 	if !ok {
-		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.registryEnv))
+		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
 		return
 	}
 	// Get the latest block number from the linea network
@@ -77,27 +77,27 @@ func (d *DinMiddleware) AddNetworkFromRegistry(regNetwork *din.Network) error {
 	}
 
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
-		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.name), zap.String("method", registryHCMethod))
+		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.Name), zap.String("method", registryHCMethod))
 		network.HCMethod = registryHCMethod
 	}
 	registryHCInterval := int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
 	if registryHCInterval != 0 && registryHCInterval != network.HCInterval {
-		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.name), zap.Int("interval", registryHCInterval))
+		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.Name), zap.Int("interval", registryHCInterval))
 		network.HCInterval = registryHCInterval
 	}
 	registryBlockLagLimit := int64(regNetwork.NetworkConfig.BlockLagLimit)
 	if registryBlockLagLimit != 0 && registryBlockLagLimit != network.BlockLagLimit {
-		d.logger.Debug("Setting network block lag limit", zap.String("network", network.name), zap.Int64("block_lag_limit", registryBlockLagLimit))
+		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", registryBlockLagLimit))
 		network.BlockLagLimit = int64(registryBlockLagLimit)
 	}
 	registryMaxRequestPayloadSizeKB := int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
 	if registryMaxRequestPayloadSizeKB != 0 && registryMaxRequestPayloadSizeKB != network.MaxRequestPayloadSizeKB {
-		d.logger.Debug("Setting network max request payload size", zap.String("network", network.name), zap.Int64("max_request_payload_size_kb", registryMaxRequestPayloadSizeKB))
+		d.logger.Debug("Setting network max request payload size", zap.String("network", network.Name), zap.Int64("max_request_payload_size_kb", registryMaxRequestPayloadSizeKB))
 		network.MaxRequestPayloadSizeKB = registryMaxRequestPayloadSizeKB
 	}
 	registryRequestAttemptCount := int(regNetwork.NetworkConfig.RequestAttemptCount)
 	if registryRequestAttemptCount != 0 && registryRequestAttemptCount != network.RequestAttemptCount {
-		d.logger.Debug("Setting network request attempt count", zap.String("network", network.name), zap.Int("request_attempt_count", registryRequestAttemptCount))
+		d.logger.Debug("Setting network request attempt count", zap.String("network", network.Name), zap.Int("request_attempt_count", registryRequestAttemptCount))
 		network.RequestAttemptCount = int(registryRequestAttemptCount)
 	}
 
@@ -111,7 +111,7 @@ func (d *DinMiddleware) AddNetworkFromRegistry(regNetwork *din.Network) error {
 			}
 
 			// set the provider priority to the registry priority
-			provider.priority = d.registryPriority
+			provider.Priority = d.RegistryPriority
 
 			// Get the network service methods from the din registry
 			networkServiceMethods, err := d.DingoClient.GetNetworkServiceMethods(networkService.Address)
@@ -187,5 +187,5 @@ func (d *DinMiddleware) AddNetwork(network *network) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.Networks[network.name] = network
+	d.Networks[network.Name] = network
 }

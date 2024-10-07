@@ -13,7 +13,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
-		registryEnv:                         LineaMainnet,
+		RegistryEnv:                         LineaMainnet,
 		RegistryBlockEpoch:                  10,
 		registryLastUpdatedEpochBlockNumber: 40,
 		logger:                              logger,

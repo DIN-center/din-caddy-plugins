@@ -21,6 +21,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -45,7 +46,7 @@ type DinMiddleware struct {
 	mu       sync.RWMutex
 
 	// The prometheus client object
-	prometheusClient *prom.PrometheusClient
+	PrometheusClient *prom.PrometheusClient
 
 	// The di-ngo client object
 	DingoClient din.IDingoClient
@@ -60,18 +61,18 @@ type DinMiddleware struct {
 
 	// DIN Registry configuration
 	// The flag to enable or disable the din registry
-	registryEnabled bool
+	RegistryEnabled bool
 	// The interval in seconds to check the latest block number from the registry
-	registryBlockCheckInterval int64
+	RegistryBlockCheckInterval int64
 	// The epoch in blocks to check the latest block number from the registry.
 	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
 	RegistryBlockEpoch int64
 	// The block number in which the registry was updated last
 	registryLastUpdatedEpochBlockNumber int64
 	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
-	registryEnv string
+	RegistryEnv string
 	// The priority of the registry providers
-	registryPriority int
+	RegistryPriority int
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -95,7 +96,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(d.logger, d.machineID)
-	d.prometheusClient = promClient
+	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
 
 	// Initialize the din registry configuration values
@@ -103,33 +104,35 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	if err != nil {
 		return err
 	}
-	if d.registryBlockCheckInterval == 0 {
-		d.registryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	if d.RegistryBlockCheckInterval == 0 {
+		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
 	}
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.registryEnv == "" {
-		d.registryEnv = DefaultRegistryEnv
+	if d.RegistryEnv == "" {
+		d.RegistryEnv = DefaultRegistryEnv
 	}
-	if d.registryPriority == 0 {
-		d.registryPriority = DefaultRegistryPriority
+	if d.RegistryPriority == 0 {
+		d.RegistryPriority = DefaultRegistryPriority
 	}
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
 	for _, network := range d.Networks {
-		network.httpClient = httpClient
+		network.HttpClient = httpClient
 		network.logger = d.logger
-		network.prometheusClient = promClient
+		network.PrometheusClient = promClient
 		network.machineID = d.machineID
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range network.Providers {
-			url, err := url.Parse(provider.httpUrl)
+			url, err := url.Parse(provider.HttpUrl)
 			if err != nil {
 				return err
 			}
+
+			spew.Dump(provider)
 
 			dialHost := url.Host
 			if url.Scheme == "https" && url.Port() == "" {
@@ -142,11 +145,11 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 			provider.httpClient = httpClient
 			if provider.Auth != nil {
 				if err := provider.Auth.Start(context.Logger(d)); err != nil {
-					d.logger.Warn("Error starting authentication", zap.String("provider", provider.httpUrl), zap.String("machine_id", d.machineID))
+					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
 				}
 			}
 			provider.logger = d.logger
-			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.httpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.priority), zap.Any("Headers", provider.headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 		}
 	}
 
@@ -168,7 +171,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		// Pull data from the din registry
 		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
 		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.registryEnabled {
+		if d.RegistryEnabled {
 			d.logger.Info("Din registry is enabled, pulling data from the registry")
 			d.startRegistrySync()
 		}
@@ -287,7 +290,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 	// Increment prometheus metric based on request data
 	// debug logging of metric is found in here.
-	d.prometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
+	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Network:        r.RequestURI,
 		Provider:       provider,
 		HostName:       r.Host,
@@ -330,7 +333,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 								switch dispenser.Val() {
 								case "auth":
 									auth := &siwe.SIWEClientAuth{
-										ProviderURL:  strings.TrimSuffix(providerObj.httpUrl, "/") + "/auth",
+										ProviderURL:  strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
 										SessionCount: 16,
 									}
 									for dispenser.NextBlock(nesting + 3) {
@@ -392,14 +395,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										k := dispenser.Val()
 										var v string
 										if dispenser.Args(&v) {
-											providerObj.headers[k] = v
+											providerObj.Headers[k] = v
 										} else {
 											return dispenser.Errf("header should have key and value")
 										}
 									}
 								case "priority":
 									dispenser.NextBlock(nesting + 2)
-									providerObj.priority, err = strconv.Atoi(dispenser.Val())
+									providerObj.Priority, err = strconv.Atoi(dispenser.Val())
 									if err != nil {
 										return err
 									}
@@ -412,7 +415,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						d.Networks[networkName].HCMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
-						d.Networks[networkName].hcThreshold, err = strconv.Atoi(dispenser.Val())
+						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
 						if err != nil {
 							return err
 						}
@@ -462,7 +465,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to bool: %v", err)
 					}
-					d.registryEnabled = boolValue
+					d.RegistryEnabled = boolValue
 				case "registry_block_epoch":
 					dispenser.Next()
 					registryBlockEpochlVal := dispenser.Val()
@@ -480,11 +483,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.registryBlockCheckInterval = int64(intValue)
+					d.RegistryBlockCheckInterval = int64(intValue)
 				case "registry_env":
 					dispenser.Next()
 					registryEnvVal := dispenser.Val()
-					d.registryEnv = registryEnvVal
+					d.RegistryEnv = registryEnvVal
 				case "registry_priority":
 					dispenser.Next()
 					registryPriorityVal := dispenser.Val()
@@ -492,7 +495,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.registryPriority = intValue
+					d.RegistryPriority = intValue
 				}
 			}
 		}
@@ -507,7 +510,7 @@ func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
 	networks := d.GetNetworks()
 	for _, network := range networks {
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.name), zap.String("machine_id", d.machineID))
+		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
 	}
 	return nil
@@ -526,7 +529,7 @@ func (d *DinMiddleware) startRegistrySync() {
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	ticker := time.NewTicker(time.Second * time.Duration(d.registryBlockCheckInterval))
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	// ticker := time.NewTicker(time.Second * time.Duration(d.registryBlockCheckInterval))
 	go func() {
 		// Keep an index for RPC request IDs
