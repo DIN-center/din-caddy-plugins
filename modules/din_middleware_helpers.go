@@ -2,7 +2,6 @@ package modules
 
 import (
 	"fmt"
-	"os"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -54,7 +53,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		_, ok := d.getNetwork(regNetwork.ProxyName)
 		if !ok {
 			// If the network does not exist in the middleware object, then create a new network and add it to the middleware object
-			err := d.addNetworkFromRegistry(&regNetwork)
+			err := d.addNetworkWithRegistryData(&regNetwork)
 			if err != nil {
 				// If there is an error adding the network, log the error and continue to the next registry network
 				d.logger.Error("Failed to add network from registry", zap.Error(err))
@@ -71,8 +70,8 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 	}
 }
 
-// addNetworkFromRegistry creates a new network object from the registry network data and adds it to the middleware object
-func (d *DinMiddleware) addNetworkFromRegistry(regNetwork *din.Network) error {
+// addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
+func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
 	network := NewNetwork(regNetwork.ProxyName)
 	network, err := d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
@@ -141,14 +140,16 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network) e
 			} else {
 				// if the provider does exist in the copied network object,
 				// delete the provider from the network Copy object because there is no need to update the existing provider data.
+
+				// TODO: update this if we also need to update the provider data in place as well.
+				// For example, if the provider becomes decommissioned in the registry, then we need to update the provider status in the middleware.
 				delete(networkCopy.Providers, provider.host)
 			}
 		}
 	}
 
-	// use a mutex to safely update the middleware network object with the copied network object.
-	// only update the network registry config data at the top level.
-
+	// safely update the middleware network object with the copied network data.
+	d.updateNetwork(networkCopy)
 	return nil
 }
 
@@ -275,12 +276,20 @@ func (d *DinMiddleware) addNetwork(network *network) {
 	d.Networks[network.Name] = network
 }
 
-// getMachineId returns a unique string for the current running process
-func getMachineId() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "UNKNOWN"
+// updateNetwork safely updates the network object in the middleware object with the provided registry network data
+func (d *DinMiddleware) updateNetwork(network *network) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// update the network object with the registry network config data
+	d.Networks[network.Name].HCMethod = network.HCMethod
+	d.Networks[network.Name].HCInterval = network.HCInterval
+	d.Networks[network.Name].BlockLagLimit = network.BlockLagLimit
+	d.Networks[network.Name].MaxRequestPayloadSizeKB = network.MaxRequestPayloadSizeKB
+	d.Networks[network.Name].RequestAttemptCount = network.RequestAttemptCount
+
+	// add the new providers to the middleware network.Providers map
+	for _, p := range network.Providers {
+		d.Networks[network.Name].Providers[p.host] = p
 	}
-	currentPid := os.Getpid()
-	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
