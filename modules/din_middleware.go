@@ -231,7 +231,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
-		case "services":
+		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
 				d.Networks[networkName] = NewNetwork(networkName) // Create a new network object
