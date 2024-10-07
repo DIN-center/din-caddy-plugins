@@ -21,7 +21,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -102,7 +101,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	// Initialize the din registry configuration values
 	d.DingoClient, err = din.NewDinClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("error initializing din client: %v", err)
 	}
 	if d.RegistryBlockCheckInterval == 0 {
 		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
@@ -127,29 +126,10 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range network.Providers {
-			url, err := url.Parse(provider.HttpUrl)
+			err := d.initializeProvider(provider, httpClient, d.logger)
 			if err != nil {
-				return err
+				return fmt.Errorf("error initializing provider: %v", err)
 			}
-
-			spew.Dump(provider)
-
-			dialHost := url.Host
-			if url.Scheme == "https" && url.Port() == "" {
-				dialHost = url.Host + ":443"
-			}
-
-			provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
-			provider.path = url.Path
-			provider.host = url.Host
-			provider.httpClient = httpClient
-			if provider.Auth != nil {
-				if err := provider.Auth.Start(context.Logger(d)); err != nil {
-					d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
-				}
-			}
-			provider.logger = d.logger
-			d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 		}
 	}
 
@@ -165,7 +145,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		// and updates the provider's health status accordingly.
 		err := d.startHealthChecks()
 		if err != nil {
-			return err
+			return fmt.Errorf("error starting healthchecks: %v", err)
 		}
 
 		// Pull data from the din registry
@@ -180,6 +160,33 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	return nil
 }
 
+// initializeProvider initializes the provider's upstream, path, logger and HTTP client
+func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_http.HTTPClient, logger *zap.Logger) error {
+	url, err := url.Parse(provider.HttpUrl)
+	if err != nil {
+		return fmt.Errorf("error parsing provider URL: %v", err)
+	}
+
+	dialHost := url.Host
+	if url.Scheme == "https" && url.Port() == "" {
+		dialHost = url.Host + ":443"
+	}
+
+	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
+	provider.path = url.Path
+	provider.host = url.Host
+	provider.httpClient = httpClient
+	if provider.Auth != nil {
+		if err := provider.Auth.Start(logger); err != nil {
+			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
+		}
+	}
+	provider.logger = d.logger
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+
+	return nil
+}
+
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -187,7 +194,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, ok := d.GetNetwork(networkPath)
+	network, ok := d.getNetwork(networkPath)
 	if !ok {
 		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
 		if networkPath == "" {
@@ -327,7 +334,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						for dispenser.NextBlock(nesting + 1) {
 							providerObj, err := NewProvider(dispenser.Val())
 							if err != nil {
-								return err
+								return fmt.Errorf("error creating provider: %v", err)
 							}
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
@@ -350,7 +357,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											dispenser.NextBlock(nesting + 3)
 											auth.SessionCount, err = strconv.Atoi(dispenser.Val())
 											if err != nil {
-												return err
+												return fmt.Errorf("invalid session count: %v", err)
 											}
 										case "signer":
 											var key []byte
@@ -366,7 +373,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
 													key, err = hex.DecodeString(hexKey)
 													if err != nil {
-														return err
+														return fmt.Errorf("failed to decode secret file: %v", err)
 													}
 												case "secret":
 													dispenser.NextBlock(nesting + 4)
@@ -374,7 +381,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 													hexKey = strings.TrimPrefix(hexKey, "0x")
 													key, err = hex.DecodeString(hexKey)
 													if err != nil {
-														return err
+														return fmt.Errorf("failed to decode secret: %v", err)
 													}
 												}
 											}
@@ -382,7 +389,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 												PrivateKey: key,
 											}
 											if err := auth.Signer.GenPrivKey(); err != nil {
-												return err
+												return fmt.Errorf("failed to generate private key: %v", err)
 											}
 										}
 									}
@@ -404,7 +411,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									dispenser.NextBlock(nesting + 2)
 									providerObj.Priority, err = strconv.Atoi(dispenser.Val())
 									if err != nil {
-										return err
+										return fmt.Errorf("invalid priority: %v", err)
 									}
 								}
 							}
@@ -417,33 +424,33 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return err
+							return fmt.Errorf("invalid healthcheck threshold: %v", err)
 						}
 					case "healthcheck_interval":
 						dispenser.Next()
 						d.Networks[networkName].HCInterval, err = strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return err
+							return fmt.Errorf("invalid healthcheck interval: %v", err)
 						}
 					case "healthcheck_blocklag_limit":
 						dispenser.Next()
 						limit, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return err
+							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
 						}
 						d.Networks[networkName].BlockLagLimit = int64(limit)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return err
+							return fmt.Errorf("invalid max request payload size: %v", err)
 						}
 						d.Networks[networkName].MaxRequestPayloadSizeKB = int64(size)
 					case "request_attempt_count":
 						dispenser.Next()
 						requestAttemptCount, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return err
+							return fmt.Errorf("invalid request attempt count: %v", err)
 						}
 						d.Networks[networkName].RequestAttemptCount = requestAttemptCount
 					default:
@@ -505,10 +512,19 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	return nil
 }
 
+func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	err := d.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+
+	return d, nil
+}
+
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
-	networks := d.GetNetworks()
+	networks := d.getNetworks()
 	for _, network := range networks {
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
@@ -544,32 +560,12 @@ func (d *DinMiddleware) startRegistrySync() {
 		}
 	}()
 }
-
-func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	err := d.UnmarshalCaddyfile(h.Dispenser)
-	if err != nil {
-		return nil, err
-	}
-
-	return d, nil
-}
-
 func (d *DinMiddleware) closeAll() {
-	networks := d.GetNetworks()
+	networks := d.getNetworks()
 	for _, network := range networks {
 		network.close()
 	}
 	d.close()
-}
-
-// getMachineId returns a unique string for the current running process
-func getMachineId() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "UNKNOWN"
-	}
-	currentPid := os.Getpid()
-	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
 
 func (d *DinMiddleware) close() {

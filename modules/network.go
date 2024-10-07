@@ -29,7 +29,7 @@ type network struct {
 	HCThreshold          int
 	CheckedProviders     map[string][]healthCheckEntry
 
-	// Registry values
+	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
 	HCMethod                string               `json:"healthcheck_method"`

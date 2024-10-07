@@ -1,13 +1,18 @@
 package modules
 
 import (
+	"fmt"
+	"os"
+
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"go.uber.org/zap"
 )
 
+// syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 	// Check if the linea network exists in the middleware object
-	network, ok := d.GetNetwork(d.RegistryEnv)
+	network, ok := d.getNetwork(d.RegistryEnv)
 	if !ok {
 		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
 		return
@@ -33,11 +38,10 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 
 		// Update the last updated block number
 		d.registryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
-
 	}
 }
 
-// TODO: finish this.
+// processRegistryData processes the registry data and updates the middleware object with the registry data
 func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 	// Loop through the networks in the din registry
 	for _, regNetwork := range registryData.Networks {
@@ -47,10 +51,10 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		}
 
 		// Check if the network exists in the local network list within the middleware object
-		_, ok := d.GetNetwork(regNetwork.ProxyName)
+		_, ok := d.getNetwork(regNetwork.ProxyName)
 		if !ok {
 			// If the network does not exist in the middleware object, then create a new network and add it to the middleware object
-			err := d.AddNetworkFromRegistry(&regNetwork)
+			err := d.addNetworkFromRegistry(&regNetwork)
 			if err != nil {
 				// If there is an error adding the network, log the error and continue to the next registry network
 				d.logger.Error("Failed to add network from registry", zap.Error(err))
@@ -58,7 +62,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 			}
 		} else {
 			// If the network exists in the middleware object, then update the existing network in place with the registry data
-			err := d.UpdateNetworkWithRegistryData(&regNetwork)
+			err := d.updateNetworkWithRegistryData(&regNetwork)
 			if err != nil {
 				d.logger.Error("Failed to update network with registry data", zap.Error(err))
 				continue
@@ -67,15 +71,96 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 	}
 }
 
-func (d *DinMiddleware) AddNetworkFromRegistry(regNetwork *din.Network) error {
+// addNetworkFromRegistry creates a new network object from the registry network data and adds it to the middleware object
+func (d *DinMiddleware) addNetworkFromRegistry(regNetwork *din.Network) error {
 	network := NewNetwork(regNetwork.ProxyName)
-	// Set the local network network config values to the registry network config values
-	registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
+	network, err := d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
-		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		d.logger.Error("Failed to sync network config", zap.Error(err))
 		return err
 	}
 
+	for _, regProvider := range regNetwork.Providers {
+		for _, networkService := range regProvider.NetworkServices {
+			// Create a new provider object
+			provider, err := NewProvider(networkService.Url)
+			if err != nil {
+				d.logger.Error("Failed to create new provider object", zap.Error(err))
+				continue
+			}
+
+			provider, err = d.createNewProvider(provider, networkService.Address)
+			if err != nil {
+				d.logger.Error("Failed to create new provider", zap.Error(err))
+				continue
+			}
+
+			// Add the provider to the network object
+			network.Providers[provider.host] = provider
+		}
+	}
+	// Safely add the network to the middleware object
+	d.addNetwork(network)
+	return nil
+}
+
+// updateNetworkWithRegistryData updates the network object in the middleware object with the latest registry network data
+func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network) error {
+	// Get a copy of the network from the middleware object
+	networkCopy := d.getNetworkCopy(regNetwork.ProxyName)
+
+	// Sync the network config data from the registry network to the copied network object
+	networkCopy, err := d.syncNetworkConfig(regNetwork, networkCopy)
+	if err != nil {
+		d.logger.Error("Failed to sync network config", zap.Error(err))
+		return err
+	}
+
+	// Loop through the providers/network services in the registry network and update the copied network.providers map with the registry provider data
+	for _, regProvider := range regNetwork.Providers {
+		for _, networkService := range regProvider.NetworkServices {
+			// Create a provider object
+			provider, err := NewProvider(networkService.Url)
+			if err != nil {
+				d.logger.Error("Failed to create new provider object", zap.Error(err))
+				continue
+			}
+
+			// check to see if the provider exists in the local network object
+			_, ok := networkCopy.Providers[provider.host]
+			if !ok {
+				// if the provider doesn't exist, create a new provider object and add it to the copied network object
+				provider, err := d.createNewProvider(provider, networkService.Address)
+				if err != nil {
+					d.logger.Error("Failed to create new provider", zap.Error(err))
+					continue
+				}
+
+				// add the new provider to the copied network object
+				networkCopy.Providers[provider.host] = provider
+			} else {
+				// if the provider does exist in the copied network object,
+				// delete the provider from the network Copy object because there is no need to update the existing provider data.
+				delete(networkCopy.Providers, provider.host)
+			}
+		}
+	}
+
+	// use a mutex to safely update the middleware network object with the copied network object.
+	// only update the network registry config data at the top level.
+
+	return nil
+}
+
+// syncNetworkConfig updates the network object with the registry network config data
+func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
+	registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
+	if err != nil {
+		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		return nil, err
+	}
+
+	// Sync the value if it is not 0 and different from the current middleware network value
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
 		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.Name), zap.String("method", registryHCMethod))
 		network.HCMethod = registryHCMethod
@@ -101,49 +186,32 @@ func (d *DinMiddleware) AddNetworkFromRegistry(regNetwork *din.Network) error {
 		network.RequestAttemptCount = int(registryRequestAttemptCount)
 	}
 
-	for _, regProvider := range regNetwork.Providers {
-		for _, networkService := range regProvider.NetworkServices {
-			// If the provider does not exist, create a new provider object
-			provider, err := NewProvider(networkService.Url)
-			if err != nil {
-				d.logger.Error("Failed to create new provider object", zap.Error(err))
-				return err
-			}
+	return network, nil
+}
 
-			// set the provider priority to the registry priority
-			provider.Priority = d.RegistryPriority
-
-			// Get the network service methods from the din registry
-			networkServiceMethods, err := d.DingoClient.GetNetworkServiceMethods(networkService.Address)
-			if err != nil {
-				d.logger.Error("Failed to get network service methods", zap.String("network_service_address", networkService.Address), zap.Error(err))
-				return err
-			}
-			provider.Methods = networkServiceMethods
-
-			// TODO: FINISH THIS set auth type and object with url
-			provider.Auth = nil
-
-			// Add the provider to the network object
-			network.Providers[provider.host] = provider
-		}
+// createNewProvider creates a new provider object and initializes the provider with the network service address
+func (d *DinMiddleware) createNewProvider(provider *provider, networkServiceAddress string) (*provider, error) {
+	httpClient := din_http.NewHTTPClient()
+	err := d.initializeProvider(provider, httpClient, d.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}
-	// Safely add the network to the middleware object
-	d.AddNetwork(network)
-	return nil
+	provider.Priority = d.RegistryPriority
+	// Get the network service methods from the din registry
+	networkServiceMethods, err := d.DingoClient.GetNetworkServiceMethods(networkServiceAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network service methods: %w", err)
+	}
+	provider.Methods = networkServiceMethods
+
+	// TODO: FINISH THIS set auth type and object with url
+	provider.Auth = nil
+
+	return provider, nil
 }
 
-func (d *DinMiddleware) UpdateNetworkWithRegistryData(regNetwork *din.Network) error {
-	return nil
-}
-
-func (d *DinMiddleware) SetNetworkConfigValues(network *network) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return nil
-}
-
-func (d *DinMiddleware) GetNetwork(networkName string) (*network, bool) {
+// getNetwork safely returns the network object with the given network name
+func (d *DinMiddleware) getNetwork(networkName string) (*network, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -151,28 +219,44 @@ func (d *DinMiddleware) GetNetwork(networkName string) (*network, bool) {
 	return n, ok
 }
 
-func (d *DinMiddleware) GetNetworkCopy(networkName string) *network {
+// GetNetworkCopy safely returns a copy of the network object with the given network name
+func (d *DinMiddleware) getNetworkCopy(networkName string) *network {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	networkCopy := NewNetwork(networkName)
 
-	n, ok := d.Networks[networkName]
-	if !ok {
-		return nil
-	}
+	n := d.Networks[networkName]
+
+	// Copy network values explicitly instead of just dereferencing with a pointer to avoid copying the mutex.
 	networkCopy.HCMethod = n.HCMethod
 	networkCopy.HCInterval = n.HCInterval
 	networkCopy.BlockLagLimit = n.BlockLagLimit
 	networkCopy.MaxRequestPayloadSizeKB = n.MaxRequestPayloadSizeKB
 	networkCopy.RequestAttemptCount = n.RequestAttemptCount
 
-	networkCopy.Providers = n.Providers
-	networkCopy.Methods = n.Methods
+	// create a copy of each method and add it to the network copy
+	for _, m := range n.Methods {
+		// dereference the method pointer
+		methodCopy := *m
+
+		// add the method copy to the network copy
+		networkCopy.Methods = append(networkCopy.Methods, &methodCopy)
+	}
+
+	// create a copy of each provider and add it to the network copy
+	for _, p := range n.Providers {
+		// dereference the provider pointer
+		providerCopy := *p
+
+		// add the provider copy to the network copy
+		networkCopy.Providers[p.host] = &providerCopy
+	}
 	return networkCopy
 }
 
-func (d *DinMiddleware) GetNetworks() []*network {
+// getNetworks safely returns a list of all networks in the middleware object
+func (d *DinMiddleware) getNetworks() []*network {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -183,9 +267,20 @@ func (d *DinMiddleware) GetNetworks() []*network {
 	return networks
 }
 
-func (d *DinMiddleware) AddNetwork(network *network) {
+// addNetwork safely adds a network to the middleware object with the given network name
+func (d *DinMiddleware) addNetwork(network *network) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	d.Networks[network.Name] = network
+}
+
+// getMachineId returns a unique string for the current running process
+func getMachineId() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	currentPid := os.Getpid()
+	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
