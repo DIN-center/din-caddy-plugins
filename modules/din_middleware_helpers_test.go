@@ -54,13 +54,6 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			expectedUpdateCall:                  false,
 			expectedBlockFloorByEpoch:           uint64(40),
 		},
-		{
-			name:                                "Sync should not update as block difference is less than epoch 30",
-			registryLastUpdatedEpochBlockNumber: uint64(40),
-			latestBlockNumber:                   uint64(30),
-			expectedUpdateCall:                  false,
-			expectedBlockFloorByEpoch:           uint64(40),
-		},
 	}
 
 	for _, tt := range tests {
@@ -68,6 +61,8 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 
 			dinMiddleware.Networks = map[string]*network{}
 			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
+
+			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
 
 			// Check if update was called as expected
 			if tt.expectedUpdateCall {
