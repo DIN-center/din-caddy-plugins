@@ -329,7 +329,6 @@
 			}
 			din_registry {
 				registry_enabled false
-				registry_env linea-sepolia
 			}
 		}
 		# din reverse proxy directive configuration
