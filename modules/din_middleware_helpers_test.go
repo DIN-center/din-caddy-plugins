@@ -74,6 +74,8 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			}
 			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
+			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
+
 			// Check if update was called as expected
 			if tt.expectedUpdateCall {
 				mockDingoClient.EXPECT().GetRegistryData().Return(&din.DinRegistryData{}, nil).Times(1)
