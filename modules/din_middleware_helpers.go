@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"os"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -292,4 +293,14 @@ func (d *DinMiddleware) updateNetwork(network *network) {
 	for _, p := range network.Providers {
 		d.Networks[network.Name].Providers[p.host] = p
 	}
+}
+
+// getMachineId returns a unique string for the current running process
+func getMachineId() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	currentPid := os.Getpid()
+	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }
