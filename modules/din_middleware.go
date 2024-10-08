@@ -220,11 +220,14 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, ok := d.getNetwork(networkPath)
+	network, ok := d.Networks[networkPath]
 	if !ok {
 		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
 		if networkPath == "" {
@@ -554,8 +557,7 @@ func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
-	networks := d.getNetworks()
-	for _, network := range networks {
+	for _, network := range d.Networks {
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 		network.startHealthcheck()
 	}
@@ -592,8 +594,7 @@ func (d *DinMiddleware) startRegistrySync() {
 }
 
 func (d *DinMiddleware) closeAll() {
-	networks := d.getNetworks()
-	for _, network := range networks {
+	for _, network := range d.Networks {
 		network.close()
 	}
 	d.close()

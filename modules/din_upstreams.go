@@ -37,10 +37,10 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		providers = v.(map[string]*provider)
 	}
 
-	upstreamPool := make([]*reverseproxy.Upstream, 0, len(providers))
+	upstreamPool := make([]*reverseproxy.Upstream, 0)
 
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
-	for priority := 0; priority < len(providers); priority++ {
+	for priority := 0; priority < MaxPriority; priority++ {
 		for _, p := range providers {
 			if p.Priority == priority && p.Available() {
 				upstreamPool = append(upstreamPool, p.upstream)
@@ -51,10 +51,10 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		}
 	}
 
-	// TODO: set config based on customer's request header
+	// TODO: set config based on customer's request header to go to a specific provider/upstream
 	// Didn't find any based on priority, available, find all upstreams that are in warning status by priority.
 	if len(upstreamPool) == 0 {
-		for priority := 0; priority < len(providers); priority++ {
+		for priority := 0; priority < MaxPriority; priority++ {
 			for _, p := range providers {
 				if p.Priority == priority && p.IsAvailableWithWarning() {
 					upstreamPool = append(upstreamPool, p.upstream)
