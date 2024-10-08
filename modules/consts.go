@@ -8,9 +8,6 @@ const (
 	Warning
 	Unhealthy
 
-	LineaMainnet = "linea-mainnet"
-	LineaSepolia = "linea-sepolia"
-
 	// Module Context Key constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
 	RequestProviderKey     = "request_provider"
@@ -22,14 +19,14 @@ const (
 	DefaultHCMethod                = "eth_blockNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
-	DefaultBlockLagLimit           = int64(5)
-	DefaultMaxRequestPayloadSizeKB = int64(4096)
+	DefaultBlockLagLimit           = uint64(5)
+	DefaultMaxRequestPayloadSizeKB = uint64(4096)
 	DefaultRequestAttemptCount     = 5
 
 	// Registry constants
-	DefaultRegistryBlockCheckInterval = int64(60)
-	DefaultRegistryBlockEpoch         = int64(2000)
-	DefaultRegistryEnv                = LineaMainnet
+	DefaultRegistryBlockCheckInterval = uint64(60)
+	DefaultRegistryBlockEpoch         = uint64(2000)
+	DefaultRegistryEndpointUrl        = "https://linea.blockpi.network/v1/rpc/public"
 	DefaultRegistryPriority           = 0
 
 	// Additional Status Codes

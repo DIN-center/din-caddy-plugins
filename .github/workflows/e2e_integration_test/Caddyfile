@@ -4,7 +4,7 @@
 		# middleware declaration
 		din {
 			# middleware configurtion data, read by DinMiddleware.UnmarshalCaddyfile()
-			services {
+			networks {
 				eth {
 					providers {
 						https://eth.llamarpc.com:443 {

@@ -18,7 +18,7 @@ import (
 type network struct {
 	Name              string
 	quit              chan struct{}
-	latestBlockNumber int64
+	latestBlockNumber uint64
 	HttpClient        din_http.IHTTPClient
 	PrometheusClient  prom.IPrometheusClient
 	logger            *zap.Logger
@@ -33,9 +33,9 @@ type network struct {
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
 	HCMethod                string               `json:"healthcheck_method"`
-	HCInterval              int                  `json:"healthcheck_interval_seconds"`
-	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
-	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
+	HCInterval              uint64               `json:"healthcheck_interval_seconds"`
+	BlockLagLimit           uint64               `json:"healthcheck_blocklag_limit"`
+	MaxRequestPayloadSizeKB uint64               `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int                  `json:"request_attempt_count"`
 }
 
@@ -79,7 +79,7 @@ func (n *network) startHealthcheck() {
 }
 
 type healthCheckEntry struct {
-	blockNumber int64
+	blockNumber uint64
 	timestamp   *time.Time
 }
 
@@ -89,7 +89,7 @@ func (n *network) healthCheck() {
 	var blockTime time.Time
 
 	for name, currentProvider := range n.Providers {
-		// check all of the providers simultaneously using async job management for more accurate blocknumber resultn.
+		// check all of the providers simultaneously using async job management for more accurate blocknumber result.
 		wg.Add(1) // Increment the WaitGroup counter
 		go func(providerName string, provider *provider) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
@@ -133,7 +133,7 @@ func (n *network) healthCheck() {
 				provider.markHealthy()
 			} else if providerBlockNumber+n.BlockLagLimit < n.latestBlockNumber {
 				// if the current provider's latest block number is below the network's latest block number by more than the acceptable threshold, set the current provider to warning
-				n.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", n.latestBlockNumber), zap.String("machine_id", n.machineID))
+				n.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", n.Name), zap.Uint64("provider_block_number", providerBlockNumber), zap.Uint64("network_block_number", n.latestBlockNumber), zap.String("machine_id", n.machineID))
 				provider.markWarning()
 			}
 
@@ -148,7 +148,7 @@ func (n *network) healthCheck() {
 	wg.Wait()
 }
 
-func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
+func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber uint64) {
 	n.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
 		Network:        n.Name,
 		Provider:       providerName,
@@ -209,7 +209,7 @@ func (n *network) addHealthCheckToCheckedProviderList(providerName string, healt
 	}
 }
 
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
+func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (uint64, int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
 
 	// Send the POST request
@@ -235,7 +235,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		return 0, 0, errors.New("Error getting block number from response")
 	}
 
-	var blockNumber int64
+	var blockNumber uint64
 
 	switch result := respObject["result"].(type) {
 	case string:
@@ -244,12 +244,12 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		}
 
 		// Convert the hexadecimal string to an int64
-		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
+		blockNumber, err = strconv.ParseUint(result[2:], 16, 64)
 		if err != nil {
 			return 0, 0, errors.Wrap(err, "Error converting block number")
 		}
 	case float64:
-		blockNumber = int64(result)
+		blockNumber = uint64(result)
 	default:
 		return 0, 0, errors.New("unsupported block number type")
 	}

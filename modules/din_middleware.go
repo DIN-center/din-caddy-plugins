@@ -62,14 +62,14 @@ type DinMiddleware struct {
 	// The flag to enable or disable the din registry
 	RegistryEnabled bool
 	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckInterval int64
+	RegistryBlockCheckInterval uint64
 	// The epoch in blocks to check the latest block number from the registry.
 	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
-	RegistryBlockEpoch int64
+	RegistryBlockEpoch uint64
 	// The block number in which the registry was updated last
-	registryLastUpdatedEpochBlockNumber int64
-	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
-	RegistryEnv string
+	registryLastUpdatedEpochBlockNumber uint64
+	// The blockchain rpc endpoint to get registry data from
+	RegistryEndpointUrl string
 	// The priority of the registry providers
 	RegistryPriority int
 
@@ -98,22 +98,23 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
 
-	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(d.logger)
-	if err != nil {
-		return fmt.Errorf("error initializing din client: %v", err)
-	}
 	if d.RegistryBlockCheckInterval == 0 {
 		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
 	}
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.RegistryEnv == "" {
-		d.RegistryEnv = DefaultRegistryEnv
+	if d.RegistryEndpointUrl == "" {
+		d.RegistryEndpointUrl = DefaultRegistryEndpointUrl
 	}
 	if d.RegistryPriority == 0 {
 		d.RegistryPriority = DefaultRegistryPriority
+	}
+
+	// Initialize the din registry configuration values
+	d.DingoClient, err = din.NewDinClient(d.logger, d.RegistryEndpointUrl)
+	if err != nil {
+		return fmt.Errorf("error initializing din client: %v", err)
 	}
 
 	// Initialize the HTTP client for each network and provider
@@ -304,7 +305,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
-		case "services":
+		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
 				d.Networks[networkName] = NewNetwork(networkName) // Create a new network object
@@ -416,24 +417,24 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "healthcheck_interval":
 						dispenser.Next()
-						d.Networks[networkName].HCInterval, err = strconv.Atoi(dispenser.Val())
+						d.Networks[networkName].HCInterval, err = strconv.ParseUint(dispenser.Val(), 10, 64)
 						if err != nil {
 							return fmt.Errorf("invalid healthcheck interval: %v", err)
 						}
 					case "healthcheck_blocklag_limit":
 						dispenser.Next()
-						limit, err := strconv.Atoi(dispenser.Val())
+						limit, err := strconv.ParseUint(dispenser.Val(), 10, 64)
 						if err != nil {
 							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
 						}
-						d.Networks[networkName].BlockLagLimit = int64(limit)
+						d.Networks[networkName].BlockLagLimit = limit
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
 							return fmt.Errorf("invalid max request payload size: %v", err)
 						}
-						d.Networks[networkName].MaxRequestPayloadSizeKB = int64(size)
+						d.Networks[networkName].MaxRequestPayloadSizeKB = uint64(size)
 					case "request_attempt_count":
 						dispenser.Next()
 						requestAttemptCount, err := strconv.Atoi(dispenser.Val())
@@ -469,7 +470,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.RegistryBlockEpoch = int64(intValue)
+					d.RegistryBlockEpoch = uint64(intValue)
 				case "registry_block_check_interval":
 					dispenser.Next()
 					registryBlockCheckIntervalVal := dispenser.Val()
@@ -478,11 +479,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.RegistryBlockCheckInterval = int64(intValue)
-				case "registry_env":
+					d.RegistryBlockCheckInterval = uint64(intValue)
+				case "registry_endpoint_url":
 					dispenser.Next()
-					registryEnvVal := dispenser.Val()
-					d.RegistryEnv = registryEnvVal
+					registryEndpointUrl := dispenser.Val()
+					d.RegistryEndpointUrl = registryEndpointUrl
 				case "registry_priority":
 					dispenser.Next()
 					registryPriorityVal := dispenser.Val()
