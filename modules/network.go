@@ -137,7 +137,6 @@ func (n *network) healthCheck() {
 				provider.markWarning()
 			}
 
-			// TODO: create a check based on time window of a provider's latest block number
 			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
 			// add the current provider to the checked providers map

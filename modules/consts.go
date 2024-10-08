@@ -34,6 +34,9 @@ const (
 
 	// Request/Response Header Keys
 	DinProviderInfo = "din-provider-info"
+
+	// Upstream/Selector Constants
+	MaxPriority = 9
 )
 
 // String method to convert MyEnum to string
