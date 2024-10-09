@@ -24,10 +24,10 @@ const (
 	DefaultRequestAttemptCount     = 5
 
 	// Registry constants
-	DefaultRegistryBlockCheckInterval = uint64(60)
-	DefaultRegistryBlockEpoch         = uint64(2000)
-	DefaultRegistryEndpointUrl        = "https://linea.blockpi.network/v1/rpc/public"
-	DefaultRegistryPriority           = 0
+	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockEpoch            = uint64(2000)
+	DefaultRegistryEndpointUrl           = "https://linea.blockpi.network/v1/rpc/public"
+	DefaultRegistryPriority              = 0
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523

@@ -62,7 +62,7 @@ type DinMiddleware struct {
 	// The flag to enable or disable the din registry
 	RegistryEnabled bool
 	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckInterval uint64
+	RegistryBlockCheckIntervalSec uint64
 	// The epoch in blocks to check the latest block number from the registry.
 	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
 	RegistryBlockEpoch uint64
@@ -128,8 +128,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
 
-	if d.RegistryBlockCheckInterval == 0 {
-		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	if d.RegistryBlockCheckIntervalSec == 0 {
+		d.RegistryBlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
 	}
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
@@ -483,15 +483,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
 					d.RegistryBlockEpoch = uint64(intValue)
-				case "registry_block_check_interval":
+				case "registry_block_check_interval_sec":
 					dispenser.Next()
-					registryBlockCheckIntervalVal := dispenser.Val()
+					registryBlockCheckIntervalSecVal := dispenser.Val()
 					// Convert string to int64
-					intValue, err := strconv.Atoi(registryBlockCheckIntervalVal)
+					intValue, err := strconv.Atoi(registryBlockCheckIntervalSecVal)
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.RegistryBlockCheckInterval = uint64(intValue)
+					d.RegistryBlockCheckIntervalSec = uint64(intValue)
 				case "registry_endpoint_url":
 					dispenser.Next()
 					registryEndpointUrl := dispenser.Val()
@@ -545,8 +545,8 @@ func (d *DinMiddleware) startRegistrySync() {
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
-	// ticker := time.NewTicker(time.Second * time.Duration(d.registryBlockCheckInterval))
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
+	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
 	go func() {
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {
