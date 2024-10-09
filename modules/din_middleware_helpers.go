@@ -109,9 +109,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 }
 
 // updateNetworkWithRegistryData updates the network object in the middleware object with the latest registry network data
-func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, network *network) error {
+func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, newNetwork *network) error {
 	// Sync the network config data from the registry network to the copied network object
-	network, err := d.syncNetworkConfig(regNetwork, network)
+	newNetwork, err := d.syncNetworkConfig(regNetwork, newNetwork)
 	if err != nil {
 		d.logger.Error("Failed to sync network config", zap.Error(err))
 		return err
@@ -121,37 +121,36 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
 			// Create a provider object
-			provider, err := NewProvider(networkService.Url)
+			newProvider, err := NewProvider(networkService.Url)
 			if err != nil {
 				d.logger.Error("Failed to create new provider object", zap.Error(err))
 				continue
 			}
 
 			// check to see if the provider exists in the local network object
-			_, ok := network.Providers[provider.host]
+			_, ok := newNetwork.Providers[newProvider.host]
 			if !ok {
 				// if the provider doesn't exist, create a new provider object and add it to the copied network object
-				provider, err := d.createNewProvider(provider, networkService.Address)
+				newProvider, err := d.createNewProvider(newProvider, networkService.Address)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
 				}
 
 				// add the new provider to the copied network object
-				network.Providers[provider.host] = provider
+				newNetwork.Providers[newProvider.host] = newProvider
 			} else {
-				// if the provider does exist in the copied network object,
-				// delete the provider from the network Copy object because there is no need to update the existing provider data.
+				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
+				d.updateProviderData(newNetwork.Name, newProvider)
 
-				// TODO: update this if we also need to update the provider data in place as well.
-				// For example, if the provider becomes decommissioned in the registry, then we need to update the provider status in the middleware.
-				delete(network.Providers, provider.host)
+				// remove the provider from the copied network object to keep track of the providers that are not in the registry network
+				delete(newNetwork.Providers, newProvider.host)
 			}
 		}
 	}
 
 	// safely update the middleware network object with the copied network data.
-	d.updateNetwork(network)
+	d.updateNetworkData(newNetwork)
 	return nil
 }
 
@@ -213,8 +212,14 @@ func (d *DinMiddleware) createNewProvider(provider *provider, networkServiceAddr
 	return provider, nil
 }
 
+func (d *DinMiddleware) updateProviderData(networkName string, provider *provider) {
+	// update the provider object with the registry provider data
+	d.Networks[networkName].Providers[provider.host].Auth = provider.Auth
+	d.Networks[networkName].Providers[provider.host].Methods = provider.Methods
+}
+
 // updateNetwork updates the network object in the middleware object with the provided registry network data
-func (d *DinMiddleware) updateNetwork(network *network) {
+func (d *DinMiddleware) updateNetworkData(network *network) {
 	// update the network object with the registry network config data
 	d.Networks[network.Name].HCMethod = network.HCMethod
 	d.Networks[network.Name].HCInterval = network.HCInterval

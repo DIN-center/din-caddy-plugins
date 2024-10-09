@@ -517,9 +517,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					d.RegistryBlockEpoch = int64(intValue)
 				case "registry_block_check_interval":
 					dispenser.Next()
-					registryBlockCheckIntervalVal := dispenser.Val()
+					registryBlockCheckIntervalSecVal := dispenser.Val()
 					// Convert string to int64
-					intValue, err := strconv.Atoi(registryBlockCheckIntervalVal)
+					intValue, err := strconv.Atoi(registryBlockCheckIntervalSecVal)
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
@@ -578,7 +578,7 @@ func (d *DinMiddleware) startRegistrySync() {
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
-	// ticker := time.NewTicker(time.Second * time.Duration(d.registryBlockCheckInterval))
+	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	go func() {
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {
