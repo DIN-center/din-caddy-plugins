@@ -55,7 +55,7 @@ func TestGetDinUpstreams(t *testing.T) {
 		output            []*reverseproxy.Upstream
 	}{
 		{
-			name:    "TestGetDinUpstreams successful, both 0 priority",
+			name:    "TestGetDinUpstreams successful, both 0 Priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
@@ -70,7 +70,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 priority and healthy",
+			name:    "TestGetDinUpstreams successful, both 0 Priority and healthy",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
@@ -87,7 +87,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 priority and 1 is healthy",
+			name:    "TestGetDinUpstreams successful, both 0 Priority and 1 is healthy",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
@@ -104,7 +104,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 priority and both are warning",
+			name:    "TestGetDinUpstreams successful, both 0 Priority and both are warning",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
@@ -121,7 +121,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 priority and one is Warning the other is Unhealthy",
+			name:    "TestGetDinUpstreams successful, both 0 Priority and one is Warning the other is Unhealthy",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
@@ -138,7 +138,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    " successful, both 1 priority",
+			name:    " successful, both 1 Priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
