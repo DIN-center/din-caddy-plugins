@@ -27,6 +27,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 		registryLastUpdatedEpochBlockNumber: 40,
 		logger:                              logger,
 		DingoClient:                         mockDingoClient,
+		testMode:                            true,
 	}
 
 	tests := []struct {
@@ -168,6 +169,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 				DingoClient: mockDingoClient,
 				logger:      logger,
 				Networks:    make(map[string]*network),
+				testMode:    true,
 			}
 
 			// Call the function being tested
@@ -266,6 +268,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				Networks: map[string]*network{
 					tt.newNetwork.Name: tt.newNetwork,
 				},
+				testMode: true,
 			}
 
 			mockDingoClient.EXPECT().GetNetworkServiceMethods(gomock.Any()).Return([]*string{aws.String("eth_call"), aws.String("eth_blockNumber")}, nil).AnyTimes()
@@ -369,6 +372,7 @@ func TestSyncNetworkConfig(t *testing.T) {
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
+				testMode:    true,
 			}
 
 			// Mock GetNetworkMethodNameByBit method
@@ -450,6 +454,7 @@ func TestCreateNewProvider(t *testing.T) {
 				DingoClient:      mockDingoClient,
 				RegistryPriority: 10,
 				logger:           logger,
+				testMode:         true,
 			}
 
 			// Mock GetNetworkServiceMethods
@@ -524,7 +529,8 @@ func TestUpdateProviderData(t *testing.T) {
 						Providers: tt.initialProviders,
 					},
 				},
-				mu: sync.RWMutex{},
+				mu:       sync.RWMutex{},
+				testMode: true,
 			}
 
 			// Lock for writing
@@ -641,7 +647,8 @@ func TestUpdateNetworkData(t *testing.T) {
 				Networks: map[string]*network{
 					tt.initialNetwork.Name: tt.initialNetwork,
 				},
-				mu: sync.RWMutex{},
+				mu:       sync.RWMutex{},
+				testMode: true,
 			}
 
 			// Lock for writing

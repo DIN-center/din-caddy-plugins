@@ -26,7 +26,7 @@ const (
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
-	DefaultRegistryEndpointUrl           = "https://linea.blockpi.network/v1/rpc/public"
+	DefaultRegistryEndpointUrl           = "http://localhost:8545"
 	DefaultRegistryPriority              = 0
 
 	// Additional Status Codes
