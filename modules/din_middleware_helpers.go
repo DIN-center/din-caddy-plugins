@@ -6,6 +6,8 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
+	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 )
 
@@ -43,6 +45,10 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 
 // processRegistryData processes the registry data and updates the middleware object with the registry data
 func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
+	if registryData == nil {
+		d.logger.Error("Registry data is nil. Check registry connection")
+		return
+	}
 	// Lock the middleware object to prevent race condition when updating the networks and providers
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -50,13 +56,15 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 	// Loop through the networks in the din registry
 	for _, regNetwork := range registryData.Networks {
 		// For each network, check if the network is provisioned, if not, skip the network
-		if regNetwork.NetworkConfig == nil || !regNetwork.NetworkConfig.IsProvisioned {
+		if regNetwork.NetworkConfig == nil || (regNetwork.NetworkConfig.NetworkStatus != dinreg.Active) {
 			continue
 		}
 
 		// Check if the network exists in the local network list within the middleware object
 		network, ok := d.Networks[regNetwork.ProxyName]
+		spew.Dump(network)
 		if !ok {
+			spew.Dump("network doesn't exist adds new network")
 			// If the network does not exist in the middleware object, then create a new network and add it to the middleware object
 			err := d.addNetworkWithRegistryData(regNetwork)
 			if err != nil {
@@ -84,6 +92,12 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 		return err
 	}
 
+	httpClient := din_http.NewHTTPClient()
+	network.HttpClient = httpClient
+	network.logger = d.logger
+	network.PrometheusClient = d.PrometheusClient
+	network.machineID = d.machineID
+
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
 			// Create a new provider object
@@ -105,6 +119,12 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	}
 	// Add the network to the middleware object
 	d.Networks[network.Name] = network
+
+	// Start the healthcheck for the network if the middleware is not in test mode
+	if !d.testMode {
+		network.startHealthcheck()
+		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+	}
 	return nil
 }
 

@@ -592,7 +592,6 @@ func (d *DinMiddleware) startRegistrySync() {
 		}
 	}()
 }
-
 func (d *DinMiddleware) closeAll() {
 	for _, network := range d.Networks {
 		network.close()
