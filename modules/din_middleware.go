@@ -47,7 +47,7 @@ type DinMiddleware struct {
 	// The prometheus client object
 	PrometheusClient *prom.PrometheusClient
 
-	// The di-ngo client object
+	// The dingo client object
 	DingoClient din.IDingoClient
 
 	logger *zap.Logger
@@ -592,6 +592,7 @@ func (d *DinMiddleware) startRegistrySync() {
 		}
 	}()
 }
+
 func (d *DinMiddleware) closeAll() {
 	for _, network := range d.Networks {
 		network.close()

@@ -55,13 +55,17 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 	// Loop through the networks in the din registry
 	for _, regNetwork := range registryData.Networks {
 		// For each network, check if the network is provisioned, if not, skip the network
-		if regNetwork.NetworkConfig == nil || (regNetwork.NetworkConfig.NetworkStatus != dinreg.Active) {
+		if regNetwork.NetworkConfig == nil {
 			continue
 		}
 
 		// Check if the network exists in the local network list within the middleware object
 		network, ok := d.Networks[regNetwork.ProxyName]
 		if !ok {
+			if regNetwork.NetworkConfig.NetworkStatus != dinreg.Active {
+				d.logger.Debug("Network is not active, skipping", zap.String("network", regNetwork.ProxyName))
+				continue
+			}
 			// If the network does not exist in the middleware object, then create a new network and add it to the middleware object
 			err := d.addNetworkWithRegistryData(regNetwork)
 			if err != nil {
@@ -70,7 +74,14 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				continue
 			}
 		} else {
-			// If the network exists in the middleware object, then update the existing network in place with the registry data
+			// If the network exists in the middleware object, check to see if the registry version is active or not,
+			if regNetwork.NetworkConfig.NetworkStatus != dinreg.Active {
+				// Skip over network for now if it is not active
+				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
+				delete(d.Networks, regNetwork.ProxyName)
+				continue
+			}
+			// if active, update the existing network in place with the registry data
 			err := d.updateNetworkWithRegistryData(regNetwork, network)
 			if err != nil {
 				d.logger.Error("Failed to update network with registry data", zap.Error(err))
@@ -97,7 +108,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
-			if networkService.NetworkStatus != dinreg.Active {
+			if networkService.Status != dinreg.Active {
 				d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 				continue
 			}
@@ -117,6 +128,10 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 			// Add the provider to the network object
 			network.Providers[provider.host] = provider
 		}
+	}
+	if len(network.Providers) == 0 {
+		d.logger.Debug("Network has no active providers", zap.String("network", network.Name))
+		return nil
 	}
 	// Add the network to the middleware object
 	d.Networks[network.Name] = network
@@ -153,7 +168,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			if !ok {
 				// if the provider doesn't exist
 				// check if the network service is active, if not, skip the provider
-				if networkService.NetworkStatus != dinreg.Active {
+				if networkService.Status != dinreg.Active {
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
 				}
@@ -169,7 +184,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			} else {
 				// if the provider exists in the copied network object,
 				// check if the network service is active, if not, don't update the provider data and remove the provider from the copied network object
-				if networkService.NetworkStatus != dinreg.Active {
+				if networkService.Status != dinreg.Active {
 					delete(newNetwork.Providers, newProvider.host)
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
