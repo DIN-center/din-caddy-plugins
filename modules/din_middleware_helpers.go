@@ -62,7 +62,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		// Check if the network exists in the local network list within the middleware object
 		network, ok := d.Networks[regNetwork.ProxyName]
 		if !ok {
-			if regNetwork.NetworkConfig.NetworkStatus != dinreg.Active {
+			if regNetwork.Status != dinreg.Active {
 				d.logger.Debug("Network is not active, skipping", zap.String("network", regNetwork.ProxyName))
 				continue
 			}
@@ -75,7 +75,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 			}
 		} else {
 			// If the network exists in the middleware object, check to see if the registry version is active or not,
-			if regNetwork.NetworkConfig.NetworkStatus != dinreg.Active {
+			if regNetwork.Status != dinreg.Active {
 				// Skip over network for now if it is not active
 				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
 				delete(d.Networks, regNetwork.ProxyName)

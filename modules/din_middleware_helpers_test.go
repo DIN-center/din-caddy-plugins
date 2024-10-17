@@ -283,7 +283,6 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 							"http://new-provider.com": {
 								Url:     "http://new-provider.com",
 								Address: "0x1234567890abcdef",
-								Status:  dinreg.Onboarding,
 							},
 						},
 					},
@@ -291,6 +290,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: 1,
 				},
+				Status: dinreg.Onboarding,
 			},
 			newNetwork: &network{
 				Name:      "test-network",
@@ -308,8 +308,8 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: 1,
-					NetworkStatus:        dinreg.Active,
 				},
+				Status: dinreg.Active,
 			},
 			newNetwork: &network{
 				Name: "test-network",
