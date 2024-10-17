@@ -121,8 +121,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:     "http://new-provider.com",
-								Address: "0x1234567890abcdef",
+								Url:           "http://new-provider.com",
+								Address:       "0x1234567890abcdef",
+								NetworkStatus: dinreg.Active,
 							},
 						},
 					},
@@ -138,6 +139,31 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			expectedNetworkProviders: 1,
 		},
 		{
+			name: "Error, missing active status",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:           "http://new-provider.com",
+								Address:       "0x1234567890abcdef",
+								NetworkStatus: dinreg.Onboarding,
+							},
+						},
+					},
+				},
+				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit: uint8(1),
+				},
+			},
+			methodByBitErr:           nil,
+			syncNetworkConfigErr:     nil,
+			createNewProviderErr:     nil,
+			expectedError:            nil,
+			expectedNetworkProviders: 0,
+		},
+		{
 			name: "Error syncing network config",
 			regNetwork: &din.Network{
 				ProxyName: "test-network",
@@ -145,8 +171,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:     "http://new-provider.com",
-								Address: "0x1234567890abcdef",
+								Url:           "http://new-provider.com",
+								Address:       "0x1234567890abcdef",
+								NetworkStatus: dinreg.Active,
 							},
 						},
 					},
@@ -225,8 +252,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:     "http://new-provider.com",
-								Address: "0x1234567890abcdef",
+								Url:           "http://new-provider.com",
+								Address:       "0x1234567890abcdef",
+								NetworkStatus: dinreg.Active,
 							},
 						},
 					},
@@ -246,11 +274,41 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			expectedRemainingProviders: 0,
 		},
 		{
+			name: "Error, non active status",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:           "http://new-provider.com",
+								Address:       "0x1234567890abcdef",
+								NetworkStatus: dinreg.Onboarding,
+							},
+						},
+					},
+				},
+				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit: 1,
+				},
+			},
+			newNetwork: &network{
+				Name:      "test-network",
+				Providers: map[string]*provider{},
+			},
+			methodByBitErr:             nil,
+			createNewProviderErr:       nil,
+			expectedError:              nil,
+			expectedProviderCount:      0,
+			expectedRemainingProviders: 0,
+		},
+		{
 			name: "Error syncing network config",
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: 1,
+					NetworkStatus:        dinreg.Active,
 				},
 			},
 			newNetwork: &network{
@@ -420,6 +478,7 @@ func TestCreateNewProvider(t *testing.T) {
 	tests := []struct {
 		name                  string
 		provider              *provider
+		authConfig            *dinreg.NetworkServiceAuthConfig
 		networkServiceAddress string
 		initializeProviderErr error
 		getMethodsErr         error
@@ -430,6 +489,10 @@ func TestCreateNewProvider(t *testing.T) {
 			name: "Successful provider creation",
 			provider: &provider{
 				HttpUrl: "http://example.com",
+			},
+			authConfig: &dinreg.NetworkServiceAuthConfig{
+				Type: "siwe",
+				Url:  "http://example.com",
 			},
 			networkServiceAddress: "0x1234567890abcdef",
 			initializeProviderErr: nil,
@@ -474,7 +537,7 @@ func TestCreateNewProvider(t *testing.T) {
 				Times(1)
 
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, tt.networkServiceAddress)
+			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, nil, tt.networkServiceAddress)
 
 			// Assert results
 			if tt.expectedError != nil {

@@ -97,6 +97,10 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
+			if networkService.NetworkStatus != dinreg.Active {
+				d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
+				continue
+			}
 			// Create a new provider object
 			provider, err := NewProvider(networkService.Url)
 			if err != nil {
@@ -104,7 +108,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				continue
 			}
 
-			provider, err = d.createNewProvider(provider, networkService.Address)
+			provider, err = d.createNewProvider(provider, regProvider.AuthConfig, networkService.Address)
 			if err != nil {
 				d.logger.Error("Failed to create new provider", zap.Error(err))
 				continue
@@ -147,8 +151,14 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			// check to see if the provider exists in the local network object
 			_, ok := newNetwork.Providers[newProvider.host]
 			if !ok {
-				// if the provider doesn't exist, create a new provider object and add it to the copied network object
-				newProvider, err := d.createNewProvider(newProvider, networkService.Address)
+				// if the provider doesn't exist
+				// check if the network service is active, if not, skip the provider
+				if networkService.NetworkStatus != dinreg.Active {
+					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
+					continue
+				}
+				// create a new provider object and add it to the copied network object
+				newProvider, err := d.createNewProvider(newProvider, regProvider.AuthConfig, networkService.Address)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
@@ -157,6 +167,13 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 				// add the new provider to the copied network object
 				newNetwork.Providers[newProvider.host] = newProvider
 			} else {
+				// if the provider exists in the copied network object,
+				// check if the network service is active, if not, don't update the provider data and remove the provider from the copied network object
+				if networkService.NetworkStatus != dinreg.Active {
+					delete(newNetwork.Providers, newProvider.host)
+					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
+					continue
+				}
 				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
 				d.updateProviderData(newNetwork.Name, newProvider)
 
@@ -209,8 +226,23 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
-func (d *DinMiddleware) createNewProvider(provider *provider, networkServiceAddress string) (*provider, error) {
+func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
 	httpClient := din_http.NewHTTPClient()
+
+	// TODO: Finish when the signer is configured globally in the Caddy config instead of per provider
+	// Set the provider auth config based on the auth type
+	// if authConfig != nil {
+	// 	switch authConfig.Type {
+	// 	case dinreg.SIWE:
+	// 		provider.Auth = &siwe.SIWEClientAuth{
+	// 			ProviderURL:  authConfig.Url,
+	// 			SessionCount: 16,
+	// 		}
+	// 	default:
+	// 		provider.Auth = nil
+	// 	}
+	// }
+
 	err := d.initializeProvider(provider, httpClient, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
@@ -222,9 +254,6 @@ func (d *DinMiddleware) createNewProvider(provider *provider, networkServiceAddr
 		return nil, fmt.Errorf("failed to get network service methods: %w", err)
 	}
 	provider.Methods = networkServiceMethods
-
-	// TODO: FINISH THIS set auth type and object with url
-	provider.Auth = nil
 
 	return provider, nil
 }
