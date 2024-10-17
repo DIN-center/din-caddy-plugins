@@ -200,6 +200,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if v, ok := repl.Get(RequestProviderKey); ok {
 		provider = v.(string)
 	}
+
+	if rww.statusCode != http.StatusOK {
+		var bodyData []byte
+		if v, ok := repl.Get(RequestBodyKey); ok {
+			bodyData = v.([]byte)
+		}
+		d.logger.Warn("Request failed", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+	}
 	healthStatus := network.Providers[provider].healthStatus.String()
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
