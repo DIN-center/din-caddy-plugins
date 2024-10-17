@@ -7,7 +7,6 @@ import (
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
-	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 )
 
@@ -62,9 +61,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 		// Check if the network exists in the local network list within the middleware object
 		network, ok := d.Networks[regNetwork.ProxyName]
-		spew.Dump(network)
 		if !ok {
-			spew.Dump("network doesn't exist adds new network")
 			// If the network does not exist in the middleware object, then create a new network and add it to the middleware object
 			err := d.addNetworkWithRegistryData(regNetwork)
 			if err != nil {
