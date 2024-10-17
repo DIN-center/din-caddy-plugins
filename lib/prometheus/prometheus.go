@@ -136,7 +136,7 @@ type PromLatestBlockMetricData struct {
 	Provider       string
 	ResponseStatus int
 	HealthStatus   string
-	BlockNumber    int64
+	BlockNumber    uint64
 }
 
 // handleLatestBlockMetric increments prometheus metric based on latest block number health check data

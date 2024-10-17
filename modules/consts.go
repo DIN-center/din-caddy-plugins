@@ -19,15 +19,24 @@ const (
 	DefaultHCMethod                = "eth_blockNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
-	DefaultBlockLagLimit           = int64(5)
-	DefaultMaxRequestPayloadSizeKB = int64(4096)
+	DefaultBlockLagLimit           = uint64(5)
+	DefaultMaxRequestPayloadSizeKB = uint64(4096)
 	DefaultRequestAttemptCount     = 5
+
+	// Registry constants
+	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockEpoch            = uint64(2000)
+	DefaultRegistryEndpointUrl           = "http://localhost:8545"
+	DefaultRegistryPriority              = 0
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 
 	// Request/Response Header Keys
 	DinProviderInfo = "din-provider-info"
+
+	// Upstream/Selector Constants
+	MaxPriority = 9
 )
 
 // String method to convert MyEnum to string
