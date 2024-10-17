@@ -47,7 +47,7 @@ type DinMiddleware struct {
 	// The prometheus client object
 	PrometheusClient *prom.PrometheusClient
 
-	// The di-ngo client object
+	// The dingo client object
 	DingoClient din.IDingoClient
 
 	logger *zap.Logger
@@ -546,7 +546,6 @@ func (d *DinMiddleware) startRegistrySync() {
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
-	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
 	go func() {
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {
@@ -560,6 +559,7 @@ func (d *DinMiddleware) startRegistrySync() {
 		}
 	}()
 }
+
 func (d *DinMiddleware) closeAll() {
 	for _, network := range d.Networks {
 		network.close()

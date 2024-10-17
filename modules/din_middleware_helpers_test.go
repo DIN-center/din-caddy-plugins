@@ -111,9 +111,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:           "http://new-provider.com",
-								Address:       "0x1234567890abcdef",
-								NetworkStatus: dinreg.Active,
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  dinreg.Active,
 							},
 						},
 					},
@@ -136,9 +136,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:           "http://new-provider.com",
-								Address:       "0x1234567890abcdef",
-								NetworkStatus: dinreg.Onboarding,
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  dinreg.Onboarding,
 							},
 						},
 					},
@@ -161,9 +161,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:           "http://new-provider.com",
-								Address:       "0x1234567890abcdef",
-								NetworkStatus: dinreg.Active,
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  dinreg.Active,
 							},
 						},
 					},
@@ -242,9 +242,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:           "http://new-provider.com",
-								Address:       "0x1234567890abcdef",
-								NetworkStatus: dinreg.Active,
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  dinreg.Active,
 							},
 						},
 					},
@@ -271,9 +271,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					"Provider1": {
 						NetworkServices: map[string]*din.NetworkService{
 							"http://new-provider.com": {
-								Url:           "http://new-provider.com",
-								Address:       "0x1234567890abcdef",
-								NetworkStatus: dinreg.Onboarding,
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  dinreg.Onboarding,
 							},
 						},
 					},
