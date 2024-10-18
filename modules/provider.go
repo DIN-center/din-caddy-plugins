@@ -11,20 +11,22 @@ import (
 )
 
 type provider struct {
-	HttpUrl    string `json:"http.url"`
-	path       string
-	host       string
-	Headers    map[string]string
-	upstream   *reverseproxy.Upstream
-	httpClient *din_http.HTTPClient
-	Priority   int
-	Auth       *siwe.SIWEClientAuth
-	logger     *zap.Logger
-
+	HttpUrl      string
+	path         string
+	host         string
+	Headers      map[string]string
+	upstream     *reverseproxy.Upstream
+	httpClient   *din_http.HTTPClient
+	logger       *zap.Logger
 	failures     int
 	successes    int
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
+	Priority     int
 	quit         chan struct{}
+
+	// Registry Configuration Values
+	Methods []*string            `json:"methods"`
+	Auth    *siwe.SIWEClientAuth `json:"auth"`
 }
 
 func NewProvider(urlStr string) (*provider, error) {

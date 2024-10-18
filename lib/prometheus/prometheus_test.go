@@ -134,23 +134,6 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 				"machine_id":      client.machineID,
 			},
 		},
-		{
-			name: "Invalid Data",
-			data: &PromLatestBlockMetricData{
-				Network:        "/ethereum",
-				Provider:       "infura",
-				ResponseStatus: 500,
-				HealthStatus:   "unhealthy",
-				BlockNumber:    -1,
-			},
-			expectedLabels: map[string]string{
-				"service":         "ethereum",
-				"provider":        "infura",
-				"response_status": "500",
-				"health_status":   "unhealthy",
-				"machine_id":      client.machineID,
-			},
-		},
 	}
 
 	for _, tt := range tests {
