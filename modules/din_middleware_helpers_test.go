@@ -112,6 +112,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 		methodByBitErr           error
 		expectedError            error
 		expectedNetworkProviders int
+		networkServiceCreated    bool
 	}{
 		{
 			name: "Successful add network with providers",
@@ -137,6 +138,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			createNewProviderErr:     nil,
 			expectedError:            nil,
 			expectedNetworkProviders: 1,
+			networkServiceCreated:    true,
 		},
 		{
 			name: "Error, missing active status",
@@ -156,12 +158,14 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: uint8(1),
 				},
+				Status: dinreg.Onboarding,
 			},
 			methodByBitErr:           nil,
 			syncNetworkConfigErr:     nil,
 			createNewProviderErr:     nil,
 			expectedError:            nil,
 			expectedNetworkProviders: 0,
+			networkServiceCreated:    false,
 		},
 		{
 			name: "Error syncing network config",
@@ -187,6 +191,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			createNewProviderErr:     nil,
 			expectedError:            errors.New(""),
 			expectedNetworkProviders: 1,
+			networkServiceCreated:    false,
 		},
 	}
 
@@ -220,10 +225,12 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 
 				// Verify the network is added
 				network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
-				assert.Equal(t, true, ok)
+				assert.Equal(t, tt.networkServiceCreated, ok)
 
-				// Verify the number of providers added to the network
-				assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
+				if network != nil {
+					// Verify the number of providers added to the network
+					assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
+				}
 			}
 		})
 	}
