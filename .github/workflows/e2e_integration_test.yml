@@ -29,7 +29,7 @@ jobs:
 
             - name: Use Custom Caddyfile and Run Caddy
               run: |
-                $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
+                GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
               shell: bash
 
             - name: Make the script executable
