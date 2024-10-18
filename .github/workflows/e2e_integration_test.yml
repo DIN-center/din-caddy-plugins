@@ -42,5 +42,5 @@ jobs:
               
             - name: Stop Caddy server
               run: |
-               $HOME/go/bin/xcaddy stop
+               GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy stop
               shell: bash
