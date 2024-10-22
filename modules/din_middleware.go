@@ -67,7 +67,8 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
-	for _, network := range d.Networks {
+	for networkname, network := range d.Networks {
+		d.logger.Debug("Registered network", zap.String("name", networkname))
 		network.HTTPClient = httpClient
 		network.logger = d.logger
 		network.PrometheusClient = promClient
@@ -229,8 +230,44 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
+	var defaultSigner *siwe.SigningConfig
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
+		case "siwe-signer":
+			var key []byte
+			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
+				switch dispenser.Val() {
+				case "secret_file":
+					dispenser.NextBlock(n1)
+					hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
+					if err != nil {
+						return dispenser.Errf("failed to read secret file: %v", err)
+					}
+					hexKey := string(hexKeyBytes)
+					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
+					key, err = hex.DecodeString(hexKey)
+					if err != nil {
+						return err
+					}
+				case "secret":
+					dispenser.NextBlock(n1)
+					hexKey := dispenser.Val()
+					hexKey = strings.TrimPrefix(hexKey, "0x")
+					key, err = hex.DecodeString(hexKey)
+					if err != nil {
+						return dispenser.Errf("error parsing %v: %v", hexKey, err.Error())
+					}
+				}
+			}
+			if len(key) == 0 {
+				return dispenser.Errf("no key material in siwe-signer definition")
+			}
+			defaultSigner = &siwe.SigningConfig{
+				PrivateKey: key,
+			}
+			if err := defaultSigner.GenPrivKey(); err != nil {
+				return err
+			}
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
@@ -308,8 +345,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											}
 										}
 									}
-									if auth.Signer == nil {
-										return fmt.Errorf("signer must be set")
+									if auth.Signer == nil  {
+										if defaultSigner == nil {
+											return dispenser.Errf("signer must be set")
+										}
+										auth.Signer = defaultSigner
 									}
 									providerObj.Auth = auth
 								case "headers":
@@ -376,6 +416,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					return dispenser.Errf("expected at least one provider for network %s", networkName)
 				}
 			}
+			if len(d.Networks) == 0 {
+				return dispenser.Errf("expected at least one network")
+			} 
 		}
 	}
 	return nil
