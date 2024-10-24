@@ -57,7 +57,7 @@ func TestNewProvider(t *testing.T) {
 				t.Errorf("Headers length = %v, want %v", len(provider.Headers), len(tt.output.Headers))
 			}
 			if provider.Priority != tt.output.Priority {
-				t.Errorf("Priority = %v, want %v", provider.Priority, tt.output.Priority)
+				t.Errorf("priority = %v, want %v", provider.Priority, tt.output.Priority)
 			}
 		})
 	}
