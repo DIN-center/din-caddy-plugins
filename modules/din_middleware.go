@@ -40,10 +40,11 @@ var (
 )
 
 type DinMiddleware struct {
-	Networks         map[string]*network `json:"networks"`
-	PrometheusClient *prom.PrometheusClient
-	logger           *zap.Logger
-	machineID        string
+	Networks          map[string]*network `json:"networks"`
+	PrometheusClient  *prom.PrometheusClient
+	DefaultSiweSigner *siwe.SigningConfig
+	logger            *zap.Logger
+	machineID         string
 
 	testMode bool
 }
@@ -230,7 +231,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
-	var defaultSigner *siwe.SigningConfig
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "siwe-signer":
@@ -262,10 +262,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 			if len(key) == 0 {
 				return dispenser.Errf("no key material in siwe-signer definition")
 			}
-			defaultSigner = &siwe.SigningConfig{
+			d.DefaultSiweSigner = &siwe.SigningConfig{
 				PrivateKey: key,
 			}
-			if err := defaultSigner.GenPrivKey(); err != nil {
+			if err := d.DefaultSiweSigner.GenPrivKey(); err != nil {
 				return err
 			}
 		case "networks":
@@ -346,10 +346,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										}
 									}
 									if auth.Signer == nil  {
-										if defaultSigner == nil {
+										if d.DefaultSiweSigner == nil {
 											return dispenser.Errf("signer must be set")
 										}
-										auth.Signer = defaultSigner
+										auth.Signer = d.DefaultSiweSigner
 									}
 									providerObj.Auth = auth
 								case "headers":
