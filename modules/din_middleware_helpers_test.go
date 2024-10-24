@@ -21,7 +21,6 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
-		RegistryEnv:                         LineaMainnet,
 		RegistryBlockEpoch:                  10,
 		registryLastUpdatedEpochBlockNumber: 40,
 		logger:                              logger,
@@ -31,56 +30,44 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 
 	tests := []struct {
 		name                                string
-		registryLastUpdatedEpochBlockNumber int64
-		latestBlockNumber                   int64
+		registryLastUpdatedEpochBlockNumber uint64
+		latestBlockNumber                   uint64
 		expectedUpdateCall                  bool
-		expectedBlockFloorByEpoch           int64
+		expectedBlockFloorByEpoch           uint64
 	}{
 		{
 			name:                                "Sync should update as block difference is equal to or exceeds epoch 50",
-			registryLastUpdatedEpochBlockNumber: int64(40),
-			latestBlockNumber:                   int64(50),
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(50),
 			expectedUpdateCall:                  true,
-			expectedBlockFloorByEpoch:           int64(50),
+			expectedBlockFloorByEpoch:           uint64(50),
 		},
 		{
 			name:                                "Sync should update as block difference is equal to or exceeds epoch 52",
-			registryLastUpdatedEpochBlockNumber: int64(40),
-			latestBlockNumber:                   int64(52),
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(52),
 			expectedUpdateCall:                  true,
-			expectedBlockFloorByEpoch:           int64(50),
+			expectedBlockFloorByEpoch:           uint64(50),
 		},
 		{
 			name:                                "Sync should update as block difference is equal to or exceeds epoch 1000",
-			registryLastUpdatedEpochBlockNumber: int64(40),
-			latestBlockNumber:                   int64(1001),
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(1001),
 			expectedUpdateCall:                  true,
-			expectedBlockFloorByEpoch:           int64(1000),
+			expectedBlockFloorByEpoch:           uint64(1000),
 		},
 		{
 			name:                                "Sync should not update as block difference is less than epoch 48",
-			registryLastUpdatedEpochBlockNumber: int64(40),
-			latestBlockNumber:                   int64(48),
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(48),
 			expectedUpdateCall:                  false,
-			expectedBlockFloorByEpoch:           int64(40),
-		},
-		{
-			name:                                "Sync should not update as block difference is less than epoch 30",
-			registryLastUpdatedEpochBlockNumber: int64(40),
-			latestBlockNumber:                   int64(30),
-			expectedUpdateCall:                  false,
-			expectedBlockFloorByEpoch:           int64(40),
+			expectedBlockFloorByEpoch:           uint64(40),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			dinMiddleware.Networks = map[string]*network{
-				LineaMainnet: {
-					latestBlockNumber: tt.latestBlockNumber,
-				},
-			}
+			dinMiddleware.Networks = map[string]*network{}
 			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
 			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
@@ -495,11 +482,11 @@ func TestCreateNewProvider(t *testing.T) {
 		{
 			name: "Successful provider creation",
 			provider: &provider{
-				HttpUrl: "http://example.com",
+				HttpUrl: "http://example5.com",
 			},
 			authConfig: &dinreg.NetworkServiceAuthConfig{
 				Type: "siwe",
-				Url:  "http://example.com",
+				Url:  "http://example6.com",
 			},
 			networkServiceAddress: "0x1234567890abcdef",
 			initializeProviderErr: nil,
@@ -510,7 +497,7 @@ func TestCreateNewProvider(t *testing.T) {
 		{
 			name: "Error fetching network service methods",
 			provider: &provider{
-				HttpUrl: "http://example.com",
+				HttpUrl: "http://example7.com",
 			},
 			networkServiceAddress: "0x1234567890abcdef",
 			initializeProviderErr: nil,

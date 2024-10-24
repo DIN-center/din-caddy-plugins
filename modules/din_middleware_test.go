@@ -179,11 +179,12 @@ func TestInitialize(t *testing.T) {
 					"test-network": {
 						Providers: map[string]*provider{
 							"provider1": {
-								HttpUrl: "http://example.com",
+								HttpUrl: "http://example1.com",
 							},
 						},
 					},
 				},
+				testMode: true,
 			},
 			expectedError: nil,
 		},
@@ -210,8 +211,9 @@ func TestInitialize(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Assert default values are set if not provided
-				assert.NotZero(t, dinMiddleware.RegistryBlockCheckInterval)
+				assert.NotZero(t, dinMiddleware.RegistryBlockCheckIntervalSec)
 				assert.NotZero(t, dinMiddleware.RegistryBlockEpoch)
+				assert.NotZero(t, dinMiddleware.RegistryEndpointUrl)
 				assert.Equal(t, 0, dinMiddleware.RegistryPriority)
 
 				// // Assert networks and providers are initialized
@@ -238,7 +240,7 @@ func TestInitializeProvider(t *testing.T) {
 		{
 			name: "Successful initialization with http URL",
 			provider: &provider{
-				HttpUrl: "http://example.com",
+				HttpUrl: "http://example2.com",
 				Auth:    nil,
 			},
 			httpClient:    &din_http.HTTPClient{},
@@ -247,7 +249,7 @@ func TestInitializeProvider(t *testing.T) {
 		{
 			name: "Successful initialization with https URL",
 			provider: &provider{
-				HttpUrl: "https://example.com",
+				HttpUrl: "https://example3.com",
 				Auth:    nil,
 			},
 			httpClient:    &din_http.HTTPClient{},
@@ -256,7 +258,7 @@ func TestInitializeProvider(t *testing.T) {
 		{
 			name: "Successful initialization with auth",
 			provider: &provider{
-				HttpUrl: "http://example.com",
+				HttpUrl: "http://example4.com",
 				Auth: &siwe.SIWEClientAuth{
 					ProviderURL: "http://auth.example.com",
 				},

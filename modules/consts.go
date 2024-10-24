@@ -27,10 +27,10 @@ const (
 	DefaultRequestAttemptCount     = 5
 
 	// Registry constants
-	DefaultRegistryBlockCheckInterval = int64(60)
-	DefaultRegistryBlockEpoch         = int64(2000)
-	DefaultRegistryEnv                = LineaMainnet
-	DefaultRegistryPriority           = 0
+	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockEpoch            = uint64(2000)
+	DefaultRegistryEndpointUrl           = "http://localhost:8545"
+	DefaultRegistryPriority              = 0
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523

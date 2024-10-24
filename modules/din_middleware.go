@@ -62,14 +62,14 @@ type DinMiddleware struct {
 	// The flag to enable or disable the din registry
 	RegistryEnabled bool
 	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckInterval int64
+	RegistryBlockCheckIntervalSec uint64
 	// The epoch in blocks to check the latest block number from the registry.
 	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
-	RegistryBlockEpoch int64
+	RegistryBlockEpoch uint64
 	// The block number in which the registry was updated last
-	registryLastUpdatedEpochBlockNumber int64
+	registryLastUpdatedEpochBlockNumber uint64
 	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
-	RegistryEnv string
+	RegistryEndpointUrl string
 	// The priority of the registry providers
 	RegistryPriority int
 
@@ -122,28 +122,30 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 func (d *DinMiddleware) initialize(context caddy.Context) error {
 	var err error
 	d.machineID = getMachineId()
-	d.logger = context.Logger(d)
+	logger := context.Logger(d)
+	d.logger = logger
 	// Initialize the prometheus client on the din middleware object
-	promClient := prom.NewPrometheusClient(d.logger, d.machineID)
+	promClient := prom.NewPrometheusClient(logger, d.machineID)
 	d.PrometheusClient = promClient
 	d.quit = make(chan struct{})
 
-	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient()
-	if err != nil {
-		return fmt.Errorf("error initializing din client: %v", err)
-	}
-	if d.RegistryBlockCheckInterval == 0 {
-		d.RegistryBlockCheckInterval = DefaultRegistryBlockCheckInterval
+	if d.RegistryBlockCheckIntervalSec == 0 {
+		d.RegistryBlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
 	}
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.RegistryEnv == "" {
-		d.RegistryEnv = DefaultRegistryEnv
+	if d.RegistryEndpointUrl == "" {
+		d.RegistryEndpointUrl = DefaultRegistryEndpointUrl
 	}
 	if d.RegistryPriority == 0 {
 		d.RegistryPriority = DefaultRegistryPriority
+	}
+
+	// Initialize the din registry configuration values
+	d.DingoClient, err = din.NewDinClient(logger, d.RegistryEndpointUrl)
+	if err != nil {
+		return fmt.Errorf("error initializing din client: %v", err)
 	}
 
 	// Initialize the HTTP client for each network and provider
@@ -514,8 +516,8 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.RegistryBlockEpoch = int64(intValue)
-				case "registry_block_check_interval":
+					d.RegistryBlockEpoch = uint64(intValue)
+				case "registry_block_check_interval_sec":
 					dispenser.Next()
 					registryBlockCheckIntervalSecVal := dispenser.Val()
 					// Convert string to int64
@@ -523,11 +525,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					if err != nil {
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
-					d.RegistryBlockCheckInterval = int64(intValue)
-				case "registry_env":
+					d.RegistryBlockCheckIntervalSec = uint64(intValue)
+				case "registry_endpoint_url":
 					dispenser.Next()
-					registryEnvVal := dispenser.Val()
-					d.RegistryEnv = registryEnvVal
+					registryEndpointUrl := dispenser.Val()
+					d.RegistryEndpointUrl = registryEndpointUrl
 				case "registry_priority":
 					dispenser.Next()
 					registryPriorityVal := dispenser.Val()
@@ -577,7 +579,7 @@ func (d *DinMiddleware) startRegistrySync() {
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
 	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	go func() {
 		// Keep an index for RPC request IDs

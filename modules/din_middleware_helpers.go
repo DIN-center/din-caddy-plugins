@@ -12,21 +12,19 @@ import (
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
-	// Check if the linea network exists in the middleware object
-	network, ok := d.getNetwork(d.RegistryEnv)
-	if !ok {
-		d.logger.Error("Network not found in middleware object. Registry data cannot be retrieved", zap.String("network", d.RegistryEnv))
+	// Get the latest block number from the linea network
+	latestBlockNumber, err := d.DingoClient.GetLatestBlockNumber()
+	if err != nil {
+		d.logger.Error("Failed to get latest block number", zap.Error(err))
 		return
 	}
-	// Get the latest block number from the linea network
-	latestBlockNumber := network.latestBlockNumber
 
 	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
 	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
 
-	d.logger.Debug("Checking block number for registry sync", zap.Int64("block_epoch", d.RegistryBlockEpoch),
-		zap.Int64("latest_linea_block_number", latestBlockNumber), zap.Int64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
-		zap.Int64("last_updated_block_number", d.registryLastUpdatedEpochBlockNumber), zap.Int64("difference", latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber),
+	d.logger.Debug("Checking block number for registry sync", zap.Uint64("block_epoch", d.RegistryBlockEpoch),
+		zap.Uint64("latest_linea_block_number", latestBlockNumber), zap.Uint64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
+		zap.Uint64("last_updated_block_number", d.registryLastUpdatedEpochBlockNumber), zap.Uint64("difference", latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber),
 	)
 
 	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
@@ -34,6 +32,7 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 		registryData, err := d.DingoClient.GetRegistryData()
 		if err != nil {
 			d.logger.Error("Failed to get data from registry", zap.Error(err))
+			return
 		}
 		d.processRegistryData(registryData)
 

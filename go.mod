@@ -5,7 +5,7 @@ go 1.22
 toolchain go1.22.8
 
 require (
-	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20241018173624-7efe8ff30c28
+	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20241024151612-6ce739940f55
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.7
