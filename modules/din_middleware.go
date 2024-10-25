@@ -68,8 +68,8 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
-	for networkname, network := range d.Networks {
-		d.logger.Debug("Registered network", zap.String("name", networkname))
+	for networkName, network := range d.Networks {
+		d.logger.Debug("Registered network", zap.String("name", networkName))
 		network.HTTPClient = httpClient
 		network.logger = d.logger
 		network.PrometheusClient = promClient
