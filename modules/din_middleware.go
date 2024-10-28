@@ -92,6 +92,10 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
+	if len(d.Networks) == 0 && !d.RegistryEnabled {
+		return fmt.Errorf("expected at least 1 network or registry to be defined")
+	}
+
 	// set the initialize the dinMiddlewareObject
 	err := d.initialize(context)
 	if err != nil {
@@ -538,9 +542,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				if len(d.Networks[networkName].Providers) == 0 {
 					return dispenser.Errf("expected at least one provider for network %s", networkName)
 				}
-			}
-			if len(d.Networks) == 0 {
-				return dispenser.Errf("expected at least one network")
 			}
 		case "din_registry":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
