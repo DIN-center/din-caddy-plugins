@@ -31,7 +31,8 @@ func TestClientBasic(t *testing.T) {
 	signer := &SigningConfig{
 		PrivateKey: keyBytes,
 	}
-	signer.GenPrivKey()
+	signerClient := NewSIWESignerClient()
+	signerClient.GenPrivKey(signer)
 	fmt.Printf("Key: %#x\nAddress: %v", keyBytes, signer.Address)
 	client := NewSIWEClient(server.URL+"/auth", 16, signer)
 	if err := client.Start(zap.NewNop()); err != nil {

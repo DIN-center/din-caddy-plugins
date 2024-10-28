@@ -243,19 +243,27 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
 	httpClient := din_http.NewHTTPClient()
 
-	// TODO: Finish when the signer is configured globally in the Caddy config instead of per provider
 	// Set the provider auth config based on the auth type
-	// if authConfig != nil {
-	// 	switch authConfig.Type {
-	// 	case dinreg.SIWE:
-	// 		provider.Auth = &siwe.SIWEClientAuth{
-	// 			ProviderURL:  authConfig.Url,
-	// 			SessionCount: 16,
-	// 		}
-	// 	default:
-	// 		provider.Auth = nil
-	// 	}
-	// }
+	if authConfig != nil {
+		switch authConfig.Type {
+		case dinreg.SIWE:
+			// Create a new SIWE auth object
+			auth := d.SiweSignerClient.CreateNewSIWEAuth(authConfig.Url, 16)
+			// Set the signer for the provider to the default signer. The default signer is set on proxy startup.
+			// it requires a secret key defined in the caddyfile.
+			if auth.Signer == nil {
+				if d.DefaultSiweSigner == nil {
+					return nil, fmt.Errorf("siwe default signer is not configured")
+				}
+				auth.Signer = d.DefaultSiweSigner
+			}
+			provider.Auth = auth
+		case dinreg.None:
+			provider.Auth = nil
+		default:
+			provider.Auth = nil
+		}
+	}
 
 	err := d.initializeProvider(provider, httpClient, d.logger)
 	if err != nil {

@@ -48,6 +48,9 @@ type DinMiddleware struct {
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
 
+	// The default siwe signer client
+	SiweSignerClient siwe.ISIWESignerClient
+
 	// The prometheus client object
 	PrometheusClient *prom.PrometheusClient
 
@@ -358,6 +361,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
+	if d.SiweSignerClient == nil {
+		d.SiweSignerClient = siwe.NewSIWESignerClient()
+	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "siwe-signer":
@@ -392,7 +398,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 			d.DefaultSiweSigner = &siwe.SigningConfig{
 				PrivateKey: key,
 			}
-			if err := d.DefaultSiweSigner.GenPrivKey(); err != nil {
+			if err := d.SiweSignerClient.GenPrivKey(d.DefaultSiweSigner); err != nil {
 				return err
 			}
 		case "networks":
@@ -418,10 +424,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "auth":
-									auth := &siwe.SIWEClientAuth{
-										ProviderURL:  strings.TrimSuffix(providerObj.HttpUrl, "/") + "/auth",
-										SessionCount: 16,
-									}
+									auth := d.SiweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
 									for dispenser.NextBlock(nesting + 3) {
 										switch dispenser.Val() {
 										case "type":
@@ -467,7 +470,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											auth.Signer = &siwe.SigningConfig{
 												PrivateKey: key,
 											}
-											if err := auth.Signer.GenPrivKey(); err != nil {
+											if err := d.SiweSignerClient.GenPrivKey(auth.Signer); err != nil {
 												return fmt.Errorf("failed to generate private key: %v", err)
 											}
 										}

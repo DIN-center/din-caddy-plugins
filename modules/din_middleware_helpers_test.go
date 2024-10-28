@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"crypto/rand"
 	"sync"
 	"testing"
 
@@ -478,14 +479,16 @@ func TestCreateNewProvider(t *testing.T) {
 		getMethodsErr         error
 		expectedError         error
 		expectedMethods       []*string
+		expectedAuth          *siwe.SIWEClientAuth
+		authNotCreated        bool
 	}{
 		{
-			name: "Successful provider creation",
+			name: "Successful provider creation with SIWE auth",
 			provider: &provider{
 				HttpUrl: "http://example5.com",
 			},
 			authConfig: &dinreg.NetworkServiceAuthConfig{
-				Type: "siwe",
+				Type: dinreg.SIWE,
 				Url:  "http://example6.com",
 			},
 			networkServiceAddress: "0x1234567890abcdef",
@@ -493,17 +496,59 @@ func TestCreateNewProvider(t *testing.T) {
 			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
+			expectedAuth: &siwe.SIWEClientAuth{
+				ProviderURL:  "http://example6.com",
+				SessionCount: 16,
+				Signer:       nil, // Signer is set in the createNewProvider function
+			},
+		},
+		{
+			name: "Successful provider creation with no auth",
+			provider: &provider{
+				HttpUrl: "http://example7.com",
+			},
+			authConfig:            &dinreg.NetworkServiceAuthConfig{Type: dinreg.None},
+			networkServiceAddress: "0x1234567890abcdef",
+			initializeProviderErr: nil,
+			getMethodsErr:         nil,
+			expectedError:         nil,
+			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
+			expectedAuth:          nil,
+			authNotCreated:        true,
 		},
 		{
 			name: "Error fetching network service methods",
 			provider: &provider{
-				HttpUrl: "http://example7.com",
+				HttpUrl: "http://example8.com",
 			},
+			authConfig:            &dinreg.NetworkServiceAuthConfig{Type: dinreg.SIWE, Url: "http://example9.com"},
 			networkServiceAddress: "0x1234567890abcdef",
 			initializeProviderErr: nil,
 			getMethodsErr:         errors.New("failed to fetch methods"),
 			expectedError:         errors.New("failed to get network service methods: failed to fetch methods"),
 			expectedMethods:       nil,
+			expectedAuth: &siwe.SIWEClientAuth{
+				ProviderURL:  "http://example9.com",
+				SessionCount: 16,
+				Signer:       nil,
+			},
+		},
+		{
+			name: "AUTH type is unknown ",
+			provider: &provider{
+				HttpUrl: "http://example12.com",
+			},
+			authConfig: &dinreg.NetworkServiceAuthConfig{
+				Type: "unknown",
+				Url:  "http://example13.com",
+			},
+			networkServiceAddress: "0x1234567890abcdef",
+			initializeProviderErr: nil,
+			getMethodsErr:         nil,
+			expectedError:         nil,
+			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
+			expectedAuth:          nil,
+			authNotCreated:        true,
 		},
 	}
 
@@ -513,15 +558,30 @@ func TestCreateNewProvider(t *testing.T) {
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
+			privateKeyData := make([]byte, 32)
+			_, err := rand.Read(privateKeyData)
+			if err != nil {
+				t.Errorf("Failed to generate random data in test: %v", err)
+			}
+
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+			mockSiweSignerClient := siwe.NewMockISIWESignerClient(mockCtrl)
+			defaultSigner := &siwe.SigningConfig{
+				PrivateKey: privateKeyData,
+			}
+			if !tt.authNotCreated {
+				mockSiweSignerClient.EXPECT().CreateNewSIWEAuth(gomock.Any(), gomock.Any()).Return(tt.expectedAuth).Times(1)
+			}
 
 			// Create DinMiddleware and mock logger
 			logger := zaptest.NewLogger(t)
 			dinMiddleware := &DinMiddleware{
-				DingoClient:      mockDingoClient,
-				RegistryPriority: 10,
-				logger:           logger,
-				testMode:         true,
+				DingoClient:       mockDingoClient,
+				SiweSignerClient:  mockSiweSignerClient,
+				RegistryPriority:  10,
+				logger:            logger,
+				testMode:          true,
+				DefaultSiweSigner: defaultSigner,
 			}
 
 			// Mock GetNetworkServiceMethods
@@ -531,7 +591,7 @@ func TestCreateNewProvider(t *testing.T) {
 				Times(1)
 
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, nil, tt.networkServiceAddress)
+			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, tt.authConfig, tt.networkServiceAddress)
 
 			// Assert results
 			if tt.expectedError != nil {
@@ -544,6 +604,7 @@ func TestCreateNewProvider(t *testing.T) {
 				// Verify that the provider was updated correctly
 				assert.DeepEqual(t, tt.expectedMethods, createdProvider.Methods)
 				assert.Equal(t, dinMiddleware.RegistryPriority, createdProvider.Priority)
+				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
 			}
 		})
 	}
