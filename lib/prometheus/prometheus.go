@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/prometheus/client_golang/prometheus"
+
 	"go.uber.org/zap"
 )
 
@@ -98,12 +100,11 @@ type PromRequestMetricData struct {
 func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration) {
 	// First extract method data from body
 	// define struct to hold request data
-	var requestBody struct {
-		Method string `json:"method,omitempty"`
-	}
+	var requestBody din_http.JSONRPCRequest
+
 	err := json.Unmarshal(reqBodyBytes, &requestBody)
 	if err != nil {
-		p.logger.Warn("Error decoding request body", zap.Error(err), zap.Int("response_status", http.StatusBadRequest), zap.String("machine_id", p.machineID))
+		p.logger.Warn("Error decoding request body", zap.Error(err), zap.String("request_body", string(reqBodyBytes)), zap.Int("response_status", http.StatusBadRequest), zap.String("machine_id", p.machineID))
 	}
 	var method string
 	if requestBody.Method != "" {

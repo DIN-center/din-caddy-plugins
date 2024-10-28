@@ -204,7 +204,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		if rww.statusCode != http.StatusOK {
 			var bodyData []byte
-			var request JSONRPCRequest
+			var request din_http.JSONRPCRequest
 
 			if v, ok := repl.Get(RequestBodyKey); ok {
 				bodyData = v.([]byte)
