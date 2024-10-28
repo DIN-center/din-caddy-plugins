@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,6 +44,9 @@ type DinMiddleware struct {
 	// A map of network paths to network objects
 	Networks map[string]*network `json:"networks"`
 	mu       sync.RWMutex
+
+	// The default siwe signer object
+	DefaultSiweSigner *siwe.SigningConfig
 
 	// The prometheus client object
 	PrometheusClient *prom.PrometheusClient
@@ -150,7 +154,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 	// Initialize the HTTP client for each network and provider
 	httpClient := din_http.NewHTTPClient()
-	for _, network := range d.Networks {
+	for networkName, network := range d.Networks {
+		d.logger.Debug("Registered network", zap.String("name", networkName))
 		network.HttpClient = httpClient
 		network.logger = d.logger
 		network.PrometheusClient = promClient
@@ -351,6 +356,41 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
+		case "siwe-signer":
+			var key []byte
+			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
+				switch dispenser.Val() {
+				case "secret_file":
+					dispenser.NextBlock(n1)
+					hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
+					if err != nil {
+						return dispenser.Errf("failed to read secret file: %v", err)
+					}
+					hexKey := string(hexKeyBytes)
+					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
+					key, err = hex.DecodeString(hexKey)
+					if err != nil {
+						return err
+					}
+				case "secret":
+					dispenser.NextBlock(n1)
+					hexKey := dispenser.Val()
+					hexKey = strings.TrimPrefix(hexKey, "0x")
+					key, err = hex.DecodeString(hexKey)
+					if err != nil {
+						return dispenser.Errf("error parsing %v: %v", hexKey, err.Error())
+					}
+				}
+			}
+			if len(key) == 0 {
+				return dispenser.Errf("no key material in siwe-signer definition")
+			}
+			d.DefaultSiweSigner = &siwe.SigningConfig{
+				PrivateKey: key,
+			}
+			if err := d.DefaultSiweSigner.GenPrivKey(); err != nil {
+				return err
+			}
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
@@ -429,7 +469,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 										}
 									}
 									if auth.Signer == nil {
-										return fmt.Errorf("signer must be set")
+										if d.DefaultSiweSigner == nil {
+											return dispenser.Errf("signer must be set")
+										}
+										auth.Signer = d.DefaultSiweSigner
 									}
 									providerObj.Auth = auth
 								case "headers":
@@ -495,6 +538,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				if len(d.Networks[networkName].Providers) == 0 {
 					return dispenser.Errf("expected at least one provider for network %s", networkName)
 				}
+			}
+			if len(d.Networks) == 0 {
+				return dispenser.Errf("expected at least one network")
 			}
 		case "din_registry":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
