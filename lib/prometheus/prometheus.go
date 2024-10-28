@@ -106,11 +106,8 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	if err != nil {
 		p.logger.Warn("Error decoding request body", zap.Error(err), zap.String("request_body", string(reqBodyBytes)), zap.Int("response_status", http.StatusBadRequest), zap.String("machine_id", p.machineID))
 	}
-	var method string
-	if requestBody.Method != "" {
-		method = requestBody.Method
-	}
 
+	method := requestBody.Method
 	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
