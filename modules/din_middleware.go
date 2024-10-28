@@ -216,6 +216,8 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 		dialHost = url.Host + ":443"
 	}
 
+	d.SiweSignerClient = siwe.NewSIWESignerClient()
+
 	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
 	provider.path = url.Path
 	provider.host = url.Host
@@ -361,9 +363,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
-	if d.SiweSignerClient == nil {
-		d.SiweSignerClient = siwe.NewSIWESignerClient()
-	}
+	siweSignerClient := siwe.NewSIWESignerClient()
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "siwe-signer":
@@ -398,7 +398,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 			d.DefaultSiweSigner = &siwe.SigningConfig{
 				PrivateKey: key,
 			}
-			if err := d.SiweSignerClient.GenPrivKey(d.DefaultSiweSigner); err != nil {
+			if err := siweSignerClient.GenPrivKey(d.DefaultSiweSigner); err != nil {
 				return err
 			}
 		case "networks":
@@ -424,7 +424,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "auth":
-									auth := d.SiweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
+									auth := siweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
 									for dispenser.NextBlock(nesting + 3) {
 										switch dispenser.Val() {
 										case "type":
@@ -470,7 +470,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											auth.Signer = &siwe.SigningConfig{
 												PrivateKey: key,
 											}
-											if err := d.SiweSignerClient.GenPrivKey(auth.Signer); err != nil {
+											if err := siweSignerClient.GenPrivKey(auth.Signer); err != nil {
 												return fmt.Errorf("failed to generate private key: %v", err)
 											}
 										}
