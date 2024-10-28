@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -314,14 +315,29 @@ func TestInitializeProvider(t *testing.T) {
 
 func TestDinMiddlewareProvision(t *testing.T) {
 	tests := []struct {
-		name          string
-		initializeErr error
-		expectedError error
+		name            string
+		networks        map[string]*network
+		registryEnabled bool
+		initializeErr   error
+		expectedError   error
 	}{
 		{
-			name:          "Successful provision in test mode",
-			initializeErr: nil,
+			name: "Successful provision in test mode",
+			networks: map[string]*network{
+				"test-network": {},
+			},
 			expectedError: nil,
+		},
+		{
+			name:            "network not found but registry is enabled",
+			registryEnabled: true,
+			networks:        map[string]*network{},
+			expectedError:   nil,
+		},
+		{
+			name:          "minimum of 1 network not found",
+			networks:      map[string]*network{},
+			expectedError: fmt.Errorf("expected at least 1 network or registry to be defined"),
 		},
 	}
 
@@ -331,6 +347,10 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			dinMiddleware := &DinMiddleware{
 				testMode: true, // Ensure test mode is enabled
 				logger:   logger,
+				Networks: tt.networks,
+			}
+			if tt.registryEnabled {
+				dinMiddleware.RegistryEnabled = tt.registryEnabled
 			}
 
 			// Call the Provision method
