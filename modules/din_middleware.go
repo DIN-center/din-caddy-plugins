@@ -138,6 +138,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(logger, d.machineID)
 	d.PrometheusClient = promClient
+	d.SiweSignerClient = siwe.NewSIWESignerClient()
 	d.quit = make(chan struct{})
 
 	if d.RegistryBlockCheckIntervalSec == 0 {
@@ -215,8 +216,6 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 	if url.Scheme == "https" && url.Port() == "" {
 		dialHost = url.Host + ":443"
 	}
-
-	d.SiweSignerClient = siwe.NewSIWESignerClient()
 
 	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
 	provider.path = url.Path
