@@ -29,7 +29,6 @@ const (
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
-	DefaultRegistryEndpointUrl           = "http://localhost:8545"
 	DefaultRegistryPriority              = 0
 
 	// Additional Status Codes

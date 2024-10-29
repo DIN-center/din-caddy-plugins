@@ -77,6 +77,8 @@ type DinMiddleware struct {
 	registryLastUpdatedEpochBlockNumber uint64
 	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
 	RegistryEndpointUrl string
+	// The contract address of the registry contract
+	RegistryContractAddress string
 	// The priority of the registry providers
 	RegistryPriority int
 
@@ -147,15 +149,12 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	if d.RegistryBlockEpoch == 0 {
 		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.RegistryEndpointUrl == "" {
-		d.RegistryEndpointUrl = DefaultRegistryEndpointUrl
-	}
 	if d.RegistryPriority == 0 {
 		d.RegistryPriority = DefaultRegistryPriority
 	}
 
 	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(logger, d.RegistryEndpointUrl)
+	d.DingoClient, err = din.NewDinClient(logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
 	if err != nil {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
@@ -579,6 +578,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					dispenser.Next()
 					registryEndpointUrl := dispenser.Val()
 					d.RegistryEndpointUrl = registryEndpointUrl
+				case "registry_contract_address":
+					dispenser.Next()
+					registryContractAddress := dispenser.Val()
+					d.RegistryContractAddress = registryContractAddress
 				case "registry_priority":
 					dispenser.Next()
 					registryPriorityVal := dispenser.Val()
