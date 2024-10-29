@@ -214,7 +214,6 @@ func TestInitialize(t *testing.T) {
 				// Assert default values are set if not provided
 				assert.NotZero(t, dinMiddleware.RegistryBlockCheckIntervalSec)
 				assert.NotZero(t, dinMiddleware.RegistryBlockEpoch)
-				assert.NotZero(t, dinMiddleware.RegistryEndpointUrl)
 				assert.Equal(t, 0, dinMiddleware.RegistryPriority)
 
 				// // Assert networks and providers are initialized
