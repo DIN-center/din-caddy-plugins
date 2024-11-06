@@ -3,6 +3,7 @@ package modules
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -326,10 +327,20 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		if rww.statusCode != http.StatusOK {
 			var bodyData []byte
+			var request din_http.JSONRPCRequest
+
 			if v, ok := repl.Get(RequestBodyKey); ok {
 				bodyData = v.([]byte)
 			}
-			d.logger.Warn("Request failed", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+
+			// Unmarshal the byte array into the struct
+			err := json.Unmarshal(bodyData, &request)
+			if err != nil {
+				d.logger.Warn("Failed to unmarshal request body", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+			} else {
+				// If the request is a JSON-RPC request, log the request method and params
+				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+			}
 		}
 	}
 	healthStatus := network.Providers[provider].healthStatus.String()
