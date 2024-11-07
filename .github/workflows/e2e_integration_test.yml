@@ -25,7 +25,7 @@ jobs:
             - name: Install xcaddy
               run: |
                 export GOBIN=$HOME/go/bin
-                go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+                go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.3.5
 
             - name: Use Custom Caddyfile and Run Caddy
               run: |
