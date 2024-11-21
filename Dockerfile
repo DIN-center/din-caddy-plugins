@@ -10,6 +10,7 @@ RUN mkdir /din-plugins/modules
 
 COPY *.go go.* /din-plugins/
 COPY lib/ /din-plugins/lib/
+COPY vendor/ /din-plugins/vendor/
 COPY modules/ /din-plugins/modules/
 
 RUN xcaddy build --with github.com/DIN-center/din-caddy-plugins=/din-plugins
