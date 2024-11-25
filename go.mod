@@ -143,4 +143,4 @@ require (
 	howett.net/plist v1.0.0 // indirect
 )
 
-replace github.com/DIN-center/din-sc/apps/din-go => ./vendor/github.com/DIN-center/din-sc/apps/din-go
+replace github.com/DIN-center/din-sc/apps/din-go => ./upstream/github.com/DIN-center/din-sc/apps/din-go

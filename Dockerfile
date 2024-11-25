@@ -10,7 +10,7 @@ RUN mkdir /din-plugins/modules
 
 COPY *.go go.* /din-plugins/
 COPY lib/ /din-plugins/lib/
-COPY vendor/ /din-plugins/vendor/
+COPY upstream/ /din-plugins/vendor/
 COPY modules/ /din-plugins/modules/
 
 RUN xcaddy build --replace github.com/DIN-center/din-sc/apps/din-go=/din-plugins/vendor/github.com/DIN-center/din-sc/apps/din-go --with github.com/DIN-center/din-caddy-plugins=/din-plugins
