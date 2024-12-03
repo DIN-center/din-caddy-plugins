@@ -2,7 +2,6 @@ module github.com/DIN-center/din-caddy-plugins
 
 go 1.22
 
-toolchain go1.22.8
 
 require (
 	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20241029204756-63334786749d
@@ -143,3 +142,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.0 // indirect
 )
+
+replace github.com/DIN-center/din-sc/apps/din-go => ./upstream/github.com/DIN-center/din-sc/apps/din-go
