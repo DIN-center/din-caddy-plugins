@@ -177,3 +177,164 @@ func TestMarkPingSuccess(t *testing.T) {
 		})
 	}
 }
+
+func TestMarkHealthy(t *testing.T) {
+	tests := []struct {
+		name                  string
+		hcThresh              int
+		provider              *provider
+		expectedHealthStatus  HealthStatus
+		expectedConsecutiveHC int
+	}{
+		{
+			name: "markHealthy when already healthy",
+			provider: &provider{
+				healthStatus:             Healthy,
+				consecutiveHealthyChecks: 5,
+			},
+			hcThresh:              3,
+			expectedHealthStatus:  Healthy,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markHealthy when unhealthy - not enough consecutive checks",
+			provider: &provider{
+				healthStatus:             Unhealthy,
+				consecutiveHealthyChecks: 2,
+			},
+			hcThresh:              3,
+			expectedHealthStatus:  Unhealthy,
+			expectedConsecutiveHC: 3,
+		},
+		{
+			name: "markHealthy when unhealthy - threshold reached",
+			provider: &provider{
+				healthStatus:             Unhealthy,
+				consecutiveHealthyChecks: 3,
+			},
+			hcThresh:              3,
+			expectedHealthStatus:  Healthy,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markHealthy when warning",
+			provider: &provider{
+				healthStatus:             Warning,
+				consecutiveHealthyChecks: 2,
+			},
+			hcThresh:              3,
+			expectedHealthStatus:  Healthy,
+			expectedConsecutiveHC: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.provider.markHealthy(tt.hcThresh)
+			if tt.provider.healthStatus != tt.expectedHealthStatus {
+				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
+			}
+			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
+				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
+			}
+		})
+	}
+}
+
+func TestMarkWarning(t *testing.T) {
+	tests := []struct {
+		name                  string
+		provider              *provider
+		expectedHealthStatus  HealthStatus
+		expectedConsecutiveHC int
+	}{
+		{
+			name: "markWarning when healthy",
+			provider: &provider{
+				healthStatus:             Healthy,
+				consecutiveHealthyChecks: 5,
+			},
+			expectedHealthStatus:  Warning,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markWarning when unhealthy",
+			provider: &provider{
+				healthStatus:             Unhealthy,
+				consecutiveHealthyChecks: 3,
+			},
+			expectedHealthStatus:  Warning,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markWarning when already warning",
+			provider: &provider{
+				healthStatus:             Warning,
+				consecutiveHealthyChecks: 2,
+			},
+			expectedHealthStatus:  Warning,
+			expectedConsecutiveHC: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.provider.markWarning()
+			if tt.provider.healthStatus != tt.expectedHealthStatus {
+				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
+			}
+			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
+				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
+			}
+		})
+	}
+}
+
+func TestMarkUnhealthy(t *testing.T) {
+	tests := []struct {
+		name                  string
+		provider              *provider
+		expectedHealthStatus  HealthStatus
+		expectedConsecutiveHC int
+	}{
+		{
+			name: "markUnhealthy when healthy",
+			provider: &provider{
+				healthStatus:             Healthy,
+				consecutiveHealthyChecks: 5,
+			},
+			expectedHealthStatus:  Unhealthy,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markUnhealthy when warning",
+			provider: &provider{
+				healthStatus:             Warning,
+				consecutiveHealthyChecks: 3,
+			},
+			expectedHealthStatus:  Unhealthy,
+			expectedConsecutiveHC: 0,
+		},
+		{
+			name: "markUnhealthy when already unhealthy",
+			provider: &provider{
+				healthStatus:             Unhealthy,
+				consecutiveHealthyChecks: 2,
+			},
+			expectedHealthStatus:  Unhealthy,
+			expectedConsecutiveHC: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.provider.markUnhealthy()
+			if tt.provider.healthStatus != tt.expectedHealthStatus {
+				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
+			}
+			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
+				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
+			}
+		})
+	}
+}
