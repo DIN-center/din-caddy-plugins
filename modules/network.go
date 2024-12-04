@@ -16,26 +16,27 @@ import (
 )
 
 type network struct {
-	Name              string               `json:"name"`
-	Providers         map[string]*provider `json:"providers"`
-	Methods           []*string            `json:"methods"`
+	Name              string
 	quit              chan struct{}
-	LatestBlockNumber int64 `json:"latest_block_number"`
-	HTTPClient        din_http.IHTTPClient
+	latestBlockNumber int64
+	HttpClient        din_http.IHTTPClient
 	PrometheusClient  prom.IPrometheusClient
 	logger            *zap.Logger
 	machineID         string
 
-	mu sync.RWMutex
+	// internal health check values
+	healthCheckListMutex sync.RWMutex
+	HCThreshold          int
+	CheckedProviders     map[string][]healthCheckEntry
 
-	// Healthcheck configuration
-	CheckedProviders        map[string][]healthCheckEntry `json:"checked_providers"`
-	HCMethod                string                        `json:"healthcheck_method"`
-	HCInterval              int                           `json:"healthcheck_interval_seconds"`
-	HCThreshold             int                           `json:"healthcheck_threshold"`
-	BlockLagLimit           int64                         `json:"healthcheck_blocklag_limit"`
-	MaxRequestPayloadSizeKB int64                         `json:"max_request_payload_size_kb"`
-	RequestAttemptCount     int                           `json:"request_attempt_count"`
+	// Registry configuration values
+	Providers               map[string]*provider `json:"providers"`
+	Methods                 []*string            `json:"methods"`
+	HCMethod                string               `json:"healthcheck_method"`
+	HCInterval              int                  `json:"healthcheck_interval_seconds"`
+	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
+	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
+	RequestAttemptCount     int                  `json:"request_attempt_count"`
 }
 
 // NewNetwork creates a new network with the given name
@@ -121,22 +122,21 @@ func (n *network) healthCheck() {
 			}
 
 			// Consistency health check
-			if n.LatestBlockNumber == 0 || n.LatestBlockNumber < providerBlockNumber {
+			if n.latestBlockNumber == 0 || n.latestBlockNumber < providerBlockNumber {
 				// if the current provider's latest block number is greater than the network's latest block number, update the network's latest block number,
 				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
-				n.LatestBlockNumber = providerBlockNumber
+				n.latestBlockNumber = providerBlockNumber
 				provider.markHealthy()
 				n.evaluateCheckedProviders()
-			} else if n.LatestBlockNumber == providerBlockNumber {
+			} else if n.latestBlockNumber == providerBlockNumber {
 				// if the current provider's latest block number is equal to the network's latest block number, set the current provider to healthy
 				provider.markHealthy()
-			} else if providerBlockNumber+n.BlockLagLimit < n.LatestBlockNumber {
+			} else if providerBlockNumber+n.BlockLagLimit < n.latestBlockNumber {
 				// if the current provider's latest block number is below the network's latest block number by more than the acceptable threshold, set the current provider to warning
-				n.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", n.LatestBlockNumber), zap.String("machine_id", n.machineID))
+				n.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", n.latestBlockNumber), zap.String("machine_id", n.machineID))
 				provider.markWarning()
 			}
 
-			// TODO: create a check based on time window of a provider's latest block number
 			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
 			// add the current provider to the checked providers map
@@ -158,27 +158,27 @@ func (n *network) sendLatestBlockMetric(providerName string, statusCode int, hea
 }
 
 func (n *network) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.healthCheckListMutex.RLock()
+	defer n.healthCheckListMutex.RUnlock()
 	values, ok := n.CheckedProviders[providerName]
 	return values, ok
 }
 
 func (n *network) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.healthCheckListMutex.Lock()
+	defer n.healthCheckListMutex.Unlock()
 	n.CheckedProviders[providerName] = newHealthCheckList
 }
 
 // evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
 func (n *network) evaluateCheckedProviders() {
 	// read lock the checked providers map
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.healthCheckListMutex.RLock()
+	defer n.healthCheckListMutex.RUnlock()
 	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
 	checkedProviders := n.CheckedProviders
 	for providerName, healthCheckList := range checkedProviders {
-		if healthCheckList[0].blockNumber+n.BlockLagLimit < n.LatestBlockNumber {
+		if healthCheckList[0].blockNumber+n.BlockLagLimit < n.latestBlockNumber {
 			n.Providers[providerName].markWarning()
 		}
 	}
@@ -212,7 +212,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
 
 	// Send the POST request
-	resBytes, statusCode, err := n.HTTPClient.Post(httpUrl, headers, []byte(payload), ac)
+	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}

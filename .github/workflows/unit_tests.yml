@@ -13,6 +13,13 @@
           MIN_COVER: 66
         steps:
           - uses: actions/checkout@v3
+
+          - name: Authenticate with GitHub and Clone Private Repo
+            env:
+              TOKEN: ${{ secrets.GH_TOKEN }}  # Use the token from GitHub Secrets
+            run: |
+              git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
+              git clone https://github.com/DIN-center/din-sc.git
     
           - name: Set up Go
             uses: actions/setup-go@v4

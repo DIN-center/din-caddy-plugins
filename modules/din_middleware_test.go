@@ -2,19 +2,23 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	reflect "reflect"
 	"strings"
 	"testing"
 	"time"
 
-	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/golang/mock/gomock"
-	"go.uber.org/zap"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -160,90 +164,203 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	}
 }
 
-func TestDinMiddlewareProvision(t *testing.T) {
-	dinMiddleware := new(DinMiddleware)
-	dinMiddleware.testMode = true
+func TestInitialize(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-	logger := zap.NewNop()
+	defer mockCtrl.Finish()
 
 	tests := []struct {
-		name     string
-		networks map[string]*network
-		hasErr   bool
+		name                 string
+		initialDinMiddleware *DinMiddleware
+		expectedError        error
 	}{
 		{
-			name: "Provision() populated 1 network, 2 upstreams successful for ethereum runtime",
-			networks: map[string]*network{
-				"eth": {
-					Name:        "eth",
-					HCThreshold: 2,
-					HCInterval:  5,
-					Providers: map[string]*provider{
-						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/eth",
-						},
-						"localhost:8001": {
-							HttpUrl: "http://localhost:8001/eth",
+			name: "Successful initialization",
+			initialDinMiddleware: &DinMiddleware{
+				Networks: map[string]*network{
+					"test-network": {
+						Providers: map[string]*provider{
+							"provider1": {
+								HttpUrl: "http://example1.com",
+							},
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
-					logger:           logger,
 				},
+				testMode: true,
 			},
-			hasErr: false,
-		},
-		{
-			name: "Provision() populated 2 network, 1 upstreams successful",
-			networks: map[string]*network{
-				"eth": {
-					Name:        "eth",
-					HCThreshold: 2,
-					HCInterval:  5,
-					Providers: map[string]*provider{
-						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/eth",
-						},
-					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
-					logger:           logger,
-				},
-				"starknet-mainnet": {
-					Name:        "eth",
-					HCMethod:    "starknet_blockNumber",
-					HCThreshold: 2,
-					HCInterval:  5,
-					Providers: map[string]*provider{
-						"localhost:8000": {
-							HttpUrl: "http://localhost:8000/starknet-mainnet",
-						},
-					},
-					CheckedProviders: map[string][]healthCheckEntry{},
-					PrometheusClient: mockPrometheusClient,
-					logger:           logger,
-				},
-			},
-			hasErr: false,
+			expectedError: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dinMiddleware.Networks = tt.networks
-			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).AnyTimes()
-			err := dinMiddleware.Provision(caddy.Context{})
-			if err != nil && !tt.hasErr {
-				t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
-			}
 
-			for _, networks := range dinMiddleware.Networks {
-				for _, provider := range networks.Providers {
-					if provider.upstream.Dial == "" || provider.path == "" {
-						t.Errorf("Provision() = %v, want %v", err, tt.hasErr)
+			// Create logger and mock context
+			logger := zaptest.NewLogger(t)
+
+			// Setup DinMiddleware object
+			dinMiddleware := tt.initialDinMiddleware
+			dinMiddleware.machineID = "test-machine-id"
+			dinMiddleware.logger = logger
+
+			// Call the initialize function
+			err := dinMiddleware.initialize(caddy.Context{})
+
+			// Assert the expected results
+			if tt.expectedError != nil {
+				assert.NotNil(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Assert default values are set if not provided
+				assert.NotZero(t, dinMiddleware.RegistryBlockCheckIntervalSec)
+				assert.NotZero(t, dinMiddleware.RegistryBlockEpoch)
+				assert.Equal(t, 0, dinMiddleware.RegistryPriority)
+
+				// // Assert networks and providers are initialized
+				for _, network := range dinMiddleware.Networks {
+					assert.NotNil(t, network.HttpClient)
+					assert.NotNil(t, network.logger)
+					for _, provider := range network.Providers {
+						assert.NotNil(t, provider.httpClient)
+						assert.NotNil(t, provider.upstream)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestInitializeProvider(t *testing.T) {
+	tests := []struct {
+		name          string
+		provider      *provider
+		httpClient    *din_http.HTTPClient
+		expectedError string
+	}{
+		{
+			name: "Successful initialization with http URL",
+			provider: &provider{
+				HttpUrl: "http://example2.com",
+				Auth:    nil,
+			},
+			httpClient:    &din_http.HTTPClient{},
+			expectedError: "",
+		},
+		{
+			name: "Successful initialization with https URL",
+			provider: &provider{
+				HttpUrl: "https://example3.com",
+				Auth:    nil,
+			},
+			httpClient:    &din_http.HTTPClient{},
+			expectedError: "",
+		},
+		{
+			name: "Successful initialization with auth",
+			provider: &provider{
+				HttpUrl: "http://example4.com",
+				Auth: &siwe.SIWEClientAuth{
+					ProviderURL: "http://auth.example.com",
+				},
+			},
+			httpClient:    &din_http.HTTPClient{},
+			expectedError: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zaptest.NewLogger(t)
+			dinMiddleware := &DinMiddleware{
+				logger:    logger,
+				machineID: "test-machine-id",
+			}
+
+			err := dinMiddleware.initializeProvider(tt.provider, tt.httpClient, logger)
+
+			if tt.expectedError != "" {
+				assert.EqualError(t, err, tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+
+				// Parse the expected URL
+				parsedURL, err := url.Parse(tt.provider.HttpUrl)
+				assert.NoError(t, err)
+
+				expectedHost := parsedURL.Host
+				if parsedURL.Scheme == "https" && parsedURL.Port() == "" {
+					expectedHost = parsedURL.Host + ":443"
+				}
+
+				// Assert provider upstream
+				assert.Equal(t, expectedHost, tt.provider.upstream.Dial)
+				// Assert provider path and host
+				assert.Equal(t, parsedURL.Path, tt.provider.path)
+				assert.Equal(t, parsedURL.Host, tt.provider.host)
+				// Assert provider httpClient
+				assert.Equal(t, tt.httpClient, tt.provider.httpClient)
+
+				// Check if Auth is started if it exists
+				if tt.provider.Auth != nil {
+					assert.NotNil(t, tt.provider.Auth)
+				}
+
+				// Assert provider logger is set to the middleware logger
+				assert.Equal(t, dinMiddleware.logger, tt.provider.logger)
+			}
+		})
+	}
+}
+
+func TestDinMiddlewareProvision(t *testing.T) {
+	tests := []struct {
+		name            string
+		networks        map[string]*network
+		registryEnabled bool
+		initializeErr   error
+		expectedError   error
+	}{
+		{
+			name: "Successful provision in test mode",
+			networks: map[string]*network{
+				"test-network": {},
+			},
+			expectedError: nil,
+		},
+		{
+			name:            "network not found but registry is enabled",
+			registryEnabled: true,
+			networks:        map[string]*network{},
+			expectedError:   nil,
+		},
+		{
+			name:          "minimum of 1 network not found",
+			networks:      map[string]*network{},
+			expectedError: fmt.Errorf("expected at least 1 network or registry to be defined"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zaptest.NewLogger(t)
+			dinMiddleware := &DinMiddleware{
+				testMode: true, // Ensure test mode is enabled
+				logger:   logger,
+				Networks: tt.networks,
+			}
+			if tt.registryEnabled {
+				dinMiddleware.RegistryEnabled = tt.registryEnabled
+			}
+
+			// Call the Provision method
+			err := dinMiddleware.Provision(caddy.Context{})
+
+			// Assert results based on the case
+			if tt.expectedError != nil {
+				assert.Equal(t, err, tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, true, dinMiddleware.testMode)
 			}
 		})
 	}

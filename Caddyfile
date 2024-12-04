@@ -24,6 +24,9 @@
 	route /* {
 		# middleware declaration
 		din {
+			siwe-signer {
+				secret_file /run/secrets/din-secret-key
+			}
 			# middleware configurtion data, read by DinMiddleware.UnmarshalCaddyfile()
 			networks {
 				eth {
@@ -33,9 +36,6 @@
 							auth {
 								type siwe
 								url https://din.rivet.cloud/auth
-								signer {
-									secret_file /run/secrets/din-secret-key
-								}
 							}
 						}
 					}
@@ -326,6 +326,9 @@
 					}
 					healthcheck_method getBlockHeight
 				}
+			}
+			din_registry {
+				registry_enabled false
 			}
 		}
 		# din reverse proxy directive configuration

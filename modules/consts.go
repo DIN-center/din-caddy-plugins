@@ -8,6 +8,9 @@ const (
 	Warning
 	Unhealthy
 
+	LineaMainnet = "linea-mainnet"
+	LineaSepolia = "linea-sepolia"
+
 	// Module Context Key constants
 	DinUpstreamsContextKey = "din.internal.upstreams"
 	RequestProviderKey     = "request_provider"
@@ -23,11 +26,19 @@ const (
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
 
+	// Registry constants
+	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockEpoch            = uint64(2000)
+	DefaultRegistryPriority              = 0
+
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 
 	// Request/Response Header Keys
 	DinProviderInfo = "din-provider-info"
+
+	// Upstream/Selector Constants
+	MaxPriority = 9
 )
 
 // String method to convert MyEnum to string

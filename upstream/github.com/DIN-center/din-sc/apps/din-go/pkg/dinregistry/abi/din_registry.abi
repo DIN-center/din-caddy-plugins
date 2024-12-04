@@ -1,0 +1,663 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "dinName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addMethodToNetwork",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "method",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addMethodsToNetwork",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "names",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "capabilities",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createNetwork",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      },
+      {
+        "name": "initialStatus",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "newNetwork",
+        "type": "address",
+        "internalType": "contract INetwork"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createNetworkService",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "initialCaps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "serviceUrl",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "serviceStatus",
+        "type": "uint8",
+        "internalType": "enum NetworkServiceStatus"
+      },
+      {
+        "name": "provider",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "networkService",
+        "type": "address",
+        "internalType": "contract NetworkService"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createProvider",
+    "inputs": [
+      {
+        "name": "providerEoa",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "authConfig",
+        "type": "tuple",
+        "internalType": "struct ProviderAuthConfig",
+        "components": [
+          {
+            "name": "auth",
+            "type": "uint8",
+            "internalType": "enum ProviderAuthType"
+          },
+          {
+            "name": "url",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "providerStatus",
+        "type": "uint8",
+        "internalType": "enum ProviderStatus"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "provider",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "dinOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllNetworkMethodNames",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "methods",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllNetworkMethods",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "methods",
+        "type": "tuple[]",
+        "internalType": "struct Method[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "bit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "deactivated",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllNetworks",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "contract INetwork[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllProviders",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "contract Provider[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkCapabilities",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "caps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkFromName",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract INetwork"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkOperationsConfig",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "opsConfig",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkStatus",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getProviders",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "contract Provider[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "network2providers",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract INetwork"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "networkMap",
+    "inputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "networks",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract INetwork"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "providerMap",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "providerNetworkMap",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "providers",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setNetworkOperationsConfig",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_opsConfig",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setNetworkStatus",
+    "inputs": [
+      {
+        "name": "networkName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "unregisterProvider",
+    "inputs": [
+      {
+        "name": "provider",
+        "type": "address",
+        "internalType": "contract Provider"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "error",
+    "name": "AuthRequireDINOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthRequireProviderOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthRequireRegisteredProvider",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnknownNetwork",
+    "inputs": []
+  }
+]

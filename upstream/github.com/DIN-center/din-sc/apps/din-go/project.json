@@ -1,0 +1,41 @@
+{
+  "name": "din-go",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "mkdir -p pkg/dinregistry/abi",
+          "cp ../../dist/apps/din-sc/*.abi pkg/dinregistry/abi",
+          "mkdir -p ../../dist/apps/din-go/bin",
+          "go build -o ../../dist/apps/din-go/bin/dingo ./cmd/main.go"
+        ],
+        "parallel": false,
+        "cwd": "apps/din-go",
+        "outputs": [
+          "{workspaceRoot}/dist/apps/din-go/bin/dingo"
+        ]
+      },
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": "din-sc"
+        }
+      ],
+      "inputs": [
+        "{workspaceRoot}/dist/apps/din-sc/*.abi"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "rm -rf pkg/dinregistry/abi",
+          "rm -rf ../../dist/apps/din-go"
+        ],
+        "cwd": "apps/din-go"
+      }
+    }
+  }
+}

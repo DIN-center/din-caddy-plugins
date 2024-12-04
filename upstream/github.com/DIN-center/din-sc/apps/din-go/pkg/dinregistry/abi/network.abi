@@ -1,0 +1,641 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      },
+      {
+        "name": "initialStatus",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addMethod",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addMethods",
+    "inputs": [
+      {
+        "name": "names",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "updatedCapabilities",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "allMethods",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct Method[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "bit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "deactivated",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "areCapabilitiesSupported",
+    "inputs": [
+      {
+        "name": "caps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "supported",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "authenticated",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCapabilities",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDescription",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMethodId",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMethodName",
+    "inputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getName",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkOperationsConfig",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetworkStatus",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isMethodSupported",
+    "inputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "supported",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "methods",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "deactivated",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "networkOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeMethod",
+    "inputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removeMethod",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "s_bit2method",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "bit",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "deactivated",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setNetworkOperationsConfig",
+    "inputs": [
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setNetworkStatus",
+    "inputs": [
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "AddMethodToNetwork",
+    "inputs": [
+      {
+        "name": "network",
+        "type": "address",
+        "indexed": false,
+        "internalType": "contract Network"
+      },
+      {
+        "name": "method",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "bit",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NetworkOperationConfigUpdated",
+    "inputs": [
+      {
+        "name": "network",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract Network"
+      },
+      {
+        "name": "newConfig",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct NetworkOperationsConfig",
+        "components": [
+          {
+            "name": "healthcheckMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "healthcheckIntervalSec",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "requestAttemptCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxRequestPayloadSizeKb",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "registryBlockEpoch",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NetworkStatusUpdated",
+    "inputs": [
+      {
+        "name": "network",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract Network"
+      },
+      {
+        "name": "newStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum NetworkStatus"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RemoveMethodFromNetwork",
+    "inputs": [
+      {
+        "name": "network",
+        "type": "address",
+        "indexed": false,
+        "internalType": "contract Network"
+      },
+      {
+        "name": "method",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "bit",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "NetworkAuthNotAuthenticated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkAuthNotOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkInvalidHealthcheckMethod",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkInvalidStatus",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkMethodAlreadyExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkMethodDeactivated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NetworkMethodNotFound",
+    "inputs": []
+  }
+]

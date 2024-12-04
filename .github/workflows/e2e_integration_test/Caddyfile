@@ -1,4 +1,7 @@
 # Caddyfile for Din e2e testing
+{
+	debug
+}
 :8000 {
 	route /* {
 		# middleware declaration

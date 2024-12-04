@@ -10,6 +10,13 @@ jobs:
         steps:
             - uses: actions/checkout@v3
 
+            - name: Authenticate with GitHub and Clone Private Repo
+              env:
+                TOKEN: ${{ secrets.GH_TOKEN }}  # Use the token from GitHub Secrets
+              run: |
+                git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
+                git clone https://github.com/DIN-center/din-sc.git
+
             - name: Set up Go
               uses: actions/setup-go@v4
               with:
@@ -18,11 +25,11 @@ jobs:
             - name: Install xcaddy
               run: |
                 export GOBIN=$HOME/go/bin
-                go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+                go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.3.5
 
             - name: Use Custom Caddyfile and Run Caddy
               run: |
-                $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
+                GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
               shell: bash
 
             - name: Make the script executable
@@ -35,5 +42,5 @@ jobs:
               
             - name: Stop Caddy server
               run: |
-               $HOME/go/bin/xcaddy stop
+               GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy stop
               shell: bash

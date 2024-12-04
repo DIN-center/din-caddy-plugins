@@ -21,6 +21,14 @@ import (
 	"go.uber.org/zap"
 )
 
+type ISIWESignerClient interface {
+	GenPrivKey(sc *SigningConfig) error
+	Sign(msg string, sc *SigningConfig) ([]byte, error)
+	CreateNewSIWEAuth(authUrl string, sessionCount int) *SIWEClientAuth
+}
+
+type SIWESignerClient struct{}
+
 type SigningConfig struct {
 	PrivateKey []byte
 	privateKey *ecdsa.PrivateKey
@@ -28,9 +36,13 @@ type SigningConfig struct {
 	Address    string
 }
 
-func (sc *SigningConfig) Sign(msg string) ([]byte, error) {
+func NewSIWESignerClient() *SIWESignerClient {
+	return &SIWESignerClient{}
+}
+
+func (s *SIWESignerClient) Sign(msg string, sc *SigningConfig) ([]byte, error) {
 	if sc.privateKey == nil && len(sc.PrivateKey) > 0 {
-		sc.GenPrivKey()
+		s.GenPrivKey(sc)
 	}
 	if sc.privateKey != nil {
 		// Sign Locally
@@ -40,18 +52,25 @@ func (sc *SigningConfig) Sign(msg string) ([]byte, error) {
 	return nil, errors.New("private key must be set in signing config")
 }
 
-func (sc *SigningConfig) GenPrivKey() error {
+func (s *SIWESignerClient) GenPrivKey(sc *SigningConfig) error {
 	if sc.privateKey == nil {
 		privateKey, err := crypto.ToECDSA(sc.PrivateKey)
 		sc.privateKey = privateKey
 		if err != nil {
-			return err
+			return fmt.Errorf("error converting private key: %w", err)
 		}
 	}
 	if sc.Address == "" {
 		sc.Address = crypto.PubkeyToAddress(sc.privateKey.PublicKey).String()
 	}
 	return nil
+}
+
+func (s *SIWESignerClient) CreateNewSIWEAuth(authUrl string, sessionCount int) *SIWEClientAuth {
+	return &SIWEClientAuth{
+		ProviderURL:  authUrl,
+		SessionCount: sessionCount,
+	}
 }
 
 func signHash(data []byte) common.Hash {
@@ -196,12 +215,18 @@ type signedMessage struct {
 func (c *SIWEClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error) {
 	options := make(map[string]interface{})
 	options["expirationTime"] = time.Now().Add(time.Minute)
-	c.Signer.GenPrivKey()
+
+	siweSignerClient := NewSIWESignerClient()
+	err := siweSignerClient.GenPrivKey(c.Signer)
+	if err != nil {
+		return auth.AuthToken{}, err
+	}
+
 	msg, err := siwe.InitMessage(c.domain, c.Signer.Address, c.ProviderURL, siwe.GenerateNonce(), options)
 	if err != nil {
 		return auth.AuthToken{}, err
 	}
-	sig, err := c.Signer.Sign(msg.String())
+	sig, err := siweSignerClient.Sign(msg.String(), c.Signer)
 	if err != nil {
 		return auth.AuthToken{}, err
 	}
