@@ -16,7 +16,7 @@
 						https://ethereum-rpc.publicnode.com:443 {
 							priority 0
 						}
-						https://eth.rpc.blxrbdn.com:443 {
+						https://api.zan.top/eth-mainnet {
 							priority 0
 						}
 					}
