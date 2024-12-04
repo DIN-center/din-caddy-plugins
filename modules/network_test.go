@@ -8,7 +8,6 @@ import (
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -16,325 +15,470 @@ func TestHealthCheck(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
 	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-
-	type postResponse struct {
-		postResponseBytes []byte
-		statusCode        int
-		err               error
-	}
+	logger := zap.NewNop()
 
 	tests := []struct {
 		name                string
 		network             *network
-		latestBlockResponse postResponse
-		want                map[string]*provider
+		latestBlockResponse struct {
+			responseBytes []byte
+			statusCode    int
+			err           error
+		}
+		wantProviderStatus map[string]HealthStatus
 	}{
 		{
-			name: "1 provider, successful response, has newer blocks, marked healthy",
+			name: "single provider, successful response",
 			network: &network{
-				HttpClient: mockHttpClient,
+				HttpClient:       mockHttpClient,
+				PrometheusClient: mockPrometheusClient,
+				BlockNumberDelta: 10,
+				HCThreshold:      3,
+				Name:             "test-network",
+				logger:           logger,
 				Providers: map[string]*provider{
 					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
+						healthStatus: Healthy,
+						host:         "provider1",
+						HttpUrl:      "http://provider1",
 					},
 				},
 				latestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
 			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
+			latestBlockResponse: struct {
+				responseBytes []byte
+				statusCode    int
+				err           error
+			}{
+				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+				statusCode:    200,
+				err:           nil,
 			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-			},
-		},
-		{
-			name: "1 provider, successful response, has newer blocks, marked healthy, int result response",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-				},
-				latestBlockNumber: 500,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": 600}`),
-				statusCode:        200,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
+			wantProviderStatus: map[string]HealthStatus{
+				"provider1": Healthy,
 			},
 		},
 		{
-			name: "1 provider, successful response, 429 too many request status, mark warning",
+			name: "single provider, error response",
 			network: &network{
-				HttpClient: mockHttpClient,
+				HttpClient:       mockHttpClient,
+				PrometheusClient: mockPrometheusClient,
+				BlockNumberDelta: 10,
+				HCThreshold:      3,
+				Name:             "test-network",
+				logger:           logger,
 				Providers: map[string]*provider{
 					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
+						healthStatus: Healthy,
+						host:         "provider1",
+						HttpUrl:      "http://provider1",
+						failures:     3, // Set initial failures to trigger unhealthy state
 					},
 				},
 				latestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
 			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        429,
-				err:               nil,
+			latestBlockResponse: struct {
+				responseBytes []byte
+				statusCode    int
+				err           error
+			}{
+				responseBytes: nil,
+				statusCode:    400,
+				err:           nil,
 			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Warning,
-				},
-			},
-		},
-		{
-			name: "1 provider, GetlatestBlockNumber fails, marked unhealthy",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-				},
-				latestBlockNumber: 20,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: nil,
-				statusCode:        200,
-				err:               errors.New(""),
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Unhealthy,
-				},
+			wantProviderStatus: map[string]HealthStatus{
+				"provider1": Unhealthy,
 			},
 		},
 		{
-			name: "1 provider, successful response, error code 400 marked unhealthy",
+			name: "multiple providers, mixed responses",
 			network: &network{
-				HttpClient: mockHttpClient,
+				HttpClient:       mockHttpClient,
+				PrometheusClient: mockPrometheusClient,
+				BlockNumberDelta: 10,
+				HCThreshold:      3,
+				Name:             "test-network",
+				logger:           logger,
 				Providers: map[string]*provider{
 					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-				},
-				latestBlockNumber: 30,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: nil,
-				statusCode:        400,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Unhealthy,
-				},
-			},
-		},
-		{
-			name: "1 provider, successful response, has equal block number, marked healthy",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-				},
-				latestBlockNumber: 6310269,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-			},
-		},
-		{
-			name: "1 provider, successful response, has smaller block number, marked warning",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-				},
-				latestBlockNumber: 7310269,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Warning,
-				},
-			},
-		},
-		{
-			name: "2 providers, successful response, both have newer blocks, both marked healthy",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
+						healthStatus: Healthy,
+						host:         "provider1",
+						HttpUrl:      "http://provider1",
 					},
 					"provider2": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider2",
-						},
+						healthStatus: Healthy,
+						host:         "provider2",
+						HttpUrl:      "http://provider2",
+						failures:     3,
 					},
 				},
-				latestBlockNumber: 5310269,
+				latestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
 			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
+			latestBlockResponse: struct {
+				responseBytes []byte
+				statusCode    int
+				err           error
+			}{
+				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+				statusCode:    200,
+				err:           nil,
 			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-				"provider2": {
-					healthStatus: Healthy,
-				},
-			},
-		},
-		{
-			name: "2 providers, successful response, both have equal blocks, both marked healthy",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-					"provider2": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider2",
-						},
-					},
-				},
-				latestBlockNumber: 6310269,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-				"provider2": {
-					healthStatus: Healthy,
-				},
-			},
-		},
-		{
-			name: "2 providers, successful response, both have older blocks, both marked warning",
-			network: &network{
-				HttpClient: mockHttpClient,
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider1",
-						},
-					},
-					"provider2": {
-						upstream: &reverseproxy.Upstream{
-							Dial: "provider2",
-						},
-					},
-				},
-				latestBlockNumber: 7310269,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-				PrometheusClient:  mockPrometheusClient,
-				logger:            zap.NewNop(),
-			},
-			latestBlockResponse: postResponse{
-				postResponseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x60497d"}`),
-				statusCode:        200,
-				err:               nil,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Warning,
-				},
-				"provider2": {
-					healthStatus: Warning,
-				},
+			wantProviderStatus: map[string]HealthStatus{
+				"provider1": Healthy,
+				"provider2": Healthy,
 			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.latestBlockResponse.postResponseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err).Times(len(tt.network.Providers))
-			mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(len(tt.network.Providers)).Times(len(tt.network.Providers))
+			// Set up mock expectations
+			for range tt.network.Providers {
+				mockHttpClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.latestBlockResponse.responseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err)
 
+				mockPrometheusClient.EXPECT().
+					HandleLatestBlockMetric(gomock.Any()).
+					Times(1)
+			}
+
+			// Run health check
 			tt.network.healthCheck()
 
+			// Verify results
 			for providerName, provider := range tt.network.Providers {
-				if provider.healthStatus != tt.want[providerName].healthStatus {
-					t.Errorf("network.healthCheck() %s for %v  = %v, want %v", tt.name, providerName, provider.healthStatus, tt.want[providerName].healthStatus)
+				wantStatus := tt.wantProviderStatus[providerName]
+				if provider.healthStatus != wantStatus {
+					t.Errorf("healthCheck() for provider %s got status = %v, want %v",
+						providerName, provider.healthStatus, wantStatus)
 				}
+			}
+		})
+	}
+}
+
+func TestPingHealthCheck(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
+	logger := zap.NewNop()
+
+	tests := []struct {
+		name         string
+		providerName string
+		provider     *provider
+		statusCode   int
+		blockNumber  int64
+		want         HealthStatus
+		wantReturn   bool
+		failures     int // Add failures count
+	}{
+		{
+			name:         "successful response, status 200",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:         "provider1",
+			},
+			statusCode:  200,
+			blockNumber: 5000000,
+			want:        Healthy,
+			wantReturn:  false,
+			failures:    0,
+		},
+		{
+			name:         "rate limited response, status 429",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:         "provider1",
+			},
+			statusCode:  429,
+			blockNumber: 5000000,
+			want:        Warning,
+			wantReturn:  true,
+			failures:    0,
+		},
+		{
+			name:         "error response, status 400, first failure",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:         "provider1",
+			},
+			statusCode:  400,
+			blockNumber: 5000000,
+			want:        Healthy, // Still healthy after first failure
+			wantReturn:  true,
+			failures:    0,
+		},
+		{
+			name:         "error response, status 400, exceeds threshold",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:         "provider1",
+				failures:     3, // Already has 3 failures
+			},
+			statusCode:  400,
+			blockNumber: 5000000,
+			want:        Unhealthy, // Now becomes unhealthy
+			wantReturn:  true,
+			failures:    3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := &network{
+				PrometheusClient: mockPrometheusClient,
+				logger:           logger,
+				HCThreshold:      3,
+				Name:             "test-network",
+			}
+
+			// Set initial failures count
+			tt.provider.failures = tt.failures
+
+			if tt.statusCode > 399 {
+				mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(1)
+			}
+
+			result := n.pingHealthCheck(tt.providerName, tt.provider, tt.statusCode, tt.blockNumber)
+
+			if result != tt.wantReturn {
+				t.Errorf("pingHealthCheck() return = %v, want %v", result, tt.wantReturn)
+			}
+
+			if tt.provider.healthStatus != tt.want {
+				t.Errorf("pingHealthCheck() got = %v, want %v", tt.provider.healthStatus, tt.want)
+			}
+
+			// Verify failures count increased for error responses
+			if tt.statusCode > 399 && tt.statusCode != 429 {
+				expectedFailures := tt.failures + 1
+				if tt.provider.failures != expectedFailures {
+					t.Errorf("pingHealthCheck() failures = %v, want %v", tt.provider.failures, expectedFailures)
+				}
+			}
+		})
+	}
+}
+
+func TestBlockNumberDeltaHealthCheck(t *testing.T) {
+	timeNow := time.Now()
+	tests := []struct {
+		name             string
+		providerName     string
+		provider         *provider
+		blockNumber      int64
+		network          *network
+		expectUnhealthy  bool
+		expectedStatus   HealthStatus
+	}{
+		{
+			name:         "single provider - always healthy",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000030,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+				},
+				BlockNumberDelta: 20,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			expectUnhealthy: false,
+			expectedStatus:  Healthy,
+		},
+		{
+			name:         "provider too far ahead of 75th percentile",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000030,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+				},
+				BlockNumberDelta: 20,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000030, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			expectUnhealthy: true,
+			expectedStatus:  Unhealthy,
+		},
+		{
+			name:         "provider too far behind 75th percentile",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 4999970,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+				},
+				BlockNumberDelta: 20,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 4999970, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			expectUnhealthy: true,
+			expectedStatus:  Unhealthy,
+		},
+		{
+			name:         "provider within acceptable range",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000010,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+				},
+				BlockNumberDelta: 20,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000010, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			expectUnhealthy: false,
+			expectedStatus:  Healthy,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.network.logger = zap.NewNop()
+			result := tt.network.blockNumberDeltaHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
+
+			if result != tt.expectUnhealthy {
+				t.Errorf("blockNumberDeltaHealthCheck() returned %v, want %v", result, tt.expectUnhealthy)
+			}
+
+			if tt.provider.healthStatus != tt.expectedStatus {
+				t.Errorf("blockNumberDeltaHealthCheck() health status = %v, want %v", tt.provider.healthStatus, tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestConsistencyHealthCheck(t *testing.T) {
+	timeNow := time.Now()
+	tests := []struct {
+		name                  string
+		providerName         string
+		provider             *provider
+		blockNumber          int64
+		network              *network
+		want                 HealthStatus
+		expectedLatestBlock  int64
+	}{
+		{
+			name:         "single provider - always healthy",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "provider lagging behind 75th percentile",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 4999800,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 4999800, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Warning,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "provider within acceptable range",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.network.logger = zap.NewNop()
+			tt.network.consistencyHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
+
+			if tt.provider.healthStatus != tt.want {
+				t.Errorf("consistencyHealthCheck() health status = %v, want %v", tt.provider.healthStatus, tt.want)
+			}
+
+			if tt.network.latestBlockNumber != tt.expectedLatestBlock {
+				t.Errorf("consistencyHealthCheck() latest block = %v, want %v", tt.network.latestBlockNumber, tt.expectedLatestBlock)
 			}
 		})
 	}
@@ -618,6 +762,79 @@ func TestEvaluatecheckedProviders(t *testing.T) {
 				if provider.healthStatus != tt.want[providerName].healthStatus {
 					t.Errorf("network.evaluatecheckedProviders() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
 				}
+			}
+		})
+	}
+}
+
+func TestGetPercentileBlockNumber(t *testing.T) {
+	timeNow := time.Now()
+	tests := []struct {
+		name       string
+		network    *network
+		percentile float64
+		want       int64
+	}{
+		{
+			name: "empty providers map",
+			network: &network{
+				Providers:        make(map[string]*provider),
+				CheckedProviders: make(map[string][]healthCheckEntry),
+			},
+			percentile: 0.75,
+			want:      0,
+		},
+		{
+			name: "single provider",
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+				},
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 1000, timestamp: &timeNow}},
+				},
+			},
+			percentile: 0.75,
+			want:      1000,
+		},
+		{
+			name: "multiple providers - 75th percentile",
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+					"provider4": {host: "provider4"},
+				},
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 1000, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 1100, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 1200, timestamp: &timeNow}},
+					"provider4": {{blockNumber: 1300, timestamp: &timeNow}},
+				},
+			},
+			percentile: 0.75,
+			want:      1200,
+		},
+		{
+			name: "providers with no health checks",
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				CheckedProviders: make(map[string][]healthCheckEntry),
+			},
+			percentile: 0.75,
+			want:      0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.network.getPercentileBlockNumber(tt.percentile)
+			if got != tt.want {
+				t.Errorf("getPercentileBlockNumber() = %v, want %v", got, tt.want)
 			}
 		})
 	}

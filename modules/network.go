@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type network struct {
 	HCMethod                string               `json:"healthcheck_method"`
 	HCInterval              int                  `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
+	BlockNumberDelta        int64                `json:"block_number_delta"`
 	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int                  `json:"request_attempt_count"`
 }
@@ -50,6 +52,7 @@ func NewNetwork(name string) *network {
 		HCThreshold:             DefaultHCThreshold,
 		HCInterval:              DefaultHCInterval,
 		BlockLagLimit:           DefaultBlockLagLimit,
+		BlockNumberDelta:        DefaultBlockNumberDelta,
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
 
@@ -96,46 +99,20 @@ func (n *network) healthCheck() {
 			// get the latest block number from the current provider
 			providerBlockNumber, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 			if err != nil {
-				// if there is an error getting the latest block number, mark the provider as a failure
-				n.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
-				provider.markPingFailure(n.HCThreshold)
-				n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
+				n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
 				return
 			}
 			blockTime = time.Now()
 
-			// Ping Health Check
-			if statusCode > 399 {
-				if statusCode == 429 {
-					// if the status code is 429, mark the provider as a warning
-					n.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", n.Name), zap.String("machine_id", n.machineID))
-					provider.markPingWarning()
-				} else {
-					// if the status code is greater than 399, mark the provider as a failure
-					n.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int("status_code", statusCode), zap.String("machine_id", n.machineID))
-					provider.markPingFailure(n.HCThreshold)
-				}
-				n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
+			if n.pingHealthCheck(providerName, provider, statusCode, providerBlockNumber) {
 				return
-			} else {
-				provider.markPingSuccess(n.HCThreshold)
 			}
 
-			// Consistency health check
-			if n.latestBlockNumber == 0 || n.latestBlockNumber < providerBlockNumber {
-				// if the current provider's latest block number is greater than the network's latest block number, update the network's latest block number,
-				// set the current provider as healthy and loop through all of the previously checked providers and set them as unhealthy
-				n.latestBlockNumber = providerBlockNumber
-				provider.markHealthy()
-				n.evaluateCheckedProviders()
-			} else if n.latestBlockNumber == providerBlockNumber {
-				// if the current provider's latest block number is equal to the network's latest block number, set the current provider to healthy
-				provider.markHealthy()
-			} else if providerBlockNumber+n.BlockLagLimit < n.latestBlockNumber {
-				// if the current provider's latest block number is below the network's latest block number by more than the acceptable threshold, set the current provider to warning
-				n.logger.Warn("Provider is lagging behind", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int64("provider_block_number", providerBlockNumber), zap.Int64("network_block_number", n.latestBlockNumber), zap.String("machine_id", n.machineID))
-				provider.markWarning()
+			if n.blockNumberDeltaHealthCheck(providerName, provider, providerBlockNumber) {
+				return
 			}
+
+			n.consistencyHealthCheck(providerName, provider, providerBlockNumber)
 
 			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
@@ -145,6 +122,104 @@ func (n *network) healthCheck() {
 	}
 	// Wait for all goroutines to complete
 	wg.Wait()
+}
+
+func (n *network) handleBlockNumberError(providerName string, provider *provider, statusCode int, providerBlockNumber int64, err error) {
+	n.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
+	provider.markPingFailure(n.HCThreshold)
+	n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
+}
+
+func (n *network) pingHealthCheck(providerName string, provider *provider, statusCode int, providerBlockNumber int64) bool {
+	if statusCode > 399 {
+		if statusCode == 429 {
+			n.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", n.Name), zap.String("machine_id", n.machineID))
+			provider.markPingWarning()
+		} else {
+			n.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int("status_code", statusCode), zap.String("machine_id", n.machineID))
+			provider.markPingFailure(n.HCThreshold)
+		}
+		n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
+		return true
+	}
+	provider.markPingSuccess(n.HCThreshold)
+	return false
+}
+
+func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *provider, providerBlockNumber int64) bool {
+	// If there's only one provider, any block number is acceptable
+	if len(n.Providers) == 1 {
+		return false
+	}
+
+	// Use 75th percentile as reference point
+	referenceBlock := n.getPercentileBlockNumber(0.75)
+	if referenceBlock == 0 {
+		// Not enough data to make a determination
+		return false
+	}
+
+	// Check if the provider's block number is too far from the reference block
+	if providerBlockNumber > referenceBlock+n.BlockNumberDelta {
+		n.logger.Warn("Provider is too far ahead of the network",
+			zap.String("provider", providerName),
+			zap.String("network", n.Name),
+			zap.Int64("provider_block_number", providerBlockNumber),
+			zap.Int64("reference_block_number", referenceBlock),
+			zap.String("machine_id", n.machineID))
+		provider.markUnhealthy()
+		return true
+	} else if providerBlockNumber < referenceBlock-n.BlockNumberDelta {
+		n.logger.Warn("Provider is too far behind the network",
+			zap.String("provider", providerName),
+			zap.String("network", n.Name),
+			zap.Int64("provider_block_number", providerBlockNumber),
+			zap.Int64("reference_block_number", referenceBlock),
+			zap.String("machine_id", n.machineID))
+		provider.markUnhealthy()
+		return true
+	}
+	return false
+}
+
+func (n *network) consistencyHealthCheck(providerName string, provider *provider, providerBlockNumber int64) {
+	// For a single provider, always consider it healthy if it's responding
+	if len(n.Providers) == 1 {
+		provider.markHealthy()
+		n.latestBlockNumber = providerBlockNumber
+		return
+	}
+
+	referenceBlock := n.getPercentileBlockNumber(0.75)
+	if referenceBlock == 0 {
+		// First health check or not enough data
+		n.latestBlockNumber = providerBlockNumber
+		provider.markHealthy()
+		return
+	}
+
+	// Update network's latest block number if we see a higher one
+	// Move this before the lag check to ensure we capture the highest block
+	if providerBlockNumber > n.latestBlockNumber {
+		n.latestBlockNumber = providerBlockNumber
+	}
+	
+	// Also update latest block number with reference block if it's higher
+	if referenceBlock > n.latestBlockNumber {
+		n.latestBlockNumber = referenceBlock
+	}
+
+	if providerBlockNumber+n.BlockLagLimit < referenceBlock {
+		n.logger.Warn("Provider is lagging behind",
+			zap.String("provider", providerName),
+			zap.String("network", n.Name),
+			zap.Int64("provider_block_number", providerBlockNumber),
+			zap.Int64("reference_block_number", referenceBlock),
+			zap.String("machine_id", n.machineID))
+		provider.markWarning()
+	} else {
+		provider.markHealthy()
+	}
 }
 
 func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
@@ -257,4 +332,35 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 func (n *network) close() {
 	close(n.quit)
+}
+
+// getPercentileBlockNumber returns the block number at the specified percentile across all providers
+// percentile should be between 0 and 1 (e.g., 0.75 for 75th percentile)
+func (n *network) getPercentileBlockNumber(percentile float64) int64 {
+	if len(n.Providers) == 0 {
+		return 0
+	}
+
+	// Collect all block numbers
+	blockNumbers := make([]int64, 0, len(n.Providers))
+	for _, provider := range n.Providers {
+		// Get the most recent block number from the provider's health check entries
+		entries, ok := n.getCheckedProviderHCList(provider.host)
+		if ok && len(entries) > 0 {
+			blockNumbers = append(blockNumbers, entries[0].blockNumber)
+		}
+	}
+
+	if len(blockNumbers) == 0 {
+		return 0
+	}
+
+	// Sort block numbers
+	sort.Slice(blockNumbers, func(i, j int) bool {
+		return blockNumbers[i] < blockNumbers[j]
+	})
+
+	// Calculate the index for the percentile
+	index := int(float64(len(blockNumbers)-1) * percentile)
+	return blockNumbers[index]
 }

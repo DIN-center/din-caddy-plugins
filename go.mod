@@ -1,7 +1,6 @@
 module github.com/DIN-center/din-caddy-plugins
 
-go 1.22
-
+go 1.21.7
 
 require (
 	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20241029204756-63334786749d

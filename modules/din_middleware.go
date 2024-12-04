@@ -533,6 +533,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
 						}
 						d.Networks[networkName].BlockLagLimit = int64(limit)
+					case "healthcheck_blocknumber_delta":
+						dispenser.Next()
+						blockNumberDelta, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid healthcheck blocknumber delta: %v", err)
+						}
+						d.Networks[networkName].BlockNumberDelta = int64(blockNumberDelta)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
