@@ -744,3 +744,166 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestConsistencyHealthCheck(t *testing.T) {
+	timeNow := time.Now()
+	tests := []struct {
+		name                 string
+		providerName        string
+		provider            *provider
+		blockNumber         int64
+		network             *network
+		want                HealthStatus
+		expectedLatestBlock int64
+	}{
+		{
+			name:         "single provider - always healthy",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "provider lagging behind 75th percentile",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 4999800,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+					"provider3": {host: "provider3"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 4999800, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Warning,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "provider within acceptable range",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "first health check",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Unhealthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{}, // Empty checked providers
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+		{
+			name:         "higher block updates latest block number",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus: Healthy,
+				host:        "provider1",
+			},
+			blockNumber: 5000100,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				BlockLagLimit:      100,
+				HCThreshold:        3,
+				latestBlockNumber:  5000000,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000100, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000100,
+		},
+		{
+			name:         "unhealthy provider becomes healthy after threshold",
+			providerName: "provider1",
+			provider: &provider{
+				healthStatus:             Unhealthy,
+				consecutiveHealthyChecks: 3,
+				host:                     "provider1",
+			},
+			blockNumber: 5000000,
+			network: &network{
+				Providers: map[string]*provider{
+					"provider1": {host: "provider1"},
+					"provider2": {host: "provider2"},
+				},
+				BlockLagLimit: 100,
+				HCThreshold:  3,
+				CheckedProviders: map[string][]healthCheckEntry{
+					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
+					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
+				},
+			},
+			want:                Healthy,
+			expectedLatestBlock: 5000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.network.logger = zap.NewNop()
+			tt.network.consistencyHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
+
+			if tt.provider.healthStatus != tt.want {
+				t.Errorf("consistencyHealthCheck() health status = %v, want %v", tt.provider.healthStatus, tt.want)
+			}
+
+			if tt.network.latestBlockNumber != tt.expectedLatestBlock {
+				t.Errorf("consistencyHealthCheck() latest block = %v, want %v", tt.network.latestBlockNumber, tt.expectedLatestBlock)
+			}
+		})
+	}
+}
