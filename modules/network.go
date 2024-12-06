@@ -185,7 +185,7 @@ func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *pro
 func (n *network) consistencyHealthCheck(providerName string, provider *provider, providerBlockNumber int64) {
 	// For a single provider, always consider it healthy if it's responding
 	if len(n.Providers) == 1 {
-		provider.markHealthy()
+		provider.markHealthy(n.HCThreshold)
 		n.latestBlockNumber = providerBlockNumber
 		return
 	}
@@ -194,7 +194,7 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 	if referenceBlock == 0 {
 		// First health check or not enough data
 		n.latestBlockNumber = providerBlockNumber
-		provider.markHealthy()
+		provider.markHealthy(n.HCThreshold)
 		return
 	}
 
@@ -218,7 +218,7 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 			zap.String("machine_id", n.machineID))
 		provider.markWarning()
 	} else {
-		provider.markHealthy()
+		provider.markHealthy(n.HCThreshold)
 	}
 }
 

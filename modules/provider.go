@@ -27,6 +27,8 @@ type provider struct {
 	// Registry Configuration Values
 	Methods []*string            `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
+
+	consecutiveHealthyChecks int
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -35,9 +37,10 @@ func NewProvider(urlStr string) (*provider, error) {
 		return nil, err
 	}
 	p := &provider{
-		HttpUrl: urlStr,
-		host:    url.Host,
-		Headers: make(map[string]string),
+		HttpUrl:                  urlStr,
+		host:                     url.Host,
+		Headers:                  make(map[string]string),
+		consecutiveHealthyChecks: 0,
 	}
 	return p, nil
 }
@@ -85,16 +88,27 @@ func (p *provider) markPingSuccess(hcThreshold int) {
 	}
 }
 
-func (p *provider) markHealthy() {
+func (p *provider) markHealthy(hcThreshold int) {
+	if p.healthStatus == Unhealthy {
+		p.consecutiveHealthyChecks++
+		if p.consecutiveHealthyChecks > hcThreshold {
+			p.healthStatus = Healthy
+			p.consecutiveHealthyChecks = 0
+		}
+		return
+	}
+	p.consecutiveHealthyChecks = 0
 	p.healthStatus = Healthy
 }
 
 func (p *provider) markWarning() {
 	p.healthStatus = Warning
+	p.consecutiveHealthyChecks = 0
 }
 
 func (p *provider) markUnhealthy() {
 	p.healthStatus = Unhealthy
+	p.consecutiveHealthyChecks = 0
 }
 
 // Healthy returns True if the node is passing healthchecks, False otherwise
