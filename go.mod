@@ -7,6 +7,8 @@ require (
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.7
+	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-redis/redismock/v8 v8.11.5
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/golang/mock v1.6.0
 	github.com/pkg/errors v0.9.1
@@ -16,6 +18,8 @@ require (
 	github.com/zeebo/assert v1.1.0
 	go.uber.org/zap v1.27.0
 )
+
+require github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
