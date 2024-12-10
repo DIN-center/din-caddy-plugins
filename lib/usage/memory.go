@@ -2,6 +2,9 @@ package usage
 
 import (
 	"sync/atomic"
+	"time"
+	"sync"
+	"github.com/google/uuid"
 )
 
 type memUsageTracker struct {
@@ -15,4 +18,39 @@ func (ut *memUsageTracker) Use() error {
 		return ErrRequestLimit
 	}
 	return nil
+}
+
+func NewMemoryTrackerManager() TrackerManager {
+	return &memUsageTrackerManager{
+		m: make(map[string]UsageTracker),
+	}
+}
+
+type memUsageTrackerManager struct {
+	m    map[string]UsageTracker
+	lock sync.RWMutex
+}
+
+func (m *memUsageTrackerManager) Create(uses int64, exp time.Time) (string, error) {
+	id := uuid.New().String()
+	m.lock.Lock()
+	tracker := &memUsageTracker{
+		Uses: new(int64),
+	}
+	*tracker.Uses = uses
+	m.m[id] = tracker
+	m.lock.Unlock()
+	time.AfterFunc(time.Until(exp), func() {
+		m.lock.Lock()
+		delete(m.m, id)
+		m.lock.Unlock()
+	})
+	return id, nil
+}
+
+func (m *memUsageTrackerManager) Get(key string) (UsageTracker, bool) {
+	m.lock.RLock()
+	t, ok := m.m[key]
+	m.lock.RUnlock()
+	return t, ok
 }

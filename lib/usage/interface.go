@@ -2,6 +2,7 @@ package usage
 
 import (
 	"errors"
+	"time"
 )
 
 var (
@@ -10,4 +11,9 @@ var (
 
 type UsageTracker interface {
 	Use() error
+}
+
+type TrackerManager interface {
+	Create(int64, time.Time) (string, error)
+	Get(string) (UsageTracker, bool)
 }

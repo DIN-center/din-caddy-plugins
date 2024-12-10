@@ -134,3 +134,55 @@ func (ut *redisUsageTracker) Use() error {
 	}
 	return nil
 }
+
+func NewRedisTrackerManager(client *redis.Client, batchSize int64) TrackerManager {
+	return &redisUsageTrackerManager{
+		m: make(map[string]UsageTracker),
+		ck: "din_caddy_counter_key",
+	}
+}
+
+type redisUsageTrackerManager struct {
+	m    map[string]UsageTracker
+	c    *redis.Client
+	bs   int64
+	lock sync.RWMutex
+	ck   string
+}
+
+func (m *redisUsageTrackerManager) Create(uses int64, exp time.Time) (string, error) {
+	res := m.c.Incr(context.Background(), m.ck)
+	if err := res.Err(); err != nil {
+		return "", err
+	}
+	key := res.String()
+	m.lock.Lock()
+	tracker := NewRedisUsageTracker(m.bs, uses, key, exp, m.c)
+	m.m[key] = tracker
+	m.lock.Unlock()
+	time.AfterFunc(time.Until(exp), func() {
+		m.lock.Lock()
+		delete(m.m, key)
+		m.lock.Unlock()
+	})
+	return key, nil
+}
+
+func (m *redisUsageTrackerManager) Get(key string) (UsageTracker, bool) {
+	m.lock.RLock()
+	t, ok := m.m[key]
+	m.lock.RUnlock()
+	if !ok {
+		ttlMs, err := m.c.PTTL(context.Background(), key).Result()
+		if err == redis.Nil {
+			return nil, false
+		} else if err != nil {
+			// TODO: Log error
+			return nil, false
+		} else {
+			exp := time.Duration(ttlMs) * time.Millisecond
+			return NewRedisUsageTracker(m.bs, 0, key, time.Now().Add(exp), m.c), true
+		}
+	}
+	return t, true
+}

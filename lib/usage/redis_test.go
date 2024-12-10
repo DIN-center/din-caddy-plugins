@@ -100,3 +100,8 @@ func TestNotificationManager(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, ErrRequestLimit, err)
 }
+
+func TestRedisTrackerManager(t *testing.T) {
+	// redisUsageTrackerManager
+	t.Errorf("Not implemented")
+}
