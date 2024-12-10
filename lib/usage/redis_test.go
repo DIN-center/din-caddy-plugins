@@ -67,8 +67,8 @@ func TestRedisUsageTracker_Use(t *testing.T) {
 	assert.Equal(t, int64(1), *tracker.Uses)
 
 	// Exceed usage
-	for i := 0; i < 19; i++ {
-		_ = tracker.Use()
+	for i := 0; i < 18; i++ {
+		assert.NoError(t, tracker.Use())
 	}
 	err = tracker.Use()
 	assert.Error(t, err)

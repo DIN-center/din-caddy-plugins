@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // PubSubClient abstracts Pub/Sub operations for flexibility in testing.
@@ -47,7 +48,6 @@ func NewNotificationManager(client PubSubClient) *NotificationManager {
 		client:   client,
 		trackers: make(map[string]*redisUsageTracker),
 	}
-	go manager.startSubscriber("api_key_usage_notifications")
 	return manager
 }
 
@@ -69,6 +69,28 @@ func (nm *NotificationManager) startSubscriber(channel string) {
 			tracker.Error.Store(ErrRequestLimit)
 		}
 	}
+}
+
+var (
+	nmSetup sync.Once
+	nm *NotificationManager
+)
+
+func NewRedisUsageTracker(batchSize, maxUses int64, key string, expiration time.Time, client *redis.Client) UsageTracker {
+	nmSetup.Do(func() {
+		nm = NewNotificationManager(&RedisPubSubClient{client})
+		go nm.startSubscriber("api_key_usage_notifications")
+	})
+	client.SetNX(context.Background(), key, maxUses, time.Until(expiration))
+	rt := &redisUsageTracker{
+		BatchSize: batchSize,
+		Uses: new(int64),
+		Key: key,
+		Client: client,
+		PubSub: nm.client,
+	}
+	nm.RegisterTracker(key, rt)
+	return rt
 }
 
 // redisUsageTracker tracks usage of an API key in Redis.
