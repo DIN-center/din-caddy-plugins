@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"os"
@@ -10,8 +11,20 @@ import (
 )
 
 func main() {
-	url := os.Args[1]
-	privateKeyFile := os.Args[2]
+	// Define flags
+	help := flag.Bool("help", false, "Display help text")
+
+	// Parse flags
+	flag.Parse()
+
+	if *help || len(flag.Args()) < 2 {
+		fmt.Println("Usage: app <SIWE client URL> <Private key file path>")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	url := flag.Arg(0)
+	privateKeyFile := flag.Arg(1)
 
 	// Read the private key file
 	hexKeyBytes, err := os.ReadFile(privateKeyFile)
