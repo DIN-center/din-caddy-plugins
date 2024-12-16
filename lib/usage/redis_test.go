@@ -5,10 +5,12 @@ import (
 	// "errors"
 	"testing"
 	"github.com/go-redis/redismock/v8"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"runtime"
 	// "sync/atomic"
 	"sync"
+	"time"
 )
 
 type MockPubSubClient struct {
@@ -102,6 +104,23 @@ func TestNotificationManager(t *testing.T) {
 }
 
 func TestRedisTrackerManager(t *testing.T) {
-	// redisUsageTrackerManager
-	t.Errorf("Not implemented")
+	db, mock := redismock.NewClientMock()
+	mock.ExpectIncr("din_caddy_counter_key").SetVal(1)
+	tm := NewRedisTrackerManager(db, 5)
+	exp := time.Now().Add(20 * time.Millisecond)
+	key, err := tm.Create(5, exp)
+	mock.ExpectDecrBy(key, int64(5)).SetVal(0)
+	mock.ExpectPTTL(key).SetErr(redis.Nil)
+	assert.NoError(t, err)
+	tracker, ok := tm.Get(key)
+	assert.True(t, ok)
+	assert.NoError(t, tracker.Use()) // 4
+	assert.NoError(t, tracker.Use()) // 3
+	assert.NoError(t, tracker.Use()) // 2
+	assert.NoError(t, tracker.Use()) // 1
+	assert.NoError(t, tracker.Use()) // 0
+	assert.Error(t, tracker.Use())   // -1
+	time.Sleep(time.Until(exp))
+	_, ok = tm.Get(key)
+	assert.False(t, ok)
 }

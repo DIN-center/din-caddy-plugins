@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"fmt"
 )
 
 // PubSubClient abstracts Pub/Sub operations for flexibility in testing.
@@ -125,10 +126,12 @@ func (ut *redisUsageTracker) Use() error {
 				return err
 			}
 			// If Redis usage drops below zero, set the tracker to an error state and publish a notification.
-			if remaining < 0 {
+			if remaining <= 0 {
 				ut.Error.Store(ErrRequestLimit)
 				ut.PubSub.Publish(ctx, "api_key_usage_notifications", ut.Key)
-				return ut.Error.Load().(error)
+				if remaining < 0 {
+					return ut.Error.Load().(error)
+				}
 			}
 		}
 	}
@@ -138,6 +141,8 @@ func (ut *redisUsageTracker) Use() error {
 func NewRedisTrackerManager(client *redis.Client, batchSize int64) TrackerManager {
 	return &redisUsageTrackerManager{
 		m: make(map[string]UsageTracker),
+		c: client,
+		bs: batchSize,
 		ck: "din_caddy_counter_key",
 	}
 }
@@ -155,7 +160,12 @@ func (m *redisUsageTrackerManager) Create(uses int64, exp time.Time) (string, er
 	if err := res.Err(); err != nil {
 		return "", err
 	}
-	key := res.String()
+	var key string
+	if keyInt, err := res.Result(); err != nil {
+		return "", err
+	} else {
+		key = fmt.Sprintf("%v-%v", m.ck, keyInt)
+	}
 	m.lock.Lock()
 	tracker := NewRedisUsageTracker(m.bs, uses, key, exp, m.c)
 	m.m[key] = tracker
