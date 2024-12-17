@@ -20,6 +20,7 @@ const (
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
+	DefaultGetBlockNumberMethod    = "eth_getBlockByNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)
@@ -40,6 +41,9 @@ const (
 
 	// Upstream/Selector Constants
 	MaxPriority = 9
+
+	// EVM Speed Constants
+	DefaultEVMSpeedEnabled = false
 )
 
 // String method to convert MyEnum to string

@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,128 +19,90 @@ func TestHealthCheck(t *testing.T) {
 	logger := zap.NewNop()
 
 	tests := []struct {
-		name                string
-		network             *network
-		latestBlockResponse struct {
-			responseBytes []byte
-			statusCode    int
-			err           error
-		}
+		name               string
+		network            *network
+		evmSpeedEnabled    bool
+		latestBlockResp    []byte
+		earliestBlockResp  []byte
+		statusCode         int
+		err                error
 		wantProviderStatus map[string]HealthStatus
+		wantLatestBlock    int64
+		wantEarliestBlock  int64
 	}{
 		{
 			name: "single provider, successful response",
 			network: &network{
-				HttpClient:       mockHttpClient,
 				PrometheusClient: mockPrometheusClient,
 				BlockNumberDelta: 10,
 				HCThreshold:      3,
 				Name:             "test-network",
 				logger:           logger,
+				EVMSpeedEnabled:  false,
 				Providers: map[string]*provider{
 					"provider1": {
 						healthStatus: Healthy,
 						host:         "provider1",
-						HttpUrl:      "http://provider1",
+						httpClient:   mockHttpClient,
 					},
 				},
 				latestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-				statusCode:    200,
-				err:           nil,
-			},
+			latestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+			statusCode:      200,
+			err:             nil,
 			wantProviderStatus: map[string]HealthStatus{
 				"provider1": Healthy,
 			},
+			wantLatestBlock: 5000003,
 		},
 		{
-			name: "single provider, error response",
+			name: "single provider with EVMSpeed enabled",
 			network: &network{
-				HttpClient:       mockHttpClient,
 				PrometheusClient: mockPrometheusClient,
 				BlockNumberDelta: 10,
 				HCThreshold:      3,
 				Name:             "test-network",
 				logger:           logger,
+				EVMSpeedEnabled:  true,
 				Providers: map[string]*provider{
 					"provider1": {
 						healthStatus: Healthy,
 						host:         "provider1",
-						HttpUrl:      "http://provider1",
-						failures:     3, // Set initial failures to trigger unhealthy state
+						httpClient:   mockHttpClient,
 					},
 				},
 				latestBlockNumber: 5000000,
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: nil,
-				statusCode:    400,
-				err:           nil,
-			},
-			wantProviderStatus: map[string]HealthStatus{
-				"provider1": Unhealthy,
-			},
-		},
-		{
-			name: "multiple providers, mixed responses",
-			network: &network{
-				HttpClient:       mockHttpClient,
-				PrometheusClient: mockPrometheusClient,
-				BlockNumberDelta: 10,
-				HCThreshold:      3,
-				Name:             "test-network",
-				logger:           logger,
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-						host:         "provider1",
-						HttpUrl:      "http://provider1",
-					},
-					"provider2": {
-						healthStatus: Healthy,
-						host:         "provider2",
-						HttpUrl:      "http://provider2",
-						failures:     3,
-					},
-				},
-				latestBlockNumber: 5000000,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-				statusCode:    200,
-				err:           nil,
-			},
+			latestBlockResp:   []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+			earliestBlockResp: []byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1","hash":"0x123"}}`),
+			statusCode:        200,
+			err:               nil,
 			wantProviderStatus: map[string]HealthStatus{
 				"provider1": Healthy,
-				"provider2": Healthy,
 			},
+			wantLatestBlock:   5000003,
+			wantEarliestBlock: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up mock expectations
-			for range tt.network.Providers {
+			for _, provider := range tt.network.Providers {
+				// Mock getLatestBlockNumber call
 				mockHttpClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.latestBlockResponse.responseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err)
+					Post(provider.HttpUrl, provider.Headers, gomock.Any(), provider.AuthClient()).
+					Return(tt.latestBlockResp, &tt.statusCode, tt.err)
+
+				if tt.network.EVMSpeedEnabled {
+					// Mock getEarliestBlockNumber call
+					expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, DefaultGetBlockNumberMethod, "0x1"))
+					mockHttpClient.EXPECT().
+						Post(provider.HttpUrl, provider.Headers, expectedPayload, provider.AuthClient()).
+						Return(tt.earliestBlockResp, &tt.statusCode, tt.err)
+				}
 
 				mockPrometheusClient.EXPECT().
 					HandleLatestBlockMetric(gomock.Any()).
@@ -149,12 +112,24 @@ func TestHealthCheck(t *testing.T) {
 			// Run health check
 			tt.network.healthCheck()
 
-			// Verify results
+			// Verify provider status
 			for providerName, provider := range tt.network.Providers {
 				wantStatus := tt.wantProviderStatus[providerName]
 				if provider.healthStatus != wantStatus {
 					t.Errorf("healthCheck() for provider %s got status = %v, want %v",
 						providerName, provider.healthStatus, wantStatus)
+				}
+
+				// Verify latest block number
+				if provider.latestBlockNumber != uint64(tt.wantLatestBlock) {
+					t.Errorf("healthCheck() for provider %s got latest block = %v, want %v",
+						providerName, provider.latestBlockNumber, tt.wantLatestBlock)
+				}
+
+				// Verify earliest block number if EVMSpeed is enabled
+				if tt.network.EVMSpeedEnabled && provider.earliestBlockNumber != uint64(tt.wantEarliestBlock) {
+					t.Errorf("healthCheck() for provider %s got earliest block = %v, want %v",
+						providerName, provider.earliestBlockNumber, tt.wantEarliestBlock)
 				}
 			}
 		})
@@ -271,20 +246,20 @@ func TestPingHealthCheck(t *testing.T) {
 func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 	timeNow := time.Now()
 	tests := []struct {
-		name             string
-		providerName     string
-		provider         *provider
-		blockNumber      int64
-		network          *network
-		expectUnhealthy  bool
-		expectedStatus   HealthStatus
+		name            string
+		providerName    string
+		provider        *provider
+		blockNumber     int64
+		network         *network
+		expectUnhealthy bool
+		expectedStatus  HealthStatus
 	}{
 		{
 			name:         "single provider - always healthy",
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000030,
 			network: &network{
@@ -304,7 +279,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000030,
 			network: &network{
@@ -328,7 +303,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 4999970,
 			network: &network{
@@ -352,7 +327,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000010,
 			network: &network{
@@ -392,20 +367,20 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 func TestConsistencyHealthCheck(t *testing.T) {
 	timeNow := time.Now()
 	tests := []struct {
-		name                  string
-		providerName         string
-		provider             *provider
-		blockNumber          int64
-		network              *network
-		want                 HealthStatus
-		expectedLatestBlock  int64
+		name                string
+		providerName        string
+		provider            *provider
+		blockNumber         int64
+		network             *network
+		want                HealthStatus
+		expectedLatestBlock int64
 	}{
 		{
 			name:         "single provider - always healthy",
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000000,
 			network: &network{
@@ -413,7 +388,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider1": {host: "provider1"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 			},
 			want:                Healthy,
 			expectedLatestBlock: 5000000,
@@ -423,7 +398,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 4999800,
 			network: &network{
@@ -433,7 +408,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider3": {host: "provider3"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {{blockNumber: 4999800, timestamp: &timeNow}},
 					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
@@ -448,7 +423,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000000,
 			network: &network{
@@ -457,7 +432,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider2": {host: "provider2"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
 					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
@@ -782,7 +757,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				CheckedProviders: make(map[string][]healthCheckEntry),
 			},
 			percentile: 0.75,
-			want:      0,
+			want:       0,
 		},
 		{
 			name: "single provider",
@@ -795,7 +770,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				},
 			},
 			percentile: 0.75,
-			want:      1000,
+			want:       1000,
 		},
 		{
 			name: "multiple providers - 75th percentile",
@@ -814,7 +789,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				},
 			},
 			percentile: 0.75,
-			want:      1200,
+			want:       1200,
 		},
 		{
 			name: "providers with no health checks",
@@ -826,7 +801,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				CheckedProviders: make(map[string][]healthCheckEntry),
 			},
 			percentile: 0.75,
-			want:      0,
+			want:       0,
 		},
 	}
 

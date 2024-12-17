@@ -1,18 +1,12 @@
 package modules
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -39,6 +33,9 @@ type network struct {
 	BlockNumberDelta        int64                `json:"block_number_delta"`
 	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int                  `json:"request_attempt_count"`
+
+	// EVMSpeedEnabled is a flag to enable EVM Speed service provided by Infura
+	EVMSpeedEnabled bool `json:"evm_speed_enabled"`
 }
 
 // NewNetwork creates a new network with the given name
@@ -55,6 +52,7 @@ func NewNetwork(name string) *network {
 		BlockNumberDelta:        DefaultBlockNumberDelta,
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
+		EVMSpeedEnabled:         DefaultEVMSpeedEnabled,
 
 		CheckedProviders: make(map[string][]healthCheckEntry),
 		Providers:        make(map[string]*provider),
@@ -96,13 +94,37 @@ func (n *network) healthCheck() {
 		wg.Add(1) // Increment the WaitGroup counter
 		go func(providerName string, provider *provider) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
-			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+			// Use provider's method instead
+			providerBlockNumber, statusCode, err := provider.getLatestBlockNumber(n.HCMethod)
 			if err != nil {
 				n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
 				return
 			}
 			blockTime = time.Now()
+
+			err = provider.saveLatestBlockNumber(providerBlockNumber)
+			if err != nil {
+				n.logger.Error("Error saving block number", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
+				return
+			}
+
+			if n.EVMSpeedEnabled {
+				// Only check and set earliest block number if it hasn't been set yet.
+				// earliest block to check will be block 1.
+				if provider.earliestBlockNumber == 0 {
+					earliestBlockNumber, statusCode, err := provider.getEarliestBlockNumber(DefaultGetBlockNumberMethod, n.RequestAttemptCount)
+					if err != nil {
+						n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
+						return
+					}
+
+					err = provider.saveEarliestBlockNumber(earliestBlockNumber)
+					if err != nil {
+						n.logger.Error("Error saving earliest block number", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
+						return
+					}
+				}
+			}
 
 			if n.pingHealthCheck(providerName, provider, statusCode, providerBlockNumber) {
 				return
@@ -203,7 +225,7 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 	if providerBlockNumber > n.latestBlockNumber {
 		n.latestBlockNumber = providerBlockNumber
 	}
-	
+
 	// Also update latest block number with reference block if it's higher
 	if referenceBlock > n.latestBlockNumber {
 		n.latestBlockNumber = referenceBlock
@@ -281,53 +303,6 @@ func (n *network) addHealthCheckToCheckedProviderList(providerName string, healt
 		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
 		n.setCheckedProviderHCList(providerName, currentHealthCheckList)
 	}
-}
-
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
-
-	// Send the POST request
-	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error sending POST request")
-	}
-
-	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return 0, *statusCode, errors.New("Network Unavailable")
-	}
-
-	// response struct
-	var respObject map[string]interface{}
-
-	// Unmarshal the response
-	err = json.Unmarshal(resBytes, &respObject)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	if _, ok := respObject["result"]; !ok {
-		return 0, 0, errors.New("Error getting block number from response")
-	}
-
-	var blockNumber int64
-
-	switch result := respObject["result"].(type) {
-	case string:
-		if result == "" || result[:2] != "0x" {
-			return 0, 0, errors.New("Invalid block number")
-		}
-
-		// Convert the hexadecimal string to an int64
-		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
-		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error converting block number")
-		}
-	case float64:
-		blockNumber = int64(result)
-	default:
-		return 0, 0, errors.New("unsupported block number type")
-	}
-	return blockNumber, *statusCode, nil
 }
 
 func (n *network) close() {
