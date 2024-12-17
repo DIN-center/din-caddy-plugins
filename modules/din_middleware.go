@@ -554,6 +554,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid request attempt count: %v", err)
 						}
 						d.Networks[networkName].RequestAttemptCount = requestAttemptCount
+					case "evm_speed_enabled":
+						dispenser.Next()
+						evmSpeedEnabled, err := strconv.ParseBool(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid evm speed enabled: %v", err)
+						}
+						d.Networks[networkName].EVMSpeedEnabled = evmSpeedEnabled
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
