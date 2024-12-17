@@ -30,33 +30,33 @@ func TestHealthCheck(t *testing.T) {
 		wantLatestBlock    int64
 		wantEarliestBlock  int64
 	}{
-		// {
-		// 	name: "single provider, successful response",
-		// 	network: &network{
-		// 		PrometheusClient: mockPrometheusClient,
-		// 		BlockNumberDelta: 10,
-		// 		HCThreshold:      3,
-		// 		Name:             "test-network",
-		// 		logger:           logger,
-		// 		EVMSpeedEnabled:  false,
-		// 		Providers: map[string]*provider{
-		// 			"provider1": {
-		// 				healthStatus: Healthy,
-		// 				host:         "provider1",
-		// 				httpClient:   mockHttpClient,
-		// 			},
-		// 		},
-		// 		latestBlockNumber: 5000000,
-		// 		CheckedProviders:  map[string][]healthCheckEntry{},
-		// 	},
-		// 	latestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-		// 	statusCode:      200,
-		// 	err:             nil,
-		// 	wantProviderStatus: map[string]HealthStatus{
-		// 		"provider1": Healthy,
-		// 	},
-		// 	wantLatestBlock: 5000003,
-		// },
+		{
+			name: "single provider, successful response",
+			network: &network{
+				PrometheusClient: mockPrometheusClient,
+				BlockNumberDelta: 10,
+				HCThreshold:      3,
+				Name:             "test-network",
+				logger:           logger,
+				EVMSpeedEnabled:  false,
+				Providers: map[string]*provider{
+					"provider1": {
+						healthStatus: Healthy,
+						host:         "provider1",
+						httpClient:   mockHttpClient,
+					},
+				},
+				latestBlockNumber: 5000000,
+				CheckedProviders:  map[string][]healthCheckEntry{},
+			},
+			latestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+			statusCode:      200,
+			err:             nil,
+			wantProviderStatus: map[string]HealthStatus{
+				"provider1": Healthy,
+			},
+			wantLatestBlock: 5000003,
+		},
 		{
 			name: "single provider with EVMSpeed enabled",
 			network: &network{
