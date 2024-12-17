@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
@@ -218,23 +217,19 @@ func (p *provider) getLatestBlockNumber(hcMethod string) (int64, int, error) {
 // First checks block 1, then uses binary search if not found
 // This is only enabled for EVM based networks
 func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCount int) (int64, int, error) {
-	// First attempt to get block 1 since it's commonly the earliest block after genesis
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, getBlockNumberMethod))
-
-	// Make HTTP request to the node
-	resBytes, statusCode, err := p.httpClient.Post(p.HttpUrl, p.Headers, []byte(payload), p.AuthClient())
+	// First, try block 1
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, getBlockNumberMethod, "0x1"))
+	resBytes, statusCode, err := p.httpClient.Post(p.HttpUrl, p.Headers, payload, p.AuthClient())
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error sending POST request")
 	}
 
-	// Check if node is available
+	// Check node availability
 	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
 		return 0, *statusCode, errors.New("Network Unavailable")
 	}
 
 	var respObject map[string]interface{}
-
-	// Parse JSON response
 	err = json.Unmarshal(resBytes, &respObject)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
@@ -242,7 +237,6 @@ func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCoun
 
 	// If block 1 exists, parse and return its number
 	if result, ok := respObject["result"]; ok && result != nil {
-		// Result should be a map containing block details
 		blockInfo, ok := result.(map[string]interface{})
 		if !ok {
 			return 0, 0, errors.New("invalid block info format")
@@ -263,72 +257,6 @@ func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCoun
 	return p.binarySearchEarliestBlock(getBlockNumberMethod)
 }
 
-// binarySearchEarliestBlock performs a binary search to find the earliest available block
-func (p *provider) binarySearchEarliestBlock(getBlockNumberMethod string) (int64, int, error) {
-	if p.latestBlockNumber == 0 {
-		return 0, 0, errors.New("latest block number not set")
-	}
-
-	left := int64(1)
-	right := int64(p.latestBlockNumber)
-	var earliestBlock int64
-
-	maxIterations := 100
-	iterations := 0
-
-	for left <= right {
-		iterations++
-		if iterations > maxIterations {
-			return 0, 0, errors.New("binary search exceeded maximum iterations")
-		}
-
-		mid := left + (right-left)/2
-		hexBlock := intToHex(mid)
-
-		// Query the midpoint block
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["%s", false],"id":1}`, getBlockNumberMethod, hexBlock))
-		resBytes, statusCode, err := p.httpClient.Post(p.HttpUrl, p.Headers, []byte(payload), p.AuthClient())
-		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error sending POST request during binary search")
-		}
-
-		// Check node availability
-		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-			return 0, *statusCode, errors.New("Network Unavailable during binary search")
-		}
-
-		var respObject map[string]interface{}
-		err = json.Unmarshal(resBytes, &respObject)
-		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error unmarshalling response during binary search")
-		}
-
-		// Check for RPC error
-		if errObj, hasError := respObject["error"]; hasError {
-			return 0, 0, errors.Errorf("RPC error during binary search: %v", errObj)
-		}
-
-		// If block exists, look for earlier blocks
-		// If block doesn't exist, look for later blocks
-		if result, ok := respObject["result"]; ok && result != nil {
-			earliestBlock = mid
-			right = mid - 1
-		} else {
-			left = mid + 1
-		}
-
-		// Rate limiting protection
-		time.Sleep(time.Millisecond * 100)
-	}
-
-	// Return error if no valid block was found
-	if earliestBlock == 0 {
-		return 0, 0, errors.New("Could not find earliest block")
-	}
-
-	return earliestBlock, http.StatusOK, nil
-}
-
 func (p *provider) saveLatestBlockNumber(blockNumber int64) error {
 	p.latestBlockNumber = uint64(blockNumber)
 	return nil
@@ -337,4 +265,75 @@ func (p *provider) saveLatestBlockNumber(blockNumber int64) error {
 func (p *provider) saveEarliestBlockNumber(blockNumber int64) error {
 	p.earliestBlockNumber = uint64(blockNumber)
 	return nil
+}
+
+// binarySearchEarliestBlock performs a binary search to find the earliest available block
+func (p *provider) binarySearchEarliestBlock(getBlockNumberMethod string) (int64, int, error) {
+	// We need the latest block number to set the upper bound
+	if p.latestBlockNumber == 0 {
+		return 0, 0, errors.New("latest block number not set")
+	}
+
+	left := int64(1)
+	right := int64(p.latestBlockNumber)
+	var lastFoundBlock int64
+	var lastStatusCode int
+
+	for left <= right {
+		mid := left + (right-left)/2
+
+		// Create the JSON-RPC payload for getting the block
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`,
+			getBlockNumberMethod, intToHex(mid)))
+
+		// Send the request
+		resBytes, statusCode, err := p.httpClient.Post(p.HttpUrl, p.Headers, payload, p.AuthClient())
+		if err != nil {
+			return 0, 0, errors.Wrap(err, "Error sending POST request")
+		}
+
+		// Check node availability
+		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+			return 0, *statusCode, errors.New("Network Unavailable")
+		}
+
+		// Parse the response
+		var respObject map[string]interface{}
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			return 0, 0, errors.Wrap(err, "Error unmarshalling response")
+		}
+
+		// Check if the block exists
+		result, exists := respObject["result"]
+		if exists && result != nil {
+			// Block exists, try to find an earlier one
+			blockInfo, ok := result.(map[string]interface{})
+			if !ok {
+				return 0, 0, errors.New("invalid block info format")
+			}
+
+			if blockInfo["number"] == nil {
+				return 0, 0, errors.New("block number is nil")
+			}
+
+			blockNumber, err := parseBlockNumber(blockInfo["number"])
+			if err != nil {
+				return 0, 0, err
+			}
+
+			lastFoundBlock = blockNumber
+			lastStatusCode = *statusCode
+			right = mid - 1
+		} else {
+			// Block doesn't exist, try a later one
+			left = mid + 1
+		}
+	}
+
+	if lastFoundBlock == 0 {
+		return 0, 0, errors.New("no valid blocks found")
+	}
+
+	return lastFoundBlock, lastStatusCode, nil
 }

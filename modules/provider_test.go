@@ -551,6 +551,226 @@ func TestSaveEarliestBlockNumber(t *testing.T) {
 	}
 }
 
+func TestBinarySearchEarliestBlock(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
+
+	tests := []struct {
+		name            string
+		hcMethod        string
+		provider        *provider
+		mockResponses   [][]byte
+		mockStatusCodes []int
+		mockErrors      []error
+		want            int64
+		wantStatus      int
+		wantErr         bool
+		expectedCalls   []string
+	}{
+		{
+			name:     "latest block number not set",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 0,
+			},
+			mockResponses:   [][]byte{},
+			mockStatusCodes: []int{},
+			mockErrors:      []error{},
+			want:            0,
+			wantStatus:      0,
+			wantErr:         true,
+			expectedCalls:   []string{},
+		},
+		{
+			name:     "finds block 2 with latest block 100",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 100,
+			},
+			mockResponses: [][]byte{
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x32","hash":"0x123"}}`), // Block 50 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x19","hash":"0x123"}}`), // Block 25 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0xc","hash":"0x123"}}`),  // Block 12 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x6","hash":"0x123"}}`),  // Block 6 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x3","hash":"0x123"}}`),  // Block 3 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x2","hash":"0x123"}}`),  // Block 2 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                             // Block 1 not found
+			},
+			mockStatusCodes: []int{200, 200, 200, 200, 200, 200, 200},
+			mockErrors:      []error{nil, nil, nil, nil, nil, nil, nil},
+			want:            2,
+			wantStatus:      200,
+			wantErr:         false,
+			expectedCalls:   []string{"0x32", "0x19", "0xc", "0x6", "0x3", "0x2", "0x1"},
+		},
+		{
+			name:     "network unavailable",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 100,
+			},
+			mockResponses:   [][]byte{[]byte(`{}`)},
+			mockStatusCodes: []int{http.StatusServiceUnavailable},
+			mockErrors:      []error{nil},
+			want:            0,
+			wantStatus:      http.StatusServiceUnavailable,
+			wantErr:         true,
+			expectedCalls:   []string{"0x32"},
+		},
+		{
+			name:     "invalid json response",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 100,
+			},
+			mockResponses:   [][]byte{[]byte(`invalid json`)},
+			mockStatusCodes: []int{200},
+			mockErrors:      []error{nil},
+			want:            0,
+			wantStatus:      0,
+			wantErr:         true,
+			expectedCalls:   []string{"0x32"},
+		},
+		{
+			name:     "invalid block info format",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 100,
+			},
+			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":"invalid"}`)},
+			mockStatusCodes: []int{200},
+			mockErrors:      []error{nil},
+			want:            0,
+			wantStatus:      0,
+			wantErr:         true,
+			expectedCalls:   []string{"0x32"},
+		},
+		{
+			name:     "no blocks found",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 10,
+			},
+			mockResponses: [][]byte{
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),
+			},
+			mockStatusCodes: []int{200, 200, 200, 200},
+			mockErrors:      []error{nil, nil, nil, nil},
+			want:            0,
+			wantStatus:      0,
+			wantErr:         true,
+			expectedCalls:   []string{"0x5", "0x8", "0x9", "0xa"},
+		},
+		{
+			name:     "http client error",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 100,
+			},
+			mockResponses:   [][]byte{nil},
+			mockStatusCodes: []int{0},
+			mockErrors:      []error{errors.New("connection error")},
+			want:            0,
+			wantStatus:      0,
+			wantErr:         true,
+			expectedCalls:   []string{"0x32"},
+		},
+		{
+			name:     "finds block 1232 with latest block 1600",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 1600,
+			},
+			mockResponses: [][]byte{
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                              // Block 800 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                              // Block 1200 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x578","hash":"0x123"}}`), // Block 1400 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x514","hash":"0x123"}}`), // Block 1300 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x4e2","hash":"0x123"}}`), // Block 1250 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                              // Block 1225 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x4d5","hash":"0x123"}}`), // Block 1237 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                              // Block 1231 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x4d2","hash":"0x123"}}`), // Block 1234 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x4d0","hash":"0x123"}}`), // Block 1232 found
+			},
+			mockStatusCodes: []int{200, 200, 200, 200, 200, 200, 200, 200, 200, 200},
+			mockErrors:      []error{nil, nil, nil, nil, nil, nil, nil, nil, nil, nil},
+			want:            1232,
+			wantStatus:      200,
+			wantErr:         false,
+			expectedCalls:   []string{"0x320", "0x4b0", "0x578", "0x514", "0x4e2", "0x4c9", "0x4d5", "0x4cf", "0x4d2", "0x4d0"},
+		},
+		{
+			name:     "finds block 63 with latest block 80",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:           "http://localhost:8545",
+				httpClient:        mockHttpClient,
+				latestBlockNumber: 80,
+			},
+			mockResponses: [][]byte{
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                             // Block 40 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                             // Block 60 not found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x46","hash":"0x123"}}`), // Block 70 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x41","hash":"0x123"}}`), // Block 65 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x3f","hash":"0x123"}}`), // Block 63 found
+				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),                             // Block 62 not found
+			},
+			mockStatusCodes: []int{200, 200, 200, 200, 200, 200},
+			mockErrors:      []error{nil, nil, nil, nil, nil, nil},
+			want:            63,
+			wantStatus:      200,
+			wantErr:         false,
+			expectedCalls:   []string{"0x28", "0x3c", "0x46", "0x41", "0x3f", "0x3e"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up expectations for each API call
+			for i, expectedCall := range tt.expectedCalls {
+				expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, tt.hcMethod, expectedCall))
+				statusCode := tt.mockStatusCodes[i]
+				mockHttpClient.EXPECT().
+					Post(tt.provider.HttpUrl, tt.provider.Headers, expectedPayload, tt.provider.AuthClient()).
+					Return(tt.mockResponses[i], &statusCode, tt.mockErrors[i])
+			}
+
+			got, gotStatus, err := tt.provider.binarySearchEarliestBlock(tt.hcMethod)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("binarySearchEarliestBlock() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("binarySearchEarliestBlock() got = %v, want %v", got, tt.want)
+			}
+			if gotStatus != tt.wantStatus {
+				t.Errorf("binarySearchEarliestBlock() gotStatus = %v, want %v", gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func TestGetLatestBlockNumber(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -696,177 +916,120 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
 
 	tests := []struct {
-		name            string
-		hcMethod        string
-		provider        *provider
-		mockResponses   [][]byte
-		mockStatusCodes []int
-		mockErrors      []error
-		want            int64
-		wantStatus      int
-		wantErr         bool
+		name           string
+		method         string
+		provider       *provider
+		mockResponse   []byte
+		mockStatusCode int
+		mockError      error
+		want           int64
+		wantStatus     int
+		wantErr        bool
 	}{
 		{
-			name:     "successful response for block 1 when earliest block not set",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:             "http://localhost:8545",
-				httpClient:          mockHttpClient,
-				earliestBlockNumber: 0, // This will trigger the check
-			},
-			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1"}}`)},
-			mockStatusCodes: []int{200},
-			mockErrors:      []error{nil},
-			want:            1,
-			wantStatus:      200,
-			wantErr:         false,
-		},
-		{
-			name:     "skip check when earliest block already set",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:             "http://localhost:8545",
-				httpClient:          mockHttpClient,
-				earliestBlockNumber: 1, // This will skip the check
-			},
-			mockResponses:   [][]byte{}, // No responses needed as no request should be made
-			mockStatusCodes: []int{},
-			mockErrors:      []error{},
-			want:            0, // Should return 0 as no check is performed
-			wantStatus:      0,
-			wantErr:         false,
-		},
-		{
-			name:     "successful response for block 1",
-			hcMethod: "eth_getBlockByNumber",
+			name:   "block 1 exists",
+			method: "eth_getBlockByNumber",
 			provider: &provider{
 				HttpUrl:    "http://localhost:8545",
 				httpClient: mockHttpClient,
 			},
-			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1"}}`)},
-			mockStatusCodes: []int{200},
-			mockErrors:      []error{nil},
-			want:            1,
-			wantStatus:      200,
-			wantErr:         false,
-		},
-
-		{
-			name:     "block 0 not found, binary search finds block 1",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:           "http://localhost:8545",
-				httpClient:        mockHttpClient,
-				latestBlockNumber: 10, // Set a small range for testing
-			},
-			mockResponses: [][]byte{
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`),             // Block 0 not found
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x5"}}`), // Mid point (5)
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x2"}}`), // Mid point (2)
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1"}}`), // Found block 1
-			},
-			mockStatusCodes: []int{200, 200, 200, 200},
-			mockErrors:      []error{nil, nil, nil, nil},
-			want:            1,
-			wantStatus:      200,
-			wantErr:         false,
+			mockResponse:   []byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1","hash":"0x123"}}`),
+			mockStatusCode: 200,
+			mockError:      nil,
+			want:           1,
+			wantStatus:     200,
+			wantErr:        false,
 		},
 		{
-			name:     "service unavailable during initial check",
-			hcMethod: "eth_getBlockByNumber",
+			name:   "service unavailable",
+			method: "eth_getBlockByNumber",
 			provider: &provider{
 				HttpUrl:    "http://localhost:8545",
 				httpClient: mockHttpClient,
 			},
-			mockResponses:   [][]byte{[]byte{}},
-			mockStatusCodes: []int{http.StatusServiceUnavailable},
-			mockErrors:      []error{nil},
-			want:            0,
-			wantStatus:      http.StatusServiceUnavailable,
-			wantErr:         true,
+			mockResponse:   []byte{},
+			mockStatusCode: http.StatusServiceUnavailable,
+			mockError:      nil,
+			want:           0,
+			wantStatus:     http.StatusServiceUnavailable,
+			wantErr:        true,
 		},
 		{
-			name:     "service unavailable during binary search",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:           "http://localhost:8545",
-				httpClient:        mockHttpClient,
-				latestBlockNumber: 10,
-			},
-			mockResponses: [][]byte{
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), // Block 0 not found
-				[]byte{}, // Service unavailable during binary search
-			},
-			mockStatusCodes: []int{200, http.StatusServiceUnavailable},
-			mockErrors:      []error{nil, nil},
-			want:            0,
-			wantStatus:      http.StatusServiceUnavailable,
-			wantErr:         true,
-		},
-		{
-			name:     "invalid json response during binary search",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:           "http://localhost:8545",
-				httpClient:        mockHttpClient,
-				latestBlockNumber: 10,
-			},
-			mockResponses: [][]byte{
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), // Block 0 not found
-				[]byte(`invalid json`),                           // Invalid JSON during binary search
-			},
-			mockStatusCodes: []int{200, 200},
-			mockErrors:      []error{nil, nil},
-			want:            0,
-			wantStatus:      0,
-			wantErr:         true,
-		},
-		{
-			name:     "no blocks found during binary search",
-			hcMethod: "eth_getBlockByNumber",
-			provider: &provider{
-				HttpUrl:           "http://localhost:8545",
-				httpClient:        mockHttpClient,
-				latestBlockNumber: 2,
-			},
-			mockResponses: [][]byte{
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), // Block 0 not found
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), // Block 1 not found
-				[]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), // Block 2 not found
-			},
-			mockStatusCodes: []int{200, 200, 200},
-			mockErrors:      []error{nil, nil, nil},
-			want:            0,
-			wantStatus:      0,
-			wantErr:         true,
-		},
-		{
-			name:     "http client error during initial check",
-			hcMethod: "eth_getBlockByNumber",
+			name:   "http client error",
+			method: "eth_getBlockByNumber",
 			provider: &provider{
 				HttpUrl:    "http://localhost:8545",
 				httpClient: mockHttpClient,
 			},
-			mockResponses:   [][]byte{nil},
-			mockStatusCodes: []int{0},
-			mockErrors:      []error{errors.New("connection error")},
-			want:            0,
-			wantStatus:      0,
-			wantErr:         true,
+			mockResponse:   nil,
+			mockStatusCode: 0,
+			mockError:      errors.New("connection error"),
+			want:           0,
+			wantStatus:     0,
+			wantErr:        true,
+		},
+		{
+			name:   "invalid json response",
+			method: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:    "http://localhost:8545",
+				httpClient: mockHttpClient,
+			},
+			mockResponse:   []byte(`invalid json`),
+			mockStatusCode: 200,
+			mockError:      nil,
+			want:           0,
+			wantStatus:     0,
+			wantErr:        true,
+		},
+		{
+			name:   "invalid block info format",
+			method: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:    "http://localhost:8545",
+				httpClient: mockHttpClient,
+			},
+			mockResponse:   []byte(`{"jsonrpc":"2.0","id":1,"result":"invalid"}`),
+			mockStatusCode: 200,
+			mockError:      nil,
+			want:           0,
+			wantStatus:     0,
+			wantErr:        true,
+		},
+		{
+			name:   "block number is nil",
+			method: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:    "http://localhost:8545",
+				httpClient: mockHttpClient,
+			},
+			mockResponse:   []byte(`{"jsonrpc":"2.0","id":1,"result":{"hash":"0x123"}}`),
+			mockStatusCode: 200,
+			mockError:      nil,
+			want:           0,
+			wantStatus:     0,
+			wantErr:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.provider.earliestBlockNumber == 0 {
-				// Only setup mock if we expect a request
-				expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, tt.hcMethod))
+			// Setup expectation for the initial block 1 request
+			expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, tt.method, "0x1"))
+			mockHttpClient.EXPECT().
+				Post(tt.provider.HttpUrl, tt.provider.Headers, expectedPayload, tt.provider.AuthClient()).
+				Return(tt.mockResponse, &tt.mockStatusCode, tt.mockError)
+
+			// If this is the binary search fallback case, setup additional expectations
+			if tt.name == "block 1 not found - fallback to binary search" {
+				// Mock a successful response for block 50 in binary search
+				binarySearchPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, tt.method, "0x32"))
 				mockHttpClient.EXPECT().
-					Post(tt.provider.HttpUrl, tt.provider.Headers, expectedPayload, tt.provider.AuthClient()).
-					Return(tt.mockResponses[0], &tt.mockStatusCodes[0], tt.mockErrors[0])
+					Post(tt.provider.HttpUrl, tt.provider.Headers, binarySearchPayload, tt.provider.AuthClient()).
+					Return([]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x32","hash":"0x123"}}`), &tt.mockStatusCode, nil)
 			}
 
-			got, gotStatus, err := tt.provider.getEarliestBlockNumber(tt.hcMethod, 1)
+			got, gotStatus, err := tt.provider.getEarliestBlockNumber(tt.method, 1)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getEarliestBlockNumber() error = %v, wantErr %v", err, tt.wantErr)
 				return
