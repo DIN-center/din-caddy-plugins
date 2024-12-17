@@ -215,11 +215,11 @@ func (p *provider) getLatestBlockNumber(hcMethod string) (int64, int, error) {
 }
 
 // getEarliestBlockNumber gets the earliest block number from the provider
-// If the blocknumber at 0 isn't available, then binary search is used to find the earliest block number
+// First checks block 1, then uses binary search if not found
 // This is only enabled for EVM based networks
 func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCount int) (int64, int, error) {
-	// First attempt to get block 0 since it's commonly the earliest block
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x0", false],"id":1}`, getBlockNumberMethod))
+	// First attempt to get block 1 since it's commonly the earliest block after genesis
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, getBlockNumberMethod))
 
 	// Make HTTP request to the node
 	resBytes, statusCode, err := p.httpClient.Post(p.HttpUrl, p.Headers, []byte(payload), p.AuthClient())
@@ -240,7 +240,7 @@ func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCoun
 		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
 	}
 
-	// If block 0 exists, parse and return its number
+	// If block 1 exists, parse and return its number
 	if result, ok := respObject["result"]; ok && result != nil {
 		// Result should be a map containing block details
 		blockInfo, ok := result.(map[string]interface{})
@@ -259,7 +259,7 @@ func (p *provider) getEarliestBlockNumber(getBlockNumberMethod string, retryCoun
 		return blockNumber, *statusCode, nil
 	}
 
-	// If block 0 doesn't exist, use binary search to find earliest block
+	// If block 1 doesn't exist, use binary search to find earliest block
 	return p.binarySearchEarliestBlock(getBlockNumberMethod)
 }
 

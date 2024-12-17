@@ -109,16 +109,20 @@ func (n *network) healthCheck() {
 			}
 
 			if n.EVMSpeedEnabled {
-				earliestBlockNumber, statusCode, err := provider.getEarliestBlockNumber(n.HCMethod, n.RequestAttemptCount)
-				if err != nil {
-					n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
-					return
-				}
+				// Only check and set earliest block number if it hasn't been set yet.
+				// earliest block to check will be block 1.
+				if provider.earliestBlockNumber != 0 {
+					earliestBlockNumber, statusCode, err := provider.getEarliestBlockNumber(n.HCMethod, n.RequestAttemptCount)
+					if err != nil {
+						n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
+						return
+					}
 
-				err = provider.saveEarliestBlockNumber(earliestBlockNumber)
-				if err != nil {
-					n.logger.Error("Error saving earliest block number", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
-					return
+					err = provider.saveEarliestBlockNumber(earliestBlockNumber)
+					if err != nil {
+						n.logger.Error("Error saving earliest block number", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
+						return
+					}
 				}
 			}
 

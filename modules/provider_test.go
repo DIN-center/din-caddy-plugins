@@ -707,16 +707,16 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 		wantErr         bool
 	}{
 		{
-			name:     "successful response for block 0",
+			name:     "successful response for block 1",
 			hcMethod: "eth_getBlockByNumber",
 			provider: &provider{
 				HttpUrl:    "http://localhost:8545",
 				httpClient: mockHttpClient,
 			},
-			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x0"}}`)},
+			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1"}}`)},
 			mockStatusCodes: []int{200},
 			mockErrors:      []error{nil},
-			want:            0,
+			want:            1,
 			wantStatus:      200,
 			wantErr:         false,
 		},
@@ -834,8 +834,8 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 
 				var expectedPayload []byte
 				if i == 0 {
-					// First call is always for block 0
-					expectedPayload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x0", false],"id":1}`, tt.hcMethod))
+					// First call is always for block 1
+					expectedPayload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, tt.hcMethod))
 				} else {
 					// Skip checking exact payload for binary search calls as they're dynamic
 					mockHttpClient.EXPECT().
