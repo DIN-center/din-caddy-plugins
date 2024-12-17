@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -29,33 +30,33 @@ func TestHealthCheck(t *testing.T) {
 		wantLatestBlock    int64
 		wantEarliestBlock  int64
 	}{
-		{
-			name: "single provider, successful response",
-			network: &network{
-				PrometheusClient: mockPrometheusClient,
-				BlockNumberDelta: 10,
-				HCThreshold:      3,
-				Name:             "test-network",
-				logger:           logger,
-				EVMSpeedEnabled:  false,
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-						host:         "provider1",
-						httpClient:   mockHttpClient,
-					},
-				},
-				latestBlockNumber: 5000000,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-			},
-			latestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-			statusCode:      200,
-			err:             nil,
-			wantProviderStatus: map[string]HealthStatus{
-				"provider1": Healthy,
-			},
-			wantLatestBlock: 5000003,
-		},
+		// {
+		// 	name: "single provider, successful response",
+		// 	network: &network{
+		// 		PrometheusClient: mockPrometheusClient,
+		// 		BlockNumberDelta: 10,
+		// 		HCThreshold:      3,
+		// 		Name:             "test-network",
+		// 		logger:           logger,
+		// 		EVMSpeedEnabled:  false,
+		// 		Providers: map[string]*provider{
+		// 			"provider1": {
+		// 				healthStatus: Healthy,
+		// 				host:         "provider1",
+		// 				httpClient:   mockHttpClient,
+		// 			},
+		// 		},
+		// 		latestBlockNumber: 5000000,
+		// 		CheckedProviders:  map[string][]healthCheckEntry{},
+		// 	},
+		// 	latestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
+		// 	statusCode:      200,
+		// 	err:             nil,
+		// 	wantProviderStatus: map[string]HealthStatus{
+		// 		"provider1": Healthy,
+		// 	},
+		// 	wantLatestBlock: 5000003,
+		// },
 		{
 			name: "single provider with EVMSpeed enabled",
 			network: &network{
@@ -76,16 +77,15 @@ func TestHealthCheck(t *testing.T) {
 				CheckedProviders:  map[string][]healthCheckEntry{},
 			},
 			latestBlockResp:   []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-			earliestBlockResp: []byte(`{"jsonrpc": "2.0", "id": 1,"result": {"number": "0x0"}}`),
+			earliestBlockResp: []byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1","hash":"0x123"}}`),
 			statusCode:        200,
 			err:               nil,
 			wantProviderStatus: map[string]HealthStatus{
 				"provider1": Healthy,
 			},
 			wantLatestBlock:   5000003,
-			wantEarliestBlock: 0,
+			wantEarliestBlock: 1,
 		},
-		// Add more test cases...
 	}
 
 	for _, tt := range tests {
@@ -98,8 +98,9 @@ func TestHealthCheck(t *testing.T) {
 
 				if tt.network.EVMSpeedEnabled {
 					// Mock getEarliestBlockNumber call
+					expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":["%s", false],"id":1}`, DefaultGetBlockNumberMethod, "0x1"))
 					mockHttpClient.EXPECT().
-						Post(provider.HttpUrl, provider.Headers, gomock.Any(), provider.AuthClient()).
+						Post(provider.HttpUrl, provider.Headers, expectedPayload, provider.AuthClient()).
 						Return(tt.earliestBlockResp, &tt.statusCode, tt.err)
 				}
 

@@ -111,8 +111,8 @@ func (n *network) healthCheck() {
 			if n.EVMSpeedEnabled {
 				// Only check and set earliest block number if it hasn't been set yet.
 				// earliest block to check will be block 1.
-				if provider.earliestBlockNumber != 0 {
-					earliestBlockNumber, statusCode, err := provider.getEarliestBlockNumber(n.HCMethod, n.RequestAttemptCount)
+				if provider.earliestBlockNumber == 0 {
+					earliestBlockNumber, statusCode, err := provider.getEarliestBlockNumber(DefaultGetBlockNumberMethod, n.RequestAttemptCount)
 					if err != nil {
 						n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
 						return
