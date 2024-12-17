@@ -707,6 +707,36 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 		wantErr         bool
 	}{
 		{
+			name:     "successful response for block 1 when earliest block not set",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:             "http://localhost:8545",
+				httpClient:          mockHttpClient,
+				earliestBlockNumber: 0, // This will trigger the check
+			},
+			mockResponses:   [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":{"number":"0x1"}}`)},
+			mockStatusCodes: []int{200},
+			mockErrors:      []error{nil},
+			want:            1,
+			wantStatus:      200,
+			wantErr:         false,
+		},
+		{
+			name:     "skip check when earliest block already set",
+			hcMethod: "eth_getBlockByNumber",
+			provider: &provider{
+				HttpUrl:             "http://localhost:8545",
+				httpClient:          mockHttpClient,
+				earliestBlockNumber: 1, // This will skip the check
+			},
+			mockResponses:   [][]byte{}, // No responses needed as no request should be made
+			mockStatusCodes: []int{},
+			mockErrors:      []error{},
+			want:            0, // Should return 0 as no check is performed
+			wantStatus:      0,
+			wantErr:         false,
+		},
+		{
 			name:     "successful response for block 1",
 			hcMethod: "eth_getBlockByNumber",
 			provider: &provider{
@@ -720,6 +750,7 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 			wantStatus:      200,
 			wantErr:         false,
 		},
+
 		{
 			name:     "block 0 not found, binary search finds block 1",
 			hcMethod: "eth_getBlockByNumber",
@@ -827,26 +858,12 @@ func TestGetEarliestBlockNumber(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup expected HTTP client calls
-			for i, response := range tt.mockResponses {
-				statusCode := tt.mockStatusCodes[i]
-				err := tt.mockErrors[i]
-
-				var expectedPayload []byte
-				if i == 0 {
-					// First call is always for block 1
-					expectedPayload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, tt.hcMethod))
-				} else {
-					// Skip checking exact payload for binary search calls as they're dynamic
-					mockHttpClient.EXPECT().
-						Post(tt.provider.HttpUrl, tt.provider.Headers, gomock.Any(), tt.provider.AuthClient()).
-						Return(response, &statusCode, err)
-					continue
-				}
-
+			if tt.provider.earliestBlockNumber == 0 {
+				// Only setup mock if we expect a request
+				expectedPayload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":["0x1", false],"id":1}`, tt.hcMethod))
 				mockHttpClient.EXPECT().
 					Post(tt.provider.HttpUrl, tt.provider.Headers, expectedPayload, tt.provider.AuthClient()).
-					Return(response, &statusCode, err)
+					Return(tt.mockResponses[0], &tt.mockStatusCodes[0], tt.mockErrors[0])
 			}
 
 			got, gotStatus, err := tt.provider.getEarliestBlockNumber(tt.hcMethod, 1)
