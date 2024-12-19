@@ -39,7 +39,7 @@ func TestMemoryTrackerManager(t *testing.T) {
 	assert.NoError(t, tracker.Use()) // 1
 	assert.NoError(t, tracker.Use()) // 0
 	assert.Error(t, tracker.Use())   // -1
-	time.Sleep(time.Until(exp))
+	time.Sleep(time.Until(exp) + time.Millisecond * 20)
 	_, ok = tm.Get(key)
 	assert.False(t, ok)
 }

@@ -9,8 +9,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
+	"strconv"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/usage"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -41,9 +43,12 @@ func handleError(err error, rw http.ResponseWriter, code int) {
 }
 
 type SIWEAuthMiddleware struct {
-	Whitelist map[string]struct{} `json:"whitelist"`
-	Secret    string              `json:"secret"`
-	logger    *zap.Logger
+	Whitelist   map[string]struct{} `json:"whitelist"`
+	Secret      string              `json:"secret"`
+	SessionUses *int              `json:"sessionUses"`
+	UsageCfg    *usage.UsageConfig  `json:"usageCfg"`
+	tracker     usage.TrackerManager
+	logger      *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -55,8 +60,10 @@ func (SIWEAuthMiddleware) CaddyModule() caddy.ModuleInfo {
 }
 
 func (d *SIWEAuthMiddleware) Provision(context caddy.Context) error {
+	var err error
 	d.logger = context.Logger(d)
-	return nil
+	d.tracker, err = usage.ResolveTrackerManager(d.UsageCfg)
+	return err
 }
 
 func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Request) error {
@@ -84,9 +91,14 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 		return err
 	}
 	issued := time.Now()
+	var key string
+	if d.SessionUses != nil {
+		d.tracker.Create(int64(*d.SessionUses), issued.Add(time.Hour))
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.RegisteredClaims{
 		IssuedAt:  jwt.NewNumericDate(issued),
 		ExpiresAt: jwt.NewNumericDate(issued.Add(time.Hour)),
+		ID: key,
 	})
 	tokenString, err := token.SignedString([]byte(d.Secret))
 	if err != nil {
@@ -143,6 +155,24 @@ func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, 
 		handleError(err, rw, 403)
 		return err
 	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		// Access the JWT ID (jti)
+		jti, ok := claims["jti"].(string)
+		if ok {
+			if tracker, ok := d.tracker.Get(jti); ok {
+				switch err := tracker.Use(); err {
+				case usage.ErrRequestLimit:
+					handleError(err, rw, 429)
+					return err
+				default:
+					d.logger.Warn("Error from usage tracker", zap.Error(err))
+				}
+			} else {
+				handleError(usage.ErrNoToken, rw, 403)
+				return err
+			}
+		}
+	}
 	return next.ServeHTTP(rw, r)
 
 }
@@ -170,6 +200,56 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 					return dispenser.Errf("failed to read secret file: %v", err)
 				}
 				d.Secret = string(secret)
+			case "usage_tracking": 
+				for dispenser.NextBlock(1) {
+					switch dispenser.Val() {
+					case "session_limit":
+						var limitStr string
+						if !dispenser.Args(&limitStr) {
+							return dispenser.ArgErr()
+						}
+						limit, err := strconv.Atoi(limitStr)
+						if err != nil {
+							return err
+						}
+						d.SessionUses = &limit
+					case "tracker":
+						switch dispenser.Val() {
+						case "redis":
+							d.UsageCfg = &usage.UsageConfig{
+								Type: "redis",
+								Config: make(map[string]interface{}),
+							}
+							d.UsageCfg.Config["url"] = "redis://localhost:6379/0"
+							d.UsageCfg.Config["batchSize"] = int64(1000)
+							for dispenser.NextBlock(2) {
+								switch dispenser.Val() {
+								case "redis_url":
+									var url string
+									if !dispenser.Args(&url) {
+										return dispenser.ArgErr()
+									}
+									d.UsageCfg.Config["url"] = url
+								case "batch_size":
+									var batchSizeStr string
+									if !dispenser.Args(&batchSizeStr) {
+										return dispenser.ArgErr()
+									}
+									batchSize, err := strconv.Atoi(batchSizeStr)
+									if err != nil {
+										return err
+									}
+									d.UsageCfg.Config["batchSize"] = int64(batchSize)
+								}
+							}
+
+						case "mem":
+							d.UsageCfg = &usage.UsageConfig{
+								Type: "mem",
+							}
+						}
+					}
+				}
 			default:
 				return dispenser.Errf("unknown subdirective: %s", dispenser.Val())
 			}

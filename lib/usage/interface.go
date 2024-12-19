@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrRequestLimit      = errors.New("request limit exceeded")
+	ErrNoToken           = errors.New("unknown token")
 )
 
 type UsageTracker interface {
