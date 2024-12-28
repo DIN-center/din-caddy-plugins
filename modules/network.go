@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
 
 type network struct {
@@ -61,24 +62,22 @@ func NewNetwork(name string) *network {
 	}
 }
 
-func (n *network) startHealthcheck() {
-	n.healthCheck()
+func (n *network) startHealthcheck(netProviderName string, netProvider *provider) {
+	n.healthCheck(netProviderName, netProvider)
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
-	go func() {
-		// Keep an index for RPC request IDs
-		for i := 0; ; i++ {
-			select {
-			// Cleanup if the quit channel gets closed. Right now nothing closes this channel, but
-			// once we integrate the authentication work there's code that should.
-			case <-n.quit:
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				// Set up the healthcheck request with authentication for this provider.
-				n.healthCheck()
-			}
+	// Keep an index for RPC request IDs
+	for i := 0; ; i++ {
+		select {
+		// Cleanup if the quit channel gets closed. Right now nothing closes this channel, but
+		// once we integrate the authentication work there's code that should.
+		case <-n.quit:
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			// Set up the healthcheck request with authentication for this provider.
+			n.healthCheck(netProviderName, netProvider)
 		}
-	}()
+	}
 }
 
 type healthCheckEntry struct {
@@ -86,42 +85,29 @@ type healthCheckEntry struct {
 	timestamp   *time.Time
 }
 
-func (n *network) healthCheck() {
-	// wait group to wait for all the providers to finish their health checks
-	var wg sync.WaitGroup
-	var blockTime time.Time
-
-	for name, currentProvider := range n.Providers {
-		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
-		wg.Add(1) // Increment the WaitGroup counter
-		go func(providerName string, provider *provider) {
-			defer wg.Done() // Decrement the counter when the goroutine completes
-			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
-			if err != nil {
-				n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
-				return
-			}
-			blockTime = time.Now()
-
-			if n.pingHealthCheck(providerName, provider, statusCode, providerBlockNumber) {
-				return
-			}
-
-			if n.blockNumberDeltaHealthCheck(providerName, provider, providerBlockNumber) {
-				return
-			}
-
-			n.consistencyHealthCheck(providerName, provider, providerBlockNumber)
-
-			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
-
-			// add the current provider to the checked providers map
-			n.addHealthCheckToCheckedProviderList(provider.host, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
-		}(name, currentProvider) // Pass the loop variable to the goroutine
+func (n *network) healthCheck(netProviderName string, netProvider *provider) {
+	// get the latest block number from the current provider
+	providerBlockNumber, statusCode, err := n.getLatestBlockNumber(netProvider.HttpUrl, netProvider.Headers, netProvider.AuthClient())
+	if err != nil {
+		n.handleBlockNumberError(netProviderName, netProvider, statusCode, providerBlockNumber, err)
+		return
 	}
-	// Wait for all goroutines to complete
-	wg.Wait()
+
+	if n.pingHealthCheck(netProviderName, netProvider, statusCode, providerBlockNumber) {
+		return
+	}
+
+	if n.blockNumberDeltaHealthCheck(netProviderName, netProvider, providerBlockNumber) {
+		return
+	}
+
+	n.consistencyHealthCheck(netProviderName, netProvider, providerBlockNumber)
+
+	n.sendLatestBlockMetric(netProvider.host, statusCode, netProvider.healthStatus.String(), providerBlockNumber)
+
+	// add the current provider to the checked providers map
+	blockTime := time.Now()
+	n.addHealthCheckToCheckedProviderList(netProvider.host, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
 }
 
 func (n *network) handleBlockNumberError(providerName string, provider *provider, statusCode int, providerBlockNumber int64, err error) {
@@ -203,7 +189,7 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 	if providerBlockNumber > n.latestBlockNumber {
 		n.latestBlockNumber = providerBlockNumber
 	}
-	
+
 	// Also update latest block number with reference block if it's higher
 	if referenceBlock > n.latestBlockNumber {
 		n.latestBlockNumber = referenceBlock

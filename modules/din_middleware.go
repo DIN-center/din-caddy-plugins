@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -25,6 +23,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
@@ -629,9 +630,12 @@ func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
-	for _, network := range d.Networks {
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
-		network.startHealthcheck()
+	for _, net := range d.Networks {
+		d.logger.Info("Starting healthcheck for network", zap.String("network", net.Name),
+			zap.String("machine_id", d.machineID))
+		for netProviderName, netProvider := range net.Providers {
+			go net.startHealthcheck(netProviderName, netProvider)
+		}
 	}
 	return nil
 }

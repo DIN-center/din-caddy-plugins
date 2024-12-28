@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"go.uber.org/zap"
+
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
@@ -137,7 +138,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
-		network.startHealthcheck()
+		for provName, prov := range network.Providers {
+			go network.startHealthcheck(provName, prov)
+		}
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}
 	return nil
