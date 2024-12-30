@@ -4,3 +4,5 @@ data/
 caddy
 din-plugins/
 coverage.out
+vendor/
+caddy.log

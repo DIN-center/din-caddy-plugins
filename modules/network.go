@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
 
 type network struct {
@@ -108,11 +109,9 @@ func (n *network) healthCheck() {
 				return
 			}
 
-			if n.blockNumberDeltaHealthCheck(providerName, provider, providerBlockNumber) {
+			if !n.providerHealthCheck(providerName, provider, providerBlockNumber) {
 				return
 			}
-
-			n.consistencyHealthCheck(providerName, provider, providerBlockNumber)
 
 			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 
@@ -146,30 +145,30 @@ func (n *network) pingHealthCheck(providerName string, provider *provider, statu
 	return false
 }
 
-func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *provider, providerBlockNumber int64) bool {
-	// If there's only one provider, any block number is acceptable
-	if len(n.Providers) == 1 {
-		return false
+func (n *network) providerHealthCheck(providerName string, provider *provider, providerBlockNumber int64) bool {
+	// Update network's latest block number if we see a higher one
+	// Move this before the lag check to ensure we capture the highest block
+	if providerBlockNumber > n.latestBlockNumber {
+		n.latestBlockNumber = providerBlockNumber
 	}
 
 	// Use 75th percentile as reference point
 	referenceBlock := n.getPercentileBlockNumber(0.75)
-	if referenceBlock == 0 {
-		// Not enough data to make a determination
-		return false
+
+	// If there's only one provider, any block number is acceptable
+	availableProviderCount := 0
+	for _, p := range n.Providers {
+		if !p.Unhealthy() {
+			availableProviderCount++
+		}
 	}
 
-	// Check if the provider's block number is too far from the reference block
-	if providerBlockNumber > referenceBlock+n.BlockNumberDelta {
-		n.logger.Warn("Provider is too far ahead of the network",
-			zap.String("provider", providerName),
-			zap.String("network", n.Name),
-			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
-		provider.markUnhealthy()
-		return true
-	} else if providerBlockNumber < referenceBlock-n.BlockNumberDelta {
+	// Also update latest block number with reference block if it's higher
+	if referenceBlock != 0 && referenceBlock > n.latestBlockNumber {
+		n.latestBlockNumber = referenceBlock
+	}
+
+	if providerBlockNumber < referenceBlock-n.BlockNumberDelta && availableProviderCount > 1 && referenceBlock > 0 {
 		n.logger.Warn("Provider is too far behind the network",
 			zap.String("provider", providerName),
 			zap.String("network", n.Name),
@@ -177,39 +176,8 @@ func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *pro
 			zap.Int64("reference_block_number", referenceBlock),
 			zap.String("machine_id", n.machineID))
 		provider.markUnhealthy()
-		return true
-	}
-	return false
-}
-
-func (n *network) consistencyHealthCheck(providerName string, provider *provider, providerBlockNumber int64) {
-	// For a single provider, always consider it healthy if it's responding
-	if len(n.Providers) == 1 {
-		provider.markHealthy(n.HCThreshold)
-		n.latestBlockNumber = providerBlockNumber
-		return
-	}
-
-	referenceBlock := n.getPercentileBlockNumber(0.75)
-	if referenceBlock == 0 {
-		// First health check or not enough data
-		n.latestBlockNumber = providerBlockNumber
-		provider.markHealthy(n.HCThreshold)
-		return
-	}
-
-	// Update network's latest block number if we see a higher one
-	// Move this before the lag check to ensure we capture the highest block
-	if providerBlockNumber > n.latestBlockNumber {
-		n.latestBlockNumber = providerBlockNumber
-	}
-	
-	// Also update latest block number with reference block if it's higher
-	if referenceBlock > n.latestBlockNumber {
-		n.latestBlockNumber = referenceBlock
-	}
-
-	if providerBlockNumber+n.BlockLagLimit < referenceBlock {
+		return false
+	} else if providerBlockNumber < referenceBlock-n.BlockLagLimit && referenceBlock > 0 {
 		n.logger.Warn("Provider is lagging behind",
 			zap.String("provider", providerName),
 			zap.String("network", n.Name),
@@ -217,8 +185,10 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 			zap.Int64("reference_block_number", referenceBlock),
 			zap.String("machine_id", n.machineID))
 		provider.markWarning()
+		return true
 	} else {
 		provider.markHealthy(n.HCThreshold)
+		return true
 	}
 }
 
@@ -343,9 +313,12 @@ func (n *network) getPercentileBlockNumber(percentile float64) int64 {
 
 	// Collect all block numbers
 	blockNumbers := make([]int64, 0, len(n.Providers))
-	for _, provider := range n.Providers {
+	for _, prov := range n.Providers {
+		if prov.Unhealthy() {
+			continue
+		}
 		// Get the most recent block number from the provider's health check entries
-		entries, ok := n.getCheckedProviderHCList(provider.host)
+		entries, ok := n.getCheckedProviderHCList(prov.host)
 		if ok && len(entries) > 0 {
 			blockNumbers = append(blockNumbers, entries[0].blockNumber)
 		}

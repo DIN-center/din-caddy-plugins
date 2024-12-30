@@ -3,11 +3,12 @@ package modules
 import (
 	"net/url"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"go.uber.org/zap"
 )
 
 type provider struct {
@@ -123,6 +124,15 @@ func (p *provider) Healthy() bool {
 // Warning returns True if the node is returning warning in healthchecks, False otherwise
 func (p *provider) Warning() bool {
 	if p.healthStatus == Warning {
+		return true
+	} else {
+		return false
+	}
+}
+
+// Warning returns True if the node is returning warning in healthchecks, False otherwise
+func (p *provider) Unhealthy() bool {
+	if p.healthStatus == Unhealthy {
 		return true
 	} else {
 		return false
