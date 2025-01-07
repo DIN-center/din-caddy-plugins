@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.7
+	github.com/go-playground/validator/v10 v10.23.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/golang/mock v1.6.0
 	github.com/pkg/errors v0.9.1
@@ -15,6 +16,13 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/zeebo/assert v1.1.0
 	go.uber.org/zap v1.27.0
+)
+
+require (
+	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/leodido/go-urn v1.4.0 // indirect
 )
 
 require (
