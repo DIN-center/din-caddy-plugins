@@ -138,7 +138,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
 		network.startHealthcheck()
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+		d.logger.Info("Starting healthcheck for registry network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}
 	return nil
 }

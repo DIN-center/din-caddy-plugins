@@ -109,26 +109,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	}
 
 	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
-
-	// Skips if test mode is enabled.
-	if !d.testMode {
-		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the network object,
-		// and updates the provider's health status accordingly.
-		err := d.startHealthChecks()
-		if err != nil {
-			return fmt.Errorf("error starting healthchecks: %v", err)
-		}
-
-		// Pull data from the din registry
-		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
-		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.RegistryEnabled {
-			d.logger.Info("Din registry is enabled, pulling data from the registry")
-			d.startRegistrySync()
-		}
-	}
-
 	return nil
 }
 
