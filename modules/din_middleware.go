@@ -558,9 +558,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
 				}
-				if len(d.Networks[networkName].Providers) == 0 {
-					return dispenser.Errf("expected at least one provider for network %s", networkName)
-				}
 			}
 		case "din_registry":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
