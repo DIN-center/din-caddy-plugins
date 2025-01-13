@@ -88,14 +88,6 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 			}
 		}
 	}
-
-	fmt.Println("networks after processing reg data ")
-	for _, network := range d.Networks {
-		fmt.Println("network name: ", network.Name, len(network.Providers))
-		for _, provider := range network.Providers {
-			fmt.Println("provider url: ", provider.HttpUrl)
-		}
-	}
 }
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
