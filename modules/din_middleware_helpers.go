@@ -75,7 +75,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		} else {
 			// If the network exists in the middleware object, check to see if the registry version is active or not,
 			if regNetwork.Status != dinreg.Active {
-				// Skip over network for now if it is not active
+				// Delete the network for now if it is not active
 				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
 				delete(d.Networks, regNetwork.ProxyName)
 				continue
@@ -86,6 +86,14 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				d.logger.Error("Failed to update network with registry data", zap.Error(err))
 				continue
 			}
+		}
+	}
+
+	fmt.Println("networks after processing reg data ")
+	for _, network := range d.Networks {
+		fmt.Println("network name: ", network.Name, len(network.Providers))
+		for _, provider := range network.Providers {
+			fmt.Println("provider url: ", provider.HttpUrl)
 		}
 	}
 }
@@ -189,10 +197,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 					continue
 				}
 				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
-				d.updateProviderData(newNetwork.Name, newProvider)
-
-				// remove the provider from the copied network object to keep track of the providers that are not in the registry network
-				delete(newNetwork.Providers, newProvider.host)
+				d.Networks[newNetwork.Name].Providers[newProvider.host].Methods = newProvider.Methods
 			}
 		}
 	}
@@ -278,12 +283,6 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 	provider.Methods = networkServiceMethods
 
 	return provider, nil
-}
-
-func (d *DinMiddleware) updateProviderData(networkName string, provider *provider) {
-	// update the provider object with the registry provider data
-	d.Networks[networkName].Providers[provider.host].Auth = provider.Auth
-	d.Networks[networkName].Providers[provider.host].Methods = provider.Methods
 }
 
 // updateNetwork updates the network object in the middleware object with the provided registry network data

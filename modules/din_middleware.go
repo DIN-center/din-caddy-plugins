@@ -626,20 +626,19 @@ func (d *DinMiddleware) startRegistrySync() {
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
-	// // ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
-	// go func() {
-	// 	// Keep an index for RPC request IDs
-	// 	for i := 0; ; i++ {
-	// 		select {
-	// 		case <-d.quit:
-	// 			ticker.Stop()
-	// 			return
-	// 		case <-ticker.C:
-	// 			d.syncRegistryWithLatestBlock()
-	// 		}
-	// 	}
-	// }()
+	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
+	go func() {
+		// Keep an index for RPC request IDs
+		for i := 0; ; i++ {
+			select {
+			case <-d.quit:
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				d.syncRegistryWithLatestBlock()
+			}
+		}
+	}()
 }
 
 func (d *DinMiddleware) closeAll() {
