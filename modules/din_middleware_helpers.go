@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
@@ -190,6 +191,19 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 				}
 				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
 				d.Networks[newNetwork.Name].Providers[newProvider.host].Methods = newProvider.Methods
+
+				// create a new provider siwe auth object
+				newAuth, err := d.createProviderSIWEAuth(regProvider.AuthConfig)
+				if err != nil {
+					d.logger.Error("Failed to create provider SIWE auth", zap.Error(err))
+					continue
+				}
+
+				// if the provider auth url is different, then update the provider auth url on the middleware object
+				oldProvider := d.Networks[newNetwork.Name].Providers[newProvider.host]
+				if newAuth != nil && oldProvider.Auth != nil && oldProvider.Auth.ProviderURL != newAuth.ProviderURL {
+					d.Networks[newNetwork.Name].Providers[newProvider.host].Auth.ProviderURL = newAuth.ProviderURL
+				}
 			}
 		}
 	}
@@ -242,23 +256,10 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 
 	// Set the provider auth config based on the auth type
 	if authConfig != nil {
-		switch authConfig.Type {
-		case dinreg.SIWE:
-			// Create a new SIWE auth object
-			auth := d.SiweSignerClient.CreateNewSIWEAuth(authConfig.Url, 16)
-			// Set the signer for the provider to the default signer. The default signer is set on proxy startup.
-			// it requires a secret key defined in the caddyfile.
-			if auth.Signer == nil {
-				if d.DefaultSiweSigner == nil {
-					return nil, fmt.Errorf("siwe default signer is not configured")
-				}
-				auth.Signer = d.DefaultSiweSigner
-			}
-			provider.Auth = auth
-		case dinreg.None:
-			provider.Auth = nil
-		default:
-			provider.Auth = nil
+		var err error
+		provider.Auth, err = d.createProviderSIWEAuth(authConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create provider SIWE auth: %w", err)
 		}
 	}
 
@@ -275,6 +276,27 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 	provider.Methods = networkServiceMethods
 
 	return provider, nil
+}
+
+func (d *DinMiddleware) createProviderSIWEAuth(authConfig *dinreg.NetworkServiceAuthConfig) (*siwe.SIWEClientAuth, error) {
+	switch authConfig.Type {
+	case dinreg.SIWE:
+		// Create a new SIWE auth object
+		auth := d.SiweSignerClient.CreateNewSIWEAuth(authConfig.Url, 16)
+		// Set the signer for the provider to the default signer. The default signer is set on proxy startup.
+		// it requires a secret key defined in the caddyfile.
+		if auth.Signer == nil {
+			if d.DefaultSiweSigner == nil {
+				return nil, fmt.Errorf("siwe default signer is not configured")
+			}
+			auth.Signer = d.DefaultSiweSigner
+		}
+		return auth, nil
+	case dinreg.None:
+		return nil, nil
+	default:
+		return nil, nil
+	}
 }
 
 // updateNetwork updates the network object in the middleware object with the provided registry network data
