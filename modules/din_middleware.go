@@ -109,26 +109,6 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	}
 
 	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
-
-	// Skips if test mode is enabled.
-	if !d.testMode {
-		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the network object,
-		// and updates the provider's health status accordingly.
-		err := d.startHealthChecks()
-		if err != nil {
-			return fmt.Errorf("error starting healthchecks: %v", err)
-		}
-
-		// Pull data from the din registry
-		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
-		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.RegistryEnabled {
-			d.logger.Info("Din registry is enabled, pulling data from the registry")
-			d.startRegistrySync()
-		}
-	}
-
 	return nil
 }
 
@@ -558,9 +538,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
 				}
-				if len(d.Networks[networkName].Providers) == 0 {
-					return dispenser.Errf("expected at least one provider for network %s", networkName)
-				}
 			}
 		case "din_registry":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
@@ -650,7 +627,6 @@ func (d *DinMiddleware) startRegistrySync() {
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
-	// ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckInterval))
 	go func() {
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {

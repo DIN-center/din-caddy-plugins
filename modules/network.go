@@ -203,7 +203,6 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 	if providerBlockNumber > n.latestBlockNumber {
 		n.latestBlockNumber = providerBlockNumber
 	}
-	
 	// Also update latest block number with reference block if it's higher
 	if referenceBlock > n.latestBlockNumber {
 		n.latestBlockNumber = referenceBlock
