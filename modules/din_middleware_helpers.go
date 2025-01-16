@@ -192,17 +192,10 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
 				d.Networks[newNetwork.Name].Providers[newProvider.host].Methods = newProvider.Methods
 
-				// create a new provider siwe auth object
-				newAuth, err := d.createProviderSIWEAuth(regProvider.AuthConfig)
-				if err != nil {
-					d.logger.Error("Failed to create provider SIWE auth", zap.Error(err))
-					continue
-				}
-
 				// if the provider auth url is different, then update the provider auth url on the middleware object
 				oldProvider := d.Networks[newNetwork.Name].Providers[newProvider.host]
-				if newAuth != nil && oldProvider.Auth != nil && oldProvider.Auth.ProviderURL != newAuth.ProviderURL {
-					d.Networks[newNetwork.Name].Providers[newProvider.host].Auth.ProviderURL = newAuth.ProviderURL
+				if regProvider.AuthConfig != nil && oldProvider.Auth != nil && oldProvider.Auth.ProviderURL != regProvider.AuthConfig.Url {
+					d.Networks[newNetwork.Name].Providers[newProvider.host].Auth.ProviderURL = regProvider.AuthConfig.Url
 				}
 			}
 		}
