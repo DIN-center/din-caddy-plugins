@@ -189,9 +189,6 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
 				}
-				// if the provider does exist in the copied network object, then update the provider data on the middleware object.
-				d.Networks[newNetwork.Name].Providers[newProvider.host].Methods = newProvider.Methods
-
 				// if the provider auth url is different, then update the provider auth url on the middleware object
 				oldProvider := d.Networks[newNetwork.Name].Providers[newProvider.host]
 				if regProvider.AuthConfig != nil && oldProvider.Auth != nil && oldProvider.Auth.ProviderURL != regProvider.AuthConfig.Url {
