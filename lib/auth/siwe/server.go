@@ -7,16 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/umbracle/ethgo"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
@@ -42,8 +45,11 @@ func handleError(err error, rw http.ResponseWriter, code int) {
 }
 
 type SIWEAuthMiddleware struct {
-	Whitelist map[string]struct{} `json:"whitelist"`
-	Secret    string              `json:"secret"`
+	Whitelist map[string]struct{}     `json:"whitelist"`
+	Secret    string                  `json:"secret"`
+	ProviderID *big.Int               `json:"provider_id"`
+	NftEndpoint string                `json:"nft_endpoint"`
+	NftAddresses map[ethgo.Address]struct{}  `json:"nft_addresses"`
 	logger    *zap.Logger
 }
 
@@ -61,6 +67,7 @@ func (d *SIWEAuthMiddleware) Provision(context caddy.Context) error {
 }
 
 func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Request) error {
+	isNftRequest := false
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		handleError(err, rw, 500)
@@ -79,10 +86,67 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
-		err := errors.New("unauthorized signer")
-		handleError(err, rw, 401)
-		return err
+	if statement := message.GetStatement(); statement != nil && *statement == "DIN NFT Authentication"{
+		isNftRequest = true
+	}
+	if isNftRequest {
+		resources := message.GetResources()
+		if len(resources) < 1 {
+			err := errors.New("no NFT specified")
+			handleError(err, rw, 400)
+			return err
+		}
+		if resources[0].Scheme != "din" {
+			err := errors.New("unknown resource protocol")
+			handleError(err, rw, 400)
+			return err
+		}
+		nftId, ok := new(big.Int).SetString(resources[0].User.Username(), 10)
+		if !ok {
+			err := errors.New("expected numeric NFT ID")
+			handleError(err, rw, 400)
+			return err
+		}
+		address := ethgo.HexToAddress(resources[0].Host)
+		if _, ok := d.NftAddresses[address]; !ok {
+			err := errors.New("nft address not recognized")
+			handleError(err, rw, 400)
+			return err
+		}
+		oc, err := nftoptions.NewNftOptionsContract(resources[0].Host, d.NftEndpoint)
+		if err != nil {
+			err := errors.New("could not construct contract endpoint")
+			handleError(err, rw, 500)
+			return err
+		}
+		metadata, err := oc.GetTokenMetadata(nftId)
+		if err != nil {
+			if err != nil {
+				handleError(err, rw, 500)
+				return err
+			}
+		}
+		if metadata.ServiceId.Cmp(d.ProviderID) != 0 {
+			err := errors.New("nft not authorized by this provider")
+			handleError(err, rw, 401)
+			return err
+		}
+		owner, err := oc.OwnerOf(nftId)
+		if err != nil {
+			handleError(err, rw, 500)
+			return err
+		}
+		if owner != ethgo.Address(crypto.PubkeyToAddress(*publicKey)) {
+			err := errors.New("signer does not own specified")
+			handleError(err, rw, 401)
+			return err
+		}
+	} else {
+		if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
+			err := errors.New("unauthorized signer")
+			handleError(err, rw, 401)
+			return err
+		}
 	}
 	issued := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.RegisteredClaims{
@@ -151,6 +215,7 @@ func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, 
 // UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	d.Whitelist = make(map[string]struct{})
+	d.NftAddresses = make(map[ethgo.Address]struct{})
 	for dispenser.Next() {
 		for dispenser.NextBlock(0) {
 			switch dispenser.Val() {
@@ -171,6 +236,17 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 					return dispenser.Errf("failed to read secret file: %v", err)
 				}
 				d.Secret = string(secret)
+			case "provider_id":
+				dispenser.NextBlock(0)
+				d.ProviderID, _ = new(big.Int).SetString(dispenser.Val(), 10)
+			case "nft_endpoint":
+				dispenser.NextBlock(0)
+				d.NftEndpoint = dispenser.Val()
+			case "nft_addresses":
+				for _, v := range dispenser.RemainingArgs() {
+					d.NftAddresses[ethgo.HexToAddress(v)] = struct{}{}
+				}
+
 			default:
 				return dispenser.Errf("unknown subdirective: %s", dispenser.Val())
 			}

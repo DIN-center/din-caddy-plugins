@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
@@ -65,6 +67,8 @@ type DinMiddleware struct {
 	DingoClient din.IDingoClient
 
 	logger *logger.LoggerClient
+	// The NFT manager config
+	NFTManager nftoptions.Config
 
 	// The unique machine ID for the current running server instance
 	machineID string
@@ -113,7 +117,9 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("error initializing middleware: %v", err)
 	}
-
+	if d.DefaultSiweSigner != nil {
+		d.logger.Debug("default ntf manager", zap.Any("nftman", d.DefaultSiweSigner.NFTManager))
+	}
 	d.logger.Info("Din middleware provisioned")
 	return nil
 }
@@ -209,7 +215,7 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 	provider.httpClient = httpClient
 	if provider.Auth != nil {
 		if err := provider.Auth.Start(logger.Logger); err != nil {
-			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
+			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("error", err.Error()))
 		}
 	}
 	provider.logger = d.logger
@@ -365,6 +371,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		d.Networks = make(map[string]*network)
 	}
 	siweSignerClient := siwe.NewSIWESignerClient()
+	var nftConfig *nftoptions.Config
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "environment":
@@ -376,6 +383,32 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				env = utils.EnvDev
 			}
 			d.Env = env
+		case "nft-manager":
+			var address, endpoint string
+			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
+				switch dispenser.Val() {
+				case "address":
+					dispenser.NextBlock(n1)
+					address = dispenser.Val()
+				case "endpoint":
+					dispenser.NextBlock(n1)
+					endpoint = dispenser.Val()
+				}
+			}
+			if address == "" || endpoint == "" {
+				return dispenser.Errf("nft-manager erquires address and endpoint")
+			}
+			nftConfig = &nftoptions.Config{
+				Type: "ethgo",
+				Options: map[string]string{
+					"contract_address": address,
+					"endpoint": endpoint,
+				},
+			}
+			err := nftConfig.Init()
+			if err != nil {
+				return dispenser.Errf("failed to initialize NFT contract: %v", err)
+			}
 		case "siwe-signer":
 			var key []byte
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
@@ -411,6 +444,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 			if err := siweSignerClient.GenPrivKey(d.DefaultSiweSigner); err != nil {
 				return err
 			}
+			if nftConfig != nil {
+				d.DefaultSiweSigner.NFTManager = siwe.NewNFTManager(nftConfig, d.DefaultSiweSigner.Address)
+			}
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
@@ -434,6 +470,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
 								case "auth":
+									var providerID *big.Int
 									auth := siweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
 									for dispenser.NextBlock(nesting + 3) {
 										switch dispenser.Val() {
@@ -451,6 +488,16 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											if err != nil {
 												return fmt.Errorf("invalid session count: %v", err)
 											}
+										case "provider_id":
+											dispenser.NextBlock(nesting + 3)
+											var ok bool
+											hexval := dispenser.Val()
+											providerID, ok = new(big.Int).SetString(hexval, 16)
+											if !ok {
+												return dispenser.Errf("failed to parse provider_id. Should be hex, got: %v", hexval)
+											}
+											auth.ProviderID = providerID
+											// TODO: We need to figure out how to calculate this if not explicitly provided
 										case "signer":
 											var key []byte
 											for dispenser.NextBlock(nesting + 4) {
@@ -482,6 +529,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 											}
 											if err := siweSignerClient.GenPrivKey(auth.Signer); err != nil {
 												return fmt.Errorf("failed to generate private key: %v", err)
+											}
+											if nftConfig != nil {
+												auth.Signer.NFTManager = siwe.NewNFTManager(nftConfig, auth.Signer.Address)
 											}
 										}
 									}

@@ -35,7 +35,7 @@ require (
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/klauspost/compress v1.16.0 // indirect
-	github.com/umbracle/ethgo v0.1.3
+	github.com/umbracle/ethgo v0.0.0-20241101102023-92266b0b0212
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.41.0 // indirect
 	go.uber.org/zap v1.27.0

@@ -83,7 +83,11 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
-	d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	if selectedUpstream != nil {
+		d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	} else {
+		d.logger.Debug("No upstreams available")
+	}
 
 	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {
