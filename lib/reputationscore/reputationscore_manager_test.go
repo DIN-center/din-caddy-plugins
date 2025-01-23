@@ -350,7 +350,9 @@ func TestReputationScoreManager(t *testing.T) {
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 1.0,
 				}},
-				ScoreTransformer: &CompositeTransformer{chain: []ScoreTransformer{&NormalizeTransformer{}, &EWMATransformer{alpha: 0.7}}},
+				ScoreTransformer: NewCompositeTransformer(
+					[]ScoreTransformer{&NormalizeTransformer{}, &EWMATransformer{alpha: 0.7}},
+				),
 			},
 		}
 		//Run scores once
