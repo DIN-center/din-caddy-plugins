@@ -1,0 +1,241 @@
+package reputationscore
+
+import (
+	"testing"
+	"time"
+
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+)
+
+func TestCalculateCheckMetric(t *testing.T) {
+	t.Run("returns 0 when success percentage is below threshold", func(t *testing.T) {
+		result := calculateCheckMetric(watcher.Status{SuccessPercentage: 99.0}, watcher.Summary{PassPercentage: 80.0})
+		if result != 0 {
+			t.Errorf("expected 0 for low success percentage, got %f", result)
+		}
+	})
+
+	t.Run("use cases when pass percentage when success percentage is 100%", func(t *testing.T) {
+		testCases := []struct {
+			name           string
+			passPercentage float64
+			expected       float64
+		}{
+			{
+				name:           "100% pass percentage",
+				passPercentage: 100.0,
+				expected:       1.0,
+			},
+			{
+				name:           "80% pass percentage",
+				passPercentage: 80.0,
+				expected:       0.8,
+			},
+			{
+				name:           "0% pass percentage",
+				passPercentage: 0.0,
+				expected:       0.0,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := calculateCheckMetric(watcher.Status{SuccessPercentage: 100.0}, watcher.Summary{PassPercentage: tc.passPercentage})
+				if result != tc.expected {
+					t.Errorf("expected %f for pass percentage %f, got %f",
+						tc.expected, tc.passPercentage, result)
+				}
+			})
+		}
+	})
+}
+
+func TestCalculateLatencyMetric(t *testing.T) {
+	t.Run("returns 0 when success percentage is below threshold", func(t *testing.T) {
+		result := calculateLatencyMetric(watcher.Status{SuccessPercentage: 99.0}, watcher.LatencyStats{P95: 500.0})
+		if result != 0 {
+			t.Errorf("expected 0 for low success percentage, got %f", result)
+		}
+	})
+
+	t.Run("use cases when success percentage is 100%", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			p95      float64
+			expected float64
+		}{
+			{
+				name:     "0ms latency",
+				p95:      0.0,
+				expected: 1.0,
+			},
+			{
+				name:     "500ms latency",
+				p95:      500.0,
+				expected: 0.5,
+			},
+			{
+				name:     "1000ms latency",
+				p95:      1000.0,
+				expected: 0.0,
+			},
+			{
+				name:     "2000ms latency",
+				p95:      2000.0,
+				expected: 0.0,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := calculateLatencyMetric(watcher.Status{SuccessPercentage: 100.0}, watcher.LatencyStats{P95: tc.p95})
+				if result != tc.expected {
+					t.Errorf("expected %f for P95 latency %f, got %f",
+						tc.expected, tc.p95, result)
+				}
+			})
+		}
+	})
+}
+
+func TestBuildMetricsForCheckQuery(t *testing.T) {
+	t.Run("handles multiple providers with different pass percentages", func(t *testing.T) {
+		mockClient := &MockWatcherAPIClient{
+			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1},
+		}
+
+		// Call the function
+		metrics, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric")
+
+		// Verify no error occurred
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify we got metrics for both providers
+		if len(metrics) != 2 {
+			t.Fatalf("expected 2 metrics, got %d", len(metrics))
+		}
+
+		expectedMetric1, _ := NewProviderMetric(
+			"test_metric",
+			"provider1",
+			0.95,
+			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		)
+		if *metrics[0] != *expectedMetric1 {
+			t.Errorf("expected provider1 %v, got %v", expectedMetric1, metrics[0])
+		}
+
+		expectedMetric2, _ := NewProviderMetric(
+			"test_metric",
+			"provider2",
+			0.20,
+			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		)
+		if *metrics[1] != *expectedMetric2 {
+			t.Errorf("expected provider2 %v, got %v", expectedMetric2, metrics[1])
+		}
+	})
+	t.Run("returns error when API call fails", func(t *testing.T) {
+		// Create mock client that returns an error
+		mockClient := &MockWatcherAPIClient{
+			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{KO_CHECK_RESPONSE_API_ERROR},
+		}
+
+		// Call the function
+		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check")
+
+		// Verify error was returned
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("returns error on invalid timestamp", func(t *testing.T) {
+		// Create mock client that returns response with invalid timestamp
+		mockClient := &MockWatcherAPIClient{
+			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_WRONG_TIMESTAMP},
+		}
+
+		// Call the function
+		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check")
+
+		// Verify error was returned
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestBuildMetricsForLatencyQuery(t *testing.T) {
+	t.Run("successfully builds metrics from latency response", func(t *testing.T) {
+		// Create mock client that returns a successful response
+		mockClient := &MockWatcherAPIClient{
+			mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1},
+		}
+
+		// Call the function
+		metrics, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+
+		// Verify no error occurred
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify we got metrics for both providers
+		if len(metrics) != 2 {
+			t.Fatalf("expected 2 metrics, got %d", len(metrics))
+		}
+
+		expectedMetric1, _ := NewProviderMetric(
+			"test_metric_latency",
+			"provider1",
+			0.9,
+			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		)
+		if *metrics[0] != *expectedMetric1 {
+			t.Errorf("expected provider1 %v, got %v", expectedMetric1, metrics[0])
+		}
+
+		expectedMetric2, _ := NewProviderMetric(
+			"test_metric_latency",
+			"provider2",
+			0.5,
+			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		)
+		if *metrics[1] != *expectedMetric2 {
+			t.Errorf("expected provider2 %v, got %v", expectedMetric2, metrics[1])
+		}
+	})
+
+	t.Run("returns error when API call fails", func(t *testing.T) {
+		// Create mock client that returns an error
+		mockClient := &MockWatcherAPIClient{
+			mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{KO_LATENCY_RESPONSE_API_ERROR},
+		}
+
+		// Call the function
+		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+
+		// Verify error was returned
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("returns error on invalid timestamp", func(t *testing.T) {
+		// Create mock client that returns response with invalid timestamp
+		mockClient := &MockWatcherAPIClient{
+			mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_WRONG_TIMESTAMP},
+		}
+
+		// Call the function
+		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+
+		// Verify error was returned
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
