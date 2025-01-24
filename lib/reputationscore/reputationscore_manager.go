@@ -22,7 +22,7 @@ type ScoreFormula struct {
 // and providing a way to get the score for a specific provider on a specific network
 type ReputationScoreManager struct {
 	scores   map[string]map[string]*Score // map[network]map[providerID]*ReputationScore
-	formulas []ScoreFormula               // map[network]ScoreFormula
+	formulas []ScoreFormula
 	mu       sync.RWMutex
 }
 
