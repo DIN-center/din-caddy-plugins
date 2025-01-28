@@ -494,6 +494,22 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					case "healthcheck_method":
 						dispenser.Next()
 						d.Networks[networkName].HCMethod = dispenser.Val()
+					case "chainid_method":
+						dispenser.Next()
+						d.Networks[networkName].ChainIDMethod = dispenser.Val()
+					case "chain_id":
+						dispenser.Next()
+						chainID, err := strconv.ParseInt(dispenser.Val(), 10, 64)
+						if err != nil {
+							return fmt.Errorf("invalid expected chain ID: %v", err)
+						}
+						// Skip chain ID validation for Solana networks
+						if !strings.Contains(networkName, "solana") {
+							if chainID == 0 {
+								return fmt.Errorf("chain ID cannot be 0 for network %s", networkName)
+							}
+						}
+						d.Networks[networkName].ChainID = chainID
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -513,13 +529,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
 						}
 						d.Networks[networkName].BlockLagLimit = int64(limit)
-					case "healthcheck_blocknumber_delta":
+					case "healthcheck_blockjump_limit":
 						dispenser.Next()
-						blockNumberDelta, err := strconv.Atoi(dispenser.Val())
+						limit, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return fmt.Errorf("invalid healthcheck blocknumber delta: %v", err)
+							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
 						}
-						d.Networks[networkName].BlockNumberDelta = int64(blockNumberDelta)
+						d.Networks[networkName].BlockJumpLimit = int64(limit)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())

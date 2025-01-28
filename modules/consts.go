@@ -20,12 +20,14 @@ const (
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
+	DefaultChainIDMethod           = "eth_chainId"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)
-	DefaultBlockNumberDelta        = int64(10)
+	DefaultBlockJumpLimit          = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
+	DefaultBlockHistorySize        = 10
 
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
