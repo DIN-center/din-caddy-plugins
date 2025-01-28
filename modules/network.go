@@ -130,9 +130,16 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	worstStatus := Healthy
 
 	// Check status code
-	if status := n.evaluateStatusCode(provider, statusCode); status > worstStatus {
-		worstStatus = status
-		// Note: evaluateStatusCode already handles its own logging
+	statusHealth := n.evaluateStatusCode(statusCode)
+	if statusHealth > worstStatus {
+		if statusCode == 429 {
+			n.logProviderWarning("Provider returned a rate limit error", provider,
+				zap.Int("status_code", statusCode))
+		} else if statusCode >= 400 {
+			n.logProviderWarning("Provider returned an error status code", provider,
+				zap.Int("status_code", statusCode))
+		}
+		worstStatus = statusHealth
 	}
 
 	// Check chain ID - this is a critical check that should always result in Unhealthy
@@ -177,11 +184,13 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Check for stalling - all blocks in history are identical
 	if n.isStalled(provider) {
 		if n.allProvidersStalled() {
+			// This signifies a network outage
 			n.logProviderWarning("All providers are stalled", provider)
 			if Warning > worstStatus {
 				worstStatus = Warning
 			}
 		} else {
+			// This signifies a provider outage
 			n.logProviderWarning("Provider is stalled while others are progressing", provider)
 			return Unhealthy // Stalling when others aren't is always Unhealthy
 		}
@@ -190,8 +199,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Check monotonicity as quality indicator
 	if !n.isMonotonic(provider) {
 		n.logProviderWarning("Provider blocks are not monotonically increasing", provider)
-		if Warning > worstStatus {
-			worstStatus = Warning
+		if Unhealthy > worstStatus {
+			worstStatus = Unhealthy
 		}
 	}
 
@@ -389,20 +398,11 @@ func (n *network) close() {
 }
 
 // evaluateStatusCode checks the HTTP status code and returns appropriate health status
-func (n *network) evaluateStatusCode(provider *provider, statusCode int) HealthStatus {
+func (n *network) evaluateStatusCode(statusCode int) HealthStatus {
 	if statusCode >= 400 {
 		if statusCode == 429 {
-			n.logger.Warn("Provider is rate limited",
-				zap.String("provider", provider.host),
-				zap.String("network", n.Name),
-				zap.String("machine_id", n.machineID))
 			return Warning
 		}
-		n.logger.Warn("Provider returned an error status code",
-			zap.String("provider", provider.host),
-			zap.String("network", n.Name),
-			zap.Int("status_code", statusCode),
-			zap.String("machine_id", n.machineID))
 		return Unhealthy
 	}
 	return Healthy
