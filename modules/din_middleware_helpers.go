@@ -3,6 +3,7 @@ package modules
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -211,6 +212,20 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		return nil, err
 	}
 
+	// Sync chain ID if provided in registry
+	registryChainID := regNetwork.NetworkConfig.ChainID
+	if !strings.Contains(network.Name, "solana") {
+		if registryChainID == 0 {
+			return nil, fmt.Errorf("chain ID is required in registry for network %s", network.Name)
+		}
+		// Verify chain ID matches if already set
+		if network.ChainID != 0 && network.ChainID != registryChainID {
+			return nil, fmt.Errorf("registry chain ID (%d) does not match configured chain ID (%d) for network %s",
+				registryChainID, network.ChainID, network.Name)
+		}
+		network.ChainID = registryChainID
+	}
+
 	// Sync the value if it is not 0 and different from the current middleware network value
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
 		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.Name), zap.String("method", registryHCMethod))
@@ -225,6 +240,11 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 	if registryBlockLagLimit != 0 && registryBlockLagLimit != network.BlockLagLimit {
 		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", registryBlockLagLimit))
 		network.BlockLagLimit = int64(registryBlockLagLimit)
+	}
+	registryBlockJumpLimit := int64(regNetwork.NetworkConfig.BlockJumpLimit)
+	if registryBlockJumpLimit != 0 && registryBlockJumpLimit != network.BlockJumpLimit {
+		d.logger.Debug("Setting network block jump limit", zap.String("network", network.Name), zap.Int64("block_jump_limit", registryBlockJumpLimit))
+		network.BlockJumpLimit = int64(registryBlockJumpLimit)
 	}
 	registryMaxRequestPayloadSizeKB := int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
 	if registryMaxRequestPayloadSizeKB != 0 && registryMaxRequestPayloadSizeKB != network.MaxRequestPayloadSizeKB {
@@ -295,8 +315,10 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	d.Networks[network.Name].HCMethod = network.HCMethod
 	d.Networks[network.Name].HCInterval = network.HCInterval
 	d.Networks[network.Name].BlockLagLimit = network.BlockLagLimit
+	d.Networks[network.Name].BlockJumpLimit = network.BlockJumpLimit
 	d.Networks[network.Name].MaxRequestPayloadSizeKB = network.MaxRequestPayloadSizeKB
 	d.Networks[network.Name].RequestAttemptCount = network.RequestAttemptCount
+	// Don't override ExpectedChainID as it's a required config value
 
 	// add the new providers to the middleware network.Providers map
 	for _, p := range network.Providers {

@@ -2,6 +2,8 @@ package modules
 
 import (
 	"net/url"
+	"sync"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
@@ -23,12 +25,21 @@ type provider struct {
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
 	Priority     int
 	quit         chan struct{}
+	chainID      int64
 
 	// Registry Configuration Values
 	Methods []*string            `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
 	consecutiveHealthyChecks int
+	blockHistory             []blockHistoryEntry
+	mu                       sync.RWMutex
+}
+
+type blockHistoryEntry struct {
+	blockNumber int64
+	statusCode  HealthStatus
+	timestamp   *time.Time
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -62,55 +73,6 @@ func (p *provider) AuthClient() auth.IAuthClient {
 	return p.Auth
 }
 
-// markPingFailure records the failure, and if the failure count exceeds the healthcheck threshold
-// marks the upstream as unhealthy
-func (p *provider) markPingFailure(hcThreshold int) {
-	p.failures++
-	p.successes = 0
-	if p.healthStatus == Healthy && p.failures > hcThreshold {
-		p.healthStatus = Unhealthy
-	}
-}
-
-func (p *provider) markPingWarning() {
-	p.successes = 0
-	p.failures = 0
-	p.healthStatus = Warning
-}
-
-// markPingSuccess records a successful healthcheck, and if the success count exceeds the healthcheck
-// threshold marks the upstream as healthy
-func (p *provider) markPingSuccess(hcThreshold int) {
-	p.successes++
-	if p.healthStatus == Unhealthy && p.successes > hcThreshold {
-		p.failures = 0
-		p.healthStatus = Healthy
-	}
-}
-
-func (p *provider) markHealthy(hcThreshold int) {
-	if p.healthStatus == Unhealthy {
-		p.consecutiveHealthyChecks++
-		if p.consecutiveHealthyChecks > hcThreshold {
-			p.healthStatus = Healthy
-			p.consecutiveHealthyChecks = 0
-		}
-		return
-	}
-	p.consecutiveHealthyChecks = 0
-	p.healthStatus = Healthy
-}
-
-func (p *provider) markWarning() {
-	p.healthStatus = Warning
-	p.consecutiveHealthyChecks = 0
-}
-
-func (p *provider) markUnhealthy() {
-	p.healthStatus = Unhealthy
-	p.consecutiveHealthyChecks = 0
-}
-
 // Healthy returns True if the node is passing healthchecks, False otherwise
 func (p *provider) Healthy() bool {
 	if p.healthStatus == Healthy {
@@ -127,4 +89,35 @@ func (p *provider) Warning() bool {
 	} else {
 		return false
 	}
+}
+
+// BlockHistory returns a copy of the provider's block history
+func (p *provider) BlockHistory() []blockHistoryEntry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	history := make([]blockHistoryEntry, len(p.blockHistory))
+	copy(history, p.blockHistory)
+	return history
+}
+
+// AddBlockEntry adds a new block entry to the history, maintaining the configured history size
+func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistorySize int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+	entry := blockHistoryEntry{
+		blockNumber: block,
+		statusCode:  status,
+		timestamp:   &now,
+	}
+	p.blockHistory = append(p.blockHistory, entry)
+	if len(p.blockHistory) > blockHistorySize {
+		p.blockHistory = p.blockHistory[1:]
+	}
+}
+
+// getChainID gets the chain ID from the provider
+func (p *provider) getChainID() int64 {
+	return p.chainID
 }
