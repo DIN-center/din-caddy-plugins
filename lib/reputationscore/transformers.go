@@ -1,16 +1,15 @@
 package reputationscore
 
 import (
-	"fmt"
 	"math"
 )
 
-// NormalizeTransform adjust the input score so the sum of all scores is 1.
-// In other words, it adjusted score reprensents the percentage of the total score.
-type NormalizeTransformer struct {
+// ShareOfTotalTransformer adjust the input score so the sum of all scores is 1.
+// In other words, adjusted score represents the percentage of the total score.
+type ShareOfTotalTransformer struct {
 }
 
-func (t *NormalizeTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
+func (t *ShareOfTotalTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
 	if len(scores) == 0 {
 		return scores, nil
 	}
@@ -22,6 +21,10 @@ func (t *NormalizeTransformer) TransformScore(scores map[string]*Score) (map[str
 		}
 	}
 
+	if sumOfScores < 0.001 { // prevent division by 0 and very small raw scores
+		return scores, nil
+	}
+
 	normalizedScores := map[string]*Score{}
 	for providerID, score := range scores {
 		if !score.HasValue() {
@@ -29,15 +32,10 @@ func (t *NormalizeTransformer) TransformScore(scores map[string]*Score) (map[str
 			continue
 		}
 
-		var normalizedScore *Score
-		if sumOfScores < 0.0001 { // prevent division by 0 and very small raw scores to be considered a score
-			normalizedScore = EmptyScore
-		} else {
-			normalizedScore, _ = NewScore(
-				math.Round(score.Value()/sumOfScores*10000)/10000,
-				score.LastUpdated(),
-			)
-		}
+		normalizedScore, _ := NewScore(
+			math.Round(score.Value()/sumOfScores*10000)/10000,
+			score.LastUpdated(),
+		)
 		normalizedScores[providerID] = normalizedScore
 	}
 
@@ -62,7 +60,7 @@ func (t *CompositeTransformer) TransformScore(scores map[string]*Score) (map[str
 	return transformedScores, nil
 }
 
-func NewCompositeTransformer(chain []ScoreTransformer) *CompositeTransformer {
+func NewCompositeTransformer(chain ...ScoreTransformer) *CompositeTransformer {
 	return &CompositeTransformer{chain: chain}
 }
 
@@ -82,17 +80,6 @@ func (t *EWMATransformer) TransformScore(scores map[string]*Score) (map[string]*
 		t.previousScores = scores
 		t.hasPreviousScores = true
 		return scores, nil
-	}
-
-	//ensure sum of scores is 1
-	sumOfScores := 0.0
-	for _, score := range scores {
-		if score.HasValue() {
-			sumOfScores += score.Value()
-		}
-	}
-	if sumOfScores != 1.0 {
-		return nil, fmt.Errorf("sum of scores given to EWMA transformer should be 1.0, got %f", sumOfScores)
 	}
 
 	// Apply EWMA to the scores using the previous scores as the T-1 scores
@@ -123,4 +110,30 @@ func (t *EWMATransformer) TransformScore(scores map[string]*Score) (map[string]*
 
 func NewEWMATransformer(alpha float64) *EWMATransformer {
 	return &EWMATransformer{alpha: alpha}
+}
+
+// HighPassThroughTransformer is a transformer that returns the same scores it receives
+// but only if the score has a value greater than a cutoff value. Otherwise, it returns a score with a value of 0.
+type HighPassThroughTransformer struct {
+	cutoffValue float64
+}
+
+func (t *HighPassThroughTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
+	transformedScores := map[string]*Score{}
+	for providerID, score := range scores {
+		if score.HasValue() {
+			if score.Value() > t.cutoffValue {
+				transformedScores[providerID] = score
+			} else {
+				transformedScores[providerID], _ = NewScore(0.0, score.LastUpdated())
+			}
+		} else {
+			transformedScores[providerID] = EmptyScore
+		}
+	}
+	return transformedScores, nil
+}
+
+func NewDefaultHighPassThroughTransformer() *HighPassThroughTransformer {
+	return &HighPassThroughTransformer{cutoffValue: 0.001}
 }

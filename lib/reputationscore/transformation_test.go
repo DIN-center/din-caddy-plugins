@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-func TestNormalizeTransformer(t *testing.T) {
+func TestShareOfTotalTransformer(t *testing.T) {
 	t.Run("successfully normalizes scores to [0,1] range", func(t *testing.T) {
-		transformer := &NormalizeTransformer{}
+		transformer := &ShareOfTotalTransformer{}
 
 		scores := map[string]*Score{
 			"provider1": mustCreateScore(0.95, TIME1),
@@ -28,7 +28,7 @@ func TestNormalizeTransformer(t *testing.T) {
 	})
 
 	t.Run("handles empty scores map", func(t *testing.T) {
-		transformer := &NormalizeTransformer{}
+		transformer := &ShareOfTotalTransformer{}
 		scores := map[string]*Score{}
 
 		normalizedScores, err := transformer.TransformScore(scores)
@@ -41,7 +41,7 @@ func TestNormalizeTransformer(t *testing.T) {
 	})
 
 	t.Run("handles scores with empty values", func(t *testing.T) {
-		transformer := &NormalizeTransformer{}
+		transformer := &ShareOfTotalTransformer{}
 		scores := map[string]*Score{
 			"provider1": NewEmptyScore(),
 			"provider2": mustCreateScore(0.5, TIME1),
@@ -64,7 +64,7 @@ func TestNormalizeTransformer(t *testing.T) {
 	})
 
 	t.Run("handles single score", func(t *testing.T) {
-		transformer := &NormalizeTransformer{}
+		transformer := &ShareOfTotalTransformer{}
 		scores := map[string]*Score{
 			"provider1": mustCreateScore(0.5, TIME1),
 		}
@@ -224,6 +224,81 @@ func TestEWMATransformer(t *testing.T) {
 		expectedScore2 := 0.56
 		if transformedScores["provider2"].Value() != expectedScore2 {
 			t.Errorf("expected provider2 score to be %v, got %v", expectedScore2, transformedScores["provider2"].Value())
+		}
+	})
+}
+
+func TestHighPassThroughTransformer(t *testing.T) {
+	t.Run("passes through scores above cutoff value", func(t *testing.T) {
+		transformer := NewDefaultHighPassThroughTransformer()
+		scores := map[string]*Score{
+			"provider1": mustCreateScore(0.5, TIME1),
+			"provider2": mustCreateScore(0.002, TIME1),
+		}
+
+		transformedScores, err := transformer.TransformScore(scores)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if transformedScores["provider1"].Value() != 0.5 {
+			t.Errorf("expected provider1 score to be 0.5, got %v", transformedScores["provider1"].Value())
+		}
+		if transformedScores["provider2"].Value() != 0.002 {
+			t.Errorf("expected provider2 score to be 0.002, got %v", transformedScores["provider2"].Value())
+		}
+	})
+
+	t.Run("zeros out scores below cutoff value", func(t *testing.T) {
+		transformer := NewDefaultHighPassThroughTransformer()
+		scores := map[string]*Score{
+			"provider1": mustCreateScore(0.0005, TIME1),
+			"provider2": mustCreateScore(0.0009, TIME1),
+		}
+
+		transformedScores, err := transformer.TransformScore(scores)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if transformedScores["provider1"].Value() != 0.0 {
+			t.Errorf("expected provider1 score to be 0.0, got %v", transformedScores["provider1"].Value())
+		}
+		if transformedScores["provider2"].Value() != 0.0 {
+			t.Errorf("expected provider2 score to be 0.0, got %v", transformedScores["provider2"].Value())
+		}
+	})
+
+	t.Run("handles empty scores", func(t *testing.T) {
+		transformer := NewDefaultHighPassThroughTransformer()
+		scores := map[string]*Score{
+			"provider1": NewEmptyScore(),
+			"provider2": mustCreateScore(0.5, TIME1),
+		}
+
+		transformedScores, err := transformer.TransformScore(scores)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if transformedScores["provider1"].HasValue() {
+			t.Error("expected provider1 score to have no value")
+		}
+		if transformedScores["provider2"].Value() != 0.5 {
+			t.Errorf("expected provider2 score to be 0.5, got %v", transformedScores["provider2"].Value())
+		}
+	})
+
+	t.Run("handles empty scores map", func(t *testing.T) {
+		transformer := NewDefaultHighPassThroughTransformer()
+		scores := map[string]*Score{}
+
+		transformedScores, err := transformer.TransformScore(scores)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(transformedScores) != 0 {
+			t.Errorf("expected empty map, got map with %d elements", len(transformedScores))
 		}
 	})
 }

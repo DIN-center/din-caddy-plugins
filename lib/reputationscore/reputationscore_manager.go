@@ -60,7 +60,7 @@ func NewWithBuitinFormula(networks []string, client watcher.IWatcherAPIClient) *
 				BlockNonStateConsistencyMetricID: 0.2,
 				LatencyMetricID:                  0.5,
 			}},
-			ScoreTransformer: &CompositeTransformer{chain: []ScoreTransformer{&NormalizeTransformer{}, &EWMATransformer{alpha: ScoreSmoothingFactor}}},
+			ScoreTransformer: &CompositeTransformer{chain: []ScoreTransformer{&ShareOfTotalTransformer{}, &EWMATransformer{alpha: ScoreSmoothingFactor}}},
 		})
 	}
 	return &ReputationScoreManager{

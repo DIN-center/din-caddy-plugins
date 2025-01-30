@@ -27,7 +27,7 @@ func TestReputationScoreManager(t *testing.T) {
 		}
 	})
 
-	t.Run("manager with a single network formula containing a single metric generator for a single provider returns ReputationScore with value 1.0", func(t *testing.T) {
+	t.Run("manager with a single network formula containing a single metric generator for a single provider returns ReputationScore with value 0.95", func(t *testing.T) {
 		rm := NewEmpty()
 		rm.formulas = []ScoreFormula{
 			{
@@ -38,7 +38,7 @@ func TestReputationScoreManager(t *testing.T) {
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 1.0,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -48,12 +48,12 @@ func TestReputationScoreManager(t *testing.T) {
 		if !score.HasValue() {
 			t.Errorf("expected score has value to be true, got false")
 		}
-		if score.Value() != 1.0 {
-			t.Errorf("expected score value to be 1.0, got %f", score.Value())
+		if score.Value() != 0.95 {
+			t.Errorf("expected score value to be 0.95, got %f", score.Value())
 		}
 	})
 
-	t.Run("manager with a single network formula containing two metric generators for a single provider returns ReputationScore with value 1.0", func(t *testing.T) {
+	t.Run("manager with a single network formula containing two metric generators for a single provider returns ReputationScore with value 0.915", func(t *testing.T) {
 		rm := NewEmpty()
 		rm.formulas = []ScoreFormula{
 			{
@@ -68,7 +68,7 @@ func TestReputationScoreManager(t *testing.T) {
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -78,8 +78,8 @@ func TestReputationScoreManager(t *testing.T) {
 		if !score.HasValue() {
 			t.Errorf("expected score has value to be true, got false")
 		}
-		if score.Value() != 1.0 {
-			t.Errorf("expected score value to be 1.0, got %f", score.Value())
+		if score.Value() != 0.915 {
+			t.Errorf("expected score value to be 0.915, got %f", score.Value())
 		}
 	})
 
@@ -99,7 +99,7 @@ func TestReputationScoreManager(t *testing.T) {
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -113,14 +113,11 @@ func TestReputationScoreManager(t *testing.T) {
 		//P1:                 0.95           *              0.3         +      0.9        *       0.7 = Raw Score => 0.915
 		//P2:                 0.2            *              0.3         +      0.5         *       0.7 = Raw Score => 0.41
 
-		//Normalized the scores: raw score / (sum of raw scores of all providers), always rounded to 4 decimal places
-		//P1: 0.915 / (0.915 + 0.41) = 0.6906
-		//P2: 0.41 / (0.915 + 0.41) = 0.3094
-		if !scoreP1.HasValue() || scoreP1.Value() != 0.6906 {
-			t.Errorf("expected score value to be 0.6906, got %f", scoreP1.Value())
+		if !scoreP1.HasValue() || scoreP1.Value() != 0.915 {
+			t.Errorf("expected score value to be 0.915, got %f", scoreP1.Value())
 		}
-		if !scoreP2.HasValue() || scoreP2.Value() != 0.3094 {
-			t.Errorf("expected score value to be 0.3094, got %f", scoreP2.Value())
+		if !scoreP2.HasValue() || scoreP2.Value() != 0.41 {
+			t.Errorf("expected score value to be 0.41, got %f", scoreP2.Value())
 		}
 	})
 
@@ -131,17 +128,27 @@ func TestReputationScoreManager(t *testing.T) {
 				Network: "gyro",
 				MetricGenerators: []ProviderMetricGenerator{
 					&WatcherBlockNumberConsistency{
-						WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1, OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2}},
+						WatcherClient: &MockWatcherAPIClient{
+							mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1,
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2,
+							},
+						},
 					},
 					&WatcherLatency{
-						WatcherClient: &MockWatcherAPIClient{mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1, OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2}},
+						WatcherClient: &MockWatcherAPIClient{
+							mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{
+								OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1,
+								OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2,
+							},
+						},
 					},
 				},
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -151,10 +158,10 @@ func TestReputationScoreManager(t *testing.T) {
 		firstScoreP1 := rm.GetScore("gyro", "provider1")
 		firstScoreP2 := rm.GetScore("gyro", "provider2")
 
-		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.6906 || !firstScoreP1.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected first score value to be Value=0.6906 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP1.Value(), firstScoreP1.LastUpdated())
+		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.915 || !firstScoreP1.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected first score value to be Value=0.915 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP1.Value(), firstScoreP1.LastUpdated())
 		}
-		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.3094 || !firstScoreP2.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.41 || !firstScoreP2.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
 			t.Errorf("expected first score value to be Value=0.3094 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP2.Value(), firstScoreP2.LastUpdated())
 		}
 
@@ -164,11 +171,11 @@ func TestReputationScoreManager(t *testing.T) {
 		secondScoreP1 := rm.GetScore("gyro", "provider1")
 		secondScoreP2 := rm.GetScore("gyro", "provider2")
 
-		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.6906 || !secondScoreP1.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected second score value to be Value=0.6906 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP1.Value(), secondScoreP1.LastUpdated())
+		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.915 || !secondScoreP1.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected second score value to be Value=0.915 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP1.Value(), secondScoreP1.LastUpdated())
 		}
-		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.3094 || !secondScoreP2.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected second score value to be Value=0.3094 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP2.Value(), secondScoreP2.LastUpdated())
+		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.41 || !secondScoreP2.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected second score value to be Value=0.41 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP2.Value(), secondScoreP2.LastUpdated())
 		}
 	})
 
@@ -189,7 +196,7 @@ func TestReputationScoreManager(t *testing.T) {
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -223,7 +230,7 @@ func TestReputationScoreManager(t *testing.T) {
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -235,8 +242,8 @@ func TestReputationScoreManager(t *testing.T) {
 		if !scoreP1.HasValue() || scoreP1.Value() != 0.0 {
 			t.Errorf("expected score has value to be 0.0, got %f", scoreP1.Value())
 		}
-		if !scoreP2.HasValue() || scoreP2.Value() != 1.0 {
-			t.Errorf("expected score has value to be 1.0, got %f", scoreP2.Value())
+		if !scoreP2.HasValue() || scoreP2.Value() != 0.59 {
+			t.Errorf("expected score has value to be 0.59, got %f", scoreP2.Value())
 		}
 	})
 
@@ -257,7 +264,7 @@ func TestReputationScoreManager(t *testing.T) {
 					BlockNumberConsistencyMetricID: 0.3,
 					LatencyMetricID:                0.7,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
@@ -265,8 +272,8 @@ func TestReputationScoreManager(t *testing.T) {
 
 		scoreP1 := rm.GetScore("gyro", "provider1")
 
-		if scoreP1.HasValue() {
-			t.Errorf("expected score has value to be false, got true")
+		if !scoreP1.HasValue() || scoreP1.Value() != 0.0 {
+			t.Errorf("expected score has value to be 0.0, got %f", scoreP1.Value())
 		}
 
 	})
@@ -282,17 +289,16 @@ func TestReputationScoreManager(t *testing.T) {
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 0.0001,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 
 		rm.ComputeScores()
 		//Raw score should be 0.95 * 0.0001 = 0,000095
-		//Normalized score should be 0,000095 / 0,000095 = 1.0 but raw score is too small to be considered a score
 
 		score := rm.GetScore("gyro", "provider1")
-		if score.HasValue() {
-			t.Errorf("expected score has value to be false, got true")
+		if !score.HasValue() || score.Value() != 0.0 {
+			t.Errorf("expected score has value to be 0.0, got %f", score.Value())
 		}
 	})
 
@@ -303,13 +309,18 @@ func TestReputationScoreManager(t *testing.T) {
 				Network: "gyro",
 				MetricGenerators: []ProviderMetricGenerator{
 					&WatcherBlockNumberConsistency{
-						WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1, OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1}},
+						WatcherClient: &MockWatcherAPIClient{
+							mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1,
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1,
+							},
+						},
 					},
 				},
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 1.0,
 				}},
-				ScoreTransformer: &NormalizeTransformer{},
+				ScoreTransformer: NewDefaultHighPassThroughTransformer(),
 			},
 		}
 		//Run scores once
@@ -317,11 +328,11 @@ func TestReputationScoreManager(t *testing.T) {
 
 		firstScoreP1 := rm.GetScore("gyro", "provider1")
 		firstScoreP2 := rm.GetScore("gyro", "provider2")
-		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.8261 {
-			t.Errorf("expected score has value to be 0.8261, got %f", firstScoreP1.Value())
+		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.95 {
+			t.Errorf("expected score has value to be 0.95, got %f", firstScoreP1.Value())
 		}
-		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.1739 {
-			t.Errorf("expected score has value to be 0.1739, got %f", firstScoreP2.Value())
+		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.2 {
+			t.Errorf("expected score has value to be 0.2, got %f", firstScoreP2.Value())
 		}
 
 		//Run scores again
@@ -332,8 +343,8 @@ func TestReputationScoreManager(t *testing.T) {
 		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.0 {
 			t.Errorf("expected score has value to be 0.0, got %f", secondScoreP1.Value())
 		}
-		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 1.0 {
-			t.Errorf("expected score has value to be 1.0, got %f", secondScoreP2.Value())
+		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.8 {
+			t.Errorf("expected score has value to be 0.8, got %f", secondScoreP2.Value())
 		}
 	})
 
@@ -344,15 +355,18 @@ func TestReputationScoreManager(t *testing.T) {
 				Network: "gyro",
 				MetricGenerators: []ProviderMetricGenerator{
 					&WatcherBlockNumberConsistency{
-						WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1, OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1}},
+						WatcherClient: &MockWatcherAPIClient{
+							mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1,
+								OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1,
+							},
+						},
 					},
 				},
 				MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
 					BlockNumberConsistencyMetricID: 1.0,
 				}},
-				ScoreTransformer: NewCompositeTransformer(
-					[]ScoreTransformer{&NormalizeTransformer{}, &EWMATransformer{alpha: 0.7}},
-				),
+				ScoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: 0.7}, NewDefaultHighPassThroughTransformer()),
 			},
 		}
 		//Run scores once
@@ -360,11 +374,11 @@ func TestReputationScoreManager(t *testing.T) {
 
 		firstScoreP1 := rm.GetScore("gyro", "provider1")
 		firstScoreP2 := rm.GetScore("gyro", "provider2")
-		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.8261 {
-			t.Errorf("expected score has value to be 0.8261, got %f", firstScoreP1.Value())
+		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.95 {
+			t.Errorf("expected score has value to be 0.95, got %f", firstScoreP1.Value())
 		}
-		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.1739 {
-			t.Errorf("expected score has value to be 0.1739, got %f", firstScoreP2.Value())
+		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.2 {
+			t.Errorf("expected score has value to be 0.2, got %f", firstScoreP2.Value())
 		}
 
 		//Run scores again
@@ -372,11 +386,11 @@ func TestReputationScoreManager(t *testing.T) {
 
 		secondScoreP1 := rm.GetScore("gyro", "provider1")
 		secondScoreP2 := rm.GetScore("gyro", "provider2")
-		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.2478 {
-			t.Errorf("expected score has value to be 0.2478, got %f", secondScoreP1.Value())
+		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.285 {
+			t.Errorf("expected score has value to be 0.285, got %f", secondScoreP1.Value())
 		}
-		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.7522 {
-			t.Errorf("expected score has value to be 0.7522, got %f", secondScoreP2.Value())
+		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.62 {
+			t.Errorf("expected score has value to be 0.62, got %f", secondScoreP2.Value())
 		}
 
 	})

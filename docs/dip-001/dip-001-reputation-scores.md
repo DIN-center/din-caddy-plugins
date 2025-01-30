@@ -17,16 +17,16 @@ Reputation Scores are a way to assess the reliability of a JSON RPC Provider fro
 
 - Block Number Consistency (BNC): This metric ensures that the block number either monotonically increases or remains consistent.
 - Consistency of Non-State Data for a Block (CNSB): This metric verifies that non-state data for a given block hash remains consistent over time.
-- Request Latency (L): This metric measures the elapsed time (in milliseconds) between sending a request and receiving a response, targeting the provider endpoint directly (without the DIN Router).
+- Request Latency (RLAT): This metric measures the elapsed time (in milliseconds) between sending a request and receiving a response, targeting the provider endpoint directly (without the DIN Router).
 
 These metrics are evaluated per network and per provider. The formula to compute the Provider Reputation Score for a provider (e.g., P1) in a given network is:
 
-$Φ({P1}) = BNC(P1) ⋅ W_{bnc} + CNSB({P1}) ⋅ W_{cnsb} + L({P1} | {P(95)})⋅  W_{lat}$,
+$$Φ({P1}) = BNC(P1) \times W_{bnc} + CNSB({P1}) \times W_{cnsb} + RLAT({P1} | {P(95)}) \times W_{rlat}$$
 
 Where:
 * Φ (Phi) is the Reputation Score (range: [0,1])
-* $W_{bnc}$, $W_{cnsb}$, $W_{lat}$ are the weights assigned to each metric (weights sum to 1)
-* BNC, CNSB, and L are normalized metrics (range: [0,1]) for Block Number Consistency, Consistency of Non-State Data, and Latency at the 95th percentile, respectively and are provided by the Watcher
+* $W_{bnc}$, $W_{cnsb}$, $W_{rlat}$ are the weights assigned to each metric (weights sum to 1)
+* BNC, CNSB, and RLAT are scaled metrics (range: [0,1]) for Block Number Consistency, Consistency of Non-State Data, and Request Latency, respectively and are provided by the Watcher
 
 ## Technical Details for the Reputation Score
 
@@ -115,18 +115,19 @@ Note that the score formula is defined per network. This means that each network
 ### Combiners and Transformers
 
 As discussed in the [Abstractions](#abstractions) section, the `ProviderMetricCombiner` and `ScoreTransformer` are responsible for combining and transforming the metrics into a single score for a provider on a given network.
-This encapsulation allows developers to implement their own combiners and transformers if they want to use a different system to collect the metrics or if they want to use a different formula to compute the score. By default, the system uses the combiner `WeightedCombiner` defined in the `combiners.go` file. The `WeightedCombiner` uses weights to aggregate the metrics into a single score such in the formula:
+This encapsulation allows developers to implement their own combiners and transformers if they want to use a different mathematical expression to compute the score. By default, the system uses the combiner `WeightedCombiner` defined in the `combiners.go` file. The `WeightedCombiner` uses weights to aggregate the metrics into a single score such in the expression:
 
-$$WC(M_1, M_2, ..., M_n) = M_1 ⋅ W_{m_1} + M_2 ⋅ W_{m_2} + ... + M_n ⋅ W_{m_n}$$
+$$WC(M_1, M_2, ..., M_n) = M_1 \times W_{m_1} + M_2 \times W_{m_2} + ... + M_n \times W_{m_n}$$
 
 
-There are two transformers implemented:
-- `NormalizeTransformer`: This transformer normalizes a set of score for different providers into a score that represents the percentage (in the range [0,1]) of the provider score in the total score. This ensures that the sum of all providerscores for a given network is 1.
+There are 3 transformers implemented:
+- `HighPassThroughTransformer`: This transformer passes through scores above a given cutoff value. This is useful to avoid having providers with very low scores to be included in the routing algorithm. This is the default transformer.
+- `ShareOfTotalTransformer`: This transformer converts a set of score for different providers into a score that represents the percentage this provider contributes to the total score. This ensures that the sum of all providers' score for a given network is 1. This is useful to transform the score into a traffic weight distribution.
 - `EWMATransformer`: This transformer applies an Exponential Weighted Moving Average (EWMA) function to the score as a way to smooth the score over time. This is useful to avoid sudden changes in the score that could be caused by a single metric. See [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing) for more details.
 
 ### Watcher metrics
 
-The reputation score algorithm is completely agnostic to the system that is used to collect the metrics. The only requirement is that the metrics are in the range [0,1] and that they are available for each provider in a given network.
+The reputation score algorithm is completely agnostic to the system that is used to collect the metrics. The only requirement is that the metrics are scaled to the range [0,1] and that they are available for each provider in a given network.
 
 This proposal delivers a built-in score based on current Watcher metrics. The Watcher metrics are:
 - `WatcherBlockNumberConsistency`: This is the implementation of the block number consistency metric.
