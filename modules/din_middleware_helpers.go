@@ -3,7 +3,6 @@ package modules
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -214,17 +213,15 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 
 	// Sync chain ID if provided in registry
 	registryChainID := regNetwork.NetworkConfig.ChainID
-	if !strings.Contains(network.Name, "solana") {
-		if registryChainID == 0 {
-			return nil, fmt.Errorf("chain ID is required in registry for network %s", network.Name)
-		}
-		// Verify chain ID matches if already set
-		if network.ChainID != 0 && network.ChainID != registryChainID {
-			return nil, fmt.Errorf("registry chain ID (%d) does not match configured chain ID (%d) for network %s",
-				registryChainID, network.ChainID, network.Name)
-		}
-		network.ChainID = registryChainID
+	if registryChainID == "" {
+		return nil, fmt.Errorf("chain ID is required in registry for network %s", network.Name)
 	}
+	// Verify chain ID matches if already set
+	if network.ChainID != "" && network.ChainID != registryChainID {
+		return nil, fmt.Errorf("registry chain ID (%s) does not match configured chain ID (%s) for network %s",
+			registryChainID, network.ChainID, network.Name)
+	}
+	network.ChainID = registryChainID
 
 	// Sync the value if it is not 0 and different from the current middleware network value
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {

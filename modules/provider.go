@@ -25,7 +25,7 @@ type provider struct {
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
 	Priority     int
 	quit         chan struct{}
-	chainID      int64
+	chainID      string
 
 	// Registry Configuration Values
 	Methods []*string            `json:"methods"`
@@ -118,6 +118,6 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 }
 
 // getChainID gets the chain ID from the provider
-func (p *provider) getChainID() int64 {
+func (p *provider) getChainID() string {
 	return p.chainID
 }
