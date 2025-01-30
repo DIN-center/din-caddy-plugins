@@ -530,6 +530,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
 						}
 						d.Networks[networkName].BlockJumpLimit = int64(limit)
+					case "healthcheck_block_history_size":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid healthcheck block history size: %v", err)
+						}
+						d.Networks[networkName].BlockHistorySize = int(size)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())

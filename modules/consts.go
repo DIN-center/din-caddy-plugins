@@ -17,6 +17,7 @@ const (
 	RequestBodyKey         = "request_body"
 	HealthStatusKey        = "health_status"
 	BlockNumberKey         = "block_number"
+	BlockHistorySize       = 10
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
@@ -27,7 +28,6 @@ const (
 	DefaultBlockJumpLimit          = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
-	DefaultBlockHistorySize        = 10
 
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
