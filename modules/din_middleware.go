@@ -499,15 +499,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						d.Networks[networkName].ChainIDMethod = dispenser.Val()
 					case "chain_id":
 						dispenser.Next()
-						chainID, err := strconv.ParseInt(dispenser.Val(), 10, 64)
-						if err != nil {
-							return fmt.Errorf("invalid expected chain ID: %v", err)
-						}
-						// Skip chain ID validation for Solana networks
-						if !strings.Contains(networkName, "solana") {
-							if chainID == 0 {
-								return fmt.Errorf("chain ID cannot be 0 for network %s", networkName)
-							}
+						chainID := dispenser.Val()
+						if chainID == "" {
+							return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
 						}
 						d.Networks[networkName].ChainID = chainID
 					case "healthcheck_threshold":

@@ -23,7 +23,7 @@ type network struct {
 	PrometheusClient prom.IPrometheusClient
 	logger           *zap.Logger
 	machineID        string
-	ChainID          int64
+	ChainID          string
 
 	// internal health check values
 	healthCheckListMutex sync.RWMutex
@@ -209,10 +209,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 // verifyChainID checks if provider is serving correct chain
 func (n *network) verifyChainID(provider *provider) bool {
-	// Solana networks are not chain ID based, so we return true for them
-	if strings.Contains(n.Name, "solana") {
-		return true
-	}
 	return provider.getChainID() == n.ChainID
 }
 
@@ -346,17 +342,17 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	return blockNumber, *statusCode, nil
 }
 
-func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
+func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIDMethod))
 
 	// Send the POST request
 	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error sending POST request")
+		return "", 0, errors.Wrap(err, "Error sending POST request")
 	}
 
 	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return 0, *statusCode, errors.New("Network Unavailable")
+		return "", *statusCode, errors.New("Network Unavailable")
 	}
 
 	// response struct
@@ -365,31 +361,28 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	// Unmarshal the response
 	err = json.Unmarshal(resBytes, &respObject)
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
+		return "", 0, errors.Wrap(err, "Error unmarshalling response")
 	}
 
 	if _, ok := respObject["result"]; !ok {
-		return 0, 0, errors.New("Error getting chain ID from response")
+		return "", 0, errors.New("Error getting chain ID from response")
 	}
 
-	var chainID int64
+	var chainID string
+	var ok bool
 
-	switch result := respObject["result"].(type) {
-	case string:
-		if result == "" || result[:2] != "0x" {
-			return 0, 0, errors.New("Invalid chain ID")
+	// Bitcoin returns back chain ID nested in an object.
+	if strings.Contains(n.Name, "bitcoin") {
+		chainID, ok = respObject["result"].(map[string]interface{})["chain"].(string)
+		if !ok {
+			return "", 0, errors.New("Error getting chain ID from response")
 		}
-
-		// Convert the hexadecimal string to an int64
-		chainID, err = strconv.ParseInt(result[2:], 16, 64)
-		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error converting chain ID")
-		}
-	case float64:
-		chainID = int64(result)
-	default:
-		return 0, 0, errors.New("unsupported chain ID type")
 	}
+	chainID, ok = respObject["result"].(string)
+	if !ok {
+		return "", 0, errors.New("Error getting chain ID from response")
+	}
+
 	return chainID, *statusCode, nil
 }
 
