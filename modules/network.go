@@ -29,7 +29,6 @@ type network struct {
 	healthCheckListMutex sync.RWMutex
 	HCThreshold          int
 	BlockHistorySize     int
-	// CheckedProviders     map[string][]healthCheckEntry
 
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
@@ -58,7 +57,7 @@ func NewNetwork(name string) *network {
 		BlockJumpLimit:          DefaultBlockJumpLimit,
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
-		BlockHistorySize:        DefaultBlockHistorySize,
+		BlockHistorySize:        BlockHistorySize,
 		// CheckedProviders: make(map[string][]healthCheckEntry),
 		Providers: make(map[string]*provider),
 	}
@@ -90,11 +89,12 @@ func (n *network) healthCheck() {
 	for _, provider := range n.Providers {
 		blockNum, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
-			n.logger.Warn("Error getting latest block number for provider",
-				zap.String("provider", provider.host),
-				zap.String("network", n.Name),
+			n.logProviderWarning(
+				"Error getting latest block number for provider",
+				provider,
 				zap.Error(err),
-				zap.String("machine_id", n.machineID))
+			)
+
 			// Set provider status to Unhealthy on error
 			provider.healthStatus = Unhealthy
 			// Send metric with error status
@@ -150,7 +150,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 	// if provider has no block history, set it to healthy
 	if len(provider.BlockHistory()) == 0 {
-		return Healthy
+		return Unhealthy
 	}
 
 	// Get latest network block for comparison
@@ -254,35 +254,39 @@ func (n *network) isMonotonic(provider *provider) bool {
 // getLatestHealthyBlock returns the highest block number among healthy providers
 // Falls back to warning providers if no healthy providers are available
 func (n *network) getLatestHealthyBlock() int64 {
-	var latestBlock int64
-	hasHealthyProviders := false
+	var latestBlockFromHealthy int64
+	var latestBlockFromWarning int64
+	var latestBlockFromUnhealthy int64
 
-	// First try to get block from healthy providers
+	// Single pass through providers to track latest blocks by status
 	for _, provider := range n.Providers {
-		if provider.healthStatus == Healthy && len(provider.BlockHistory()) > 0 {
-			history := provider.BlockHistory()
-			lastBlock := history[len(history)-1].blockNumber
-			if lastBlock > latestBlock {
-				latestBlock = lastBlock
+		history := provider.BlockHistory()
+		if len(history) == 0 {
+			continue
+		}
+
+		lastBlock := history[len(history)-1].blockNumber
+		switch provider.healthStatus {
+		case Healthy:
+			if lastBlock > latestBlockFromHealthy {
+				latestBlockFromHealthy = lastBlock
 			}
-			hasHealthyProviders = true
+		case Warning:
+			if lastBlock > latestBlockFromWarning {
+				latestBlockFromWarning = lastBlock
+			}
+		case Unhealthy:
+			if lastBlock > latestBlockFromUnhealthy {
+				latestBlockFromUnhealthy = lastBlock
+			}
 		}
 	}
 
-	// If no healthy providers, try warning providers
-	if !hasHealthyProviders {
-		for _, provider := range n.Providers {
-			if provider.healthStatus == Warning && len(provider.BlockHistory()) > 0 {
-				history := provider.BlockHistory()
-				lastBlock := history[len(history)-1].blockNumber
-				if lastBlock > latestBlock {
-					latestBlock = lastBlock
-				}
-			}
-		}
+	// Return highest block number, prioritizing by health status
+	if latestBlockFromHealthy > 0 {
+		return latestBlockFromHealthy
 	}
-
-	return latestBlock
+	return latestBlockFromWarning
 }
 
 func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
@@ -298,48 +302,64 @@ func (n *network) sendLatestBlockMetric(providerName string, statusCode int, hea
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
 
-	// Send the POST request
-	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error sending POST request")
-	}
+	var lastErr error
+	var lastStatusCode int
 
-	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return 0, *statusCode, errors.New("Network Unavailable")
-	}
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		// Send the POST request
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		lastStatusCode = *statusCode
 
-	// response struct
-	var respObject map[string]interface{}
-
-	// Unmarshal the response
-	err = json.Unmarshal(resBytes, &respObject)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	if _, ok := respObject["result"]; !ok {
-		return 0, 0, errors.New("Error getting block number from response")
-	}
-
-	var blockNumber int64
-
-	switch result := respObject["result"].(type) {
-	case string:
-		if result == "" || result[:2] != "0x" {
-			return 0, 0, errors.New("Invalid block number")
-		}
-
-		// Convert the hexadecimal string to an int64
-		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
 		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error converting block number")
+			lastErr = err
+			continue
 		}
-	case float64:
-		blockNumber = int64(result)
-	default:
-		return 0, 0, errors.New("unsupported block number type")
+
+		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+			lastErr = errors.New("Network Unavailable")
+			continue
+		}
+
+		// response struct
+		var respObject map[string]interface{}
+
+		// Unmarshal the response
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error unmarshalling response")
+			continue
+		}
+
+		if _, ok := respObject["result"]; !ok {
+			lastErr = errors.New("Error getting block number from response")
+			continue
+		}
+
+		var blockNumber int64
+
+		switch result := respObject["result"].(type) {
+		case string:
+			if result == "" || result[:2] != "0x" {
+				lastErr = errors.New("Invalid block number")
+				continue
+			}
+
+			// Convert the hexadecimal string to an int64
+			blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
+			if err != nil {
+				lastErr = errors.Wrap(err, "Error converting block number")
+				continue
+			}
+		case float64:
+			blockNumber = int64(result)
+		default:
+			lastErr = errors.New("unsupported block number type")
+			continue
+		}
+		return blockNumber, lastStatusCode, nil
 	}
-	return blockNumber, *statusCode, nil
+
+	return 0, lastStatusCode, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, int, error) {

@@ -211,18 +211,18 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		return nil, err
 	}
 
+	registryChainIDMethod, err := d.DingoClient.GetChainIDMethodByBit(regNetwork.Name, regNetwork.NetworkConfig.ChainIDMethodBit)
+	if err != nil {
+		d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		return nil, err
+	}
+
 	// Sync chain ID if provided in registry
 	registryChainID := regNetwork.NetworkConfig.ChainID
-	if registryChainID == "" {
-		return nil, fmt.Errorf("chain ID is required in registry for network %s", network.Name)
+	if registryChainID != "" && registryChainID != network.ChainID {
+		d.logger.Debug("Setting network chain ID", zap.String("network", network.Name), zap.String("chain_id", registryChainID))
+		network.ChainID = registryChainID
 	}
-	// Verify chain ID matches if already set
-	if network.ChainID != "" && network.ChainID != registryChainID {
-		return nil, fmt.Errorf("registry chain ID (%s) does not match configured chain ID (%s) for network %s",
-			registryChainID, network.ChainID, network.Name)
-	}
-	network.ChainID = registryChainID
-
 	// Sync the value if it is not 0 and different from the current middleware network value
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
 		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.Name), zap.String("method", registryHCMethod))
