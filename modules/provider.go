@@ -31,9 +31,9 @@ type provider struct {
 	Methods []*string            `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
-	consecutiveHealthyChecks int
-	blockHistory             []blockHistoryEntry
-	mu                       sync.RWMutex
+	consecutiveUnhealthyChecks int
+	blockHistory               []blockHistoryEntry
+	mu                         sync.RWMutex
 }
 
 type blockHistoryEntry struct {
@@ -48,10 +48,9 @@ func NewProvider(urlStr string) (*provider, error) {
 		return nil, err
 	}
 	p := &provider{
-		HttpUrl:                  urlStr,
-		host:                     url.Host,
-		Headers:                  make(map[string]string),
-		consecutiveHealthyChecks: 0,
+		HttpUrl: urlStr,
+		host:    url.Host,
+		Headers: make(map[string]string),
 	}
 	return p, nil
 }
