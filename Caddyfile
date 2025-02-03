@@ -330,6 +330,10 @@
 			din_registry {
 				registry_enabled false
 			}
+			din_reputation_score {
+				reputation_score_enabled false
+				reputation_score_watcher_endpoint https://watcher.din.com
+			}
 		}
 		# din reverse proxy directive configuration
 		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy

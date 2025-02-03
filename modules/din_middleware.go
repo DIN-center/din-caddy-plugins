@@ -17,7 +17,9 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	rs "github.com/DIN-center/din-caddy-plugins/lib/reputationscore"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -82,6 +84,13 @@ type DinMiddleware struct {
 	RegistryContractAddress string
 	// The priority of the registry providers
 	RegistryPriority int
+
+	//Reputation score management
+	ReputationScoreManager *rs.ReputationScoreManager
+	// The flag to enable or disable the reputation score
+	ReputationScoreEnabled bool
+	// The endpoint of the watcher
+	ReputationScoreWatcherEndpoint string
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -181,6 +190,20 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 			d.startRegistrySync()
 		}
 	}
+
+	//From this point on, all networks and providers are provisioned and ready to be used
+	//Initialize the reputation score manager
+	networks := make([]string, 0, len(d.Networks))
+	for network := range d.Networks {
+		networks = append(networks, network)
+	}
+	//TODO: get the watcher endpoint and key from the Caddyfile
+	watcherClient := watcher.NewClient(d.DingoClient.GetWatcherEndpoint(), "KEY")
+	if err != nil {
+		return fmt.Errorf("error initializing watcher client: %v", err)
+	}
+
+	d.ReputationScoreManager = rs.NewWithBuitinFormula(networks, watcherClient)
 
 	return nil
 }
@@ -585,6 +608,24 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
 					d.RegistryPriority = intValue
+				}
+			}
+		case "din_reputation_score":
+			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
+				switch dispenser.Val() {
+				case "reputation_score_enabled":
+					dispenser.Next()
+					reputationScoreEnabledVal := dispenser.Val()
+					// Convert string to bool
+					boolValue, err := strconv.ParseBool(reputationScoreEnabledVal)
+					if err != nil {
+						return dispenser.Errf("Error while parsing reputation_score_enabled: %v", err)
+					}
+					d.ReputationScoreEnabled = boolValue
+				case "reputation_score_watcher_endpoint":
+					dispenser.Next()
+					reputationScoreWatcherEndpoint := dispenser.Val()
+					d.ReputationScoreWatcherEndpoint = reputationScoreWatcherEndpoint
 				}
 			}
 		}
