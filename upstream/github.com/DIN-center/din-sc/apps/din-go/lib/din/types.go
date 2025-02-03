@@ -3,7 +3,7 @@ package din
 import (
 	"math/big"
 
-	din_reg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
+	"github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 )
 
 type DinRegistryData struct {
@@ -15,10 +15,10 @@ type Network struct {
 	Status        string
 	Name          string
 	ProxyName     string
-	Methods       map[string]*din_reg.Method
+	Methods       map[string]*dinregistry.Method
 	Providers     map[string]*Provider
 	Capabilities  *big.Int
-	NetworkConfig *din_reg.NetworkConfig
+	NetworkConfig *dinregistry.NetworkConfig
 }
 
 type Provider struct {
@@ -26,7 +26,7 @@ type Provider struct {
 	Name            string
 	Owner           string
 	NetworkServices map[string]*NetworkService
-	AuthConfig      *din_reg.NetworkServiceAuthConfig
+	AuthConfig      *dinregistry.NetworkServiceAuthConfig
 }
 
 type NetworkService struct {
@@ -34,5 +34,6 @@ type NetworkService struct {
 	Status       string
 	Url          string
 	Capabilities *big.Int
-	Methods      map[string]*din_reg.Method
+	Methods      map[string]*dinregistry.Method
+	Locations    []string
 }
