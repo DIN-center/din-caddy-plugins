@@ -85,9 +85,10 @@ func (n *network) startHealthcheck() {
 
 // HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
-	// First get latest blocks from all providers and update their history
 	for _, provider := range n.Providers {
-		blockNum, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+		// Get latest block and initial health status
+		var healthStatus HealthStatus = Healthy
+		blockNum, initialHealth, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
 			n.logProviderWarning(
 				"Error getting latest block number for provider",
@@ -95,23 +96,43 @@ func (n *network) healthCheck() {
 				zap.Error(err),
 			)
 
-			// Set provider status to Unhealthy on error
-			provider.healthStatus = Unhealthy
-			// Send metric with error status
-			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), blockNum)
-			continue
-		}
+			// Handle error cases with grace period logic
+			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
+			if healthStatus == Unhealthy {
+				continue // Skip further checks for confirmed unhealthy providers
+			}
 
-		// Evaluate health status for this provider
-		newStatus := n.evaluateProviderHealth(provider, blockNum, statusCode)
+		}
+		// Evaluate final health status
+		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus)
 		provider.healthStatus = newStatus
 
-		// Add block entry with final status
+		// Update metrics and history
 		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
-
-		// Send metric with current status
-		n.sendLatestBlockMetric(provider.host, statusCode, newStatus.String(), blockNum)
+		n.sendLatestBlockMetric(provider.host, 0, newStatus.String(), blockNum)
 	}
+}
+
+// handleErrorWithGracePeriod implements the grace period logic for unhealthy providers
+func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus HealthStatus, blockNum int64) HealthStatus {
+	if healthStatus != Unhealthy {
+		// For Warning status, reset counter and continue with checks
+		provider.consecutiveUnhealthyChecks = 0
+		return healthStatus
+	}
+
+	// Handle Unhealthy status with grace period
+	provider.consecutiveUnhealthyChecks++
+	if provider.consecutiveUnhealthyChecks < n.HCThreshold {
+		// First unhealthy response - give grace period by converting to warning
+		return Warning
+	}
+
+	// Provider has exceeded grace period - mark as unhealthy
+	provider.healthStatus = Unhealthy
+	provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
+	n.sendLatestBlockMetric(provider.host, 0, provider.healthStatus.String(), blockNum)
+	return Unhealthy
 }
 
 // logProviderWarning logs a warning message with standard provider context
@@ -125,22 +146,9 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 }
 
 // evaluateProviderHealth performs both levels of health checks
-func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, statusCode int) HealthStatus {
+func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus) HealthStatus {
 	// Track the worst status we find
-	worstStatus := Healthy
-
-	// Check status code
-	statusHealth := n.evaluateStatusCode(statusCode)
-	if statusHealth > worstStatus {
-		if statusCode == 429 {
-			n.logProviderWarning("Provider returned a rate limit error", provider,
-				zap.Int("status_code", statusCode))
-		} else if statusCode >= 400 {
-			n.logProviderWarning("Provider returned an error status code", provider,
-				zap.Int("status_code", statusCode))
-		}
-		worstStatus = statusHealth
-	}
+	worstStatus := healthStatus
 
 	// Check chain ID - this is a critical check that should always result in Unhealthy
 	if !n.verifyChainID(provider) {
@@ -193,14 +201,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 			// This signifies a provider outage
 			n.logProviderWarning("Provider is stalled while others are progressing", provider)
 			return Unhealthy // Stalling when others aren't is always Unhealthy
-		}
-	}
-
-	// Check monotonicity as quality indicator
-	if !n.isMonotonic(provider) {
-		n.logProviderWarning("Provider blocks are not monotonically increasing", provider)
-		if Unhealthy > worstStatus {
-			worstStatus = Unhealthy
 		}
 	}
 
@@ -299,24 +299,29 @@ func (n *network) sendLatestBlockMetric(providerName string, statusCode int, hea
 	})
 }
 
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
+func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, HealthStatus, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
 
 	var lastErr error
-	var lastStatusCode int
+	var lastHealthStatus HealthStatus = Unhealthy
 
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
 		// Send the POST request
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-		lastStatusCode = *statusCode
 
-		if err != nil {
-			lastErr = err
+		// Evaluate health status based on status code
+		if *statusCode >= 400 {
+			// If status code is 429, set health status to Warning, otherwise continue as unhealthy
+			if *statusCode == 429 {
+				lastHealthStatus = Warning
+				lastErr = fmt.Errorf("rate limit error (status code: %d)", *statusCode)
+			}
+			lastErr = fmt.Errorf("error status code: %d", *statusCode)
 			continue
 		}
 
-		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-			lastErr = errors.New("Network Unavailable")
+		if err != nil {
+			lastErr = err
 			continue
 		}
 
@@ -356,10 +361,12 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			lastErr = errors.New("unsupported block number type")
 			continue
 		}
-		return blockNumber, lastStatusCode, nil
+		// If we get here, the block number is valid and we can return as Healthy
+		return blockNumber, Healthy, nil
 	}
 
-	return 0, lastStatusCode, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+	// If we get here, we've tried all attempts and failed
+	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, int, error) {
@@ -408,15 +415,4 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 
 func (n *network) close() {
 	close(n.quit)
-}
-
-// evaluateStatusCode checks the HTTP status code and returns appropriate health status
-func (n *network) evaluateStatusCode(statusCode int) HealthStatus {
-	if statusCode >= 400 {
-		if statusCode == 429 {
-			return Warning
-		}
-		return Unhealthy
-	}
-	return Healthy
 }
