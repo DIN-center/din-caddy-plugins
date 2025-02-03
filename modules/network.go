@@ -85,6 +85,9 @@ func (n *network) startHealthcheck() {
 
 // HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
+	// Get latest network block for comparison
+	latestNetworkBlock := n.getLatestHealthyBlock()
+
 	for _, provider := range n.Providers {
 		// Get latest block and initial health status
 		var healthStatus HealthStatus = Healthy
@@ -104,7 +107,7 @@ func (n *network) healthCheck() {
 
 		}
 		// Evaluate final health status
-		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus)
+		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus, latestNetworkBlock)
 		provider.healthStatus = newStatus
 
 		// Update metrics and history
@@ -146,7 +149,7 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 }
 
 // evaluateProviderHealth performs both levels of health checks
-func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus) HealthStatus {
+func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus, latestNetworkBlock int64) HealthStatus {
 	// Track the worst status we find
 	worstStatus := healthStatus
 
@@ -160,9 +163,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	if len(provider.BlockHistory()) == 0 {
 		return Unhealthy
 	}
-
-	// Get latest network block for comparison
-	latestNetworkBlock := n.getLatestHealthyBlock()
 
 	// Check block lag
 	if latestNetworkBlock > 0 {
