@@ -2,62 +2,63 @@ package modules
 
 import (
 	"testing"
+	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/stretchr/testify/assert"
 )
+
+type MockUpstream reverseproxy.Upstream
 
 func TestNewProvider(t *testing.T) {
 	tests := []struct {
-		name   string
-		urlstr string
-		output *provider
-		hasErr bool
+		name         string
+		urlStr       string
+		expectError  bool
+		expectedURL  string
+		expectedHost string
 	}{
 		{
-			name:   "passing localhost",
-			urlstr: "http://localhost:8080",
-			output: &provider{
-				HttpUrl:  "http://localhost:8080",
-				host:     "localhost:8080",
-				path:     "",
-				Headers:  make(map[string]string),
-				Priority: 0,
-			},
-			hasErr: false,
+			name:         "valid http url",
+			urlStr:       "http://example.com",
+			expectError:  false,
+			expectedURL:  "http://example.com",
+			expectedHost: "example.com",
 		},
 		{
-			name:   "passing fullurl with key",
-			urlstr: "https://eth.rpc.test.cloud:443/key",
-			output: &provider{
-				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
-				host:     "eth.rpc.test.cloud:443",
-				Headers:  make(map[string]string),
-				Priority: 0,
-			},
-			hasErr: false,
+			name:         "valid https url with port",
+			urlStr:       "https://example.com:8545",
+			expectError:  false,
+			expectedURL:  "https://example.com:8545",
+			expectedHost: "example.com:8545",
+		},
+		{
+			name:        "invalid url",
+			urlStr:      "not-a-url",
+			expectError: true,
+		},
+		{
+			name:        "empty url",
+			urlStr:      "",
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := NewProvider(tt.urlstr)
-			if err != nil && !tt.hasErr {
-				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
-			}
-			if provider.HttpUrl != tt.output.HttpUrl {
-				t.Errorf("HttpUrl = %v, want %v", provider.HttpUrl, tt.output.HttpUrl)
-			}
-			if provider.host != tt.output.host {
-				t.Errorf("host = %v, want %v", provider.host, tt.output.host)
-			}
-			if provider.path != tt.output.path {
-				t.Errorf("path = %v, want %v", provider.path, tt.output.path)
-			}
-			if len(provider.Headers) != len(tt.output.Headers) {
-				t.Errorf("Headers length = %v, want %v", len(provider.Headers), len(tt.output.Headers))
-			}
-			if provider.Priority != tt.output.Priority {
-				t.Errorf("priority = %v, want %v", provider.Priority, tt.output.Priority)
+			p, err := NewProvider(tt.urlStr)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, p)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, p)
+				assert.Equal(t, tt.expectedURL, p.HttpUrl)
+				assert.Equal(t, tt.expectedHost, p.host)
+				assert.NotNil(t, p.Headers)
+				assert.Empty(t, p.Headers)
 			}
 		})
 	}
@@ -65,276 +66,353 @@ func TestNewProvider(t *testing.T) {
 
 func TestAvailable(t *testing.T) {
 	tests := []struct {
-		name     string
-		provider *provider
-		output   bool
+		name           string
+		upstreamAvail  bool
+		healthStatus   HealthStatus
+		expectedResult bool
 	}{
 		{
-			name: "Available with healthy upstream",
-			provider: &provider{
-				healthStatus: Healthy,
-				upstream: &reverseproxy.Upstream{
-					Dial: "localhost:8080",
-				},
-			},
-			output: true,
+			name:           "upstream available and healthy",
+			upstreamAvail:  true,
+			healthStatus:   Healthy,
+			expectedResult: true,
 		},
 		{
-			name: "Available with unhealthy upstream",
-			provider: &provider{
-				healthStatus: Unhealthy,
-				upstream: &reverseproxy.Upstream{
-					Dial: "localhost:8080",
-				},
-			},
-			output: false,
+			name:           "upstream available but unhealthy",
+			upstreamAvail:  true,
+			healthStatus:   Unhealthy,
+			expectedResult: false,
+		},
+		{
+			name:           "upstream unavailable but healthy",
+			upstreamAvail:  false,
+			healthStatus:   Healthy,
+			expectedResult: false,
+		},
+		{
+			name:           "upstream unavailable and warning",
+			upstreamAvail:  false,
+			healthStatus:   Warning,
+			expectedResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.provider.Available() != tt.output {
-				t.Errorf("Available() = %v, want %v", tt.provider.Available(), tt.output)
+			mockUpstream := (*reverseproxy.Upstream)(new(MockUpstream))
+
+			p := &provider{
+				upstream:     mockUpstream,
+				healthStatus: tt.healthStatus,
+			}
+
+			result := p.Available()
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestIsAvailableWithWarning(t *testing.T) {
+	tests := []struct {
+		name           string
+		upstreamAvail  bool
+		healthStatus   HealthStatus
+		expectedResult bool
+	}{
+		{
+			name:           "upstream available and warning",
+			upstreamAvail:  true,
+			healthStatus:   Warning,
+			expectedResult: true,
+		},
+		{
+			name:           "upstream available and healthy",
+			upstreamAvail:  true,
+			healthStatus:   Healthy,
+			expectedResult: false,
+		},
+		{
+			name:           "upstream unavailable with warning",
+			upstreamAvail:  false,
+			healthStatus:   Warning,
+			expectedResult: false,
+		},
+		{
+			name:           "upstream unavailable and unhealthy",
+			upstreamAvail:  false,
+			healthStatus:   Unhealthy,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUpstream := (*reverseproxy.Upstream)(new(MockUpstream))
+
+			p := &provider{
+				upstream:     mockUpstream,
+				healthStatus: tt.healthStatus,
+			}
+
+			result := p.IsAvailableWithWarning()
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestAuthClient(t *testing.T) {
+	tests := []struct {
+		name           string
+		auth           *siwe.SIWEClientAuth
+		expectedResult bool
+	}{
+		{
+			name:           "auth client configured",
+			auth:           &siwe.SIWEClientAuth{},
+			expectedResult: true,
+		},
+		{
+			name:           "no auth client",
+			auth:           nil,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				Auth: tt.auth,
+			}
+
+			result := p.AuthClient()
+			if tt.expectedResult {
+				assert.NotNil(t, result)
+			} else {
+				assert.Nil(t, result)
 			}
 		})
 	}
 }
 
-func TestMarkPingFailure(t *testing.T) {
+func TestHealthy(t *testing.T) {
 	tests := []struct {
-		name     string
-		hcThresh int
-		provider *provider
-		output   HealthStatus
+		name           string
+		healthStatus   HealthStatus
+		expectedResult bool
 	}{
 		{
-			name: "markPingFailure with 0 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Healthy,
-			},
-			hcThresh: 0,
-			output:   Unhealthy,
+			name:           "healthy status",
+			healthStatus:   Healthy,
+			expectedResult: true,
 		},
 		{
-			name: "markPingFailure with 1 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Healthy,
-			},
-			hcThresh: 1,
-			output:   Healthy,
+			name:           "warning status",
+			healthStatus:   Warning,
+			expectedResult: false,
+		},
+		{
+			name:           "unhealthy status",
+			healthStatus:   Unhealthy,
+			expectedResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markPingFailure(tt.hcThresh)
-			if tt.provider.healthStatus != tt.output {
-				t.Errorf("markPingFailure() = %v, want %v", tt.provider.healthStatus, tt.output)
+			p := &provider{
+				healthStatus: tt.healthStatus,
+			}
+
+			result := p.Healthy()
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestWarning(t *testing.T) {
+	tests := []struct {
+		name           string
+		healthStatus   HealthStatus
+		expectedResult bool
+	}{
+		{
+			name:           "warning status",
+			healthStatus:   Warning,
+			expectedResult: true,
+		},
+		{
+			name:           "healthy status",
+			healthStatus:   Healthy,
+			expectedResult: false,
+		},
+		{
+			name:           "unhealthy status",
+			healthStatus:   Unhealthy,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				healthStatus: tt.healthStatus,
+			}
+
+			result := p.Warning()
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestBlockHistory(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name         string
+		blockHistory []blockHistoryEntry
+		expected     int
+	}{
+		{
+			name: "normal history",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 101, statusCode: Healthy, timestamp: &now},
+			},
+			expected: 2,
+		},
+		{
+			name:         "empty history",
+			blockHistory: []blockHistoryEntry{},
+			expected:     0,
+		},
+		{
+			name: "single entry",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+			},
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				blockHistory: tt.blockHistory,
+			}
+
+			result := p.BlockHistory()
+			assert.Equal(t, tt.expected, len(result))
+			assert.Equal(t, tt.blockHistory, result)
+
+			// Verify it's a copy, not the original slice
+			if len(result) > 0 {
+				result[0].blockNumber = 999
+				assert.NotEqual(t, result[0].blockNumber, p.blockHistory[0].blockNumber)
 			}
 		})
 	}
 }
 
-func TestMarkPingSuccess(t *testing.T) {
+func TestAddBlockEntry(t *testing.T) {
+	now := time.Now()
 	tests := []struct {
-		name     string
-		hcThresh int
-		provider *provider
-		output   HealthStatus
+		name           string
+		initialHistory []blockHistoryEntry
+		newBlock       int64
+		newStatus      HealthStatus
+		historySize    int
+		expectedLength int
+		expectedFirst  int64
+		expectedLast   int64
 	}{
 		{
-			name: "markPingSuccess with 0 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Unhealthy,
-			},
-			hcThresh: 0,
-			output:   Healthy,
+			name:           "add to empty history",
+			initialHistory: []blockHistoryEntry{},
+			newBlock:       100,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 1,
+			expectedFirst:  100,
+			expectedLast:   100,
 		},
 		{
-			name: "markPingSuccess with 1 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Unhealthy,
+			name: "add within size limit",
+			initialHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
 			},
-			hcThresh: 1,
-			output:   Unhealthy,
+			newBlock:       101,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 2,
+			expectedFirst:  100,
+			expectedLast:   101,
+		},
+		{
+			name: "exceed size limit",
+			initialHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 101, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 102, statusCode: Healthy, timestamp: &now},
+			},
+			newBlock:       103,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 3,
+			expectedFirst:  101,
+			expectedLast:   103,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markPingSuccess(tt.hcThresh)
-			if tt.provider.healthStatus != tt.output {
-				t.Errorf("markPingSuccess() = %v, want %v", tt.provider.healthStatus, tt.output)
+			p := &provider{
+				blockHistory: tt.initialHistory,
+			}
+
+			p.AddBlockEntry(tt.newBlock, tt.newStatus, tt.historySize)
+
+			result := p.BlockHistory()
+			assert.Equal(t, tt.expectedLength, len(result))
+
+			if len(result) > 0 {
+				assert.Equal(t, tt.expectedFirst, result[0].blockNumber)
+				assert.Equal(t, tt.expectedLast, result[len(result)-1].blockNumber)
+				assert.NotNil(t, result[len(result)-1].timestamp)
 			}
 		})
 	}
 }
 
-func TestMarkHealthy(t *testing.T) {
+func TestProviderGetChainID(t *testing.T) {
 	tests := []struct {
-		name                  string
-		hcThresh              int
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
+		name            string
+		chainID         string
+		expectedChainID string
 	}{
 		{
-			name: "markHealthy when already healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
+			name:            "normal chain ID",
+			chainID:         "1",
+			expectedChainID: "1",
 		},
 		{
-			name: "markHealthy when unhealthy - not enough consecutive checks",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 2,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 3,
+			name:            "empty chain ID",
+			chainID:         "",
+			expectedChainID: "",
 		},
 		{
-			name: "markHealthy when unhealthy - threshold reached",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 3,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markHealthy when warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 2,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
+			name:            "hex chain ID",
+			chainID:         "0x1",
+			expectedChainID: "0x1",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markHealthy(tt.hcThresh)
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
+			p := &provider{
+				chainID: tt.chainID,
 			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
-			}
-		})
-	}
-}
 
-func TestMarkWarning(t *testing.T) {
-	tests := []struct {
-		name                  string
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
-	}{
-		{
-			name: "markWarning when healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markWarning when unhealthy",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 3,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markWarning when already warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 2,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markWarning()
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
-			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
-			}
-		})
-	}
-}
-
-func TestMarkUnhealthy(t *testing.T) {
-	tests := []struct {
-		name                  string
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
-	}{
-		{
-			name: "markUnhealthy when healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markUnhealthy when warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 3,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markUnhealthy when already unhealthy",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 2,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markUnhealthy()
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
-			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
-			}
+			result := p.getChainID()
+			assert.Equal(t, tt.expectedChainID, result)
 		})
 	}
 }

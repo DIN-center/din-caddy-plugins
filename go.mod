@@ -12,10 +12,12 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spruceid/siwe-go v0.2.1
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/zeebo/assert v1.1.0
 	go.uber.org/zap v1.27.0
 )
+
+require github.com/stretchr/objx v0.5.2 // indirect
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect

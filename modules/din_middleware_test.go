@@ -9,7 +9,6 @@ import (
 	reflect "reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -64,8 +63,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;"}`
 
-	now := time.Now()
-
 	test := []struct {
 		name     string
 		request  *http.Request
@@ -85,14 +82,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 							healthStatus: Healthy,
 						},
 					},
-					CheckedProviders: map[string][]healthCheckEntry{
-						"localhost:8000": {
-							{
-								blockNumber: 1,
-								timestamp:   &now,
-							},
-						},
-					},
 					MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 				},
 			},
@@ -108,14 +97,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							healthStatus: Healthy,
-						},
-					},
-					CheckedProviders: map[string][]healthCheckEntry{
-						"localhost:8000": {
-							{
-								blockNumber: 1,
-								timestamp:   &now,
-							},
 						},
 					},
 					MaxRequestPayloadSizeKB: 0,
@@ -147,12 +128,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(RequestProviderKey, tt.provider)
-
-			// bodyBytes, err := io.ReadAll(tt.request.Body)
-			// if err != nil {
-			// 	t.Errorf("ServeHTTP() = %v, want %v", err, nil)
-			// }
-			// repl.Set(RequestBodyKey, bodyBytes)
 
 			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 			if err == nil && tt.hasErr {

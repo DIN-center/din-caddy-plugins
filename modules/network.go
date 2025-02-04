@@ -58,8 +58,7 @@ func NewNetwork(name string) *network {
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
 		BlockHistorySize:        BlockHistorySize,
-		// CheckedProviders: make(map[string][]healthCheckEntry),
-		Providers: make(map[string]*provider),
+		Providers:               make(map[string]*provider),
 	}
 }
 
@@ -234,17 +233,6 @@ func (n *network) isStalled(provider *provider) bool {
 func (n *network) allProvidersStalled() bool {
 	for _, p := range n.Providers {
 		if !n.isStalled(p) {
-			return false
-		}
-	}
-	return true
-}
-
-// isMonotonic checks if block numbers are non-decreasing
-func (n *network) isMonotonic(provider *provider) bool {
-	history := provider.BlockHistory()
-	for i := 1; i < len(history); i++ {
-		if history[i].blockNumber < history[i-1].blockNumber {
 			return false
 		}
 	}

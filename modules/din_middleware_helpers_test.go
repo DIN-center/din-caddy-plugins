@@ -358,110 +358,160 @@ func TestSyncNetworkConfig(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	tests := []struct {
-		name                          string
-		regNetwork                    *din.Network
-		network                       *network
-		getNetworkMethodNameByBitErr  error
-		expectedNetwork               *network
-		expectedError                 error
-		expectedHCMethod              string
-		expectedHCInterval            uint64
-		expectedBlockLagLimit         uint64
-		expectedMaxRequestPayloadSize uint64
-		expectedRequestAttemptCount   int
+		name                string
+		regNetwork          *din.Network
+		existingNetwork     *network
+		hcMethodName        string
+		chainIDMethodName   string
+		getHCMethodErr      error
+		getChainIDMethodErr error
+		expectedError       error
+		expectedNetwork     *network
 	}{
 		{
-			name: "Successful sync with all changes",
+			name: "successful sync with all new values",
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit:    1,
-					HealthcheckIntervalSec:  30,
-					BlockLagLimit:           5,
+					ChainIDMethodBit:        1,
+					ChainID:                 "0x1",
+					HealthcheckIntervalSec:  20,
+					BlockLagLimit:           10,
+					BlockJumpLimit:          5,
 					MaxRequestPayloadSizeKb: 2048,
-					RequestAttemptCount:     3,
+					RequestAttemptCount:     5,
 				},
 			},
-			network: &network{
+			existingNetwork: &network{
 				Name:                    "test-network",
 				HCMethod:                "old-method",
+				ChainIDMethod:           "old-chain-method",
+				ChainID:                 "0x0",
 				HCInterval:              10,
-				BlockLagLimit:           3,
-				MaxRequestPayloadSizeKB: 1024,
-				RequestAttemptCount:     1,
-			},
-			expectedHCMethod:              "new-method",
-			expectedHCInterval:            30,
-			expectedBlockLagLimit:         5,
-			expectedMaxRequestPayloadSize: 2048,
-			expectedRequestAttemptCount:   3,
-			expectedNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "new-method",
-				HCInterval:              30,
 				BlockLagLimit:           5,
-				MaxRequestPayloadSizeKB: 2048,
+				BlockJumpLimit:          3,
+				MaxRequestPayloadSizeKB: 1024,
 				RequestAttemptCount:     3,
 			},
-			expectedError: nil,
+			hcMethodName:      "eth_blockNumber",
+			chainIDMethodName: "eth_chainId",
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HCMethod:                "eth_blockNumber",
+				ChainIDMethod:           "eth_chainId",
+				ChainID:                 "0x1",
+				HCInterval:              20,
+				BlockLagLimit:           10,
+				BlockJumpLimit:          5,
+				MaxRequestPayloadSizeKB: 2048,
+				RequestAttemptCount:     5,
+			},
 		},
 		{
-			name: "Error getting network method",
+			name: "error getting healthcheck method",
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: 1,
 				},
 			},
-			network: &network{
-				Name:     "test-network",
-				HCMethod: "old-method",
+			existingNetwork: &network{
+				Name: "test-network",
 			},
-			getNetworkMethodNameByBitErr: errors.New("failed to get method"),
-			expectedError:                errors.New("failed to get method"),
-			expectedNetwork:              nil,
+			getHCMethodErr: errors.New("failed to get healthcheck method"),
+			expectedError:  errors.New("failed to get network healthcheck method"),
+		},
+		{
+			name: "error getting chain ID method",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit: 1,
+					ChainIDMethodBit:     1,
+				},
+			},
+			existingNetwork:     &network{Name: "test-network"},
+			hcMethodName:        "eth_blockNumber",
+			getChainIDMethodErr: errors.New("failed to get chain ID method"),
+			expectedError:       errors.New("failed to get network chain ID method"),
+		},
+		{
+			name: "no updates needed when registry values are zero",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit:    1,
+					ChainIDMethodBit:        1,
+					HealthcheckIntervalSec:  0,
+					BlockLagLimit:           0,
+					BlockJumpLimit:          0,
+					MaxRequestPayloadSizeKb: 0,
+					RequestAttemptCount:     0,
+				},
+			},
+			existingNetwork: &network{
+				Name:                    "test-network",
+				HCMethod:                "eth_blockNumber",
+				ChainIDMethod:           "eth_chainId",
+				HCInterval:              10,
+				BlockLagLimit:           5,
+				BlockJumpLimit:          3,
+				MaxRequestPayloadSizeKB: 1024,
+				RequestAttemptCount:     3,
+			},
+			hcMethodName:      "eth_blockNumber",
+			chainIDMethodName: "eth_chainId",
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HCMethod:                "eth_blockNumber",
+				ChainIDMethod:           "eth_chainId",
+				HCInterval:              10,
+				BlockLagLimit:           5,
+				BlockJumpLimit:          3,
+				MaxRequestPayloadSizeKB: 1024,
+				RequestAttemptCount:     3,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock DingoClient
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
-
-			// Create logger
 			logger := zaptest.NewLogger(t)
 
-			// Create DinMiddleware instance
+			mockDingoClient.EXPECT().
+				GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.HealthcheckMethodBit).
+				Return(tt.hcMethodName, tt.getHCMethodErr).
+				AnyTimes()
+
+			mockDingoClient.EXPECT().
+				GetChainIDMethodByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.ChainIDMethodBit).
+				Return(tt.chainIDMethodName, tt.getChainIDMethodErr).
+				AnyTimes()
+
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
-				testMode:    true,
 			}
 
-			// Mock GetNetworkMethodNameByBit method
-			mockDingoClient.EXPECT().
-				GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.HealthcheckMethodBit).
-				Return(tt.expectedHCMethod, tt.getNetworkMethodNameByBitErr).
-				AnyTimes()
+			result, err := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.existingNetwork)
 
-			// Call syncNetworkConfig
-			updatedNetwork, err := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.network)
-
-			// Assert results
 			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-				assert.Nil(t, updatedNetwork)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, updatedNetwork)
-
-				// Verify that the network was updated correctly
-				assert.Equal(t, tt.expectedHCMethod, updatedNetwork.HCMethod)
-				assert.Equal(t, tt.expectedHCInterval, updatedNetwork.HCInterval)
-				assert.Equal(t, tt.expectedBlockLagLimit, updatedNetwork.BlockLagLimit)
-				assert.Equal(t, tt.expectedMaxRequestPayloadSize, updatedNetwork.MaxRequestPayloadSizeKB)
-				assert.Equal(t, tt.expectedRequestAttemptCount, updatedNetwork.RequestAttemptCount)
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError.Error())
+				return
 			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedNetwork.HCMethod, result.HCMethod)
+			assert.Equal(t, tt.expectedNetwork.ChainIDMethod, result.ChainIDMethod)
+			assert.Equal(t, tt.expectedNetwork.ChainID, result.ChainID)
+			assert.Equal(t, tt.expectedNetwork.HCInterval, result.HCInterval)
+			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, result.BlockLagLimit)
+			assert.Equal(t, tt.expectedNetwork.BlockJumpLimit, result.BlockJumpLimit)
+			assert.Equal(t, tt.expectedNetwork.MaxRequestPayloadSizeKB, result.MaxRequestPayloadSizeKB)
+			assert.Equal(t, tt.expectedNetwork.RequestAttemptCount, result.RequestAttemptCount)
 		})
 	}
 }
