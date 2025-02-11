@@ -36,6 +36,13 @@
         ],
         "cwd": "apps/din-go"
       }
+    },
+    "test-watcher": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["go test -v ./lib/watcher/..."],
+        "cwd": "apps/din-go"
+      }
     }
   }
 }

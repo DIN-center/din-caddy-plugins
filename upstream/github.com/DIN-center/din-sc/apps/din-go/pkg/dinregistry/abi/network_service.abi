@@ -26,8 +26,26 @@
         "name": "providerOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "locations",
+        "type": "uint8[]",
+        "internalType": "enum LocationType[]"
       }
     ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addLocations",
+    "inputs": [
+      {
+        "name": "_locations",
+        "type": "uint8[]",
+        "internalType": "enum LocationType[]"
+      }
+    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -52,6 +70,19 @@
         "name": "methods",
         "type": "string[]",
         "internalType": "string[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getLocations",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "locations",
+        "type": "uint8[]",
+        "internalType": "enum LocationType[]"
       }
     ],
     "stateMutability": "view"
@@ -100,6 +131,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeLocations",
+    "inputs": [
+      {
+        "name": "_locations",
+        "type": "uint8[]",
+        "internalType": "enum LocationType[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",

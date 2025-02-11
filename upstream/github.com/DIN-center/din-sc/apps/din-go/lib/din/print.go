@@ -185,6 +185,7 @@ func (d *DinClient) PrintRegistryData() {
 
 			for _, networkService := range provider.NetworkServices {
 				fmt.Println("    NetworkService: ", networkService.Url)
+				fmt.Println("    Locations: ", networkService.Locations)
 				fmt.Println("    Capabilities: ", networkService.Capabilities)
 				// fmt.Println("    # of Methods: ", len(networkService.Methods))
 				// for _, method := range networkService.Methods {

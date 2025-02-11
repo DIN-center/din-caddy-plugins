@@ -157,11 +157,18 @@ func (d *DinClient) GetRegistryData() (*DinRegistryData, error) {
 				if err != nil {
 					return nil, errors.Wrap(err, "failed call to GetNetworkServiceStatus")
 				}
+
+				locations, err := networkServiceHandler.GetNetworkServiceLocations()
+				if err != nil {
+					return nil, errors.Wrap(err, "failed call to GetNetworkServiceLocations")
+				}
+
 				networkServiceData := &NetworkService{
 					Address:      networkServiceAddress.String(),
 					Url:          url,
 					Capabilities: capabilities,
 					Status:       networkServiceStatus,
+					Locations:    locations,
 					// Methods: make(map[string]*din.Method),
 				}
 				registryData.Networks[networkName].Providers[name].NetworkServices[networkServiceData.Url] = networkServiceData
@@ -240,4 +247,51 @@ func (d *DinClient) GetLatestBlockNumber() (uint64, error) {
 		return 0, errors.Wrap(err, "Error converting block number")
 	}
 	return blockNumber, nil
+}
+
+// GetAllNetworks returns a list of all networks in the registry
+func (d *DinClient) GetAllNetworks() ([]Network, error) {
+	// Get A list of Network Addresses
+	networkAddresses, err := d.DinRegistry.GetAllNetworkAddresses()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to GetAllNetworks")
+	}
+	var networks []Network
+
+	for _, networkAddress := range networkAddresses {
+		networkHandler, err := din.NewNetworkHandler(d.ethClient, networkAddress.String())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed call to NewNetworkHandler")
+		}
+
+		networkName, err := networkHandler.GetNetworkName()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed call to GetNetworkMeta")
+		}
+
+		networkStatus, err := networkHandler.GetNetworkStatus()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed call to GetNetworkStatus")
+		}
+
+		capabilities, err := d.DinRegistry.GetNetworkCapabilities(networkName)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed call to GetNetworkCapabilities")
+		}
+
+		networkConfig, err := d.DinRegistry.GetNetworkOperationsConfig(networkName)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed call to GetNetworkOperationsConfig")
+		}
+
+		networks = append(networks, Network{
+			Address:       networkAddress.String(),
+			Name:          networkName,
+			Status:        networkStatus,
+			ProxyName:     convertNetworkName(networkName),
+			Capabilities:  capabilities,
+			NetworkConfig: networkConfig,
+		})
+	}
+	return networks, nil
 }

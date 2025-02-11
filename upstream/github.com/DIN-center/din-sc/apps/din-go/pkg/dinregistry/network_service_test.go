@@ -418,3 +418,59 @@ func TestGetNetworkServiceStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestGetNetworkServiceLocations(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockContractHandler := NewMockIContractHandler(mockCtrl)
+
+	dinServiceHandler := &NetworkServiceHandler{
+		ContractHandler: mockContractHandler,
+	}
+
+	type smartContractData struct {
+		output map[string]interface{}
+		err    error
+	}
+
+	tests := []struct {
+		name              string
+		smartContractData smartContractData
+		output            []string
+		hasErr            bool
+	}{
+		{
+			name: "successful call",
+			smartContractData: smartContractData{
+				output: map[string]interface{}{
+					"locations": []uint8{uint8(1), uint8(2)},
+				},
+				err: nil,
+			},
+			output: []string{NorthAmerica, Latam},
+			hasErr: false,
+		},
+		{
+			name: "contract call error",
+			smartContractData: smartContractData{
+				output: nil,
+				err:    errors.New("error"),
+			},
+			output: nil,
+			hasErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContractHandler.EXPECT().Call(GetNetworkServiceLocations).Return(tt.smartContractData.output, tt.smartContractData.err).Times(1)
+
+			got, err := dinServiceHandler.GetNetworkServiceLocations()
+			if (err != nil) != tt.hasErr {
+				t.Errorf("GetNetworkServiceLocations() error = %v, wantErr %v", err, tt.hasErr)
+			}
+			if !reflect.DeepEqual(got, tt.output) {
+				t.Errorf("GetNetworkServiceLocations() = %v, want %v", got, tt.output)
+			}
+		})
+	}
+}

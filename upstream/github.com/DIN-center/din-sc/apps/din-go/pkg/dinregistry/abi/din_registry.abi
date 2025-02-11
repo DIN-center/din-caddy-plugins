@@ -154,6 +154,11 @@
         "internalType": "enum NetworkServiceStatus"
       },
       {
+        "name": "locations",
+        "type": "uint8[]",
+        "internalType": "enum LocationType[]"
+      },
+      {
         "name": "provider",
         "type": "address",
         "internalType": "contract Provider"

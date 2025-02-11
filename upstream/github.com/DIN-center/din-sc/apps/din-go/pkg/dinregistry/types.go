@@ -28,6 +28,7 @@ const (
 	GetNetworkAddress             = "inetwork"
 	GetNetworkServiceStatus       = "getStatus"
 	GetNetworkServiceCapabilities = "capabilities"
+	GetNetworkServiceLocations    = "getLocations"
 
 	// DinRegistry Functions
 	GetAllNetworks            = "getAllNetworks"
@@ -51,6 +52,13 @@ const (
 	Maintenance    = "Maintenance"
 	Decommissioned = "Decommissioned"
 	Retired        = "Retired"
+
+	// Network Service Locations
+	NorthAmerica     = "NorthAmerica"
+	Latam            = "Latam"
+	Europe           = "Europe"
+	MiddleEastAfrica = "MiddleEastAfrica"
+	AsiaPacific      = "AsiaPacific"
 
 	// Auth Type for Network Service
 	SIWE = "siwe"

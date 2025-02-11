@@ -183,3 +183,52 @@ func getNetworkServiceStatus(networkServiceStatusCode uint8) (string, error) {
 
 	return "", errors.New("Invalid Network Service Status Code")
 }
+
+// GetNetworkServiceLocations returns the supported locaction for the network service
+func (n *NetworkServiceHandler) GetNetworkServiceLocations() ([]string, error) {
+	locations, err := n.ContractHandler.Call(GetNetworkServiceLocations)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to NetworkService GetNetworkServiceLocations")
+	}
+
+	locationsStruct, ok := locations.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("mismatched type for locationsStruct")
+	}
+
+	locationsCode, ok := locationsStruct["locations"].([]uint8)
+	if !ok {
+		return nil, errors.New("unexpected data structure returned in NetworkService GetNetworkServiceLocations")
+	}
+
+	// Map raw location codes to strings
+	locationsName := make([]string, len(locationsCode))
+	for i, code := range locationsCode {
+		locationName, err := convertLocationCodeToName(code)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to map location code")
+		}
+		locationsName[i] = locationName
+	}
+
+	return locationsName, nil
+}
+
+func convertLocationCodeToName(locationCodes uint8) (string, error) {
+	switch locationCodes {
+	case 0:
+		return None, nil
+	case 1:
+		return NorthAmerica, nil
+	case 2:
+		return Latam, nil
+	case 3:
+		return Europe, nil
+	case 4:
+		return MiddleEastAfrica, nil
+	case 5:
+		return AsiaPacific, nil
+	}
+
+	return "", errors.New("Invalid Network Service Location Code")
+}
