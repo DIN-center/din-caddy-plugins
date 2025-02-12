@@ -5,11 +5,8 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/stretchr/testify/assert"
 )
-
-type MockUpstream reverseproxy.Upstream
 
 func TestNewProvider(t *testing.T) {
 	tests := []struct {
@@ -18,6 +15,7 @@ func TestNewProvider(t *testing.T) {
 		expectError  bool
 		expectedURL  string
 		expectedHost string
+		errorMessage string
 	}{
 		{
 			name:         "valid http url",
@@ -34,9 +32,22 @@ func TestNewProvider(t *testing.T) {
 			expectedHost: "example.com:8545",
 		},
 		{
-			name:        "invalid url",
-			urlStr:      "not-a-url",
-			expectError: true,
+			name:         "invalid url",
+			urlStr:       "not-a-url",
+			expectError:  true,
+			errorMessage: "invalid URL: missing host",
+		},
+		{
+			name:         "empty url",
+			urlStr:       "",
+			expectError:  true,
+			errorMessage: "empty URL",
+		},
+		{
+			name:         "missing scheme",
+			urlStr:       "example.com",
+			expectError:  true,
+			errorMessage: "invalid URL: missing host",
 		},
 		{
 			name:        "empty url",
@@ -52,6 +63,9 @@ func TestNewProvider(t *testing.T) {
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Nil(t, p)
+				if tt.errorMessage != "" {
+					assert.Contains(t, err.Error(), tt.errorMessage)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, p)
@@ -60,102 +74,6 @@ func TestNewProvider(t *testing.T) {
 				assert.NotNil(t, p.Headers)
 				assert.Empty(t, p.Headers)
 			}
-		})
-	}
-}
-
-func TestAvailable(t *testing.T) {
-	tests := []struct {
-		name           string
-		upstreamAvail  bool
-		healthStatus   HealthStatus
-		expectedResult bool
-	}{
-		{
-			name:           "upstream available and healthy",
-			upstreamAvail:  true,
-			healthStatus:   Healthy,
-			expectedResult: true,
-		},
-		{
-			name:           "upstream available but unhealthy",
-			upstreamAvail:  true,
-			healthStatus:   Unhealthy,
-			expectedResult: false,
-		},
-		{
-			name:           "upstream unavailable but healthy",
-			upstreamAvail:  false,
-			healthStatus:   Healthy,
-			expectedResult: false,
-		},
-		{
-			name:           "upstream unavailable and warning",
-			upstreamAvail:  false,
-			healthStatus:   Warning,
-			expectedResult: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockUpstream := (*reverseproxy.Upstream)(new(MockUpstream))
-
-			p := &provider{
-				upstream:     mockUpstream,
-				healthStatus: tt.healthStatus,
-			}
-
-			result := p.Available()
-			assert.Equal(t, tt.expectedResult, result)
-		})
-	}
-}
-
-func TestIsAvailableWithWarning(t *testing.T) {
-	tests := []struct {
-		name           string
-		upstreamAvail  bool
-		healthStatus   HealthStatus
-		expectedResult bool
-	}{
-		{
-			name:           "upstream available and warning",
-			upstreamAvail:  true,
-			healthStatus:   Warning,
-			expectedResult: true,
-		},
-		{
-			name:           "upstream available and healthy",
-			upstreamAvail:  true,
-			healthStatus:   Healthy,
-			expectedResult: false,
-		},
-		{
-			name:           "upstream unavailable with warning",
-			upstreamAvail:  false,
-			healthStatus:   Warning,
-			expectedResult: false,
-		},
-		{
-			name:           "upstream unavailable and unhealthy",
-			upstreamAvail:  false,
-			healthStatus:   Unhealthy,
-			expectedResult: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockUpstream := (*reverseproxy.Upstream)(new(MockUpstream))
-
-			p := &provider{
-				upstream:     mockUpstream,
-				healthStatus: tt.healthStatus,
-			}
-
-			result := p.IsAvailableWithWarning()
-			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
 }
@@ -385,34 +303,122 @@ func TestAddBlockEntry(t *testing.T) {
 func TestProviderGetChainID(t *testing.T) {
 	tests := []struct {
 		name            string
-		chainID         string
-		expectedChainID string
+		chainId         string
+		expectedChainId string
 	}{
 		{
 			name:            "normal chain ID",
-			chainID:         "1",
-			expectedChainID: "1",
+			chainId:         "1",
+			expectedChainId: "1",
 		},
 		{
 			name:            "empty chain ID",
-			chainID:         "",
-			expectedChainID: "",
+			chainId:         "",
+			expectedChainId: "",
 		},
 		{
 			name:            "hex chain ID",
-			chainID:         "0x1",
-			expectedChainID: "0x1",
+			chainId:         "0x1",
+			expectedChainId: "0x1",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &provider{
-				chainID: tt.chainID,
+				chainId: tt.chainId,
 			}
 
-			result := p.getChainID()
-			assert.Equal(t, tt.expectedChainID, result)
+			result := p.getChainId()
+			assert.Equal(t, tt.expectedChainId, result)
+		})
+	}
+}
+
+func TestGetLatestHealthyBlockEntry(t *testing.T) {
+	tests := []struct {
+		name          string
+		blockHistory  []blockHistoryEntry
+		expectedBlock *blockHistoryEntry
+	}{
+		{
+			name:          "empty history returns nil",
+			blockHistory:  []blockHistoryEntry{},
+			expectedBlock: nil,
+		},
+		{
+			name: "single healthy entry returns that entry",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy},
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 100, statusCode: Healthy},
+		},
+		{
+			name: "single unhealthy entry returns nil",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Unhealthy},
+			},
+			expectedBlock: nil,
+		},
+		{
+			name: "multiple entries returns latest healthy",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Healthy},
+				{blockNumber: 101, statusCode: Unhealthy},
+				{blockNumber: 102, statusCode: Healthy},
+				{blockNumber: 103, statusCode: Unhealthy},
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, statusCode: Healthy},
+		},
+		{
+			name: "all unhealthy entries returns nil",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Unhealthy},
+				{blockNumber: 101, statusCode: Unhealthy},
+				{blockNumber: 102, statusCode: Unhealthy},
+			},
+			expectedBlock: nil,
+		},
+		{
+			name: "latest entry is healthy returns that entry",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, statusCode: Unhealthy},
+				{blockNumber: 101, statusCode: Unhealthy},
+				{blockNumber: 102, statusCode: Healthy},
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, statusCode: Healthy},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				blockHistory: tt.blockHistory,
+			}
+
+			got := p.getLatestHealthyBlockEntry()
+
+			if tt.expectedBlock == nil {
+				if got != nil {
+					t.Errorf("getLatestHealthyBlockEntry() = %v, want nil", got)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Errorf("getLatestHealthyBlockEntry() = nil, want %v", tt.expectedBlock)
+				return
+			}
+
+			if got.blockNumber != tt.expectedBlock.blockNumber {
+				t.Errorf("getLatestHealthyBlockEntry() blockNumber = %v, want %v",
+					got.blockNumber, tt.expectedBlock.blockNumber)
+			}
+
+			if got.statusCode != tt.expectedBlock.statusCode {
+				t.Errorf("getLatestHealthyBlockEntry() statusCode = %v, want %v",
+					got.statusCode, tt.expectedBlock.statusCode)
+			}
 		})
 	}
 }

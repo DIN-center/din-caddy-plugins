@@ -354,13 +354,13 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 				eth {
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
-						localhost:8000 {
+						http://test-website-1.com/eth {
 							headers {
 								Content-Type application/json
 							}
 							priority 1
 						}
-						localhost:8001 {
+						http://test-website-2.com/eth {
 							headers {
 								Content-Type application/json
 							}

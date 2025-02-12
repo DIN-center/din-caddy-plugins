@@ -4,6 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +23,7 @@ type MockHTTPClient struct {
 func (m *MockHTTPClient) Post(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
 	args := m.Called(url, headers, payload, ac)
 	statusCode := args.Get(1).(int)
+	// Always return a non-nil status code pointer
 	return args.Get(0).([]byte), &statusCode, args.Error(2)
 }
 
@@ -46,7 +51,7 @@ func TestNewNetwork(t *testing.T) {
 			expected: &network{
 				Name:                    "ethereum",
 				HCMethod:                DefaultHCMethod,
-				ChainIDMethod:           DefaultChainIDMethod,
+				ChainIdMethod:           DefaultChainIdMethod,
 				HCThreshold:             DefaultHCThreshold,
 				HCInterval:              DefaultHCInterval,
 				BlockLagLimit:           DefaultBlockLagLimit,
@@ -64,7 +69,7 @@ func TestNewNetwork(t *testing.T) {
 			result := NewNetwork(tt.input)
 			assert.Equal(t, tt.expected.Name, result.Name)
 			assert.Equal(t, tt.expected.HCMethod, result.HCMethod)
-			assert.Equal(t, tt.expected.ChainIDMethod, result.ChainIDMethod)
+			assert.Equal(t, tt.expected.ChainIdMethod, result.ChainIdMethod)
 			assert.Equal(t, tt.expected.HCThreshold, result.HCThreshold)
 			assert.Equal(t, tt.expected.HCInterval, result.HCInterval)
 			assert.Equal(t, tt.expected.BlockLagLimit, result.BlockLagLimit)
@@ -90,8 +95,11 @@ func TestEvaluateProviderHealth(t *testing.T) {
 		initialHealth      HealthStatus
 		provider           *provider
 		blockHistory       []blockHistoryEntry
-		chainID            string
-		networkChainID     string
+		chainId            string
+		networkChainId     string
+		networkName        string
+		archiveEnabled     bool
+		mockArchiveTest    error // New field to mock archive test result
 		expectedStatus     HealthStatus
 	}{
 		{
@@ -107,8 +115,9 @@ func TestEvaluateProviderHealth(t *testing.T) {
 				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
 				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
 			},
-			chainID:        "1",
-			networkChainID: "1",
+			chainId:        "1",
+			networkChainId: "1",
+			networkName:    "ethereum",
 			expectedStatus: Healthy,
 		},
 		{
@@ -124,27 +133,121 @@ func TestEvaluateProviderHealth(t *testing.T) {
 				{blockNumber: 89, statusCode: Healthy, timestamp: &oneSecondAgo},
 				{blockNumber: 90, statusCode: Healthy, timestamp: &now},
 			},
-			chainID:        "1",
-			networkChainID: "1",
+			chainId:        "1",
+			networkChainId: "1",
+			networkName:    "ethereum",
 			expectedStatus: Warning,
 		},
-		// Add more test cases
+		{
+			name:               "archive check passes",
+			currentBlock:       100,
+			latestNetworkBlock: 101,
+			initialHealth:      Healthy,
+			provider: &provider{
+				host:    "test.com",
+				HttpUrl: "http://test.com",
+			},
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
+				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+			},
+			chainId:         "1",
+			networkChainId:  "1",
+			networkName:     "ethereum",
+			archiveEnabled:  true,
+			mockArchiveTest: nil, // No error means test passes
+			expectedStatus:  Healthy,
+		},
+		{
+			name:               "archive check fails",
+			currentBlock:       100,
+			latestNetworkBlock: 101,
+			initialHealth:      Healthy,
+			provider: &provider{
+				host:    "test.com",
+				HttpUrl: "http://test.com",
+			},
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
+				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+			},
+			chainId:         "1",
+			networkChainId:  "1",
+			networkName:     "ethereum",
+			archiveEnabled:  true,
+			mockArchiveTest: errors.New("network doesn't support archive mode"),
+			expectedStatus:  Unhealthy,
+		},
+		{
+			name:               "bitcoin skips archive check",
+			currentBlock:       100,
+			latestNetworkBlock: 101,
+			initialHealth:      Healthy,
+			provider: &provider{
+				host:    "test.com",
+				HttpUrl: "http://test.com",
+			},
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
+				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
+				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+			},
+			chainId:         "main",
+			networkChainId:  "main",
+			networkName:     "bitcoin",
+			archiveEnabled:  true,
+			mockArchiveTest: errors.New("should not be called"),
+			expectedStatus:  Healthy,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
-			n.ChainID = tt.networkChainID
+			n := NewNetwork(tt.networkName)
+			n.ChainId = tt.networkChainId
 			n.BlockLagLimit = 5
-			n.BlockJumpLimit = 5
+			n.BlockJumpLimit = 50
 			n.BlockHistorySize = 3
+			n.ArchiveEnabled = tt.archiveEnabled
+			n.CallContractMethod = "eth_call"
 			n.logger, _ = zap.NewDevelopment()
 
+			// Mock HTTP client for archive testing
+			mockHTTP := new(MockHTTPClient)
+
+			// Set up mock for archive test
+			if tt.archiveEnabled && !strings.Contains(tt.networkName, "bitcoin") && !strings.Contains(tt.networkName, "solana") {
+				mockHTTP.On("Post",
+					mock.Anything, // URL
+					mock.Anything, // headers
+					mock.MatchedBy(func(payload []byte) bool {
+						// Normalize both expected and actual JSON by removing whitespace
+						expectedJSON := strings.ReplaceAll(
+							`{"jsonrpc":"2.0","method":"eth_call","id":1,"params":[{"input":"0x436000526004601cf3"},"0x19"]}`,
+							" ", "",
+						)
+						actualJSON := strings.ReplaceAll(string(payload), " ", "")
+
+						t.Logf("Expected (normalized): %s", expectedJSON)
+						t.Logf("Actual (normalized): %s", actualJSON)
+
+						return actualJSON == expectedJSON
+					}),
+					mock.Anything, // auth client
+				).Return([]byte(`{}`), 200, tt.mockArchiveTest)
+			}
+
+			n.HttpClient = mockHTTP
 			tt.provider.blockHistory = tt.blockHistory
-			tt.provider.chainID = tt.chainID
+			tt.provider.chainId = tt.chainId
 
 			result := n.evaluateProviderHealth(tt.provider, tt.currentBlock, tt.initialHealth, tt.latestNetworkBlock)
 			assert.Equal(t, tt.expectedStatus, result)
+
+			// Verify all expected calls were made
+			mockHTTP.AssertExpectations(t)
 		})
 	}
 }
@@ -336,32 +439,32 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 func TestVerifyChainID(t *testing.T) {
 	tests := []struct {
 		name            string
-		providerChainID string
-		networkChainID  string
+		providerChainId string
+		networkChainId  string
 		expected        bool
 	}{
 		{
 			name:            "matching chain IDs",
-			providerChainID: "1",
-			networkChainID:  "1",
+			providerChainId: "1",
+			networkChainId:  "1",
 			expected:        true,
 		},
 		{
 			name:            "mismatched chain IDs",
-			providerChainID: "1",
-			networkChainID:  "2",
+			providerChainId: "1",
+			networkChainId:  "2",
 			expected:        false,
 		},
 		{
 			name:            "empty provider chain ID",
-			providerChainID: "",
-			networkChainID:  "1",
+			providerChainId: "",
+			networkChainId:  "1",
 			expected:        false,
 		},
 		{
 			name:            "empty network chain ID",
-			providerChainID: "1",
-			networkChainID:  "",
+			providerChainId: "1",
+			networkChainId:  "",
 			expected:        false,
 		},
 	}
@@ -369,8 +472,8 @@ func TestVerifyChainID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewNetwork("test")
-			n.ChainID = tt.networkChainID
-			p := &provider{chainID: tt.providerChainID}
+			n.ChainId = tt.networkChainId
+			p := &provider{chainId: tt.providerChainId}
 
 			result := n.verifyChainID(p)
 			assert.Equal(t, tt.expected, result)
@@ -611,6 +714,7 @@ func TestGetChainID(t *testing.T) {
 		expectedChainID string
 		expectedError   bool
 		networkName     string
+		expectedStatus  int
 	}{
 		{
 			name:            "successful ethereum response",
@@ -620,6 +724,7 @@ func TestGetChainID(t *testing.T) {
 			expectedChainID: "0x1",
 			expectedError:   false,
 			networkName:     "ethereum",
+			expectedStatus:  200,
 		},
 		{
 			name:            "successful bitcoin response",
@@ -629,6 +734,7 @@ func TestGetChainID(t *testing.T) {
 			expectedChainID: "main",
 			expectedError:   false,
 			networkName:     "bitcoin",
+			expectedStatus:  200,
 		},
 		{
 			name:            "network unavailable",
@@ -638,6 +744,7 @@ func TestGetChainID(t *testing.T) {
 			expectedChainID: "",
 			expectedError:   true,
 			networkName:     "ethereum",
+			expectedStatus:  503,
 		},
 		{
 			name:            "invalid response format",
@@ -647,12 +754,14 @@ func TestGetChainID(t *testing.T) {
 			expectedChainID: "",
 			expectedError:   true,
 			networkName:     "ethereum",
+			expectedStatus:  200,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHTTP := new(MockHTTPClient)
+			// Always return the status code from the test case
 			mockHTTP.On("Post", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 				Return(tt.httpResponse, tt.statusCode, tt.httpError)
 
@@ -667,7 +776,108 @@ func TestGetChainID(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedChainID, chainID)
 			}
-			assert.Equal(t, tt.statusCode, statusCode)
+			assert.Equal(t, tt.expectedStatus, statusCode)
+		})
+	}
+}
+
+func TestTestArchiveMode(t *testing.T) {
+	tests := []struct {
+		name               string
+		httpResponse       []byte
+		statusCode         int
+		httpError          error
+		quarterBlockHeight string
+		expectedError      string
+	}{
+		{
+			name:               "successful archive test",
+			httpResponse:       []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
+			statusCode:         200,
+			httpError:          nil,
+			quarterBlockHeight: "0x1234",
+			expectedError:      "",
+		},
+		{
+			name:               "network unavailable",
+			httpResponse:       []byte{},
+			statusCode:         503,
+			httpError:          nil,
+			quarterBlockHeight: "0x1234",
+			expectedError:      "Network Unavailable",
+		},
+		{
+			name:               "invalid JSON response",
+			httpResponse:       []byte(`invalid json`),
+			statusCode:         200,
+			httpError:          nil,
+			quarterBlockHeight: "0x1234",
+			expectedError:      "Error unmarshalling response",
+		},
+		{
+			name:               "network doesn't support archive",
+			httpResponse:       []byte(`{"error":{"code":-32000,"message":"missing trie node"}}`),
+			statusCode:         200,
+			httpError:          nil,
+			quarterBlockHeight: "0x1234",
+			expectedError:      "network doesn't support archive mode",
+		},
+		{
+			name:               "http client error",
+			httpResponse:       []byte{},
+			statusCode:         200,
+			httpError:          errors.New("connection failed"),
+			quarterBlockHeight: "0x1234",
+			expectedError:      "Error sending POST request",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHTTP := new(MockHTTPClient)
+
+			// Set up mock with exact payload matching
+			mockHTTP.On("Post",
+				mock.MatchedBy(func(url string) bool {
+					return url == "http://test.com"
+				}),
+				mock.MatchedBy(func(headers map[string]string) bool {
+					return headers == nil
+				}),
+				mock.MatchedBy(func(payload []byte) bool {
+					// Remove all whitespace from both expected and actual payloads
+					expected := strings.ReplaceAll(
+						fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`,
+							"eth_call",
+							tt.quarterBlockHeight,
+						),
+						" ", "",
+					)
+					actual := strings.ReplaceAll(string(payload), " ", "")
+
+					if expected != actual {
+						t.Logf("Expected payload: %s", expected)
+						t.Logf("Actual payload: %s", actual)
+					}
+					return expected == actual
+				}),
+				mock.Anything,
+			).Return(tt.httpResponse, tt.statusCode, tt.httpError)
+
+			n := NewNetwork("test")
+			n.HttpClient = mockHTTP
+			n.CallContractMethod = "eth_call"
+
+			err := n.testArchiveMode("http://test.com", nil, nil, tt.quarterBlockHeight)
+
+			if tt.expectedError == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			}
+
+			mockHTTP.AssertExpectations(t)
 		})
 	}
 }

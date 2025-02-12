@@ -406,6 +406,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
+							fmt.Println("providerName.Val()", dispenser.Val())
 							providerObj, err := NewProvider(dispenser.Val())
 							if err != nil {
 								return fmt.Errorf("error creating provider: %v", err)
@@ -496,14 +497,17 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						d.Networks[networkName].HCMethod = dispenser.Val()
 					case "chainid_method":
 						dispenser.Next()
-						d.Networks[networkName].ChainIDMethod = dispenser.Val()
+						d.Networks[networkName].ChainIdMethod = dispenser.Val()
 					case "chain_id":
 						dispenser.Next()
-						chainID := dispenser.Val()
-						if chainID == "" {
+						chainId := dispenser.Val()
+						if chainId == "" {
 							return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
 						}
-						d.Networks[networkName].ChainID = chainID
+						d.Networks[networkName].ChainId = chainId
+					case "call_contract_method":
+						dispenser.Next()
+						d.Networks[networkName].CallContractMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -551,6 +555,13 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid request attempt count: %v", err)
 						}
 						d.Networks[networkName].RequestAttemptCount = requestAttemptCount
+					case "archive_enabled":
+						dispenser.Next()
+						archiveEnabled, err := strconv.ParseBool(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid archive enabled: %v", err)
+						}
+						d.Networks[networkName].ArchiveEnabled = archiveEnabled
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}

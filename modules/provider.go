@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"errors"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -20,12 +22,10 @@ type provider struct {
 	upstream     *reverseproxy.Upstream
 	httpClient   *din_http.HTTPClient
 	logger       *zap.Logger
-	failures     int
-	successes    int
 	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
 	Priority     int
-	quit         chan struct{}
-	chainID      string
+
+	chainId string
 
 	// Registry Configuration Values
 	Methods []*string            `json:"methods"`
@@ -43,10 +43,24 @@ type blockHistoryEntry struct {
 }
 
 func NewProvider(urlStr string) (*provider, error) {
+	if urlStr == "" {
+		return nil, errors.New("empty URL")
+	}
+
 	url, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err
 	}
+
+	// Additional validation
+	if url.Host == "" {
+		return nil, errors.New("invalid URL: missing host")
+	}
+
+	if url.Scheme != "http" && url.Scheme != "https" {
+		return nil, errors.New("invalid URL: scheme must be http or https")
+	}
+
 	p := &provider{
 		HttpUrl: urlStr,
 		host:    url.Host,
@@ -117,6 +131,18 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 }
 
 // getChainID gets the chain ID from the provider
-func (p *provider) getChainID() string {
-	return p.chainID
+func (p *provider) getChainId() string {
+	return p.chainId
+}
+
+func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
+	if len(p.blockHistory) == 0 {
+		return nil
+	}
+	for i := len(p.blockHistory) - 1; i >= 0; i-- {
+		if p.blockHistory[i].statusCode == Healthy {
+			return &p.blockHistory[i]
+		}
+	}
+	return nil
 }

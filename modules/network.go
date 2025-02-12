@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -23,23 +22,24 @@ type network struct {
 	PrometheusClient prom.IPrometheusClient
 	logger           *zap.Logger
 	machineID        string
-	ChainID          string
 
 	// internal health check values
-	healthCheckListMutex sync.RWMutex
-	HCThreshold          int
-	BlockHistorySize     int
+	HCThreshold      int
+	BlockHistorySize int
 
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
 	HCMethod                string               `json:"healthcheck_method"`
-	ChainIDMethod           string               `json:"chainid_method"`
+	ChainIdMethod           string               `json:"chainid_method"`
+	ChainId                 string               `json:"chain_id"`
+	CallContractMethod      string               `json:"call_contract_method"`
 	HCInterval              int                  `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
 	BlockJumpLimit          int64                `json:"healthcheck_blockjump_limit"`
 	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int                  `json:"request_attempt_count"`
+	ArchiveEnabled          bool                 `json:"archive_enabled"`
 }
 
 // NewNetwork creates a new network with the given name
@@ -50,7 +50,8 @@ func NewNetwork(name string) *network {
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCMethod:                DefaultHCMethod,
-		ChainIDMethod:           DefaultChainIDMethod,
+		ChainIdMethod:           DefaultChainIdMethod,
+		CallContractMethod:      DefaultCallContractMethod,
 		HCThreshold:             DefaultHCThreshold,
 		HCInterval:              DefaultHCInterval,
 		BlockLagLimit:           DefaultBlockLagLimit,
@@ -58,6 +59,7 @@ func NewNetwork(name string) *network {
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
 		BlockHistorySize:        BlockHistorySize,
+		ArchiveEnabled:          DefaultArchiveEnabled,
 		Providers:               make(map[string]*provider),
 	}
 }
@@ -163,7 +165,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		return Unhealthy
 	}
 
-	// Check block lag
+	// Check block lag and block jump
 	if latestNetworkBlock > 0 {
 		blockLag := int64(latestNetworkBlock) - currentBlock
 		// If block lag is greater than limit, mark as warning
@@ -203,12 +205,36 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
+	// Archive Health Check
+	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
+	// then check if the provider can return back block data from half of its block height
+	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") {
+		// check if the provider can return back block data from half of its block height
+		currentBlock := provider.getLatestHealthyBlockEntry()
+		if currentBlock == nil {
+			// if the provider has no healthy block history, return unhealthy
+			return Unhealthy
+		}
+		// get a quarter of the block height
+		quarterBlockHeight := currentBlock.blockNumber / 4
+
+		// convert quarterBlockHeight to hex string
+		quarterBlockHeightHex := fmt.Sprintf("0x%x", quarterBlockHeight)
+
+		// call the network method
+		err := n.testArchiveMode(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
+		if err != nil {
+			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
+			return Unhealthy
+		}
+	}
+
 	return worstStatus
 }
 
 // verifyChainID checks if provider is serving correct chain
 func (n *network) verifyChainID(provider *provider) bool {
-	return provider.getChainID() == n.ChainID
+	return provider.getChainId() == n.ChainId
 }
 
 // isStalled checks if provider's block numbers haven't changed
@@ -358,7 +384,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 }
 
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, int, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIDMethod))
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
 
 	// Send the POST request
 	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
@@ -376,11 +402,11 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	// Unmarshal the response
 	err = json.Unmarshal(resBytes, &respObject)
 	if err != nil {
-		return "", 0, errors.Wrap(err, "Error unmarshalling response")
+		return "", *statusCode, errors.Wrap(err, "Error unmarshalling response")
 	}
 
 	if _, ok := respObject["result"]; !ok {
-		return "", 0, errors.New("Error getting chain ID from response")
+		return "", *statusCode, errors.New("Error getting chain ID from response")
 	}
 
 	var chainID string
@@ -390,16 +416,46 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	if strings.Contains(n.Name, "bitcoin") {
 		chainID, ok = respObject["result"].(map[string]interface{})["chain"].(string)
 		if !ok {
-			return "", 0, errors.New("Error getting chain ID from response")
+			return "", *statusCode, errors.New("Error getting chain ID from response")
 		}
 	} else {
 		chainID, ok = respObject["result"].(string)
 		if !ok {
-			return "", 0, errors.New("Error getting chain ID from response")
+			return "", *statusCode, errors.New("Error getting chain ID from response")
 		}
 	}
 
 	return chainID, *statusCode, nil
+}
+
+func (n *network) testArchiveMode(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
+
+	// Send the POST request
+	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+	if err != nil {
+		return errors.Wrap(err, "Error sending POST request")
+	}
+
+	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+		return errors.New("Network Unavailable")
+	}
+
+	// response struct
+	var respObject map[string]interface{}
+
+	// Unmarshal the response
+	err = json.Unmarshal(resBytes, &respObject)
+	if err != nil {
+		return errors.Wrap(err, "Error unmarshalling response")
+	}
+
+	// if the response contains an error, return an error
+	if _, ok := respObject["error"]; ok {
+		return errors.New("network doesn't support archive mode")
+	}
+
+	return nil
 }
 
 func (n *network) close() {
