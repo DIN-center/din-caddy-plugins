@@ -35,6 +35,8 @@ const (
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
 
+	BlockNumberTimeoutSeconds = 1
+
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 

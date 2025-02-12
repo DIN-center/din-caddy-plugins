@@ -154,12 +154,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Track the worst status we find
 	worstStatus := healthStatus
 
-	// Check chain ID - this is a critical check that should always result in Unhealthy
-	if !n.verifyChainID(provider) {
-		n.logProviderWarning("Provider has incorrect chain ID", provider)
-		return Unhealthy
-	}
-
 	// if provider has no block history, set it to healthy
 	if len(provider.BlockHistory()) == 0 {
 		return Unhealthy
@@ -205,6 +199,18 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
+	// chainId check health check
+	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
+	if err != nil {
+		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err))
+		return Unhealthy
+	}
+
+	if !n.verifyChainID(chainId) {
+		n.logProviderWarning("Provider has incorrect chain ID", provider)
+		return Unhealthy
+	}
+
 	// Archive Health Check
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
@@ -233,8 +239,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 }
 
 // verifyChainID checks if provider is serving correct chain
-func (n *network) verifyChainID(provider *provider) bool {
-	return provider.getChainId() == n.ChainId
+func (n *network) verifyChainID(chainId string) bool {
+	return chainId == n.ChainId
 }
 
 // isStalled checks if provider's block numbers haven't changed
@@ -320,8 +326,44 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	var lastHealthStatus HealthStatus = Unhealthy
 
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		// Create a channel for the response
+		type result struct {
+			resBytes   []byte
+			statusCode *int
+			err        error
+		}
+		resChan := make(chan result, 1)
+
+		// Try the request up to 2 times if it times out
+		var resBytes []byte
+		var statusCode *int
+		var err error
+
+		for retryCount := 0; retryCount < 2; retryCount++ {
+			// Make the request in a goroutine
+			go func(payload []byte) {
+				resBytes, statusCode, err = n.HttpClient.Post(httpUrl, headers, payload, ac)
+				resChan <- result{resBytes, statusCode, err}
+			}(payload)
+
+			// Wait for response or timeout
+			select {
+			case res := <-resChan:
+				resBytes, statusCode, err = res.resBytes, res.statusCode, res.err
+				goto processResponse
+			case <-time.After(time.Duration(BlockNumberTimeoutSeconds) * time.Second):
+				if retryCount == 1 {
+					return 0, Unhealthy, errors.New("request is taking too long after retry")
+				}
+				continue
+			}
+		}
+
+	processResponse:
+		if err != nil {
+			lastErr = err
+			continue
+		}
 
 		// Evaluate health status based on status code
 		if *statusCode >= 400 {
@@ -329,28 +371,16 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			if *statusCode == 429 {
 				lastHealthStatus = Warning
 				lastErr = fmt.Errorf("rate limit error (status code: %d)", *statusCode)
+				continue
 			}
 			lastErr = fmt.Errorf("error status code: %d", *statusCode)
 			continue
 		}
 
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// response struct
 		var respObject map[string]interface{}
-
-		// Unmarshal the response
 		err = json.Unmarshal(resBytes, &respObject)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error unmarshalling response")
-			continue
-		}
-
-		if _, ok := respObject["result"]; !ok {
-			lastErr = errors.New("Error getting block number from response")
 			continue
 		}
 
@@ -363,7 +393,6 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 				continue
 			}
 
-			// Convert the hexadecimal string to an int64
 			blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
 			if err != nil {
 				lastErr = errors.Wrap(err, "Error converting block number")
@@ -375,25 +404,24 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			lastErr = errors.New("unsupported block number type")
 			continue
 		}
-		// If we get here, the block number is valid and we can return as Healthy
+
 		return blockNumber, Healthy, nil
 	}
 
-	// If we get here, we've tried all attempts and failed
 	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
-func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, int, error) {
+func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
 
 	// Send the POST request
 	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
 	if err != nil {
-		return "", 0, errors.Wrap(err, "Error sending POST request")
+		return "", errors.Wrap(err, "Error sending POST request")
 	}
 
-	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return "", *statusCode, errors.New("Network Unavailable")
+	if *statusCode != http.StatusOK {
+		return "", errors.New("Error getting chain ID from response")
 	}
 
 	// response struct
@@ -402,11 +430,11 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	// Unmarshal the response
 	err = json.Unmarshal(resBytes, &respObject)
 	if err != nil {
-		return "", *statusCode, errors.Wrap(err, "Error unmarshalling response")
+		return "", errors.Wrap(err, "Error unmarshalling response")
 	}
 
 	if _, ok := respObject["result"]; !ok {
-		return "", *statusCode, errors.New("Error getting chain ID from response")
+		return "", errors.New("Error getting chain ID from response")
 	}
 
 	var chainID string
@@ -416,16 +444,16 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	if strings.Contains(n.Name, "bitcoin") {
 		chainID, ok = respObject["result"].(map[string]interface{})["chain"].(string)
 		if !ok {
-			return "", *statusCode, errors.New("Error getting chain ID from response")
+			return "", errors.New("Error getting chain ID from response")
 		}
 	} else {
 		chainID, ok = respObject["result"].(string)
 		if !ok {
-			return "", *statusCode, errors.New("Error getting chain ID from response")
+			return "", errors.New("Error getting chain ID from response")
 		}
 	}
 
-	return chainID, *statusCode, nil
+	return chainID, nil
 }
 
 func (n *network) testArchiveMode(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {

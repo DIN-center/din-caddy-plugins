@@ -130,11 +130,6 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 	}
 }
 
-// getChainID gets the chain ID from the provider
-func (p *provider) getChainId() string {
-	return p.chainId
-}
-
 func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
 	if len(p.blockHistory) == 0 {
 		return nil

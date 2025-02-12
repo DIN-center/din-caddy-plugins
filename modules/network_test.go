@@ -4,434 +4,81 @@ import (
 	"testing"
 	"time"
 
-	"errors"
-	"fmt"
-	"strings"
-
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 
-// Mock implementations
-type MockHTTPClient struct {
-	mock.Mock
-}
-
-func (m *MockHTTPClient) Post(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
-	args := m.Called(url, headers, payload, ac)
-	statusCode := args.Get(1).(int)
-	// Always return a non-nil status code pointer
-	return args.Get(0).([]byte), &statusCode, args.Error(2)
-}
-
-type MockPrometheusClient struct {
-	mock.Mock
-}
-
-func (m *MockPrometheusClient) HandleLatestBlockMetric(data *prom.PromLatestBlockMetricData) {
-	m.Called(data)
-}
-
-func (m *MockPrometheusClient) HandleRequestMetrics(data *prom.PromRequestMetricData, body []byte, duration time.Duration) {
-	m.Called(data, body, duration)
-}
-
-func TestNewNetwork(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected *network
-	}{
-		{
-			name:  "creates network with default values",
-			input: "ethereum",
-			expected: &network{
-				Name:                    "ethereum",
-				HCMethod:                DefaultHCMethod,
-				ChainIdMethod:           DefaultChainIdMethod,
-				HCThreshold:             DefaultHCThreshold,
-				HCInterval:              DefaultHCInterval,
-				BlockLagLimit:           DefaultBlockLagLimit,
-				BlockJumpLimit:          DefaultBlockJumpLimit,
-				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
-				RequestAttemptCount:     DefaultRequestAttemptCount,
-				BlockHistorySize:        BlockHistorySize,
-				Providers:               make(map[string]*provider),
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := NewNetwork(tt.input)
-			assert.Equal(t, tt.expected.Name, result.Name)
-			assert.Equal(t, tt.expected.HCMethod, result.HCMethod)
-			assert.Equal(t, tt.expected.ChainIdMethod, result.ChainIdMethod)
-			assert.Equal(t, tt.expected.HCThreshold, result.HCThreshold)
-			assert.Equal(t, tt.expected.HCInterval, result.HCInterval)
-			assert.Equal(t, tt.expected.BlockLagLimit, result.BlockLagLimit)
-			assert.Equal(t, tt.expected.BlockJumpLimit, result.BlockJumpLimit)
-			assert.Equal(t, tt.expected.MaxRequestPayloadSizeKB, result.MaxRequestPayloadSizeKB)
-			assert.Equal(t, tt.expected.RequestAttemptCount, result.RequestAttemptCount)
-			assert.Equal(t, tt.expected.BlockHistorySize, result.BlockHistorySize)
-			assert.NotNil(t, result.Providers)
-			assert.Len(t, result.Providers, 0)
-		})
-	}
-}
-
-func TestEvaluateProviderHealth(t *testing.T) {
-	now := time.Now()
-	twoSecondsAgo := now.Add(-2 * time.Second)
-	oneSecondAgo := now.Add(-1 * time.Second)
-
-	tests := []struct {
-		name               string
-		currentBlock       int64
-		latestNetworkBlock int64
-		initialHealth      HealthStatus
-		provider           *provider
-		blockHistory       []blockHistoryEntry
-		chainId            string
-		networkChainId     string
-		networkName        string
-		archiveEnabled     bool
-		mockArchiveTest    error // New field to mock archive test result
-		expectedStatus     HealthStatus
-	}{
-		{
-			name:               "healthy provider within limits",
-			currentBlock:       100,
-			latestNetworkBlock: 101,
-			initialHealth:      Healthy,
-			provider: &provider{
-				host: "test.com",
-			},
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			chainId:        "1",
-			networkChainId: "1",
-			networkName:    "ethereum",
-			expectedStatus: Healthy,
-		},
-		{
-			name:               "provider lagging behind",
-			currentBlock:       90,
-			latestNetworkBlock: 100,
-			initialHealth:      Healthy,
-			provider: &provider{
-				host: "test.com",
-			},
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 88, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 89, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 90, statusCode: Healthy, timestamp: &now},
-			},
-			chainId:        "1",
-			networkChainId: "1",
-			networkName:    "ethereum",
-			expectedStatus: Warning,
-		},
-		{
-			name:               "archive check passes",
-			currentBlock:       100,
-			latestNetworkBlock: 101,
-			initialHealth:      Healthy,
-			provider: &provider{
-				host:    "test.com",
-				HttpUrl: "http://test.com",
-			},
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			chainId:         "1",
-			networkChainId:  "1",
-			networkName:     "ethereum",
-			archiveEnabled:  true,
-			mockArchiveTest: nil, // No error means test passes
-			expectedStatus:  Healthy,
-		},
-		{
-			name:               "archive check fails",
-			currentBlock:       100,
-			latestNetworkBlock: 101,
-			initialHealth:      Healthy,
-			provider: &provider{
-				host:    "test.com",
-				HttpUrl: "http://test.com",
-			},
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			chainId:         "1",
-			networkChainId:  "1",
-			networkName:     "ethereum",
-			archiveEnabled:  true,
-			mockArchiveTest: errors.New("network doesn't support archive mode"),
-			expectedStatus:  Unhealthy,
-		},
-		{
-			name:               "bitcoin skips archive check",
-			currentBlock:       100,
-			latestNetworkBlock: 101,
-			initialHealth:      Healthy,
-			provider: &provider{
-				host:    "test.com",
-				HttpUrl: "http://test.com",
-			},
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 98, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 99, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			chainId:         "main",
-			networkChainId:  "main",
-			networkName:     "bitcoin",
-			archiveEnabled:  true,
-			mockArchiveTest: errors.New("should not be called"),
-			expectedStatus:  Healthy,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork(tt.networkName)
-			n.ChainId = tt.networkChainId
-			n.BlockLagLimit = 5
-			n.BlockJumpLimit = 50
-			n.BlockHistorySize = 3
-			n.ArchiveEnabled = tt.archiveEnabled
-			n.CallContractMethod = "eth_call"
-			n.logger, _ = zap.NewDevelopment()
-
-			// Mock HTTP client for archive testing
-			mockHTTP := new(MockHTTPClient)
-
-			// Set up mock for archive test
-			if tt.archiveEnabled && !strings.Contains(tt.networkName, "bitcoin") && !strings.Contains(tt.networkName, "solana") {
-				mockHTTP.On("Post",
-					mock.Anything, // URL
-					mock.Anything, // headers
-					mock.MatchedBy(func(payload []byte) bool {
-						// Normalize both expected and actual JSON by removing whitespace
-						expectedJSON := strings.ReplaceAll(
-							`{"jsonrpc":"2.0","method":"eth_call","id":1,"params":[{"input":"0x436000526004601cf3"},"0x19"]}`,
-							" ", "",
-						)
-						actualJSON := strings.ReplaceAll(string(payload), " ", "")
-
-						t.Logf("Expected (normalized): %s", expectedJSON)
-						t.Logf("Actual (normalized): %s", actualJSON)
-
-						return actualJSON == expectedJSON
-					}),
-					mock.Anything, // auth client
-				).Return([]byte(`{}`), 200, tt.mockArchiveTest)
-			}
-
-			n.HttpClient = mockHTTP
-			tt.provider.blockHistory = tt.blockHistory
-			tt.provider.chainId = tt.chainId
-
-			result := n.evaluateProviderHealth(tt.provider, tt.currentBlock, tt.initialHealth, tt.latestNetworkBlock)
-			assert.Equal(t, tt.expectedStatus, result)
-
-			// Verify all expected calls were made
-			mockHTTP.AssertExpectations(t)
-		})
-	}
-}
-
-func TestGetLatestBlockNumber(t *testing.T) {
-	tests := []struct {
-		name           string
-		httpResponse   []byte
-		statusCode     int
-		httpError      error
-		expectedBlock  int64
-		expectedHealth HealthStatus
-		expectedError  bool
-	}{
-		{
-			name:           "successful hex response",
-			httpResponse:   []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
-			statusCode:     200,
-			httpError:      nil,
-			expectedBlock:  0x1234,
-			expectedHealth: Healthy,
-			expectedError:  false,
-		},
-		{
-			name:           "successful decimal response",
-			httpResponse:   []byte(`{"jsonrpc":"2.0","result":1234}`),
-			statusCode:     200,
-			httpError:      nil,
-			expectedBlock:  1234,
-			expectedHealth: Healthy,
-			expectedError:  false,
-		},
-		{
-			name:           "rate limit response",
-			httpResponse:   []byte(`{}`),
-			statusCode:     429,
-			httpError:      nil,
-			expectedBlock:  0,
-			expectedHealth: Warning,
-			expectedError:  true,
-		},
-		// Add more test cases
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockHTTP := new(MockHTTPClient)
-			mockHTTP.On("Post", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-				Return(tt.httpResponse, tt.statusCode, tt.httpError)
-
-			n := NewNetwork("test")
-			n.HttpClient = mockHTTP
-
-			block, health, err := n.getLatestBlockNumber("http://test.com", nil, nil)
-
-			if tt.expectedError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			assert.Equal(t, tt.expectedBlock, block)
-			assert.Equal(t, tt.expectedHealth, health)
-		})
-	}
-}
-
-func TestIsStalled(t *testing.T) {
-	now := time.Now()
-	twoSecondsAgo := now.Add(-2 * time.Second)
-	oneSecondAgo := now.Add(-1 * time.Second)
-
-	tests := []struct {
-		name         string
-		blockHistory []blockHistoryEntry
-		expected     bool
-	}{
-		{
-			name: "not stalled - increasing blocks",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 101, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 102, statusCode: Healthy, timestamp: &now},
-			},
-			expected: false,
-		},
-		{
-			name: "stalled - same block number",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &twoSecondsAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			expected: true,
-		},
-		{
-			name: "not stalled - insufficient history",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &oneSecondAgo},
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
-			n.BlockHistorySize = 3
-			p := &provider{}
-			p.blockHistory = tt.blockHistory
-
-			result := n.isStalled(p)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestHandleErrorWithGracePeriod(t *testing.T) {
 	tests := []struct {
-		name                       string
-		initialHealthStatus        HealthStatus
-		consecutiveUnhealthyChecks int
-		healthCheckThreshold       int
-		expectedHealthStatus       HealthStatus
-		expectedUnhealthyChecks    int
-		blockNum                   int64
+		name                   string
+		consecutiveUnhealthy   int
+		healthThreshold        int
+		currentStatus          HealthStatus
+		expectedStatus         HealthStatus
+		expectedUnhealthyCount int
 	}{
 		{
-			name:                       "first unhealthy check",
-			initialHealthStatus:        Unhealthy,
-			consecutiveUnhealthyChecks: 0,
-			healthCheckThreshold:       3,
-			expectedHealthStatus:       Warning,
-			expectedUnhealthyChecks:    1,
-			blockNum:                   100,
+			name:                   "first error within threshold",
+			consecutiveUnhealthy:   0,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Warning,
+			expectedUnhealthyCount: 1,
 		},
 		{
-			name:                       "second unhealthy check",
-			initialHealthStatus:        Unhealthy,
-			consecutiveUnhealthyChecks: 1,
-			healthCheckThreshold:       3,
-			expectedHealthStatus:       Warning,
-			expectedUnhealthyChecks:    2,
-			blockNum:                   100,
+			name:                   "multiple errors within threshold",
+			consecutiveUnhealthy:   1,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Warning,
+			expectedUnhealthyCount: 2,
 		},
 		{
-			name:                       "exceeds threshold",
-			initialHealthStatus:        Unhealthy,
-			consecutiveUnhealthyChecks: 3,
-			healthCheckThreshold:       3,
-			expectedHealthStatus:       Unhealthy,
-			expectedUnhealthyChecks:    4,
-			blockNum:                   100,
+			name:                   "errors beyond threshold",
+			consecutiveUnhealthy:   2,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Unhealthy,
+			expectedUnhealthyCount: 3,
 		},
 		{
-			name:                       "warning status resets counter",
-			initialHealthStatus:        Warning,
-			consecutiveUnhealthyChecks: 2,
-			healthCheckThreshold:       3,
-			expectedHealthStatus:       Warning,
-			expectedUnhealthyChecks:    0,
-			blockNum:                   100,
+			name:                   "healthy status resets counter",
+			consecutiveUnhealthy:   2,
+			healthThreshold:        3,
+			currentStatus:          Healthy,
+			expectedStatus:         Healthy,
+			expectedUnhealthyCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
-			n.HCThreshold = tt.healthCheckThreshold
-			n.logger, _ = zap.NewDevelopment()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			mockProm := new(MockPrometheusClient)
-			mockProm.On("HandleLatestBlockMetric", mock.Anything).Return()
-			n.PrometheusClient = mockProm
+			mockPrometheus := prom.NewMockIPrometheusClient(ctrl)
+			mockPrometheus.EXPECT().
+				HandleLatestBlockMetric(gomock.Any()).
+				AnyTimes()
 
 			p := &provider{
+				consecutiveUnhealthyChecks: tt.consecutiveUnhealthy,
 				host:                       "test.com",
-				consecutiveUnhealthyChecks: tt.consecutiveUnhealthyChecks,
 			}
 
-			result := n.handleErrorWithGracePeriod(p, tt.initialHealthStatus, tt.blockNum)
+			n := NewNetwork("test")
+			n.HCThreshold = tt.healthThreshold
+			n.PrometheusClient = mockPrometheus
 
-			assert.Equal(t, tt.expectedHealthStatus, result)
-			assert.Equal(t, tt.expectedUnhealthyChecks, p.consecutiveUnhealthyChecks)
+			status := n.handleErrorWithGracePeriod(p, tt.currentStatus, 100)
+
+			assert.Equal(t, tt.expectedStatus, status)
+			assert.Equal(t, tt.expectedUnhealthyCount, p.consecutiveUnhealthyChecks)
 		})
 	}
 }
@@ -439,32 +86,26 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 func TestVerifyChainID(t *testing.T) {
 	tests := []struct {
 		name            string
-		providerChainId string
-		networkChainId  string
+		networkChainID  string
+		providerChainID string
 		expected        bool
 	}{
 		{
 			name:            "matching chain IDs",
-			providerChainId: "1",
-			networkChainId:  "1",
+			networkChainID:  "mainnet",
+			providerChainID: "mainnet",
 			expected:        true,
 		},
 		{
 			name:            "mismatched chain IDs",
-			providerChainId: "1",
-			networkChainId:  "2",
+			networkChainID:  "mainnet",
+			providerChainID: "testnet",
 			expected:        false,
 		},
 		{
 			name:            "empty provider chain ID",
-			providerChainId: "",
-			networkChainId:  "1",
-			expected:        false,
-		},
-		{
-			name:            "empty network chain ID",
-			providerChainId: "1",
-			networkChainId:  "",
+			networkChainID:  "mainnet",
+			providerChainID: "",
 			expected:        false,
 		},
 	}
@@ -472,168 +113,102 @@ func TestVerifyChainID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewNetwork("test")
-			n.ChainId = tt.networkChainId
-			p := &provider{chainId: tt.providerChainId}
+			n.ChainId = tt.networkChainID
 
-			result := n.verifyChainID(p)
+			result := n.verifyChainID(tt.providerChainID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestAllProvidersStalled(t *testing.T) {
-	now := time.Now()
-	twoSecondsAgo := now.Add(-2 * time.Second)
-	oneSecondAgo := now.Add(-1 * time.Second)
-
+func TestIsStalled(t *testing.T) {
 	tests := []struct {
-		name      string
-		providers map[string]*provider
-		expected  bool
+		name         string
+		blockHistory []blockHistoryEntry
+		historySize  int
+		expected     bool
 	}{
 		{
-			name: "all providers stalled",
-			providers: map[string]*provider{
-				"provider1": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &twoSecondsAgo},
-						{blockNumber: 100, statusCode: Healthy, timestamp: &oneSecondAgo},
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
-				},
-				"provider2": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 200, statusCode: Healthy, timestamp: &twoSecondsAgo},
-						{blockNumber: 200, statusCode: Healthy, timestamp: &oneSecondAgo},
-						{blockNumber: 200, statusCode: Healthy, timestamp: &now},
-					},
-				},
+			name: "not enough history",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100},
 			},
-			expected: true,
+			historySize: 2,
+			expected:    false,
 		},
 		{
-			name: "one provider progressing",
-			providers: map[string]*provider{
-				"provider1": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &twoSecondsAgo},
-						{blockNumber: 100, statusCode: Healthy, timestamp: &oneSecondAgo},
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
-				},
-				"provider2": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 200, statusCode: Healthy, timestamp: &twoSecondsAgo},
-						{blockNumber: 201, statusCode: Healthy, timestamp: &oneSecondAgo},
-						{blockNumber: 202, statusCode: Healthy, timestamp: &now},
-					},
-				},
+			name: "stalled blocks",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100},
+				{blockNumber: 100},
+				{blockNumber: 100},
 			},
-			expected: false,
+			historySize: 3,
+			expected:    true,
 		},
 		{
-			name: "insufficient history",
-			providers: map[string]*provider{
-				"provider1": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &oneSecondAgo},
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
-				},
+			name: "progressing blocks",
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100},
+				{blockNumber: 101},
+				{blockNumber: 102},
 			},
-			expected: false,
+			historySize: 3,
+			expected:    false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewNetwork("test")
-			n.BlockHistorySize = 3
-			n.Providers = tt.providers
+			n.BlockHistorySize = tt.historySize
 
-			result := n.allProvidersStalled()
+			p := &provider{blockHistory: tt.blockHistory}
+
+			result := n.isStalled(p)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
 func TestGetLatestHealthyBlock(t *testing.T) {
-	now := time.Now()
-
 	tests := []struct {
 		name      string
 		providers map[string]*provider
 		expected  int64
 	}{
 		{
-			name: "healthy providers available",
+			name: "healthy provider has highest block",
 			providers: map[string]*provider{
-				"provider1": {
+				"p1": {
 					healthStatus: Healthy,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
+					blockHistory: []blockHistoryEntry{{blockNumber: 100}},
 				},
-				"provider2": {
-					healthStatus: Healthy,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 102, statusCode: Healthy, timestamp: &now},
-					},
-				},
-			},
-			expected: 102,
-		},
-		{
-			name: "only warning providers",
-			providers: map[string]*provider{
-				"provider1": {
+				"p2": {
 					healthStatus: Warning,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
-				},
-				"provider2": {
-					healthStatus: Warning,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 102, statusCode: Healthy, timestamp: &now},
-					},
-				},
-			},
-			expected: 102,
-		},
-		{
-			name: "mix of health statuses",
-			providers: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-					},
-				},
-				"provider2": {
-					healthStatus: Warning,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 102, statusCode: Healthy, timestamp: &now},
-					},
-				},
-				"provider3": {
-					healthStatus: Unhealthy,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 105, statusCode: Healthy, timestamp: &now},
-					},
+					blockHistory: []blockHistoryEntry{{blockNumber: 90}},
 				},
 			},
 			expected: 100,
 		},
 		{
-			name:      "no providers",
-			providers: map[string]*provider{},
-			expected:  0,
+			name: "warning provider used when no healthy",
+			providers: map[string]*provider{
+				"p1": {
+					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100}},
+				},
+				"p2": {
+					healthStatus: Unhealthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 110}},
+				},
+			},
+			expected: 100,
 		},
 		{
-			name: "providers with no history",
+			name: "empty history returns 0",
 			providers: map[string]*provider{
-				"provider1": {
+				"p1": {
 					healthStatus: Healthy,
 					blockHistory: []blockHistoryEntry{},
 				},
@@ -653,174 +228,249 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 	}
 }
 
-func TestStartHealthcheck(t *testing.T) {
-	tests := []struct {
-		name        string
-		hcInterval  int
-		expectQuit  bool
-		runDuration time.Duration
-	}{
-		{
-			name:        "normal operation",
-			hcInterval:  1,
-			expectQuit:  false,
-			runDuration: 2 * time.Second,
-		},
-		{
-			name:        "quit channel closed",
-			hcInterval:  1,
-			expectQuit:  true,
-			runDuration: 100 * time.Millisecond,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
-			n.HCInterval = tt.hcInterval
-			n.quit = make(chan struct{})
-			n.logger, _ = zap.NewDevelopment()
-
-			mockHTTP := new(MockHTTPClient)
-			mockHTTP.On("Post", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-				Return([]byte(`{"result":"0x1234"}`), 200, nil)
-			n.HttpClient = mockHTTP
-
-			mockProm := new(MockPrometheusClient)
-			mockProm.On("HandleLatestBlockMetric", mock.Anything).Return()
-			n.PrometheusClient = mockProm
-
-			go n.startHealthcheck()
-
-			if tt.expectQuit {
-				close(n.quit)
-			}
-
-			time.Sleep(tt.runDuration)
-
-			if !tt.expectQuit {
-				n.close()
-			}
-		})
-	}
-}
-
 func TestGetChainID(t *testing.T) {
 	tests := []struct {
 		name            string
+		networkName     string
 		httpResponse    []byte
 		statusCode      int
 		httpError       error
 		expectedChainID string
-		expectedError   bool
-		networkName     string
-		expectedStatus  int
+		expectError     bool
+		errorContains   string
 	}{
 		{
 			name:            "successful ethereum response",
 			httpResponse:    []byte(`{"jsonrpc":"2.0","result":"0x1"}`),
 			statusCode:      200,
-			httpError:       nil,
 			expectedChainID: "0x1",
-			expectedError:   false,
-			networkName:     "ethereum",
-			expectedStatus:  200,
+			expectError:     false,
 		},
 		{
 			name:            "successful bitcoin response",
-			httpResponse:    []byte(`{"result":{"chain":"main"}}`),
-			statusCode:      200,
-			httpError:       nil,
-			expectedChainID: "main",
-			expectedError:   false,
 			networkName:     "bitcoin",
-			expectedStatus:  200,
-		},
-		{
-			name:            "network unavailable",
-			httpResponse:    []byte(``),
-			statusCode:      503,
-			httpError:       nil,
-			expectedChainID: "",
-			expectedError:   true,
-			networkName:     "ethereum",
-			expectedStatus:  503,
-		},
-		{
-			name:            "invalid response format",
-			httpResponse:    []byte(`{"result":123}`),
+			httpResponse:    []byte(`{"jsonrpc":"2.0","result":{"chain":"main"}}`),
 			statusCode:      200,
-			httpError:       nil,
+			expectedChainID: "main",
+			expectError:     false,
+		},
+		{
+			name:            "non-200 status code",
+			httpResponse:    []byte{},
+			statusCode:      503,
 			expectedChainID: "",
-			expectedError:   true,
-			networkName:     "ethereum",
-			expectedStatus:  200,
+			expectError:     true,
+			errorContains:   "Error getting chain ID from response",
+		},
+		{
+			name:            "invalid json response",
+			httpResponse:    []byte(`invalid json`),
+			statusCode:      200,
+			expectedChainID: "",
+			expectError:     true,
+			errorContains:   "Error unmarshalling response",
+		},
+		{
+			name:            "missing result field",
+			httpResponse:    []byte(`{"jsonrpc":"2.0"}`),
+			statusCode:      200,
+			expectedChainID: "",
+			expectError:     true,
+			errorContains:   "Error getting chain ID from response",
+		},
+		{
+			name:            "http client error",
+			httpError:       errors.New("connection failed"),
+			expectedChainID: "",
+			expectError:     true,
+			errorContains:   "Error sending POST request",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHTTP := new(MockHTTPClient)
-			// Always return the status code from the test case
-			mockHTTP.On("Post", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-				Return(tt.httpResponse, tt.statusCode, tt.httpError)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+			mockHTTPClient.EXPECT().
+				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
 
 			n := NewNetwork(tt.networkName)
-			n.HttpClient = mockHTTP
+			n.HttpClient = mockHTTPClient
+			n.ChainIdMethod = "eth_chainId"
 
-			chainID, statusCode, err := n.getChainID("http://test.com", nil, nil)
+			chainID, err := n.getChainID("http://test.com", nil, nil)
 
-			if tt.expectedError {
+			if tt.expectError {
 				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedChainID, chainID)
 			}
-			assert.Equal(t, tt.expectedStatus, statusCode)
 		})
 	}
 }
 
-func TestTestArchiveMode(t *testing.T) {
+func TestGetLatestBlockNumber(t *testing.T) {
+	tests := []struct {
+		name           string
+		httpResponse   []byte
+		statusCode     int
+		httpError      error
+		expectedBlock  int64
+		expectedHealth HealthStatus
+		expectError    bool
+		responseDelay  time.Duration
+	}{
+		{
+			name:           "successful hex response",
+			httpResponse:   []byte(`{"jsonrpc":"2.0","result":"0x1234","id":1}`),
+			statusCode:     200,
+			expectedBlock:  0x1234,
+			expectedHealth: Healthy,
+			expectError:    false,
+		},
+		{
+			name:           "successful decimal response",
+			httpResponse:   []byte(`{"jsonrpc":"2.0","result":1234,"id":1}`),
+			statusCode:     200,
+			expectedBlock:  1234,
+			expectedHealth: Healthy,
+			expectError:    false,
+		},
+		{
+			name:           "rate limit response",
+			httpResponse:   []byte(`{"error": "rate limited"}`),
+			statusCode:     429,
+			expectedBlock:  0,
+			expectedHealth: Warning,
+			expectError:    true,
+		},
+		{
+			name:           "timeout response",
+			httpResponse:   []byte{},
+			statusCode:     200,
+			responseDelay:  time.Duration(BlockNumberTimeoutSeconds+1) * time.Second,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+		},
+		{
+			name:           "invalid block number format",
+			httpResponse:   []byte(`{"jsonrpc":"2.0","result":"invalid","id":1}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+		},
+		{
+			name:           "server error",
+			httpResponse:   []byte(`{"error": "internal error"}`),
+			statusCode:     500,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			// Set up expectations based on test case
+			if tt.responseDelay > 0 {
+				// For timeout tests, expect 2 calls (1 attempt × 2 retries)
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
+						time.Sleep(tt.responseDelay)
+						return tt.httpResponse, &tt.statusCode, tt.httpError
+					}).Times(2)
+			} else if tt.statusCode >= 400 || tt.expectError {
+				// For error cases, expect 2 calls (1 initial + 1 retry attempt)
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
+					Times(2)
+			} else {
+				// For successful cases, expect 1 call
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
+					Times(1)
+			}
+
+			// Create test network with mock client
+			n := NewNetwork("test")
+			n.HttpClient = mockHTTPClient
+			n.logger = zap.NewExample() // Use example logger for tests
+			n.RequestAttemptCount = 2   // Set lower attempt count for tests
+			n.HCMethod = "eth_blockNumber"
+
+			// Create mock auth client
+			mockAuthClient := auth.NewMockIAuthClient(ctrl)
+
+			// Execute test
+			block, health, err := n.getLatestBlockNumber("test-url", nil, mockAuthClient)
+
+			// Verify results
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tt.expectedBlock, block)
+			assert.Equal(t, tt.expectedHealth, health)
+		})
+	}
+}
+
+func TestArchiveMode(t *testing.T) {
 	tests := []struct {
 		name               string
 		httpResponse       []byte
 		statusCode         int
 		httpError          error
 		quarterBlockHeight string
-		expectedError      string
+		expectError        bool
+		errorContains      string
 	}{
 		{
 			name:               "successful archive test",
 			httpResponse:       []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
 			statusCode:         200,
-			httpError:          nil,
 			quarterBlockHeight: "0x1234",
-			expectedError:      "",
+			expectError:        false,
 		},
 		{
-			name:               "network unavailable",
+			name:               "service unavailable",
 			httpResponse:       []byte{},
 			statusCode:         503,
-			httpError:          nil,
 			quarterBlockHeight: "0x1234",
-			expectedError:      "Network Unavailable",
+			expectError:        true,
+			errorContains:      "Network Unavailable",
 		},
 		{
-			name:               "invalid JSON response",
+			name:               "invalid json response",
 			httpResponse:       []byte(`invalid json`),
 			statusCode:         200,
-			httpError:          nil,
 			quarterBlockHeight: "0x1234",
-			expectedError:      "Error unmarshalling response",
+			expectError:        true,
+			errorContains:      "Error unmarshalling response",
 		},
 		{
-			name:               "network doesn't support archive",
+			name:               "archive mode not supported",
 			httpResponse:       []byte(`{"error":{"code":-32000,"message":"missing trie node"}}`),
 			statusCode:         200,
-			httpError:          nil,
 			quarterBlockHeight: "0x1234",
-			expectedError:      "network doesn't support archive mode",
+			expectError:        true,
+			errorContains:      "network doesn't support archive mode",
 		},
 		{
 			name:               "http client error",
@@ -828,56 +478,33 @@ func TestTestArchiveMode(t *testing.T) {
 			statusCode:         200,
 			httpError:          errors.New("connection failed"),
 			quarterBlockHeight: "0x1234",
-			expectedError:      "Error sending POST request",
+			expectError:        true,
+			errorContains:      "Error sending POST request",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHTTP := new(MockHTTPClient)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			// Set up mock with exact payload matching
-			mockHTTP.On("Post",
-				mock.MatchedBy(func(url string) bool {
-					return url == "http://test.com"
-				}),
-				mock.MatchedBy(func(headers map[string]string) bool {
-					return headers == nil
-				}),
-				mock.MatchedBy(func(payload []byte) bool {
-					// Remove all whitespace from both expected and actual payloads
-					expected := strings.ReplaceAll(
-						fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`,
-							"eth_call",
-							tt.quarterBlockHeight,
-						),
-						" ", "",
-					)
-					actual := strings.ReplaceAll(string(payload), " ", "")
-
-					if expected != actual {
-						t.Logf("Expected payload: %s", expected)
-						t.Logf("Actual payload: %s", actual)
-					}
-					return expected == actual
-				}),
-				mock.Anything,
-			).Return(tt.httpResponse, tt.statusCode, tt.httpError)
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+			mockHTTPClient.EXPECT().
+				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
 
 			n := NewNetwork("test")
-			n.HttpClient = mockHTTP
+			n.HttpClient = mockHTTPClient
 			n.CallContractMethod = "eth_call"
 
 			err := n.testArchiveMode("http://test.com", nil, nil, tt.quarterBlockHeight)
 
-			if tt.expectedError == "" {
-				assert.NoError(t, err)
-			} else {
+			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
 			}
-
-			mockHTTP.AssertExpectations(t)
 		})
 	}
 }

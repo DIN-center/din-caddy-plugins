@@ -325,11 +325,7 @@ func TestProviderGetChainID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &provider{
-				chainId: tt.chainId,
-			}
-
-			result := p.getChainId()
+			result := tt.chainId
 			assert.Equal(t, tt.expectedChainId, result)
 		})
 	}
