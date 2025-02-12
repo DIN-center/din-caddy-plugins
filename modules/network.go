@@ -392,10 +392,11 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 		if !ok {
 			return "", 0, errors.New("Error getting chain ID from response")
 		}
-	}
-	chainID, ok = respObject["result"].(string)
-	if !ok {
-		return "", 0, errors.New("Error getting chain ID from response")
+	} else {
+		chainID, ok = respObject["result"].(string)
+		if !ok {
+			return "", 0, errors.New("Error getting chain ID from response")
+		}
 	}
 
 	return chainID, *statusCode, nil
