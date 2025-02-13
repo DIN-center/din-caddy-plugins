@@ -20,16 +20,16 @@ func TestWeightedCombiner(t *testing.T) {
 		time2 := time1.Add(time.Hour)
 		metrics := []*ProviderMetric{
 			{
-				metricID:    "metric1",
-				providerID:  "provider1",
-				value:       0.9,
-				lastUpdated: time1,
+				metricID:     "metric1",
+				providerName: "provider1",
+				value:        0.9,
+				lastUpdated:  time1,
 			},
 			{
-				metricID:    "metric2",
-				providerID:  "provider1",
-				value:       0.1,
-				lastUpdated: time2,
+				metricID:     "metric2",
+				providerName: "provider1",
+				value:        0.1,
+				lastUpdated:  time2,
 			},
 		}
 
@@ -62,16 +62,16 @@ func TestWeightedCombiner(t *testing.T) {
 
 		metrics := []*ProviderMetric{
 			{
-				metricID:    "metric1",
-				providerID:  "provider1",
-				value:       0.9,
-				lastUpdated: now,
+				metricID:     "metric1",
+				providerName: "provider1",
+				value:        0.9,
+				lastUpdated:  now,
 			},
 			{
-				metricID:    "metric2",
-				providerID:  "provider1",
-				value:       0.1,
-				lastUpdated: now,
+				metricID:     "metric2",
+				providerName: "provider1",
+				value:        0.1,
+				lastUpdated:  now,
 			},
 		}
 

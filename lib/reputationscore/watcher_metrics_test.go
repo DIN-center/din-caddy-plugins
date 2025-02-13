@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestWatcherBlockNumberConsistencyGenerateMetrics(t *testing.T) {
@@ -13,7 +14,7 @@ func TestWatcherBlockNumberConsistencyGenerateMetrics(t *testing.T) {
 			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE},
 		}
 
-		metrics, err := (&WatcherBlockNumberConsistency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		metrics, err := (&WatcherBlockNumberConsistency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -24,10 +25,11 @@ func TestWatcherBlockNumberConsistencyGenerateMetrics(t *testing.T) {
 		expectedMetric, _ := NewProviderMetric(
 			BlockNumberConsistencyMetricID,
 			"provider1",
+			"https://provider1.com",
 			0.95,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[0] != *expectedMetric {
+		if !metrics[0].Equal(expectedMetric) {
 			t.Errorf("expected provider1 %v, got %v", expectedMetric, metrics[0])
 		}
 
@@ -38,7 +40,7 @@ func TestWatcherBlockNumberConsistencyGenerateMetrics(t *testing.T) {
 			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{KO_CHECK_RESPONSE_API_ERROR},
 		}
 
-		_, err := (&WatcherBlockNumberConsistency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		_, err := (&WatcherBlockNumberConsistency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}
@@ -51,7 +53,7 @@ func TestWatcherBlockNonStateConsistencyGenerateMetrics(t *testing.T) {
 			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE},
 		}
 
-		metrics, err := (&WatcherBlockNonStateConsistency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		metrics, err := (&WatcherBlockNonStateConsistency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -62,11 +64,12 @@ func TestWatcherBlockNonStateConsistencyGenerateMetrics(t *testing.T) {
 		expectedMetric, _ := NewProviderMetric(
 			BlockNonStateConsistencyMetricID,
 			"provider1",
+			"https://provider1.com",
 			0.95,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[0] != *expectedMetric {
-			t.Errorf("expected provider1 %v, got %v", *expectedMetric, *metrics[0])
+		if !metrics[0].Equal(expectedMetric) {
+			t.Errorf("expected provider1 %v, got %v", expectedMetric, metrics[0])
 		}
 	})
 
@@ -75,7 +78,7 @@ func TestWatcherBlockNonStateConsistencyGenerateMetrics(t *testing.T) {
 			mockCheckResponses: []watcher.Result[watcher.CheckResponse]{KO_CHECK_RESPONSE_API_ERROR},
 		}
 
-		_, err := (&WatcherBlockNonStateConsistency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		_, err := (&WatcherBlockNonStateConsistency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}
@@ -88,7 +91,7 @@ func TestWatcherLatencyGenerateMetrics(t *testing.T) {
 			mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE},
 		}
 
-		metrics, err := (&WatcherLatency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		metrics, err := (&WatcherLatency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -99,10 +102,11 @@ func TestWatcherLatencyGenerateMetrics(t *testing.T) {
 		expectedMetric, _ := NewProviderMetric(
 			LatencyMetricID,
 			"provider1",
+			"https://provider1.com",
 			0.9,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[0] != *expectedMetric {
+		if !metrics[0].Equal(expectedMetric) {
 			t.Errorf("expected provider1 %v, got %v", expectedMetric, metrics[0])
 		}
 	})
@@ -112,7 +116,7 @@ func TestWatcherLatencyGenerateMetrics(t *testing.T) {
 			mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{KO_LATENCY_RESPONSE_API_ERROR},
 		}
 
-		_, err := (&WatcherLatency{WatcherClient: mockClient}).GenerateMetrics("test_network")
+		_, err := (&WatcherLatency{WatcherClient: mockClient, Logger: zaptest.NewLogger(t)}).GenerateMetrics("test_network")
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}

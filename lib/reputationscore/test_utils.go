@@ -2,6 +2,7 @@ package reputationscore
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 )
@@ -34,7 +35,8 @@ func (m *MockWatcherAPIClient) GetLatency(params watcher.LatencyQueryParams) wat
 var OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -49,7 +51,8 @@ var OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.CheckResponse
 var OK_CHECK_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
 			},
@@ -64,7 +67,8 @@ var OK_CHECK_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.CheckResponse{
 var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1 = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -74,7 +78,8 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1 = watcher.Ok(watcher.Check
 			LatestCheckTimestamp: "2023-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -89,7 +94,8 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1 = watcher.Ok(watcher.Check
 var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2 = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -99,7 +105,8 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2 = watcher.Ok(watcher.Check
 			LatestCheckTimestamp: "2024-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -114,7 +121,8 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2 = watcher.Ok(watcher.Check
 var OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1 = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
 			},
@@ -124,7 +132,8 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1 = watcher.Ok(watcher.CheckR
 			LatestCheckTimestamp: "2023-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -157,7 +166,8 @@ var OK_CHECK_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.CheckResponse{
 var OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -172,7 +182,8 @@ var OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.LatencyResp
 var OK_LATENCY_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
 			},
@@ -187,7 +198,8 @@ var OK_LATENCY_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.LatencyRespo
 var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1 = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -197,7 +209,8 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1 = watcher.Ok(watcher.Late
 			LastRequestTimestamp: "2023-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -212,7 +225,8 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1 = watcher.Ok(watcher.Late
 var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2 = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -222,7 +236,8 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2 = watcher.Ok(watcher.Late
 			LastRequestTimestamp: "2024-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -237,7 +252,8 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2 = watcher.Ok(watcher.Late
 var OK_LATENCY_RESPONSE_TWO_PROVIDERS_BAD_SCORE_TIME1 = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 50.0,
 			},
@@ -247,7 +263,8 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_BAD_SCORE_TIME1 = watcher.Ok(watcher.Laten
 			LastRequestTimestamp: "2023-01-01T00:00:00Z",
 		},
 		{
-			Provider: "provider2",
+			Provider:    "provider2",
+			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -264,7 +281,8 @@ var KO_LATENCY_RESPONSE_API_ERROR = watcher.Err[watcher.LatencyResponse](fmt.Err
 var OK_LATENCY_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
-			Provider: "provider1",
+			Provider:    "provider1",
+			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -275,3 +293,9 @@ var OK_LATENCY_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.LatencyResponse{
 		},
 	},
 })
+
+// Helper function to create scores without error checking
+func MustCreateScore(value float64, time time.Time) *Score {
+	score, _ := NewScore(value, time)
+	return score
+}

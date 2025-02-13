@@ -10,8 +10,8 @@ func TestShareOfTotalTransformer(t *testing.T) {
 		transformer := &ShareOfTotalTransformer{}
 
 		scores := map[string]*Score{
-			"provider1": mustCreateScore(0.95, TIME1),
-			"provider2": mustCreateScore(0.2, TIME1),
+			"provider1": MustCreateScore(0.95, TIME1),
+			"provider2": MustCreateScore(0.2, TIME1),
 		}
 
 		normalizedScores, err := transformer.TransformScore(scores)
@@ -44,7 +44,7 @@ func TestShareOfTotalTransformer(t *testing.T) {
 		transformer := &ShareOfTotalTransformer{}
 		scores := map[string]*Score{
 			"provider1": NewEmptyScore(),
-			"provider2": mustCreateScore(0.5, TIME1),
+			"provider2": MustCreateScore(0.5, TIME1),
 		}
 
 		normalizedScores, err := transformer.TransformScore(scores)
@@ -66,7 +66,7 @@ func TestShareOfTotalTransformer(t *testing.T) {
 	t.Run("handles single score", func(t *testing.T) {
 		transformer := &ShareOfTotalTransformer{}
 		scores := map[string]*Score{
-			"provider1": mustCreateScore(0.5, TIME1),
+			"provider1": MustCreateScore(0.5, TIME1),
 		}
 
 		normalizedScores, err := transformer.TransformScore(scores)
@@ -80,20 +80,14 @@ func TestShareOfTotalTransformer(t *testing.T) {
 	})
 }
 
-// Helper function to create scores without error checking
-func mustCreateScore(value float64, time time.Time) *Score {
-	score, _ := NewScore(value, time)
-	return score
-}
-
 var TIME1 = time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func TestEWMATransformer(t *testing.T) {
 	t.Run("first call returns unchanged scores", func(t *testing.T) {
 		transformer := NewEWMATransformer(0.7)
 		scores := map[string]*Score{
-			"provider1": mustCreateScore(0.8, TIME1),
-			"provider2": mustCreateScore(0.2, TIME1),
+			"provider1": MustCreateScore(0.8, TIME1),
+			"provider2": MustCreateScore(0.2, TIME1),
 		}
 
 		transformedScores, err := transformer.TransformScore(scores)
@@ -112,12 +106,12 @@ func TestEWMATransformer(t *testing.T) {
 	t.Run("applies EWMA formula correctly", func(t *testing.T) {
 		transformer := NewEWMATransformer(0.7)
 		scoresTMinusOne := map[string]*Score{
-			"provider1": mustCreateScore(1.0, TIME1),
-			"provider2": mustCreateScore(0.0, TIME1),
+			"provider1": MustCreateScore(1.0, TIME1),
+			"provider2": MustCreateScore(0.0, TIME1),
 		}
 		scoresT := map[string]*Score{
-			"provider1": mustCreateScore(0.9, TIME1),
-			"provider2": mustCreateScore(0.1, TIME1),
+			"provider1": MustCreateScore(0.9, TIME1),
+			"provider2": MustCreateScore(0.1, TIME1),
 		}
 
 		// First call initializes previous scores
@@ -139,12 +133,12 @@ func TestEWMATransformer(t *testing.T) {
 	t.Run("handles empty scores", func(t *testing.T) {
 		transformer := NewEWMATransformer(0.7)
 		scores1 := map[string]*Score{
-			"provider1": mustCreateScore(1.0, TIME1),
-			"provider2": mustCreateScore(0.0, TIME1),
+			"provider1": MustCreateScore(1.0, TIME1),
+			"provider2": MustCreateScore(0.0, TIME1),
 		}
 		scores2 := map[string]*Score{
 			"provider1": NewEmptyScore(),
-			"provider2": mustCreateScore(1.0, TIME1),
+			"provider2": MustCreateScore(1.0, TIME1),
 		}
 
 		transformer.TransformScore(scores1)
@@ -161,11 +155,11 @@ func TestEWMATransformer(t *testing.T) {
 	t.Run("handles new providers", func(t *testing.T) {
 		transformer := NewEWMATransformer(0.7)
 		scores1 := map[string]*Score{
-			"provider1": mustCreateScore(1.0, TIME1),
+			"provider1": MustCreateScore(1.0, TIME1),
 		}
 		scores2 := map[string]*Score{
-			"provider1": mustCreateScore(0.85, TIME1),
-			"provider2": mustCreateScore(0.15, TIME1), // New provider was added
+			"provider1": MustCreateScore(0.85, TIME1),
+			"provider2": MustCreateScore(0.15, TIME1), // New provider was added
 		}
 
 		transformer.TransformScore(scores1)
@@ -189,16 +183,16 @@ func TestEWMATransformer(t *testing.T) {
 	t.Run("handles three consecutive transformations", func(t *testing.T) {
 		transformer := NewEWMATransformer(0.7)
 		scores1 := map[string]*Score{
-			"provider1": mustCreateScore(1.0, TIME1),
-			"provider2": mustCreateScore(0.0, TIME1),
+			"provider1": MustCreateScore(1.0, TIME1),
+			"provider2": MustCreateScore(0.0, TIME1),
 		}
 		scores2 := map[string]*Score{
-			"provider1": mustCreateScore(0.0, TIME1),
-			"provider2": mustCreateScore(1.0, TIME1),
+			"provider1": MustCreateScore(0.0, TIME1),
+			"provider2": MustCreateScore(1.0, TIME1),
 		}
 		scores3 := map[string]*Score{
-			"provider1": mustCreateScore(0.5, TIME1),
-			"provider2": mustCreateScore(0.5, TIME1),
+			"provider1": MustCreateScore(0.5, TIME1),
+			"provider2": MustCreateScore(0.5, TIME1),
 		}
 
 		transformer.TransformScore(scores1)
@@ -232,8 +226,8 @@ func TestHighPassThroughTransformer(t *testing.T) {
 	t.Run("passes through scores above cutoff value", func(t *testing.T) {
 		transformer := NewDefaultHighPassThroughTransformer()
 		scores := map[string]*Score{
-			"provider1": mustCreateScore(0.5, TIME1),
-			"provider2": mustCreateScore(0.002, TIME1),
+			"provider1": MustCreateScore(0.5, TIME1),
+			"provider2": MustCreateScore(0.002, TIME1),
 		}
 
 		transformedScores, err := transformer.TransformScore(scores)
@@ -252,8 +246,8 @@ func TestHighPassThroughTransformer(t *testing.T) {
 	t.Run("zeros out scores below cutoff value", func(t *testing.T) {
 		transformer := NewDefaultHighPassThroughTransformer()
 		scores := map[string]*Score{
-			"provider1": mustCreateScore(0.0005, TIME1),
-			"provider2": mustCreateScore(0.0009, TIME1),
+			"provider1": MustCreateScore(0.0005, TIME1),
+			"provider2": MustCreateScore(0.0009, TIME1),
 		}
 
 		transformedScores, err := transformer.TransformScore(scores)
@@ -273,7 +267,7 @@ func TestHighPassThroughTransformer(t *testing.T) {
 		transformer := NewDefaultHighPassThroughTransformer()
 		scores := map[string]*Score{
 			"provider1": NewEmptyScore(),
-			"provider2": mustCreateScore(0.5, TIME1),
+			"provider2": MustCreateScore(0.5, TIME1),
 		}
 
 		transformedScores, err := transformer.TransformScore(scores)

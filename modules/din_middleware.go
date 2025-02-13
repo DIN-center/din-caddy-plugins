@@ -85,12 +85,19 @@ type DinMiddleware struct {
 	// The priority of the registry providers
 	RegistryPriority int
 
+	// Reputation score configuration
 	//Reputation score management
 	ReputationScoreManager *rs.ReputationScoreManager
 	// The flag to enable or disable the reputation score
 	ReputationScoreEnabled bool
 	// The endpoint of the watcher
 	ReputationScoreWatcherEndpoint string
+	// The API key for the watcher
+	ReputationScoreWatcherApiKey string
+	// The sync interval in seconds for the reputation score
+	ReputationScoreSyncIntervalSec uint64
+	// The watcher client
+	reputationScoreWatcherClient watcher.IWatcherAPIClient
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -167,43 +174,32 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		}
 	}
 
+	// Initialize the reputation score manager (before the registry is pulled)
+	if d.isReputationScoreActivable() {
+		d.logger.Info("[RSM] Reputation score activated, initializing reputation score manager")
+		d.logger.Debug("[RSM] Reputation score settings:",
+			zap.Uint64("sync_interval_secs", d.ReputationScoreSyncIntervalSec),
+			zap.String("watcher_endpoint", d.ReputationScoreWatcherEndpoint))
+
+		//list of networks to sync the reputation score for
+		networks := make([]string, 0, len(d.Networks))
+		for network := range d.Networks {
+			networks = append(networks, network)
+		}
+
+		//initialize the reputation score manager for provisioned networks
+		d.ReputationScoreManager = rs.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger)
+	}
+
+	// Pull data from the din registry
+	// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
+	// This is done in a goroutine that sets the latest networks and providers in the network map
+	if d.RegistryEnabled {
+		d.logger.Info("Din registry is enabled, pulling data from the registry")
+		d.startRegistrySync()
+	}
+
 	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
-
-	// Start the latest block number polling for each provider in each network.
-	// This is done in a goroutine that sets the latest block number in the network object,
-	// and updates the provider's health status accordingly.
-	// Skips if test mode is enabled.
-	if !d.testMode {
-		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the network object,
-		// and updates the provider's health status accordingly.
-		err := d.startHealthChecks()
-		if err != nil {
-			return fmt.Errorf("error starting healthchecks: %v", err)
-		}
-
-		// Pull data from the din registry
-		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
-		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.RegistryEnabled {
-			d.logger.Info("Din registry is enabled, pulling data from the registry")
-			d.startRegistrySync()
-		}
-	}
-
-	//From this point on, all networks and providers are provisioned and ready to be used
-	//Initialize the reputation score manager
-	networks := make([]string, 0, len(d.Networks))
-	for network := range d.Networks {
-		networks = append(networks, network)
-	}
-	//TODO: get the watcher endpoint and key from the Caddyfile
-	watcherClient := watcher.NewClient(d.DingoClient.GetWatcherEndpoint(), "KEY")
-	if err != nil {
-		return fmt.Errorf("error initializing watcher client: %v", err)
-	}
-
-	d.ReputationScoreManager = rs.NewWithBuitinFormula(networks, watcherClient)
 
 	return nil
 }
@@ -280,6 +276,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Set the upstreams in the context for the request
 	repl.Set(DinUpstreamsContextKey, network.Providers)
+
+	// Set if score based routing should be done
+	repl.Set(DinScoreBasedRoutingContextKey, d.isReputationScoreActivable())
 
 	reqStartTime := time.Now()
 
@@ -626,6 +625,18 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					dispenser.Next()
 					reputationScoreWatcherEndpoint := dispenser.Val()
 					d.ReputationScoreWatcherEndpoint = reputationScoreWatcherEndpoint
+				case "reputation_score_watcher_api_key":
+					dispenser.Next()
+					reputationScoreWatcherApiKey := dispenser.Val()
+					d.ReputationScoreWatcherApiKey = reputationScoreWatcherApiKey
+				case "reputation_score_sync_interval_secs":
+					dispenser.Next()
+					reputationScoreSyncIntervalSecVal := dispenser.Val()
+					intValue, err := strconv.Atoi(reputationScoreSyncIntervalSecVal)
+					if err != nil {
+						return dispenser.Errf("Error parsing reputation_score_sync_interval_secs: %v", err)
+					}
+					d.ReputationScoreSyncIntervalSec = uint64(intValue)
 				}
 			}
 		}
@@ -691,4 +702,9 @@ func (d *DinMiddleware) closeAll() {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
+}
+
+// ReputationScoreActive checks if reputation score is enabled and the registry is enabled
+func (d *DinMiddleware) isReputationScoreActivable() bool {
+	return d.ReputationScoreEnabled && d.RegistryEnabled
 }

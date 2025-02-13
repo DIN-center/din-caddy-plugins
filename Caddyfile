@@ -333,6 +333,8 @@
 			din_reputation_score {
 				reputation_score_enabled false
 				reputation_score_watcher_endpoint https://watcher.din.com
+				reputation_score_watcher_api_key key
+				reputation_score_sync_interval_secs 300 # 5 minutes
 			}
 		}
 		# din reverse proxy directive configuration

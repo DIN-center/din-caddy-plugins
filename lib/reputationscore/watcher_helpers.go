@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+	"go.uber.org/zap"
 
 	"github.com/pkg/errors"
 )
@@ -36,10 +37,12 @@ func calculateLatencyMetric(responseStatus watcher.Status, latencyStats watcher.
 
 }
 
-func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.CheckQueryParams, metricID string) ([]*ProviderMetric, error) {
+func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.CheckQueryParams, metricID string, logger *zap.Logger) ([]*ProviderMetric, error) {
 	// Query watcher API for check
+	logger.Debug("[RSM] Querying watcher API for check", zap.Any("params", params))
 	response := client.GetCheck(params)
 	if response.IsErr() {
+		logger.Error("[RSM] Error getting check data", zap.Error(response.UnwrapErr()))
 		return nil, errors.Wrapf(response.UnwrapErr(), "Error while querying check %s for network %s", params.CheckID, params.Network)
 	}
 
@@ -60,19 +63,22 @@ func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.
 		metric, _ := NewProviderMetric(
 			metricID,
 			provider.Provider,
+			provider.EndpointURL,
 			metricValue,
 			lastUpdated,
 		)
-
+		logger.Debug("[RSM] Check metric built", zap.Any("metric", metric))
 		metrics = append(metrics, metric)
 	}
 	return metrics, nil
 }
 
-func buildMetricsForLatencyQuery(client watcher.IWatcherAPIClient, params watcher.LatencyQueryParams, metricID string) ([]*ProviderMetric, error) {
+func buildMetricsForLatencyQuery(client watcher.IWatcherAPIClient, params watcher.LatencyQueryParams, metricID string, logger *zap.Logger) ([]*ProviderMetric, error) {
 	// Query watcher API for latency
+	logger.Debug("[RSM] Querying watcher API for latency", zap.Any("params", params))
 	response := client.GetLatency(params)
 	if response.IsErr() {
+		logger.Error("[RSM] Error getting latency data", zap.Error(response.UnwrapErr()))
 		return nil, errors.Wrapf(response.UnwrapErr(), "Error getting latency data for network %s", params.Network)
 	}
 	latencyResponse := response.Unwrap()
@@ -93,9 +99,11 @@ func buildMetricsForLatencyQuery(client watcher.IWatcherAPIClient, params watche
 		metric, _ := NewProviderMetric(
 			metricID,
 			provider.Provider,
+			provider.EndpointURL,
 			metricValue,
 			lastUpdated,
 		)
+		logger.Debug("[RSM] Latency metric built", zap.Any("metric", metric))
 		metrics = append(metrics, metric)
 	}
 

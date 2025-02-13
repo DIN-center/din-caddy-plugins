@@ -2,14 +2,15 @@ package reputationscore
 
 import (
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
-
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // Implements the logic to generate block number consistency metric
 // Block number consistency is a metric that checks if the block number monotonically increases over time
 type WatcherBlockNumberConsistency struct {
 	WatcherClient watcher.IWatcherAPIClient
+	Logger        *zap.Logger
 }
 
 func (g *WatcherBlockNumberConsistency) MetricID() string {
@@ -25,7 +26,9 @@ func (g *WatcherBlockNumberConsistency) GenerateMetrics(network string) ([]*Prov
 		Interval: MetricDefaultInterval,
 	}
 
-	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID())
+	g.Logger.Debug("[RSM] Generating metrics for block number consistency...")
+
+	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID(), g.Logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error while building metrics from check blockNumberConsistency")
 	}
@@ -37,6 +40,7 @@ func (g *WatcherBlockNumberConsistency) GenerateMetrics(network string) ([]*Prov
 // associated with a specific block may change over time due to chain reorganizations, node inconsistencies, or data corruption.
 type WatcherBlockNonStateConsistency struct {
 	WatcherClient watcher.IWatcherAPIClient
+	Logger        *zap.Logger
 }
 
 func (g *WatcherBlockNonStateConsistency) MetricID() string {
@@ -52,7 +56,9 @@ func (g *WatcherBlockNonStateConsistency) GenerateMetrics(network string) ([]*Pr
 		Interval: MetricDefaultInterval,
 	}
 
-	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID())
+	g.Logger.Debug("[RSM] Generating metrics for block non-state consistency...")
+
+	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID(), g.Logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error while building metrics from check blockNonStateConsistency")
 	}
@@ -64,6 +70,7 @@ func (g *WatcherBlockNonStateConsistency) GenerateMetrics(network string) ([]*Pr
 // Latency is a metric that checks the overall response time that a provider takes to respond to a JSON RPC request
 type WatcherLatency struct {
 	WatcherClient watcher.IWatcherAPIClient
+	Logger        *zap.Logger
 }
 
 func (g *WatcherLatency) MetricID() string {
@@ -78,7 +85,9 @@ func (g *WatcherLatency) GenerateMetrics(network string) ([]*ProviderMetric, err
 		Interval: MetricDefaultInterval,
 	}
 
-	metrics, err := buildMetricsForLatencyQuery(g.WatcherClient, latencyQuery, g.MetricID())
+	g.Logger.Debug("[RSM] Generating metrics for latency...")
+
+	metrics, err := buildMetricsForLatencyQuery(g.WatcherClient, latencyQuery, g.MetricID(), g.Logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error while building metrics from latency")
 	}

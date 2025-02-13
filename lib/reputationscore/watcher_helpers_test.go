@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestCalculateCheckMetric(t *testing.T) {
@@ -105,7 +106,7 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 		}
 
 		// Call the function
-		metrics, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric")
+		metrics, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric", zaptest.NewLogger(t))
 
 		// Verify no error occurred
 		if err != nil {
@@ -120,20 +121,22 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 		expectedMetric1, _ := NewProviderMetric(
 			"test_metric",
 			"provider1",
+			"https://provider1.com",
 			0.95,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[0] != *expectedMetric1 {
+		if !metrics[0].Equal(expectedMetric1) {
 			t.Errorf("expected provider1 %v, got %v", expectedMetric1, metrics[0])
 		}
 
 		expectedMetric2, _ := NewProviderMetric(
 			"test_metric",
 			"provider2",
+			"https://provider2.com",
 			0.20,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[1] != *expectedMetric2 {
+		if !metrics[1].Equal(expectedMetric2) {
 			t.Errorf("expected provider2 %v, got %v", expectedMetric2, metrics[1])
 		}
 	})
@@ -144,7 +147,7 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 		}
 
 		// Call the function
-		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check")
+		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check", zaptest.NewLogger(t))
 
 		// Verify error was returned
 		if err == nil {
@@ -159,7 +162,7 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 		}
 
 		// Call the function
-		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check")
+		_, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric_check", zaptest.NewLogger(t))
 
 		// Verify error was returned
 		if err == nil {
@@ -176,7 +179,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 		}
 
 		// Call the function
-		metrics, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+		metrics, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency", zaptest.NewLogger(t))
 
 		// Verify no error occurred
 		if err != nil {
@@ -191,20 +194,22 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 		expectedMetric1, _ := NewProviderMetric(
 			"test_metric_latency",
 			"provider1",
+			"https://provider1.com",
 			0.9,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[0] != *expectedMetric1 {
+		if !metrics[0].Equal(expectedMetric1) {
 			t.Errorf("expected provider1 %v, got %v", expectedMetric1, metrics[0])
 		}
 
 		expectedMetric2, _ := NewProviderMetric(
 			"test_metric_latency",
 			"provider2",
+			"https://provider2.com",
 			0.5,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
-		if *metrics[1] != *expectedMetric2 {
+		if !metrics[1].Equal(expectedMetric2) {
 			t.Errorf("expected provider2 %v, got %v", expectedMetric2, metrics[1])
 		}
 	})
@@ -216,7 +221,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 		}
 
 		// Call the function
-		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency", zaptest.NewLogger(t))
 
 		// Verify error was returned
 		if err == nil {
@@ -231,7 +236,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 		}
 
 		// Call the function
-		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency")
+		_, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency", zaptest.NewLogger(t))
 
 		// Verify error was returned
 		if err == nil {

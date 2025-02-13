@@ -2,28 +2,40 @@ package reputationscore
 
 import (
 	"fmt"
+	"math"
+	"net/url"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 // A provider metric is a number between 0 and 1 that can be used to measure the quality of a provider for a given criteria.
 // For example, the block number consistency metric ensures the consistency rate of a provider's block number.
 type ProviderMetric struct {
-	metricID    string
-	providerID  string
-	value       float64
-	lastUpdated time.Time
+	metricID     string
+	providerName string
+	providerURL  *url.URL
+	value        float64
+	lastUpdated  time.Time
 }
 
 // Constructor function to create a new ProviderMetric
-func NewProviderMetric(metricID, providerID string, value float64, lastUpdated time.Time) (*ProviderMetric, error) {
+func NewProviderMetric(metricID, providerID, providerEndpoint string, value float64, lastUpdated time.Time) (*ProviderMetric, error) {
 	if value < 0 || value > 1 {
 		return nil, fmt.Errorf("value must be between 0 and 1, got %f", value)
 	}
+
+	providerURL, err := url.Parse(providerEndpoint)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse provider endpoint")
+	}
+
 	return &ProviderMetric{
-		metricID:    metricID,
-		providerID:  providerID,
-		value:       value,
-		lastUpdated: lastUpdated,
+		metricID:     metricID,
+		providerName: providerID,
+		providerURL:  providerURL,
+		value:        value,
+		lastUpdated:  lastUpdated,
 	}, nil
 }
 
@@ -31,17 +43,40 @@ func (m *ProviderMetric) MetricID() string {
 	return m.metricID
 }
 
-func (m *ProviderMetric) ProviderID() string {
-	return m.providerID
+func (m *ProviderMetric) ProviderName() string {
+	return m.providerName
 }
 
-// Getter methods
+func (m *ProviderMetric) ProviderID() string {
+	return m.providerURL.Hostname()
+}
+
+func (m *ProviderMetric) ProviderURL() *url.URL {
+	return m.providerURL
+}
+
 func (m *ProviderMetric) Value() float64 {
 	return m.value
 }
 
 func (m *ProviderMetric) LastUpdated() time.Time {
 	return m.lastUpdated
+}
+
+// Equal returns true if the two ProviderMetrics are equal
+func (m *ProviderMetric) Equal(other *ProviderMetric) bool {
+	if m == nil || other == nil {
+		return m == other
+	}
+	return m.metricID == other.metricID &&
+		m.providerName == other.providerName &&
+		m.providerURL.String() == other.providerURL.String() &&
+		math.Abs(m.value-other.value) < 0.00001 &&
+		m.lastUpdated.Equal(other.lastUpdated)
+}
+
+func (m *ProviderMetric) String() string {
+	return fmt.Sprintf("ProviderMetric{metricID: %s, providerID: %s, providerURL: %s, value: %f, lastUpdated: %s}", m.metricID, m.ProviderID(), m.providerURL.String(), m.value, m.lastUpdated.Format(time.RFC3339))
 }
 
 var EmptyScore = &Score{value: 0, hasValue: false, lastUpdated: time.Time{}}
@@ -78,6 +113,10 @@ func (s *Score) Value() float64 {
 
 func (s *Score) LastUpdated() time.Time {
 	return s.lastUpdated
+}
+
+func (s *Score) String() string {
+	return fmt.Sprintf("Score{value: %f, hasValue: %t, lastUpdated: %s}", s.value, s.hasValue, s.lastUpdated.Format(time.RFC3339))
 }
 
 // A provider metric generator is responsible for generating metrics for all providers in a given network.

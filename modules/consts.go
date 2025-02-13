@@ -12,11 +12,12 @@ const (
 	LineaSepolia = "linea-sepolia"
 
 	// Module Context Key constants
-	DinUpstreamsContextKey = "din.internal.upstreams"
-	RequestProviderKey     = "request_provider"
-	RequestBodyKey         = "request_body"
-	HealthStatusKey        = "health_status"
-	BlockNumberKey         = "block_number"
+	DinUpstreamsContextKey         = "din.internal.upstreams"
+	DinScoreBasedRoutingContextKey = "din.internal.score_based_routing"
+	RequestProviderKey             = "request_provider"
+	RequestBodyKey                 = "request_body"
+	HealthStatusKey                = "health_status"
+	BlockNumberKey                 = "block_number"
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
@@ -40,6 +41,10 @@ const (
 
 	// Upstream/Selector Constants
 	MaxPriority = 9
+
+	// Routing score based constants
+	ProvidersDefaultWeight         = 50
+	StaleScoreGracePeriodInMinutes = 60
 )
 
 // String method to convert MyEnum to string
