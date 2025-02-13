@@ -320,12 +320,36 @@ func (n *network) sendLatestBlockMetric(providerName string, statusCode int, hea
 }
 
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, HealthStatus, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
-
 	var lastErr error
 	var lastHealthStatus HealthStatus = Unhealthy
 
+	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		resBytes, statusCode, err := n.tryBlockNumberRequestWithTimeout(httpUrl, headers, ac)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+		if err != nil {
+			lastErr = err
+			lastHealthStatus = health
+			continue
+		}
+
+		return blockNumber, health, nil
+	}
+
+	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+}
+
+// Layer 2: Handle timeout
+func (n *network) tryBlockNumberRequestWithTimeout(httpUrl string, headers map[string]string, ac auth.IAuthClient) ([]byte, *int, error) {
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+
+	// Try the request up to 2 times if it times out
+	for retryCount := 0; retryCount < 2; retryCount++ {
 		// Create a channel for the response
 		type result struct {
 			resBytes   []byte
@@ -334,81 +358,63 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		}
 		resChan := make(chan result, 1)
 
-		// Try the request up to 2 times if it times out
-		var resBytes []byte
-		var statusCode *int
-		var err error
+		// Make the request in a goroutine
+		go func(payload []byte) {
+			resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
+			resChan <- result{resBytes, statusCode, err}
+		}(payload)
 
-		for retryCount := 0; retryCount < 2; retryCount++ {
-			// Make the request in a goroutine
-			go func(payload []byte) {
-				resBytes, statusCode, err = n.HttpClient.Post(httpUrl, headers, payload, ac)
-				resChan <- result{resBytes, statusCode, err}
-			}(payload)
-
-			// Wait for response or timeout
-			select {
-			case res := <-resChan:
-				resBytes, statusCode, err = res.resBytes, res.statusCode, res.err
-				goto processResponse
-			case <-time.After(time.Duration(BlockNumberTimeoutSeconds) * time.Second):
-				if retryCount == 1 {
-					return 0, Unhealthy, errors.New("request is taking too long after retry")
-				}
-				continue
+		// Wait for response or timeout
+		select {
+		case res := <-resChan:
+			return res.resBytes, res.statusCode, res.err
+		case <-time.After(time.Duration(BlockNumberTimeoutSeconds) * time.Second):
+			if retryCount == 1 {
+				return nil, nil, errors.New("request is taking too long after retry")
 			}
-		}
-
-	processResponse:
-		if err != nil {
-			lastErr = err
 			continue
 		}
-
-		// Evaluate health status based on status code
-		if *statusCode >= 400 {
-			// If status code is 429, set health status to Warning, otherwise continue as unhealthy
-			if *statusCode == 429 {
-				lastHealthStatus = Warning
-				lastErr = fmt.Errorf("rate limit error (status code: %d)", *statusCode)
-				continue
-			}
-			lastErr = fmt.Errorf("error status code: %d", *statusCode)
-			continue
-		}
-
-		var respObject map[string]interface{}
-		err = json.Unmarshal(resBytes, &respObject)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Error unmarshalling response")
-			continue
-		}
-
-		var blockNumber int64
-
-		switch result := respObject["result"].(type) {
-		case string:
-			if result == "" || result[:2] != "0x" {
-				lastErr = errors.New("Invalid block number")
-				continue
-			}
-
-			blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
-			if err != nil {
-				lastErr = errors.Wrap(err, "Error converting block number")
-				continue
-			}
-		case float64:
-			blockNumber = int64(result)
-		default:
-			lastErr = errors.New("unsupported block number type")
-			continue
-		}
-
-		return blockNumber, Healthy, nil
 	}
 
-	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+	return nil, nil, errors.New("request timed out")
+}
+
+// Layer 3: Process response
+func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
+	// Evaluate health status based on status code
+	if *statusCode >= 400 {
+		// If status code is 429, set health status to Warning, otherwise return as unhealthy
+		if *statusCode == 429 {
+			return 0, Warning, fmt.Errorf("rate limit error (status code: %d)", *statusCode)
+		}
+		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
+	}
+
+	var respObject map[string]interface{}
+	err := json.Unmarshal(resBytes, &respObject)
+	if err != nil {
+		return 0, Unhealthy, errors.Wrap(err, "Error unmarshalling response")
+	}
+
+	var blockNumber int64
+
+	switch result := respObject["result"].(type) {
+	case string:
+		if result == "" || result[:2] != "0x" {
+			return 0, Unhealthy, errors.New("Invalid block number")
+		}
+
+		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
+		if err != nil {
+			return 0, Unhealthy, errors.Wrap(err, "Error converting block number")
+		}
+	case float64:
+		blockNumber = int64(result)
+	default:
+		return 0, Unhealthy, errors.New("unsupported block number type")
+	}
+
+	return blockNumber, Healthy, nil
 }
 
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {

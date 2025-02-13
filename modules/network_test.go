@@ -10,7 +10,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 func TestHandleErrorWithGracePeriod(t *testing.T) {
@@ -314,123 +313,6 @@ func TestGetChainID(t *testing.T) {
 	}
 }
 
-func TestGetLatestBlockNumber(t *testing.T) {
-	tests := []struct {
-		name           string
-		httpResponse   []byte
-		statusCode     int
-		httpError      error
-		expectedBlock  int64
-		expectedHealth HealthStatus
-		expectError    bool
-		responseDelay  time.Duration
-	}{
-		{
-			name:           "successful hex response",
-			httpResponse:   []byte(`{"jsonrpc":"2.0","result":"0x1234","id":1}`),
-			statusCode:     200,
-			expectedBlock:  0x1234,
-			expectedHealth: Healthy,
-			expectError:    false,
-		},
-		{
-			name:           "successful decimal response",
-			httpResponse:   []byte(`{"jsonrpc":"2.0","result":1234,"id":1}`),
-			statusCode:     200,
-			expectedBlock:  1234,
-			expectedHealth: Healthy,
-			expectError:    false,
-		},
-		{
-			name:           "rate limit response",
-			httpResponse:   []byte(`{"error": "rate limited"}`),
-			statusCode:     429,
-			expectedBlock:  0,
-			expectedHealth: Warning,
-			expectError:    true,
-		},
-		{
-			name:           "timeout response",
-			httpResponse:   []byte{},
-			statusCode:     200,
-			responseDelay:  time.Duration(BlockNumberTimeoutSeconds+1) * time.Second,
-			expectedBlock:  0,
-			expectedHealth: Unhealthy,
-			expectError:    true,
-		},
-		{
-			name:           "invalid block number format",
-			httpResponse:   []byte(`{"jsonrpc":"2.0","result":"invalid","id":1}`),
-			statusCode:     200,
-			expectedBlock:  0,
-			expectedHealth: Unhealthy,
-			expectError:    true,
-		},
-		{
-			name:           "server error",
-			httpResponse:   []byte(`{"error": "internal error"}`),
-			statusCode:     500,
-			expectedBlock:  0,
-			expectedHealth: Unhealthy,
-			expectError:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-
-			// Set up expectations based on test case
-			if tt.responseDelay > 0 {
-				// For timeout tests, expect 2 calls (1 attempt × 2 retries)
-				mockHTTPClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
-						time.Sleep(tt.responseDelay)
-						return tt.httpResponse, &tt.statusCode, tt.httpError
-					}).Times(2)
-			} else if tt.statusCode >= 400 || tt.expectError {
-				// For error cases, expect 2 calls (1 initial + 1 retry attempt)
-				mockHTTPClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
-					Times(2)
-			} else {
-				// For successful cases, expect 1 call
-				mockHTTPClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
-					Times(1)
-			}
-
-			// Create test network with mock client
-			n := NewNetwork("test")
-			n.HttpClient = mockHTTPClient
-			n.logger = zap.NewExample() // Use example logger for tests
-			n.RequestAttemptCount = 2   // Set lower attempt count for tests
-			n.HCMethod = "eth_blockNumber"
-
-			// Create mock auth client
-			mockAuthClient := auth.NewMockIAuthClient(ctrl)
-
-			// Execute test
-			block, health, err := n.getLatestBlockNumber("test-url", nil, mockAuthClient)
-
-			// Verify results
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			assert.Equal(t, tt.expectedBlock, block)
-			assert.Equal(t, tt.expectedHealth, health)
-		})
-	}
-}
-
 func TestArchiveMode(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -504,6 +386,201 @@ func TestArchiveMode(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.errorContains)
 			} else {
 				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestProcessBlockNumberResponse(t *testing.T) {
+	tests := []struct {
+		name           string
+		response       []byte
+		statusCode     int
+		expectedBlock  int64
+		expectedHealth HealthStatus
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name:           "valid hex response",
+			response:       []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
+			statusCode:     200,
+			expectedBlock:  0x1234,
+			expectedHealth: Healthy,
+			expectError:    false,
+		},
+		{
+			name:           "valid decimal response",
+			response:       []byte(`{"jsonrpc":"2.0","result":1234}`),
+			statusCode:     200,
+			expectedBlock:  1234,
+			expectedHealth: Healthy,
+			expectError:    false,
+		},
+		{
+			name:           "rate limit error",
+			response:       []byte(`{"error":"rate limited"}`),
+			statusCode:     429,
+			expectedBlock:  0,
+			expectedHealth: Warning,
+			expectError:    true,
+			errorContains:  "rate limit error",
+		},
+		{
+			name:           "server error",
+			response:       []byte(`{"error":"internal error"}`),
+			statusCode:     500,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "error status code: 500",
+		},
+		{
+			name:           "invalid json",
+			response:       []byte(`invalid json`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Error unmarshalling response",
+		},
+		{
+			name:           "missing hex prefix",
+			response:       []byte(`{"jsonrpc":"2.0","result":"1234"}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Invalid block number",
+		},
+		{
+			name:           "invalid hex string",
+			response:       []byte(`{"jsonrpc":"2.0","result":"0xZZZZ"}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Error converting block number",
+		},
+		{
+			name:           "unsupported result type",
+			response:       []byte(`{"jsonrpc":"2.0","result":{"block":1234}}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "unsupported block number type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := NewNetwork("test")
+			block, health, err := n.processBlockNumberResponse(tt.response, &tt.statusCode)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tt.expectedBlock, block)
+			assert.Equal(t, tt.expectedHealth, health)
+		})
+	}
+}
+
+func TestTryBlockNumberRequestWithTimeout(t *testing.T) {
+	tests := []struct {
+		name          string
+		responseDelay time.Duration
+		httpResponse  []byte
+		statusCode    int
+		httpError     error
+		expectError   bool
+		errorContains string
+		expectedCalls int
+	}{
+		{
+			name:          "successful response",
+			httpResponse:  []byte(`{"result":"0x1234"}`),
+			statusCode:    200,
+			expectError:   false,
+			expectedCalls: 1,
+		},
+		{
+			name:          "timeout on first try, success on retry",
+			responseDelay: time.Duration(BlockNumberTimeoutSeconds+1) * time.Second,
+			httpResponse:  []byte(`{"result":"0x1234"}`),
+			statusCode:    200,
+			expectError:   true,
+			errorContains: "request is taking too long after retry",
+			expectedCalls: 2,
+			// For timeout errors, both resBytes and statusCode should be nil
+		},
+		{
+			name:          "http client error",
+			httpError:     errors.New("connection failed"),
+			statusCode:    0,
+			expectError:   true,
+			errorContains: "connection failed",
+			expectedCalls: 1,
+		},
+		{
+			name:          "non-200 status code",
+			httpResponse:  []byte(`{"error":"server error"}`),
+			statusCode:    500,
+			expectError:   false, // Function only handles timeouts, not HTTP errors
+			expectedCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			if tt.responseDelay > 0 {
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
+						time.Sleep(tt.responseDelay)
+						return tt.httpResponse, &tt.statusCode, tt.httpError
+					}).Times(tt.expectedCalls)
+			} else {
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
+					Times(tt.expectedCalls)
+			}
+
+			n := NewNetwork("test")
+			n.HttpClient = mockHTTPClient
+			n.HCMethod = "eth_blockNumber"
+
+			resBytes, statusCode, err := n.tryBlockNumberRequestWithTimeout("test-url", nil, nil)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				if tt.responseDelay > 0 {
+					// For timeout errors, both resBytes and statusCode should be nil
+					assert.Nil(t, resBytes)
+					assert.Nil(t, statusCode)
+				} else {
+					// For other errors, check status code
+					assert.Equal(t, &tt.statusCode, statusCode)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.httpResponse, resBytes)
+				assert.Equal(t, tt.statusCode, *statusCode)
 			}
 		})
 	}
