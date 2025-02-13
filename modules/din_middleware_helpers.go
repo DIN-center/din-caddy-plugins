@@ -39,7 +39,7 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 		d.processRegistryData(registryData)
 
 		if d.isReputationScoreActivable() {
-			d.SyncReputationScore()
+			d.SyncMiddlewareWithLatestScores()
 		}
 
 		// Update the last updated block number
@@ -330,7 +330,7 @@ func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
 }
 
 // Fetches the latest score from the reputation score manager and updates the provider score for all active networks
-func (d *DinMiddleware) SyncReputationScore() {
+func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 	d.logger.Info("[RSM] Syncing provider scores from reputation score manager")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {

@@ -199,6 +199,13 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		d.startRegistrySync()
 	}
 
+	// Start the periodic updates for the reputation scores (after the registry is pulled)
+	if d.isReputationScoreActivable() {
+		d.logger.Info("[RSM] Reputation score is activated, starting periodic updates")
+		d.ReputationScoreManager.StartPeriodicUpdates(time.Duration(d.ReputationScoreSyncIntervalSec) * time.Second)
+		d.SyncMiddlewareWithLatestScores()
+	}
+
 	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
 
 	return nil
