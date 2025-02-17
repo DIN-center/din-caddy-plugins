@@ -73,31 +73,31 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		request             *http.Request
-		pool                reverseproxy.UpstreamPool
-		providers           map[string]*provider
-		score_based_routing bool
-		repeat              int
-		output              []Output
+		name                  string
+		request               *http.Request
+		pool                  reverseproxy.UpstreamPool
+		providers             map[string]*provider
+		smartRoutingEnabled bool
+		repeat                int
+		output                []Output
 	}{
 		{
-			name:                "Score based routing disabled, use fallback => upstream selected",
-			request:             &http.Request{},
-			pool:                reverseproxy.UpstreamPool{upstream_mock},
-			providers:           nil,
-			score_based_routing: false,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_mock, target_prob: 1.0}},
+			name:                  "Score based routing disabled, use fallback => upstream selected",
+			request:               &http.Request{},
+			pool:                  reverseproxy.UpstreamPool{upstream_mock},
+			providers:             nil,
+			smartRoutingEnabled: false,
+			repeat:                1,
+			output:                []Output{{upstream: upstream_mock, target_prob: 1.0}},
 		},
 		{
-			name:                "Score based routing enabled, no providers score => no upstream selected",
-			request:             &http.Request{},
-			pool:                reverseproxy.UpstreamPool{},
-			providers:           nil,
-			score_based_routing: true,
-			repeat:              1,
-			output:              []Output{{upstream: nil, target_prob: 0.0}},
+			name:                  "Score based routing enabled, no providers score => no upstream selected",
+			request:               &http.Request{},
+			pool:                  reverseproxy.UpstreamPool{},
+			providers:             nil,
+			smartRoutingEnabled: true,
+			repeat:                1,
+			output:                []Output{{upstream: nil, target_prob: 0.0}},
 		},
 		{
 			name:    "Score based routing enabled, single provider (score is empty) => upstream selected",
@@ -108,9 +108,9 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.NewEmptyScore(),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_foo, target_prob: 1.0}},
+			smartRoutingEnabled: true,
+			repeat:                1,
+			output:                []Output{{upstream: upstream_foo, target_prob: 1.0}},
 		},
 		{
 			name:    "Score based routing enabled, single provider (score has a value > 0.0) => upstream selected",
@@ -121,9 +121,9 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.MustCreateScore(1.0, time.Now().UTC()),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_bar, target_prob: 1.0}},
+			smartRoutingEnabled: true,
+			repeat:                1,
+			output:                []Output{{upstream: upstream_bar, target_prob: 1.0}},
 		},
 		{
 			name:    "Score based routing enabled, single provider (score has a value, but it's 0.0) => no upstream selected",
@@ -134,9 +134,9 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.MustCreateScore(0.0, time.Now().UTC()),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1,
-			output:              []Output{{upstream: nil, target_prob: 0.0}},
+			smartRoutingEnabled: true,
+			repeat:                1,
+			output:                []Output{{upstream: nil, target_prob: 0.0}},
 		},
 		{
 			name:    "Score based routing enabled, single provider (score has a value, but it is stale) => upstream selected",
@@ -147,9 +147,9 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.MustCreateScore(0.0, time.Now().UTC().Add(-time.Minute*StaleScoreGracePeriodInMinutes-1)),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_bar, target_prob: 1.0}},
+			smartRoutingEnabled: true,
+			repeat:                1,
+			output:                []Output{{upstream: upstream_bar, target_prob: 1.0}},
 		},
 		{
 			name:    "Score based routing enabled, two providers (same score) => upstream selected with same odds",
@@ -163,9 +163,9 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
-			output:              []Output{{upstream: upstream_bar, target_prob: 0.5}, {upstream: upstream_foo, target_prob: 0.5}},
+			smartRoutingEnabled: true,
+			repeat:                1000, // less than 10000 is not enough to get a stable result
+			output:                []Output{{upstream: upstream_bar, target_prob: 0.5}, {upstream: upstream_foo, target_prob: 0.5}},
 		},
 		{
 			name:    "Score based routing enabled, two providers (bar valid, foo valid) => upstream selected according to odds",
@@ -179,8 +179,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.MustCreateScore(0.67, time.Now().UTC()),
 				},
 			},
-			score_based_routing: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
+			smartRoutingEnabled: true,
+			repeat:                1000, // less than 10000 is not enough to get a stable result
 			output: []Output{{upstream: upstream_bar, target_prob: 0.5786}, // note that prob = odd / (odd + 1)
 				{upstream: upstream_foo, target_prob: 0.4214}},
 		},
@@ -196,8 +196,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 					Score: rs.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
 				},
 			},
-			score_based_routing: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
+			smartRoutingEnabled: true,
+			repeat:                1000, // less than 10000 is not enough to get a stable result
 			output: []Output{{upstream: upstream_bar, target_prob: 0.6479}, // note that prob = odd / (odd + 1)
 				{upstream: upstream_foo, target_prob: 0.3521}},
 		},
@@ -207,7 +207,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(DinUpstreamsContextKey, tt.providers)
-			repl.Set(DinScoreBasedRoutingContextKey, tt.score_based_routing)
+			repl.Set(DinScoreBasedRoutingContextKey, tt.smartRoutingEnabled)
 
 			results := make([]*reverseproxy.Upstream, tt.repeat)
 			upstream_count := make(map[*reverseproxy.Upstream]int)

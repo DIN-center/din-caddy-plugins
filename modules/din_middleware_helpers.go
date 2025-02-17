@@ -38,7 +38,8 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 		}
 		d.processRegistryData(registryData)
 
-		if d.isReputationScoreActivable() {
+		// Sync scores at the end of each epoch if smart routing is enabled and the sync is enabled
+		if d.isSmartScoringActive() && d.SmartRoutingSyncEnabled {
 			d.SyncMiddlewareWithLatestScores()
 		}
 
@@ -86,9 +87,9 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				delete(d.Networks, regNetwork.ProxyName)
 
 				// Remove the network from the reputation score manager if the reputation score is enabled
-				if d.isReputationScoreActivable() {
-					d.ReputationScoreManager.RemoveNetwork(regNetwork.ProxyName)
-					d.logger.Info("Removing network from reputation score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
+				if d.isSmartScoringActive() {
+					d.reputationScoreManager.RemoveNetwork(regNetwork.ProxyName)
+					d.logger.Info("[SMART ROUTING] Removing network from reputation score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
 				}
 				continue
 			}
@@ -154,9 +155,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	}
 
 	// Add the network to the reputation score manager if the reputation score is enabled
-	if d.isReputationScoreActivable() {
-		d.ReputationScoreManager.AddNetworkWithBuiltInFormula(network.Name, d.GetOrCreateWatcherClient())
-		d.logger.Info("[RSM] Adding network to reputation score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+	if d.isSmartScoringActive() {
+		d.reputationScoreManager.AddNetworkWithBuiltInFormula(network.Name, d.GetOrCreateWatcherClient())
+		d.logger.Info("[SMART ROUTING] Adding network to reputation score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}
 
 	return nil
@@ -323,19 +324,19 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 }
 
 func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
-	if d.reputationScoreWatcherClient == nil {
-		d.reputationScoreWatcherClient = watcher.NewClient(d.ReputationScoreWatcherEndpoint, d.ReputationScoreWatcherApiKey)
+	if d.smartRoutingWatcherClient == nil {
+		d.smartRoutingWatcherClient = watcher.NewClient(d.SmartRoutingWatcherEndpoint, d.SmartRoutingWatcherApiKey)
 	}
-	return d.reputationScoreWatcherClient
+	return d.smartRoutingWatcherClient
 }
 
 // Fetches the latest score from the reputation score manager and updates the provider score for all active networks
 func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
-	d.logger.Info("[RSM] Syncing provider scores from reputation score manager")
+	d.logger.Info("[SMART ROUTING] Syncing provider scores from reputation score manager")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
-			provider.Score = d.ReputationScoreManager.GetScore(network.Name, provider.host)
-			d.logger.Debug("[RSM] Provider score",
+			provider.Score = d.reputationScoreManager.GetScore(network.Name, provider.host)
+			d.logger.Debug("[SMART ROUTING] Provider score",
 				zap.String("network", network.Name),
 				zap.String("provider", provider.host),
 				zap.Any("score", provider.Score))

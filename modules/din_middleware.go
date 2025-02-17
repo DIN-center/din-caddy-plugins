@@ -85,19 +85,23 @@ type DinMiddleware struct {
 	// The priority of the registry providers
 	RegistryPriority int
 
-	// Reputation score configuration
-	//Reputation score management
-	ReputationScoreManager *rs.ReputationScoreManager
-	// The flag to enable or disable the reputation score
-	ReputationScoreEnabled bool
+	// Smart routing configuration
+	// The flag to enable or disable the smart routing
+	SmartRoutingEnabled bool
 	// The endpoint of the watcher
-	ReputationScoreWatcherEndpoint string
+	SmartRoutingWatcherEndpoint string
 	// The API key for the watcher
-	ReputationScoreWatcherApiKey string
-	// The sync interval in seconds for the reputation score
-	ReputationScoreSyncIntervalSec uint64
-	// The watcher client
-	reputationScoreWatcherClient watcher.IWatcherAPIClient
+	SmartRoutingWatcherApiKey string
+	// The flag to enable or disable the smart routing sync
+	SmartRoutingSyncEnabled bool
+	// The sync interval in seconds for the smart routing
+	SmartRoutingSyncIntervalSec uint64
+
+	//The backend to manage score (Reputation score)
+	reputationScoreManager *rs.ReputationScoreManager
+
+	//The watcher client for smart routing
+	smartRoutingWatcherClient watcher.IWatcherAPIClient
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -174,21 +178,22 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		}
 	}
 
-	// Initialize the reputation score manager (before the registry is pulled)
-	if d.isReputationScoreActivable() {
-		d.logger.Info("[RSM] Reputation score activated, initializing reputation score manager")
-		d.logger.Debug("[RSM] Reputation score settings:",
-			zap.Uint64("sync_interval_secs", d.ReputationScoreSyncIntervalSec),
-			zap.String("watcher_endpoint", d.ReputationScoreWatcherEndpoint))
+	// If smart routing is enabled, initialize the score backend
+	if d.isSmartScoringActive() {
+		d.logger.Info("[SMART ROUTING] Smart routing activated, initializing reputation score manager")
+		d.logger.Debug("[SMART ROUTING] Smart routing settings:",
+			zap.Bool("sync_score_enabled", d.SmartRoutingSyncEnabled),
+			zap.Uint64("sync_interval_secs", d.SmartRoutingSyncIntervalSec),
+			zap.String("watcher_endpoint", d.SmartRoutingWatcherEndpoint))
 
-		//list of networks to sync the reputation score for
+		//list of networks to compute scores
 		networks := make([]string, 0, len(d.Networks))
 		for network := range d.Networks {
 			networks = append(networks, network)
 		}
 
 		//initialize the reputation score manager for provisioned networks
-		d.ReputationScoreManager = rs.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger)
+		d.reputationScoreManager = rs.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger)
 	}
 
 	// Pull data from the din registry
@@ -200,9 +205,9 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	}
 
 	// Start the periodic updates for the reputation scores (after the registry is pulled)
-	if d.isReputationScoreActivable() {
-		d.logger.Info("[RSM] Reputation score is activated, starting periodic updates")
-		d.ReputationScoreManager.StartPeriodicUpdates(time.Duration(d.ReputationScoreSyncIntervalSec) * time.Second)
+	if d.isSmartScoringActive() && d.SmartRoutingSyncEnabled {
+		d.logger.Info("[SMART ROUTING] Reputation score is activated, starting periodic updates")
+		d.reputationScoreManager.StartPeriodicUpdates(time.Duration(d.SmartRoutingSyncIntervalSec) * time.Second)
 		d.SyncMiddlewareWithLatestScores()
 	}
 
@@ -233,6 +238,7 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 		}
 	}
 	provider.logger = d.logger
+	provider.Score = rs.EmptyScore
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
 	return nil
@@ -285,7 +291,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl.Set(DinUpstreamsContextKey, network.Providers)
 
 	// Set if score based routing should be done
-	repl.Set(DinScoreBasedRoutingContextKey, d.isReputationScoreActivable())
+	repl.Set(DinScoreBasedRoutingContextKey, d.isSmartScoringActive())
 
 	reqStartTime := time.Now()
 
@@ -614,40 +620,49 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
 					d.RegistryPriority = intValue
-				}
-			}
-		case "din_reputation_score":
-			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
-				switch dispenser.Val() {
-				case "reputation_score_enabled":
-					dispenser.Next()
-					reputationScoreEnabledVal := dispenser.Val()
-					// Convert string to bool
-					boolValue, err := strconv.ParseBool(reputationScoreEnabledVal)
-					if err != nil {
-						return dispenser.Errf("Error while parsing reputation_score_enabled: %v", err)
+				case "smart_routing":
+					for n2 := dispenser.Nesting(); dispenser.NextBlock(n2); {
+						switch dispenser.Val() {
+						case "enabled":
+							dispenser.Next()
+							smartRoutingEnabledVal := dispenser.Val()
+							// Convert string to bool
+							boolValue, err := strconv.ParseBool(smartRoutingEnabledVal)
+							if err != nil {
+								return dispenser.Errf("Error while parsing smart_routing_enabled: %v", err)
+							}
+							d.SmartRoutingEnabled = boolValue
+						case "watcher_endpoint":
+							dispenser.Next()
+							smartRoutingWatcherEndpoint := dispenser.Val()
+							d.SmartRoutingWatcherEndpoint = smartRoutingWatcherEndpoint
+						case "watcher_api_key":
+							dispenser.Next()
+							smartRoutingWatcherApiKey := dispenser.Val()
+							d.SmartRoutingWatcherApiKey = smartRoutingWatcherApiKey
+						case "sync_score_enabled":
+							dispenser.Next()
+							syncScoreEnabledVal := dispenser.Val()
+							boolValue, err := strconv.ParseBool(syncScoreEnabledVal)
+							if err != nil {
+								return dispenser.Errf("Error while parsing sync_score_enabled: %v", err)
+							}
+							d.SmartRoutingSyncEnabled = boolValue
+						case "sync_score_interval_secs":
+							dispenser.Next()
+							smartRoutingSyncIntervalSecVal := dispenser.Val()
+							intValue, err := strconv.Atoi(smartRoutingSyncIntervalSecVal)
+							if err != nil {
+								return dispenser.Errf("Error parsing sync_score_interval_secs: %v", err)
+							}
+							d.SmartRoutingSyncIntervalSec = uint64(intValue)
+						}
 					}
-					d.ReputationScoreEnabled = boolValue
-				case "reputation_score_watcher_endpoint":
-					dispenser.Next()
-					reputationScoreWatcherEndpoint := dispenser.Val()
-					d.ReputationScoreWatcherEndpoint = reputationScoreWatcherEndpoint
-				case "reputation_score_watcher_api_key":
-					dispenser.Next()
-					reputationScoreWatcherApiKey := dispenser.Val()
-					d.ReputationScoreWatcherApiKey = reputationScoreWatcherApiKey
-				case "reputation_score_sync_interval_secs":
-					dispenser.Next()
-					reputationScoreSyncIntervalSecVal := dispenser.Val()
-					intValue, err := strconv.Atoi(reputationScoreSyncIntervalSecVal)
-					if err != nil {
-						return dispenser.Errf("Error parsing reputation_score_sync_interval_secs: %v", err)
-					}
-					d.ReputationScoreSyncIntervalSec = uint64(intValue)
+				default:
+					return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 				}
 			}
 		}
-
 	}
 
 	return nil
@@ -712,6 +727,7 @@ func (d *DinMiddleware) close() {
 }
 
 // ReputationScoreActive checks if reputation score is enabled and the registry is enabled
-func (d *DinMiddleware) isReputationScoreActivable() bool {
-	return d.ReputationScoreEnabled && d.RegistryEnabled
+// We prefer to use "active" instead of "enabled" to avoid confusion with the "enabled" flag
+func (d *DinMiddleware) isSmartScoringActive() bool {
+	return d.SmartRoutingEnabled && d.RegistryEnabled
 }

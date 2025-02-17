@@ -30,18 +30,18 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager with a single network formula containing a single metric generator for a single provider returns ReputationScore with value 0.95", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -57,9 +57,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager with a single network formula containing two metric generators for a single provider returns ReputationScore with value 0.915", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
 					Logger:        zaptest.NewLogger(t),
@@ -69,11 +69,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -89,9 +89,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager with a single network formula containing two metric generators for two providers returns P1 score 0.6906 and P2 score 0.3094", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1}},
 					Logger:        zaptest.NewLogger(t),
@@ -101,11 +101,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -128,9 +128,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager is idempotent as long as the metrics are the same", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{
 						mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
@@ -150,11 +150,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		// Run it once
@@ -186,9 +186,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager behaviour nicely when the metrics fails to be generated", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{KO_CHECK_RESPONSE_API_ERROR}},
 					Logger:        zaptest.NewLogger(t),
@@ -198,11 +198,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -220,9 +220,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager behaviour nicely when one metric has only zero values and another has a score", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1}},
 					Logger:        zaptest.NewLogger(t),
@@ -232,11 +232,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -254,9 +254,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager behaviour nicely when the metrics has only zero values", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_BAD_SCORE}},
 					Logger:        zaptest.NewLogger(t),
@@ -266,11 +266,11 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -285,18 +285,18 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager prevents very small scores", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 0.0001,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		rm.ComputeScores()
@@ -310,9 +310,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager update scores as long as metrics changes over time", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{
 						mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
@@ -323,10 +323,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 		//Run scores once
 		rm.ComputeScores()
@@ -355,9 +355,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager update scores smoothly when the metrics changes abruptly over time (using EWMA transform)", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{
 						mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
@@ -368,10 +368,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
 			}},
-			ScoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: 0.7}, NewDefaultHighPassThroughTransformer()),
+			scoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: 0.7}, NewDefaultHighPassThroughTransformer()),
 		})
 		//Run scores once
 		rm.ComputeScores()
@@ -401,9 +401,9 @@ func TestReputationScoreManager(t *testing.T) {
 
 	t.Run("manager removes network and its scores when RemoveNetwork is called", func(t *testing.T) {
 		rm := NewEmpty(zaptest.NewLogger(t))
-		rm.AddNetworkWithCustomFormula("gyro", ScoreFormula{
-			Network: "gyro",
-			MetricGenerators: []ProviderMetricGenerator{
+		rm.AddNetworkFormula("gyro", ScoreFormula{
+			network: "gyro",
+			metricGenerators: []ProviderMetricGenerator{
 				&WatcherBlockNumberConsistency{
 					WatcherClient: &MockWatcherAPIClient{
 						mockCheckResponses: []watcher.Result[watcher.CheckResponse]{
@@ -413,10 +413,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
 			}},
-			ScoreTransformer: NewDefaultHighPassThroughTransformer(),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
 		// Compute initial scores

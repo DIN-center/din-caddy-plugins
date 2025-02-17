@@ -13,10 +13,10 @@ import (
 // A ScoreFormula defines the components that will be used to compute the score (a metric)
 // and how to combine them to produce a score for a provider on a given network
 type ScoreFormula struct {
-	Network          string
-	MetricGenerators []ProviderMetricGenerator
-	MetricCombiner   ProviderMetricCombiner
-	ScoreTransformer ScoreTransformer
+	network          string
+	metricGenerators []ProviderMetricGenerator
+	metricCombiner   ProviderMetricCombiner
+	scoreTransformer ScoreTransformer
 }
 
 // ReputationScoreManager is responsible for computing reputation scores for providers across networks
@@ -56,20 +56,20 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
-	rm.logger.Debug("[RSM] Computing reputation scores...")
+	rm.logger.Debug("[SMART ROUTING] Computing reputation scores...")
 
 	// Process each formula that defines how to compute the score for a network
 	for _, formula := range rm.formulas {
-		network := formula.Network
+		network := formula.network
 
 		// A score may be composed of multiple metrics, so we need to collect all metrics for each provider
 		metricsPerProvider := make(map[string][]*ProviderMetric)
-		for _, metricGenerator := range formula.MetricGenerators {
+		for _, metricGenerator := range formula.metricGenerators {
 
 			// A metric generator produces the same metric type for all providers monitored on the network
 			providerMetrics, err := metricGenerator.GenerateMetrics(network)
 			if err != nil {
-				rm.logger.Error("[RSM] Error generating metrics for network", zap.String("network", network), zap.Error(err))
+				rm.logger.Error("[SMART ROUTING] Error generating metrics for network", zap.String("network", network), zap.Error(err))
 				return errors.Wrapf(err, "Error generating metrics for network %s", network)
 			}
 
@@ -82,18 +82,18 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 		// Combine the metrics for each provider by reducing them to a single score per provider
 		rawScores := map[string]*Score{}
 		for providerID, metrics := range metricsPerProvider {
-			providerRawScore, err := formula.MetricCombiner.CombineMetrics(metrics)
+			providerRawScore, err := formula.metricCombiner.CombineMetrics(metrics)
 			if err != nil {
-				rm.logger.Error("[RSM] Error whilecombining metrics for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Error(err))
+				rm.logger.Error("[SMART ROUTING] Error whilecombining metrics for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Error(err))
 				return errors.Wrapf(err, "Error while combining metrics for provider %s on network %s", providerID, network)
 			}
 			rawScores[providerID] = providerRawScore
 		}
 
 		// Apply the score transformer
-		transformedScores, err := formula.ScoreTransformer.TransformScore(rawScores)
+		transformedScores, err := formula.scoreTransformer.TransformScore(rawScores)
 		if err != nil {
-			rm.logger.Error("[RSM] Error while transforming scores for network", zap.String("network", network), zap.Error(err))
+			rm.logger.Error("[SMART ROUTING] Error while transforming scores for network", zap.String("network", network), zap.Error(err))
 			return errors.Wrapf(err, "Error while transforming scores for network %s", network)
 		}
 
@@ -106,7 +106,7 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 			}
 
 			// Add the final score to the scores map
-			rm.logger.Debug("[RSM] Adding score for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Any("score", score))
+			rm.logger.Debug("[SMART ROUTING] Adding score for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Any("score", score))
 			rm.scores[network][providerID] = score
 		}
 	}
@@ -160,41 +160,48 @@ func (rm *ReputationScoreManager) GetAllScores(network string) map[string]*Score
 func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, client watcher.IWatcherAPIClient) {
 
 	builtInFormula := ScoreFormula{
-		Network: network,
-		MetricGenerators: []ProviderMetricGenerator{
+		network: network,
+		metricGenerators: []ProviderMetricGenerator{
 			&WatcherBlockNumberConsistency{WatcherClient: client, Logger: rm.logger},
 			&WatcherBlockNonStateConsistency{WatcherClient: client, Logger: rm.logger},
 			&WatcherLatency{WatcherClient: client, Logger: rm.logger},
 		},
-		MetricCombiner: &WeightedCombiner{Weights: map[string]float64{
+		metricCombiner: &WeightedCombiner{Weights: map[string]float64{
 			BlockNumberConsistencyMetricID:   BlockNumberConsistencyWeight,
 			BlockNonStateConsistencyMetricID: BlockNonStateConsistencyWeight,
 			LatencyMetricID:                  LatencyWeight,
 		}},
-		ScoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: ScoreSmoothingFactor}, NewDefaultHighPassThroughTransformer()),
+		scoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: ScoreSmoothingFactor}, NewDefaultHighPassThroughTransformer()),
 	}
-	rm.AddNetworkWithCustomFormula(network, builtInFormula)
+	rm.AddNetworkFormula(network, builtInFormula)
 }
 
-func (rm *ReputationScoreManager) AddNetworkWithCustomFormula(network string, formula ScoreFormula) {
+func (rm *ReputationScoreManager) AddNetworkFormula(network string, formula ScoreFormula) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
-	rm.logger.Info("[RSM] Adding network with custom formula", zap.String("network", network))
+	rm.logger.Info("[SMART ROUTING] Adding network with custom formula", zap.String("network", network))
 
 	// Check if the network already exists
 	if _, exists := rm.formulas[network]; exists {
-		rm.logger.Warn("[RSM] A formula for this network already exists, overriding formula", zap.String("network", network))
+		rm.logger.Warn("[SMART ROUTING] A formula for this network already exists, overriding formula", zap.String("network", network))
 	}
 
 	rm.formulas[network] = formula
+}
+
+func (rm *ReputationScoreManager) GetNetworkFormula(network string) *ScoreFormula {
+	if formula, exists := rm.formulas[network]; exists {
+		return &formula
+	}
+	return nil
 }
 
 func (rm *ReputationScoreManager) RemoveNetwork(network string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
-	rm.logger.Info("[RSM] Removing network from reputation score manager", zap.String("network", network))
+	rm.logger.Info("[SMART ROUTING] Removing network from reputation score manager", zap.String("network", network))
 
 	// Remove from formulas so no more scores will be computed for this network
 	delete(rm.formulas, network)

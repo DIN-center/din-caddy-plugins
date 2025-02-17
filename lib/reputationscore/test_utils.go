@@ -2,9 +2,11 @@ package reputationscore
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+	"go.uber.org/zap"
 )
 
 // MockWatcherAPIClient is a mock implementation of the IWatcherAPIClient interface to be used in tests
@@ -298,4 +300,13 @@ var OK_LATENCY_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.LatencyResponse{
 func MustCreateScore(value float64, time time.Time) *Score {
 	score, _ := NewScore(value, time)
 	return score
+}
+
+func NewMock(logger *zap.Logger, scores map[string]map[string]*Score, formulas map[string]ScoreFormula) *ReputationScoreManager {
+	return &ReputationScoreManager{
+		scores:   scores,
+		formulas: formulas,
+		logger:   logger,
+		mu:       sync.RWMutex{},
+	}
 }

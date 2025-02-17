@@ -3,6 +3,7 @@ package modules
 import (
 	"testing"
 
+	rs "github.com/DIN-center/din-caddy-plugins/lib/reputationscore"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
@@ -22,6 +23,7 @@ func TestNewProvider(t *testing.T) {
 				path:     "",
 				Headers:  make(map[string]string),
 				Priority: 0,
+				Score:    rs.EmptyScore,
 			},
 			hasErr: false,
 		},
@@ -33,6 +35,7 @@ func TestNewProvider(t *testing.T) {
 				host:     "eth.rpc.test.cloud:443",
 				Headers:  make(map[string]string),
 				Priority: 0,
+				Score:    rs.EmptyScore,
 			},
 			hasErr: false,
 		},
@@ -58,6 +61,9 @@ func TestNewProvider(t *testing.T) {
 			}
 			if provider.Priority != tt.output.Priority {
 				t.Errorf("priority = %v, want %v", provider.Priority, tt.output.Priority)
+			}
+			if provider.Score != tt.output.Score {
+				t.Errorf("Score = %v, want %v", provider.Score, tt.output.Score)
 			}
 		})
 	}

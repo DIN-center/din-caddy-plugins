@@ -41,6 +41,7 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id",
 		FallbackRaw: caddyconfig.JSONModuleObject(DinScoreBasedSelector{}, "policy", "din_score_based_selector", nil)}
+
 	d.logger.Debug("Provisioning DinSelect", zap.Any("selector", selector))
 	err := selector.Provision(context)
 	if err != nil {

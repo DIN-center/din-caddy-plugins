@@ -26,7 +26,7 @@ func (g *WatcherBlockNumberConsistency) GenerateMetrics(network string) ([]*Prov
 		Interval: MetricDefaultInterval,
 	}
 
-	g.Logger.Debug("[RSM] Generating metrics for block number consistency...")
+	g.Logger.Debug("[SMART ROUTING] Generating metrics for block number consistency...")
 
 	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID(), g.Logger)
 	if err != nil {
@@ -56,7 +56,7 @@ func (g *WatcherBlockNonStateConsistency) GenerateMetrics(network string) ([]*Pr
 		Interval: MetricDefaultInterval,
 	}
 
-	g.Logger.Debug("[RSM] Generating metrics for block non-state consistency...")
+	g.Logger.Debug("[SMART ROUTING] Generating metrics for block non-state consistency...")
 
 	metrics, err := buildMetricsForCheckQuery(g.WatcherClient, queryParams, g.MetricID(), g.Logger)
 	if err != nil {
@@ -85,7 +85,7 @@ func (g *WatcherLatency) GenerateMetrics(network string) ([]*ProviderMetric, err
 		Interval: MetricDefaultInterval,
 	}
 
-	g.Logger.Debug("[RSM] Generating metrics for latency...")
+	g.Logger.Debug("[SMART ROUTING] Generating metrics for latency...")
 
 	metrics, err := buildMetricsForLatencyQuery(g.WatcherClient, latencyQuery, g.MetricID(), g.Logger)
 	if err != nil {
