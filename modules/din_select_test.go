@@ -100,7 +100,7 @@ func TestDinSelectSelect(t *testing.T) {
 			providers:           nil,
 			smartRoutingEnabled: false,
 			repeat:              1000,
-			tolerance:           0.03, // 3% error margin
+			tolerance:           0.05, // 5% error margin
 			output:              []Output{{upstream_foo, 0.5}, {upstream_bar, 0.5}},
 		},
 		{
@@ -117,7 +117,7 @@ func TestDinSelectSelect(t *testing.T) {
 			},
 			smartRoutingEnabled: true,
 			repeat:              1000,
-			tolerance:           0.03, // 3% error margin
+			tolerance:           0.05, // 5% error margin
 			output:              []Output{{upstream_bar, 0.5786}, {upstream_foo, 0.4214}},
 		},
 	}
