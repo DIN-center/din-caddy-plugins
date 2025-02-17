@@ -9,7 +9,7 @@ date: 2025-01-24
 ## Introduction
 
 The DIN Router currently routes traffic evenly among providers of the same priority level. "Evenly" means each eligible and healthy provider gets an equal share of the traffic. There's no consideration of provider performance or data quality in this distribution.
-This document proposes a way to improve the routing algorithm by introducing a "Provider Reputation Score" that reflects how well each provider is performing in terms of data consistency and latency over time. This score will be used to weight traffic distribution thus the name "smart routing", so better-performing providers receive a proportionally larger share of requests. The ultimate goal: improve service quality for DIN developers.
+This document proposes a way to improve the routing algorithm by introducing a "Provider Reputation Score" that reflects how well each provider is performing in terms of data consistency and latency over time. This score will be used to dynamically weight traffic distribution, hence the name "smart routing." Better-performing providers will receive a proportionally larger share of requests. The ultimate goal is to improve service quality for DIN developers.
 
 ## Computing Reputation Scores
 
@@ -227,10 +227,10 @@ The smart routing system handles several edge cases to ensure stable operation:
 
 1. **New or Unmonitored Providers**: 
    - When a provider has no reputation score yet (e.g., newly registered provider or not yet monitored by Watcher)
-   - The system assigns a default score of 0.5 to ensure the provider receives a fair share of traffic while building its reputation
+   - The system assigns a default score of 50 to ensure the provider receives a fair share of traffic while building its reputation
 
 2. **Stale or Missing Data**:
    - If Watcher data becomes stale or unavailable, the system:
-     - Continues using last known scores during a grace period (default grace period is 60 seconds minutes)
-     - After the grace period, reverts to a default score of 0.5 for affected providers
+     - Continues using last known scores during a grace period (default grace period is 60 minutes)
+     - After the grace period, reverts to a default score of 50 for affected providers
    - This approach maintains system stability while gracefully degrading to fair distribution when needed
