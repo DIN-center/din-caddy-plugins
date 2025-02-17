@@ -1,4 +1,4 @@
-### DIP-001: Reputation Scores
+### DIP-001: Reputation-Driven Adaptive Load Balancing (a.k.a Smart Routing)
 
 @author: @noleto
 
@@ -8,10 +8,10 @@ date: 2025-01-24
 
 ## Introduction
 
-The DIN Router currently routes traffic evenly among providers of the same priority level. “Evenly” means each eligible and healthy provider gets an equal share of the traffic. There’s no consideration of provider performance or data quality in this distribution.
-This document proposes a way to improve the routing algorithm by introducing a “Provider Reputation Score” that reflects how well each provider is performing in terms of data consistency and latency over time. This score will be used to weight traffic distribution, so better-performing providers receive a proportionally larger share of requests. The ultimate goal: improve service quality for DIN developers.
+The DIN Router currently routes traffic evenly among providers of the same priority level. "Evenly" means each eligible and healthy provider gets an equal share of the traffic. There's no consideration of provider performance or data quality in this distribution.
+This document proposes a way to improve the routing algorithm by introducing a "Provider Reputation Score" that reflects how well each provider is performing in terms of data consistency and latency over time. This score will be used to weight traffic distribution thus the name "smart routing", so better-performing providers receive a proportionally larger share of requests. The ultimate goal: improve service quality for DIN developers.
 
-## Reputation Scores
+## Computing Reputation Scores
 
 Reputation Scores are a way to assess the reliability of a JSON RPC Provider from a high level perspective. Providers will be measured based on a set of criteria, forming the "Provider Reputation Score." This score is calculated using data provided by Watchers, which perform regular checks and latency measurement. The criteria currently monitored by Watchers include:
 
@@ -86,7 +86,6 @@ class ScoreFormula {
 +ScoreTransformer: ScoreTransformer
 }
 class ReputationScoreManager {
--formulas: List<ScoreFormula>
 +ComputeScores(provider: Provider, network: Network)
 +GetScore(network: string, providerID: string): Score
 +GetAllScores(network string): Map<string, Score>
@@ -105,7 +104,7 @@ ScoreFormula o-- ScoreTransformer
 
 ### Score Formula
 
-The score formula is the abstraction that defines how to compute the score for a provider on a given network. The score formula is implemented as a `ScoreFormula` and is responsible for:
+The score formula is the abstraction that defines how a score for a provider on a given network is computed. The score formula is implemented as a `ScoreFormula` and is responsible for:
 - Defining which metrics will be used to compute the score for a provider on a given network.
 - Combining the metrics into a single score for a provider on a given network.
 - Transforming the score into a final score for a provider on a given network.
@@ -190,3 +189,48 @@ deactivate RSM
 </details>
 
 ![sequence](sequence-diagram.png)
+
+## Integration with the DIN Router
+
+The DIN Router integrates reputation scores through the `ReputationScoreManager` to enable smart traffic distribution among providers. This feature requires both the registry and smart routing to be enabled.
+
+### Smart Routing
+
+The router implements a new selection policy called `din_score_based_selector` that considers provider reputation scores when distributing traffic. The selection process follows these rules:
+
+1. Session affinity takes precedence - if a request specifies a session, it will always be routed to the same provider regardless of scores
+2. For non-session requests:
+   - With smart routing enabled: Traffic is distributed proportionally based on provider scores (0-100)
+   - With smart routing disabled: Traffic is distributed evenly (default behavior)
+
+### Configuration
+
+Smart routing is configured within the `din_registry` directive:
+
+```caddy
+din_registry {
+    smart_routing {
+        enabled true                        # Enables score-based routing
+        watcher_endpoint https://watcher.din.com  # Source of provider metrics
+        watcher_api_key key                 # Authentication for watcher API
+        sync_score_enabled true             # Enables periodic score updates
+        sync_score_interval_secs 300        # Score update frequency (5 minutes)
+    }
+}
+```
+
+The router synchronizes scores with the reputation service at regular intervals aligned with registry epochs. This ensures that routing decisions are based on recent performance data while maintaining system stability.
+
+### Corner Cases
+
+The smart routing system handles several edge cases to ensure stable operation:
+
+1. **New or Unmonitored Providers**: 
+   - When a provider has no reputation score yet (e.g., newly registered provider or not yet monitored by Watcher)
+   - The system assigns a default score of 0.5 to ensure the provider receives a fair share of traffic while building its reputation
+
+2. **Stale or Missing Data**:
+   - If Watcher data becomes stale or unavailable, the system:
+     - Continues using last known scores during a grace period (default grace period is 60 seconds minutes)
+     - After the grace period, reverts to a default score of 0.5 for affected providers
+   - This approach maintains system stability while gracefully degrading to fair distribution when needed
