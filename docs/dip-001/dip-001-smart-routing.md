@@ -122,7 +122,7 @@ $$WC(M_1, M_2, ..., M_n) = M_1 \times W_{m_1} + M_2 \times W_{m_2} + ... + M_n \
 There are 3 transformers implemented:
 - `HighPassThroughTransformer`: This transformer passes through scores above a given cutoff value. This is useful to avoid having providers with very low scores to be included in the routing algorithm. This is the default transformer.
 - `ShareOfTotalTransformer`: This transformer converts a set of score for different providers into a score that represents the percentage this provider contributes to the total score. This ensures that the sum of all providers' score for a given network is 1. This is useful to transform the score into a traffic weight distribution.
-- `EWMATransformer`: This transformer applies an Exponential Weighted Moving Average (EWMA) function to the score as a way to smooth the score over time. This is useful to avoid sudden changes in the score that could be caused by a single metric. See [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing) for more details.
+- `EWMATransformer`: This transformer applies an Exponential Weighted Moving Average (EWMA) function to the score as a way to smooth the score over time. This is useful to avoid sudden changes in the score that could be caused by a single metric [1].
 
 ### Watcher metrics
 
@@ -192,16 +192,18 @@ deactivate RSM
 
 ## Integration with the DIN Router
 
-The DIN Router integrates reputation scores through the `ReputationScoreManager` to enable smart traffic distribution among providers. This feature requires both the registry and smart routing to be enabled.
+The DIN Router integrates reputation scores through the `ReputationScoreManager` to enable dynamic traffic distribution among providers. This feature requires both the registry and smart routing to be enabled.
 
 ### Smart Routing
 
-The router implements a new selection policy called `din_score_based_selector` that considers provider reputation scores when distributing traffic. The selection process follows these rules:
+This proposal adds a new selection policy called `din_score_based_selector` that considers provider reputation scores when distributing traffic. This selector is integrated with the existing `din_select` selector and will be used when the `smart_routing` directive is enabled.
 
-1. Session affinity takes precedence - if a request specifies a session, it will always be routed to the same provider regardless of scores
-2. For non-session requests:
-   - With smart routing enabled: Traffic is distributed proportionally based on provider scores (0-100)
-   - With smart routing disabled: Traffic is distributed evenly (default behavior)
+The selection process follows these rules:
+
+1. Session affinity takes precedence (as previously defined in the `din_select` selector) - if a request specifies a session, it will always be routed to the same provider regardless of scores
+2. For non-session requests (this is where the new `din_score_based_selector` comes into play):
+   - With smart routing enabled: Traffic is distributed proportionally based on provider scores (scaled to the range 0-100). It uses Weighted Random algorithm [2] to distribute the traffic where provider scores are the relative odds in selection algorithm.
+   - With smart routing disabled: Traffic is distributed evenly (randomly) among all providers.
 
 ### Configuration
 
@@ -210,16 +212,16 @@ Smart routing is configured within the `din_registry` directive:
 ```caddy
 din_registry {
     smart_routing {
-        enabled true                        # Enables score-based routing
-        watcher_endpoint https://watcher.din.com  # Source of provider metrics
-        watcher_api_key key                 # Authentication for watcher API
-        sync_score_enabled true             # Enables periodic score updates
-        sync_score_interval_secs 300        # Score update frequency (5 minutes)
+        enabled true                                # Enables score-based routing
+        watcher_endpoint https://watcher.din.com    # Source of provider metrics
+        watcher_api_key key                         # Authentication for watcher API
+        sync_score_enabled true                     # Enables periodic score updates
+        sync_score_interval_secs 300                # Score update frequency (5 minutes)
     }
 }
 ```
 
-The router synchronizes scores with the reputation service at regular intervals aligned with registry epochs. This ensures that routing decisions are based on recent performance data while maintaining system stability.
+The router synchronizes scores with the reputation service at regular intervals aligned with registry epochs. This ensures that routing decisions are based on recent performance data while maintaining system stability (score doesn't change over the same epoch).
 
 ### Corner Cases
 
@@ -234,3 +236,9 @@ The smart routing system handles several edge cases to ensure stable operation:
      - Continues using last known scores during a grace period (default grace period is 60 minutes)
      - After the grace period, reverts to a default score of 50 for affected providers
    - This approach maintains system stability while gracefully degrading to fair distribution when needed
+
+
+## References
+
+[1] See [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing) for more details.
+[2] See [Weighted Random](https://dev.to/jacktt/understanding-the-weighted-random-algorithm-581p) for more details.

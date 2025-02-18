@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"crypto/rand"
 	"math"
 	"net/http"
 	reflect "reflect"
@@ -12,6 +13,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"go.uber.org/zap"
 )
 
 func TestSelectCaddyModule(t *testing.T) {
@@ -59,6 +61,7 @@ func TestDinSelectSelect(t *testing.T) {
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 	dinSelect := DinSelect{}
 	dinSelect.Provision(ctx)
+	dinSelect.logger = zap.NewNop() // suppress logger here because we repeat the test multiple times (too many logs)
 
 	//Fake upstreams
 	upstream_foo := &reverseproxy.Upstream{
@@ -123,6 +126,9 @@ func TestDinSelectSelect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Replace crypto/rand with a deterministic reader for the test
+			rand.Reader = NewDeterministicReader(1234567890)
+
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(DinUpstreamsContextKey, tt.providers)
