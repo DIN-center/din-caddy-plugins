@@ -121,8 +121,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	// Disabled to avoid high metric count on prometheus
-	// DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
+	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(durationMS))
 
 	// Observe prometheus histogram based on request body size and data
 	// Disabled to avoid high metric count on prometheus
