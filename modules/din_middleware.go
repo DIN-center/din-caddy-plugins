@@ -180,8 +180,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 	// If smart routing is enabled, initialize the score backend
 	if d.isSmartScoringActive() {
-		d.logger.Info("[SMART ROUTING] Smart routing activated, initializing reputation score manager")
-		d.logger.Debug("[SMART ROUTING] Smart routing settings:",
+		d.logger.Info("[SMART_ROUTING] Smart routing activated, initializing reputation score manager")
+		d.logger.Debug("[SMART_ROUTING] Smart routing settings:",
 			zap.Bool("sync_score_enabled", d.SmartRoutingSyncEnabled),
 			zap.Uint64("sync_interval_secs", d.SmartRoutingSyncIntervalSec),
 			zap.String("watcher_endpoint", d.SmartRoutingWatcherEndpoint))
@@ -206,7 +206,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 	// Start the periodic updates for the reputation scores (after the registry is pulled)
 	if d.isSmartScoringActive() && d.SmartRoutingSyncEnabled {
-		d.logger.Info("[SMART ROUTING] Reputation score is activated, starting periodic updates")
+		d.logger.Info("[SMART_ROUTING] Reputation score is activated, starting periodic updates")
 		d.reputationScoreManager.StartPeriodicUpdates(time.Duration(d.SmartRoutingSyncIntervalSec) * time.Second)
 		d.SyncMiddlewareWithLatestScores()
 	}

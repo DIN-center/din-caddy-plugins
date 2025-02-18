@@ -40,7 +40,7 @@ func (DinScoreBasedSelector) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 func (s *DinScoreBasedSelector) Provision(context caddy.Context) error {
 	s.logger = context.Logger(s)
-	s.logger.Debug("[DinScoreBasedSelector] Provisioning called")
+	s.logger.Debug("[SMART_ROUTING] Provisioning called")
 	s.fallback = &reverseproxy.RandomSelection{}
 	return nil
 }
@@ -50,7 +50,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 
 	// short circuit if there is no upstreams
 	if len(pool) == 0 {
-		s.logger.Warn("[DinScoreBasedSelector] No upstreams available")
+		s.logger.Warn("[SMART_ROUTING] No upstreams available")
 		return nil
 	}
 
@@ -68,7 +68,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 
 		// Check if providers are available
 		if providers != nil {
-			s.logger.Debug("[DinScoreBasedSelector] Selecting upstream according to its reputation score")
+			s.logger.Debug("[SMART_ROUTING] Selecting upstream according to its reputation score")
 
 			choices := make([]randutil.Choice, len(pool))
 			for i, upstream := range pool {
@@ -77,7 +77,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 				providerKey := strings.Split(upstream.Dial, ":")[0]
 				if provider, exists := providers[providerKey]; exists {
 					providerScore := provider.Score
-					s.logger.Debug("[DinScoreBasedSelector] Provider score found:",
+					s.logger.Debug("[SMART_ROUTING] Provider score found:",
 						zap.String("provider key", providerKey),
 						zap.Any("score", providerScore))
 
@@ -93,16 +93,16 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 
 			selected, err := randutil.WeightedChoice(choices)
 			if err != nil {
-				s.logger.Warn("[DinScoreBasedSelector]Error when selecting upstreams, all weights are 0 (zero value)")
+				s.logger.Warn("[SMART_ROUTING] Error when selecting upstreams, all weights are 0 (zero value)")
 				return nil
 			}
 			return selected.Item.(*reverseproxy.Upstream)
 		} else {
-			s.logger.Warn("[DinScoreBasedSelector] Score based routing enabled but there is no providers score")
+			s.logger.Warn("[SMART_ROUTING] Score based routing enabled but there is no providers score")
 			return nil
 		}
 	}
 	// Fallback to random selection
-	s.logger.Debug("[DinScoreBasedSelector] No score based routing, using fallback")
+	s.logger.Debug("[SMART_ROUTING] No score based routing, using fallback")
 	return s.fallback.Select(pool, r, rw)
 }

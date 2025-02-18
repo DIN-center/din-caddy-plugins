@@ -89,7 +89,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				// Remove the network from the reputation score manager if the reputation score is enabled
 				if d.isSmartScoringActive() {
 					d.reputationScoreManager.RemoveNetwork(regNetwork.ProxyName)
-					d.logger.Info("[SMART ROUTING] Removing network from reputation score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
+					d.logger.Info("[SMART_ROUTING] Removing network from reputation score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
 				}
 				continue
 			}
@@ -157,7 +157,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	// Add the network to the reputation score manager if the reputation score is enabled
 	if d.isSmartScoringActive() {
 		d.reputationScoreManager.AddNetworkWithBuiltInFormula(network.Name, d.GetOrCreateWatcherClient())
-		d.logger.Info("[SMART ROUTING] Adding network to reputation score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+		d.logger.Info("[SMART_ROUTING] Adding network to reputation score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}
 
 	return nil
@@ -332,11 +332,11 @@ func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
 
 // Fetches the latest score from the reputation score manager and updates the provider score for all active networks
 func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
-	d.logger.Info("[SMART ROUTING] Syncing provider scores from reputation score manager")
+	d.logger.Info("[SMART_ROUTING] Syncing provider scores from reputation score manager")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
 			provider.Score = d.reputationScoreManager.GetScore(network.Name, provider.host)
-			d.logger.Debug("[SMART ROUTING] Provider score",
+			d.logger.Debug("[SMART_ROUTING] Provider score",
 				zap.String("network", network.Name),
 				zap.String("provider", provider.host),
 				zap.Any("score", provider.Score))

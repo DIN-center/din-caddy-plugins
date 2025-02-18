@@ -241,4 +241,5 @@ The smart routing system handles several edge cases to ensure stable operation:
 ## References
 
 [1] See [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing) for more details.
+
 [2] See [Weighted Random](https://dev.to/jacktt/understanding-the-weighted-random-algorithm-581p) for more details.
