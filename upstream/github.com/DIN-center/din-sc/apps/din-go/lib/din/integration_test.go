@@ -212,6 +212,22 @@ func validateNetworkData(t *testing.T, network *Network) {
 		t.Fatalf("Healthcheck interval seconds is 0")
 	}
 
+	if network.NetworkConfig.CallContractMethodBit == 0 {
+		t.Fatalf("Call contract method bit is 0")
+	}
+
+	if network.NetworkConfig.ChainIdMethodBit == 0 {
+		t.Fatalf("Chain ID method bit is 0")
+	}
+
+	if network.NetworkConfig.ChainId == "" {
+		t.Fatalf("Chain ID is empty")
+	}
+
+	if network.NetworkConfig.BlockJumpLimit == 0 {
+		t.Fatalf("Block jump limit is 0")
+	}
+
 	if network.NetworkConfig.BlockLagLimit == 0 {
 		t.Fatalf("Block lag limit is 0")
 	}
@@ -316,6 +332,10 @@ func TestGetAllNetworks(t *testing.T) {
 			t.Fatalf("Network proxy name is empty")
 		}
 
+		if network.Name == "" {
+			t.Fatalf("Network name is empty")
+		}
+
 		if network.Capabilities == nil {
 			t.Fatalf("Network capabilities is nil")
 		}
@@ -330,6 +350,22 @@ func TestGetAllNetworks(t *testing.T) {
 
 		if network.NetworkConfig.HealthcheckIntervalSec == 0 {
 			t.Fatalf("Healthcheck interval seconds is 0")
+		}
+
+		if network.NetworkConfig.CallContractMethodBit == 0 {
+			t.Fatalf("Call contract method bit is 0")
+		}
+
+		if network.NetworkConfig.ChainIdMethodBit == 0 {
+			t.Fatalf("Chain ID method bit is 0")
+		}
+
+		if network.NetworkConfig.ChainId == "" {
+			t.Fatalf("Chain ID is empty")
+		}
+
+		if network.NetworkConfig.BlockJumpLimit == 0 {
+			t.Fatalf("Block jump limit is 0")
 		}
 
 		if network.NetworkConfig.BlockLagLimit == 0 {

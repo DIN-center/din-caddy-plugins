@@ -93,7 +93,22 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainIdMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "callContractMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
             "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockJumpLimit",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -111,6 +126,16 @@
             "name": "registryBlockEpoch",
             "type": "uint32",
             "internalType": "uint32"
+          },
+          {
+            "name": "archiveEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       },
@@ -378,7 +403,22 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainIdMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "callContractMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
             "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockJumpLimit",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -396,6 +436,16 @@
             "name": "registryBlockEpoch",
             "type": "uint32",
             "internalType": "uint32"
+          },
+          {
+            "name": "archiveEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -584,7 +634,22 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainIdMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "callContractMethodBit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
             "name": "blockLagLimit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockJumpLimit",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -602,6 +667,16 @@
             "name": "registryBlockEpoch",
             "type": "uint32",
             "internalType": "uint32"
+          },
+          {
+            "name": "archiveEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }

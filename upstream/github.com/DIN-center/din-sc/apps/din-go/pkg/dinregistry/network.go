@@ -240,7 +240,27 @@ func parseNetworkOperationsConfig(networkConfigMapData map[string]interface{}) (
 		return nil, errors.New("mismatched type for healthcheckIntervalSec")
 	}
 
+	callContractMethodBit, ok := networkConfigMapData["callContractMethodBit"].(uint8)
+	if !ok {
+		return nil, errors.New("mismatched type for callContractMethodBit")
+	}
+
+	chainIdMethodBit, ok := networkConfigMapData["chainIdMethodBit"].(uint8)
+	if !ok {
+		return nil, errors.New("mismatched type for chainIdMethodBit")
+	}
+
+	chainId, ok := networkConfigMapData["chainId"].(string)
+	if !ok {
+		return nil, errors.New("mismatched type for chainId")
+	}
+
 	blockLagLimit, ok := networkConfigMapData["blockLagLimit"].(uint8)
+	if !ok {
+		return nil, errors.New("mismatched type for blockLagLimit")
+	}
+
+	blockJumpLimit, ok := networkConfigMapData["blockJumpLimit"].(uint8)
 	if !ok {
 		return nil, errors.New("mismatched type for blockLagLimit")
 	}
@@ -255,12 +275,22 @@ func parseNetworkOperationsConfig(networkConfigMapData map[string]interface{}) (
 		return nil, errors.New("mismatched type for maxRequestPayloadSizeKb")
 	}
 
+	archiveEnabled, ok := networkConfigMapData["archiveEnabled"].(bool)
+	if !ok {
+		return nil, errors.New("mismatched type for archiveEnabled")
+	}
+
 	return &NetworkConfig{
 		HealthcheckMethodBit:    healthcheckMethodBit,
 		HealthcheckIntervalSec:  healthcheckIntervalSec,
+		CallContractMethodBit:   callContractMethodBit,
+		ChainIdMethodBit:        chainIdMethodBit,
+		ChainId:                 chainId,
 		BlockLagLimit:           blockLagLimit,
+		BlockJumpLimit:          blockJumpLimit,
 		RequestAttemptCount:     requestAttemptCount,
 		MaxRequestPayloadSizeKb: maxRequestPayloadSizeKb,
+		ArchiveEnabled:          archiveEnabled,
 	}, nil
 }
 
