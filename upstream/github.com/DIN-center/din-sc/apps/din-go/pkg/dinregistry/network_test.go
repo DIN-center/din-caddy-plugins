@@ -329,16 +329,26 @@ func TestParseNetworkOperationsConfig(t *testing.T) {
 			input: map[string]interface{}{
 				"healthcheckMethodBit":    uint8(1),
 				"healthcheckIntervalSec":  uint8(30),
+				"callContractMethodBit":   uint8(2),
+				"chainIdMethodBit":        uint8(3),
+				"chainId":                 "1",
+				"blockJumpLimit":          uint8(5),
 				"blockLagLimit":           uint8(5),
 				"requestAttemptCount":     uint8(3),
 				"maxRequestPayloadSizeKb": uint16(1024),
+				"archiveEnabled":          true,
 			},
 			expected: &NetworkConfig{
 				HealthcheckMethodBit:    1,
 				HealthcheckIntervalSec:  30,
+				CallContractMethodBit:   2,
+				ChainIdMethodBit:        3,
+				ChainId:                 "1",
+				BlockJumpLimit:          5,
 				BlockLagLimit:           5,
 				RequestAttemptCount:     3,
 				MaxRequestPayloadSizeKb: 1024,
+				ArchiveEnabled:          true,
 			},
 			expectedError: nil,
 		},
@@ -346,9 +356,14 @@ func TestParseNetworkOperationsConfig(t *testing.T) {
 			name: "Missing field: healthcheckMethodBit",
 			input: map[string]interface{}{
 				"healthcheckIntervalSec":  uint8(30),
+				"callContractMethodBit":   uint8(2),
+				"chainIdMethodBit":        uint8(3),
+				"chainId":                 "1",
+				"blockJumpLimit":          uint8(5),
 				"blockLagLimit":           uint8(5),
 				"requestAttemptCount":     uint8(3),
 				"maxRequestPayloadSizeKb": uint16(1024),
+				"archiveEnabled":          true,
 			},
 			expected:      nil,
 			expectedError: errors.New("mismatched type for healthcheckMethodBit"),
@@ -358,12 +373,34 @@ func TestParseNetworkOperationsConfig(t *testing.T) {
 			input: map[string]interface{}{
 				"healthcheckMethodBit":    uint8(1),
 				"healthcheckIntervalSec":  uint8(30),
+				"callContractMethodBit":   uint8(2),
+				"chainIdMethodBit":        uint8(3),
+				"chainId":                 "1",
+				"blockJumpLimit":          uint8(5),
 				"blockLagLimit":           "5", // wrong type
 				"requestAttemptCount":     uint8(3),
 				"maxRequestPayloadSizeKb": uint16(1024),
+				"archiveEnabled":          true,
 			},
 			expected:      nil,
 			expectedError: errors.New("mismatched type for blockLagLimit"),
+		},
+		{
+			name: "Invalid chainId type",
+			input: map[string]interface{}{
+				"healthcheckMethodBit":    uint8(1),
+				"healthcheckIntervalSec":  uint8(30),
+				"callContractMethodBit":   uint8(2),
+				"chainIdMethodBit":        uint8(3),
+				"chainId":                 1, // wrong type
+				"blockJumpLimit":          uint8(5),
+				"blockLagLimit":           uint8(5),
+				"requestAttemptCount":     uint8(3),
+				"maxRequestPayloadSizeKb": uint16(1024),
+				"archiveEnabled":          true,
+			},
+			expected:      nil,
+			expectedError: errors.New("mismatched type for chainId"),
 		},
 	}
 
@@ -371,16 +408,16 @@ func TestParseNetworkOperationsConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := parseNetworkOperationsConfig(tt.input)
 
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("expected result %+v, got %+v", tt.expected, result)
-			}
-
 			if tt.expectedError == nil && err != nil {
 				t.Errorf("expected no error, but got %v", err)
 			} else if tt.expectedError != nil && err == nil {
 				t.Errorf("expected error %v, but got nil", tt.expectedError)
-			} else if tt.expectedError != nil && err != nil && err.Error() != tt.expectedError.Error() {
+			} else if tt.expectedError != nil && err != nil && tt.expectedError.Error() != err.Error() {
 				t.Errorf("expected error %v, but got %v", tt.expectedError, err)
+			}
+
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("expected %+v, got %+v", tt.expected, result)
 			}
 		})
 	}
@@ -408,18 +445,28 @@ func TestGetNetworkOperationsConfig(t *testing.T) {
 				"config": map[string]interface{}{
 					"healthcheckMethodBit":    uint8(1),
 					"healthcheckIntervalSec":  uint8(30),
+					"callContractMethodBit":   uint8(2),
+					"chainIdMethodBit":        uint8(3),
+					"chainId":                 "1",
+					"blockJumpLimit":          uint8(5),
 					"blockLagLimit":           uint8(5),
 					"requestAttemptCount":     uint8(3),
 					"maxRequestPayloadSizeKb": uint16(1024),
+					"archiveEnabled":          true,
 				},
 			},
 			callReturnError: nil,
 			expectedConfig: &NetworkConfig{
 				HealthcheckMethodBit:    1,
 				HealthcheckIntervalSec:  30,
+				CallContractMethodBit:   2,
+				ChainIdMethodBit:        3,
+				ChainId:                 "1",
+				BlockJumpLimit:          5,
 				BlockLagLimit:           5,
 				RequestAttemptCount:     3,
 				MaxRequestPayloadSizeKb: 1024,
+				ArchiveEnabled:          true,
 			},
 			expectedError: "",
 		},

@@ -81,9 +81,14 @@ type Network struct {
 type NetworkConfig struct {
 	HealthcheckMethodBit    uint8
 	HealthcheckIntervalSec  uint8
+	CallContractMethodBit   uint8
+	ChainIdMethodBit        uint8
+	ChainId                 string
+	BlockJumpLimit          uint8
 	BlockLagLimit           uint8
 	RequestAttemptCount     uint8
 	MaxRequestPayloadSizeKb uint16
+	ArchiveEnabled          bool
 }
 
 type NetworkServiceAuthConfig struct {

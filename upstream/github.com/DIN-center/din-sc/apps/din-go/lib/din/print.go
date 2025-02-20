@@ -117,10 +117,14 @@ func (d *DinClient) PrintNetworkData(networkAddress string, networkData *din.Net
 	fmt.Printf("NetworkStatusTypeCode: %s\n", networkStatus)
 	fmt.Printf("HealthcheckMethodBit: %d\n", networkConfig.HealthcheckMethodBit)
 	fmt.Printf("HealtcheckIntervalSec: %d\n", networkConfig.HealthcheckIntervalSec)
+	fmt.Printf("CallContractMethodBit: %d\n", networkConfig.CallContractMethodBit)
+	fmt.Printf("ChainIdMethodBit: %d\n", networkConfig.ChainIdMethodBit)
+	fmt.Printf("ChainId: %s\n", networkConfig.ChainId)
+	fmt.Printf("BlockJumpLimit: %d\n", networkConfig.BlockJumpLimit)
 	fmt.Printf("BlockLagLimit: %d\n", networkConfig.BlockLagLimit)
 	fmt.Printf("RequestAttemptCount: %d\n", networkConfig.RequestAttemptCount)
 	fmt.Printf("MaxRequestPayloadSizeKb: %d\n", networkConfig.MaxRequestPayloadSizeKb)
-
+	fmt.Printf("ArchiveEnabled: %t\n", networkConfig.ArchiveEnabled)
 	return nil
 }
 
@@ -172,9 +176,14 @@ func (d *DinClient) PrintRegistryData() {
 		fmt.Println("  NetworkStatusTypeCode: ", network.Status)
 		fmt.Println("  HealthcheckMethodBit: ", network.NetworkConfig.HealthcheckMethodBit)
 		fmt.Println("  HealtcheckIntervalSec: ", network.NetworkConfig.HealthcheckIntervalSec)
+		fmt.Println("  CallContractMethodBit: ", network.NetworkConfig.CallContractMethodBit)
+		fmt.Println("  ChainIdMethodBit: ", network.NetworkConfig.ChainIdMethodBit)
+		fmt.Println("  ChainId: ", network.NetworkConfig.ChainId)
+		fmt.Println("  BlockJumpLimit: ", network.NetworkConfig.BlockJumpLimit)
 		fmt.Println("  BlockLagLimit: ", network.NetworkConfig.BlockLagLimit)
 		fmt.Println("  RequestAttemptCount: ", network.NetworkConfig.RequestAttemptCount)
 		fmt.Println("  MaxRequestPayloadSizeKb: ", network.NetworkConfig.MaxRequestPayloadSizeKb)
+		fmt.Println("  ArchiveEnabled: ", network.NetworkConfig.ArchiveEnabled)
 		fmt.Println("# of Providers: ", len(network.Providers))
 		for providerName, provider := range network.Providers {
 			fmt.Println("  Provider: ", providerName)
