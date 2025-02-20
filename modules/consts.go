@@ -45,6 +45,12 @@ const (
 
 	// Upstream/Selector Constants
 	MaxPriority = 9
+
+	// Chain ID Namespace Constants
+	EVMNamespace      = "eip155"
+	BitcoinNamespace  = "bip122"
+	SolanaNamespace   = "solana"
+	StarknetNamespace = "starknet"
 )
 
 // String method to convert MyEnum to string

@@ -443,23 +443,43 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 		return "", errors.New("Error getting chain ID from response")
 	}
 
-	var chainID string
+	var chainReference string
 	var ok bool
+	namespace := EVMNamespace
 
-	// Bitcoin returns back chain ID nested in an object.
+	// Map network names to their namespaces
+	namespaceMap := map[string]string{
+		"bitcoin":  BitcoinNamespace,
+		"solana":   SolanaNamespace,
+		"starknet": StarknetNamespace,
+	}
+
+	// Check if network name contains any of the special cases
+	for key, ns := range namespaceMap {
+		if strings.Contains(n.Name, key) {
+			namespace = ns
+			break
+		}
+	}
+
+	// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
+	// For all other networks, the chain ID is directly in the result field as a string
 	if strings.Contains(n.Name, "bitcoin") {
-		chainID, ok = respObject["result"].(map[string]interface{})["chain"].(string)
-		if !ok {
+		result, ok := respObject["result"].(map[string]interface{})
+		if !ok || result["chain"] == nil {
 			return "", errors.New("Error getting chain ID from response")
 		}
+		chainReference = result["chain"].(string)
 	} else {
-		chainID, ok = respObject["result"].(string)
+		chainReference, ok = respObject["result"].(string)
 		if !ok {
 			return "", errors.New("Error getting chain ID from response")
 		}
 	}
 
-	return chainID, nil
+	fullChainId := namespace + ":" + chainReference
+
+	return fullChainId, nil
 }
 
 func (n *network) testArchiveMode(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
