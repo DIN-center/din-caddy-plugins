@@ -154,27 +154,22 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus, latestNetworkBlock int64) HealthStatus {
 	// Track the worst status we find
 	worstStatus := healthStatus
-	fmt.Println("1")
 
 	// if provider has no block history, set it to healthy
 	if len(provider.BlockHistory()) == 0 {
-		fmt.Println("2")
 		return Unhealthy
 	}
 
 	// Check block lag and block jump
 	if latestNetworkBlock > 0 {
-		fmt.Println("3")
 		blockLag := int64(latestNetworkBlock) - currentBlock
 		// If block lag is greater than limit, mark as warning
 		if blockLag > n.BlockLagLimit {
-			fmt.Println("4")
 			n.logProviderWarning("Provider is lagging behind network", provider,
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock))
 			if Warning > worstStatus {
-				fmt.Println("5")
 				worstStatus = Warning
 			}
 		}
@@ -182,7 +177,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// Check if block is too far ahead (block jump)
 		blockJump := currentBlock - int64(latestNetworkBlock)
 		if blockJump > n.BlockJumpLimit {
-			fmt.Println("6")
 			n.logProviderWarning("Provider is too far ahead of network", provider,
 				zap.Int64("block_jump", blockJump),
 				zap.Int64("provider_block", currentBlock),
@@ -191,10 +185,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
-	fmt.Println("7")
 	// Check for stalling - all blocks in history are identical
 	if n.isStalled(provider) {
-		fmt.Println("8")
 		if n.allProvidersStalled() {
 			// This signifies a network outage
 			n.logProviderWarning("All providers are stalled", provider)
@@ -202,34 +194,28 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				worstStatus = Warning
 			}
 		} else {
-			fmt.Println("9")
 			// This signifies a provider outage
 			n.logProviderWarning("Provider is stalled while others are progressing", provider)
 			return Unhealthy // Stalling when others aren't is always Unhealthy
 		}
 	}
-	fmt.Println("10")
 
 	// chainId check health check
 	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
 	if err != nil {
-		fmt.Println("11")
 		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err))
 		return Unhealthy
 	}
-	fmt.Println("12")
+
 	if !n.verifyChainID(chainId) {
-		fmt.Println("13")
 		n.logProviderWarning("Provider has incorrect chain ID", provider)
 		return Unhealthy
 	}
 
-	fmt.Println("14")
 	// Archive Health Check
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
 	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") {
-		fmt.Println("15")
 		// check if the provider can return back block data from half of its block height
 		currentBlock := provider.getLatestHealthyBlockEntry()
 		if currentBlock == nil {
@@ -245,12 +231,10 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// call the network method
 		err := n.testArchiveMode(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
 		if err != nil {
-			fmt.Println("16")
 			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
 			return Unhealthy
 		}
 	}
-	fmt.Println("17")
 
 	return worstStatus
 }

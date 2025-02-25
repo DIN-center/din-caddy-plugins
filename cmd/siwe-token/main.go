@@ -4,9 +4,10 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"os"
 	"strings"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
 )
 

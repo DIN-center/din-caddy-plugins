@@ -14,7 +14,9 @@ while ! curl -s localhost:8000/health > /dev/null; do
     ((attempt++))
 done
 
-echo "Server is ready. Starting requests..."
+echo "Server is ready. Waiting 10 seconds before starting requests..."
+sleep 10
+echo "Starting requests..."
 
 for i in {1..10}; do
     # Make the POST request and capture both the response and HTTP status code
