@@ -242,7 +242,7 @@ func TestGetChainID(t *testing.T) {
 			name:            "successful ethereum response",
 			httpResponse:    []byte(`{"jsonrpc":"2.0","result":"0x1"}`),
 			statusCode:      200,
-			expectedChainID: "0x1",
+			expectedChainID: "eip155:0x1",
 			expectError:     false,
 		},
 		{
@@ -250,7 +250,7 @@ func TestGetChainID(t *testing.T) {
 			networkName:     "bitcoin",
 			httpResponse:    []byte(`{"jsonrpc":"2.0","result":{"chain":"main"}}`),
 			statusCode:      200,
-			expectedChainID: "main",
+			expectedChainID: "bip122:main",
 			expectError:     false,
 		},
 		{
