@@ -367,6 +367,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 2
 						}
 					}
+					chain_id eip155:0x1
 					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
@@ -375,6 +376,34 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 				}
 			}`,
 			hasErr: false,
+		},
+		{
+			name: "Invalid Caddyfile - No chain_id",
+			caddyfile: `networks {
+				eth {
+					methods eth_blockNumber eth_getBlockByNumber
+					providers {
+						http://test-website-1.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 1
+						}
+						http://test-website-2.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 2
+						}
+					}
+					healthcheck_method GET
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
+				}
+			}`,
+			hasErr: true,
 		},
 		{
 			name: "Invalid Caddyfile - Missing provider",
