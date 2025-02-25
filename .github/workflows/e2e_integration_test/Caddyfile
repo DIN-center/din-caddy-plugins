@@ -20,6 +20,7 @@
 							priority 0
 						}
 					}
+					chain_id eip155:0x1
 				}
 			}
 		}

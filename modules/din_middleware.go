@@ -566,6 +566,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
 				}
+				if d.Networks[networkName].ChainId == "" {
+					return fmt.Errorf("chain ID is not set for network %s", networkName)
+				}
 			}
 		case "din_registry":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {

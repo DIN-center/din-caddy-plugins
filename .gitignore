@@ -18,3 +18,6 @@ foundry.toml
 local_rivet_script.sh
 scripts/
 services/.DS_Store
+.DS_Store
+*/.DS_Store
+coverage.out
