@@ -215,6 +215,7 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	fmt.Println("ServeHTTP")
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 

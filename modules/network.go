@@ -113,7 +113,7 @@ func (n *network) healthCheck() {
 
 		// Update metrics and history
 		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
-		n.sendLatestBlockMetric(provider.host, 0, newStatus.String(), blockNum)
+		n.sendHealthCheckMetric(provider.host, newStatus.String())
 	}
 }
 
@@ -135,7 +135,7 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 	// Provider has exceeded grace period - mark as unhealthy
 	provider.healthStatus = Unhealthy
 	provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
-	n.sendLatestBlockMetric(provider.host, 0, provider.healthStatus.String(), blockNum)
+	n.sendHealthCheckMetric(provider.host, provider.healthStatus.String())
 	return Unhealthy
 }
 
@@ -309,13 +309,11 @@ func (n *network) getLatestHealthyBlock() int64 {
 	return latestBlockFromWarning
 }
 
-func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
-	n.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-		Network:        n.Name,
-		Provider:       providerName,
-		ResponseStatus: statusCode,
-		HealthStatus:   healthStatus,
-		BlockNumber:    providerBlockNumber,
+func (n *network) sendHealthCheckMetric(providerName string, healthStatus string) {
+	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
+		Network:      n.Name,
+		Provider:     providerName,
+		HealthStatus: healthStatus,
 	})
 }
 

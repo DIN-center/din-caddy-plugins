@@ -62,7 +62,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 
 			mockPrometheus := prom.NewMockIPrometheusClient(ctrl)
 			mockPrometheus.EXPECT().
-				HandleLatestBlockMetric(gomock.Any()).
+				HandleRequestMetrics(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
 			p := &provider{

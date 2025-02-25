@@ -34,16 +34,16 @@ func (m *MockIPrometheusClient) EXPECT() *MockIPrometheusClientMockRecorder {
 	return m.recorder
 }
 
-// HandleLatestBlockMetric mocks base method.
-func (m *MockIPrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricData) {
+// HandleHealthCheckMetric mocks base method.
+func (m *MockIPrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricData) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "HandleLatestBlockMetric", data)
+	m.ctrl.Call(m, "HandleHealthCheckMetric", data)
 }
 
-// HandleLatestBlockMetric indicates an expected call of HandleLatestBlockMetric.
-func (mr *MockIPrometheusClientMockRecorder) HandleLatestBlockMetric(data interface{}) *gomock.Call {
+// HandleHealthCheckMetric indicates an expected call of HandleHealthCheckMetric.
+func (mr *MockIPrometheusClientMockRecorder) HandleHealthCheckMetric(data interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleLatestBlockMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleLatestBlockMetric), data)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleHealthCheckMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleHealthCheckMetric), data)
 }
 
 // HandleRequestMetrics mocks base method.

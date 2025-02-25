@@ -35,8 +35,7 @@ var (
 	DinRequestBodyBytes            *prometheus.HistogramVec
 
 	// Din Health Check Metrics
-	DinHealthCheckCount    *prometheus.CounterVec
-	DinProviderBlockNumber *prometheus.GaugeVec
+	DinHealthCheckCount *prometheus.CounterVec
 )
 
 // RegisterMetrics registers the prometheus metrics
@@ -67,24 +66,16 @@ func RegisterMetrics() {
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id"},
 	)
 
-	DinProviderBlockNumber = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "din_http_provider_block_number",
-			Help: "Metric for measuring the latest block number of the request",
-		},
-		[]string{"service", "provider", "machine_id"},
-	)
-
 	// Register health check count metric for din health checks
 	DinHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "din_health_check_count",
 			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
-		[]string{"service", "provider", "response_status", "health_status", "machine_id"},
+		[]string{"service", "provider", "health_status", "machine_id"},
 	)
 
-	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinProviderBlockNumber)
+	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes)
 }
 
 type PromRequestMetricData struct {
@@ -128,25 +119,17 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	// DinRequestBodyBytes.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
 }
 
-type PromLatestBlockMetricData struct {
-	Network        string
-	Provider       string
-	ResponseStatus int
-	HealthStatus   string
-	BlockNumber    int64
+type PromHealthCheckMetricData struct {
+	Network      string
+	Provider     string
+	HealthStatus string
 }
 
-// handleLatestBlockMetric increments prometheus metric based on latest block number health check data
-func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricData) {
+func (p *PrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricData) {
 	network := strings.TrimPrefix(data.Network, "/")
-	status := strconv.Itoa(data.ResponseStatus)
 
-	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Health check metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(network, data.Provider, status, data.HealthStatus, p.machineID).Inc()
-
-	// Set the latest block number for the provider
-	// Disabled to avoid high metric count on prometheus
-	// DinProviderBlockNumber.WithLabelValues(network, data.Provider, p.machineID).Set(float64(data.BlockNumber))
+	DinHealthCheckCount.WithLabelValues(network, data.Provider, data.HealthStatus, p.machineID).Inc()
 }
