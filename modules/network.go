@@ -159,11 +159,15 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		return Unhealthy
 	}
 
-	// Check block lag and block jump
+	// Check for block lag
+	var isLagged bool
+	var blockLag int64
+
 	if latestNetworkBlock > 0 {
-		blockLag := int64(latestNetworkBlock) - currentBlock
-		// If block lag is greater than limit, mark as warning
+		blockLag = int64(latestNetworkBlock) - currentBlock
+		// If block lag is greater than limit, mark as warning and set isLagged flag
 		if blockLag > n.BlockLagLimit {
+			isLagged = true
 			n.logProviderWarning("Provider is lagging behind network", provider,
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
@@ -184,18 +188,28 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
-	// TODO: Check to see if a provider is stalled AND Lagged, if they are then set them to WARNING
-	// TODO: If all providers are stalled, but are not lagged, then we would still return traffic and consider them HEALTHY.
-	// Check for stalling - all blocks in history are identical
-	if n.isStalled(provider) {
-		if n.allProvidersStalled() {
-			// This signifies a network outage
-			n.logProviderWarning("All providers are stalled", provider)
+	// Check for stalling
+	isStalled := n.isStalled(provider)
+	allStalled := n.allProvidersStalled()
+
+	// 1. If a provider is stalled AND lagged, set to WARNING
+	// 2. If all providers are stalled but not lagged, consider them HEALTHY
+	if isStalled {
+		if isStalled && isLagged {
+			// Provider is both stalled and lagged - set to WARNING
+			n.logProviderWarning("Provider is stalled and lagged", provider,
+				zap.Int64("block_lag", blockLag),
+				zap.Int64("provider_block", currentBlock),
+				zap.Int64("network_block", latestNetworkBlock))
 			if Warning > worstStatus {
 				worstStatus = Warning
 			}
+		} else if allStalled {
+			// All providers are stalled - likely a network outage, don't change status
+			// This is set to healthy because we want to return traffic as it is in the case of a network outage
+			n.logProviderWarning("All providers are stalled", provider)
 		} else {
-			// This signifies a provider outage
+			// This provider is stalled while others are progressing - provider outage
 			n.logProviderWarning("Provider is stalled while others are progressing", provider)
 			return Unhealthy // Stalling when others aren't is always Unhealthy
 		}
