@@ -34,9 +34,9 @@ type provider struct {
 }
 
 type blockHistoryEntry struct {
-	blockNumber int64
-	statusCode  HealthStatus
-	timestamp   *time.Time
+	blockNumber  int64
+	healthStatus HealthStatus
+	timestamp    *time.Time
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -89,7 +89,7 @@ func (p *provider) Healthy() bool {
 	if latestBlockEntry == nil {
 		return false
 	}
-	if latestBlockEntry.statusCode == Healthy {
+	if latestBlockEntry.healthStatus == Healthy {
 		return true
 	} else {
 		return false
@@ -102,7 +102,7 @@ func (p *provider) Warning() bool {
 	if latestBlockEntry == nil {
 		return false
 	}
-	if latestBlockEntry.statusCode == Warning {
+	if latestBlockEntry.healthStatus == Warning {
 		return true
 	} else {
 		return false
@@ -125,9 +125,9 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 
 	now := time.Now()
 	entry := blockHistoryEntry{
-		blockNumber: block,
-		statusCode:  status,
-		timestamp:   &now,
+		blockNumber:  block,
+		healthStatus: status,
+		timestamp:    &now,
 	}
 	p.blockHistory = append(p.blockHistory, entry)
 	if len(p.blockHistory) > blockHistorySize {
@@ -140,7 +140,7 @@ func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
 		return nil
 	}
 	for i := len(p.blockHistory) - 1; i >= 0; i-- {
-		if p.blockHistory[i].statusCode == Healthy {
+		if p.blockHistory[i].healthStatus == Healthy {
 			return &p.blockHistory[i]
 		}
 	}

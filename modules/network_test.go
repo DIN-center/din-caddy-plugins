@@ -2,9 +2,7 @@ package modules
 
 import (
 	"testing"
-	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/golang/mock/gomock"
@@ -180,10 +178,10 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "healthy provider has highest block",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, statusCode: Healthy}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 90, statusCode: Healthy}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 90, healthStatus: Healthy}},
 				},
 			},
 			expected: 100,
@@ -192,19 +190,91 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "warning provider used when no healthy",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, statusCode: Warning}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 110, statusCode: Warning}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 110, healthStatus: Warning}},
 				},
 			},
-			expected: 100,
+			expected: 110,
 		},
 		{
 			name: "empty history returns 0",
 			providers: map[string]*provider{
 				"p1": {
 					blockHistory: []blockHistoryEntry{},
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "healthy provider preferred over higher warning block",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+				},
+				"p2": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 150, healthStatus: Warning}},
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "warning provider preferred over higher unhealthy block",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+				},
+				"p2": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 150, healthStatus: Unhealthy}},
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "mixed health statuses with multiple entries",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 99, healthStatus: Healthy},
+						{blockNumber: 100, healthStatus: Healthy},
+					},
+				},
+				"p2": {
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 110, healthStatus: Warning},
+						{blockNumber: 109, healthStatus: Warning},
+					},
+				},
+				"p3": {
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 120, healthStatus: Unhealthy},
+						{blockNumber: 119, healthStatus: Unhealthy},
+					},
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "no providers with block history",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: []blockHistoryEntry{},
+				},
+				"p2": {
+					blockHistory: []blockHistoryEntry{},
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "only unhealthy providers with blocks",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
+				},
+				"p2": {
+					blockHistory: []blockHistoryEntry{{blockNumber: 110, healthStatus: Unhealthy}},
 				},
 			},
 			expected: 0,
@@ -218,170 +288,6 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 			result := n.getLatestHealthyBlock()
 			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestGetChainID(t *testing.T) {
-	tests := []struct {
-		name            string
-		networkName     string
-		httpResponse    []byte
-		statusCode      int
-		httpError       error
-		expectedChainID string
-		expectError     bool
-		errorContains   string
-	}{
-		{
-			name:            "successful ethereum response",
-			httpResponse:    []byte(`{"jsonrpc":"2.0","result":"0x1"}`),
-			statusCode:      200,
-			expectedChainID: "eip155:0x1",
-			expectError:     false,
-		},
-		{
-			name:            "successful bitcoin response",
-			networkName:     "bitcoin",
-			httpResponse:    []byte(`{"jsonrpc":"2.0","result":{"chain":"main"}}`),
-			statusCode:      200,
-			expectedChainID: "bip122:main",
-			expectError:     false,
-		},
-		{
-			name:            "non-200 status code",
-			httpResponse:    []byte{},
-			statusCode:      503,
-			expectedChainID: "",
-			expectError:     true,
-			errorContains:   "Error getting chain ID from response",
-		},
-		{
-			name:            "invalid json response",
-			httpResponse:    []byte(`invalid json`),
-			statusCode:      200,
-			expectedChainID: "",
-			expectError:     true,
-			errorContains:   "Error unmarshalling response",
-		},
-		{
-			name:            "missing result field",
-			httpResponse:    []byte(`{"jsonrpc":"2.0"}`),
-			statusCode:      200,
-			expectedChainID: "",
-			expectError:     true,
-			errorContains:   "Error getting chain ID from response",
-		},
-		{
-			name:            "http client error",
-			httpError:       errors.New("connection failed"),
-			expectedChainID: "",
-			expectError:     true,
-			errorContains:   "Error sending POST request",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-			mockHTTPClient.EXPECT().
-				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
-
-			n := NewNetwork(tt.networkName)
-			n.HttpClient = mockHTTPClient
-			n.ChainIdMethod = "eth_chainId"
-
-			chainID, err := n.getChainID("http://test.com", nil, nil)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorContains)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedChainID, chainID)
-			}
-		})
-	}
-}
-
-func TestArchiveMode(t *testing.T) {
-	tests := []struct {
-		name               string
-		httpResponse       []byte
-		statusCode         int
-		httpError          error
-		quarterBlockHeight string
-		expectError        bool
-		errorContains      string
-	}{
-		{
-			name:               "successful archive test",
-			httpResponse:       []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
-			statusCode:         200,
-			quarterBlockHeight: "0x1234",
-			expectError:        false,
-		},
-		{
-			name:               "service unavailable",
-			httpResponse:       []byte{},
-			statusCode:         503,
-			quarterBlockHeight: "0x1234",
-			expectError:        true,
-			errorContains:      "Network Unavailable",
-		},
-		{
-			name:               "invalid json response",
-			httpResponse:       []byte(`invalid json`),
-			statusCode:         200,
-			quarterBlockHeight: "0x1234",
-			expectError:        true,
-			errorContains:      "Error unmarshalling response",
-		},
-		{
-			name:               "archive mode not supported",
-			httpResponse:       []byte(`{"error":{"code":-32000,"message":"missing trie node"}}`),
-			statusCode:         200,
-			quarterBlockHeight: "0x1234",
-			expectError:        true,
-			errorContains:      "network doesn't support archive mode",
-		},
-		{
-			name:               "http client error",
-			httpResponse:       []byte{},
-			statusCode:         200,
-			httpError:          errors.New("connection failed"),
-			quarterBlockHeight: "0x1234",
-			expectError:        true,
-			errorContains:      "Error sending POST request",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-			mockHTTPClient.EXPECT().
-				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
-
-			n := NewNetwork("test")
-			n.HttpClient = mockHTTPClient
-			n.CallContractMethod = "eth_call"
-
-			err := n.archvieModeCheck("http://test.com", nil, nil, tt.quarterBlockHeight)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorContains)
-			} else {
-				assert.NoError(t, err)
-			}
 		})
 	}
 }
@@ -487,48 +393,61 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 	}
 }
 
-func TestTryBlockNumberRequestWithTimeout(t *testing.T) {
+func TestArchiveModeCheck(t *testing.T) {
 	tests := []struct {
-		name          string
-		responseDelay time.Duration
-		httpResponse  []byte
-		statusCode    int
-		httpError     error
-		expectError   bool
-		errorContains string
-		expectedCalls int
+		name                string
+		httpResponse        []byte
+		statusCode          int
+		httpError           error
+		quarterBlockHeight  string
+		requestAttemptCount int
+		expectError         bool
+		errorContains       string
 	}{
 		{
-			name:          "successful response",
-			httpResponse:  []byte(`{"result":"0x1234"}`),
-			statusCode:    200,
-			expectError:   false,
-			expectedCalls: 1,
+			name:                "successful archive test",
+			httpResponse:        []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         false,
 		},
 		{
-			name:          "timeout on first try, success on retry",
-			responseDelay: time.Duration(BlockNumberTimeoutSeconds+1) * time.Second,
-			httpResponse:  []byte(`{"result":"0x1234"}`),
-			statusCode:    200,
-			expectError:   true,
-			errorContains: "request is taking too long after retry",
-			expectedCalls: 2,
-			// For timeout errors, both resBytes and statusCode should be nil
+			name:                "service unavailable",
+			httpResponse:        []byte{},
+			statusCode:          503,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Network Unavailable",
 		},
 		{
-			name:          "http client error",
-			httpError:     errors.New("connection failed"),
-			statusCode:    0,
-			expectError:   true,
-			errorContains: "connection failed",
-			expectedCalls: 1,
+			name:                "invalid json response",
+			httpResponse:        []byte(`invalid json`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Error unmarshalling response",
 		},
 		{
-			name:          "non-200 status code",
-			httpResponse:  []byte(`{"error":"server error"}`),
-			statusCode:    500,
-			expectError:   false, // Function only handles timeouts, not HTTP errors
-			expectedCalls: 1,
+			name:                "archive mode not supported",
+			httpResponse:        []byte(`{"error":{"code":-32000,"message":"missing trie node"}}`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "network doesn't support archive mode",
+		},
+		{
+			name:                "http client error",
+			httpResponse:        []byte{},
+			statusCode:          200,
+			httpError:           errors.New("connection failed"),
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Error sending POST request",
 		},
 	}
 
@@ -539,43 +458,206 @@ func TestTryBlockNumberRequestWithTimeout(t *testing.T) {
 
 			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
 
-			if tt.responseDelay > 0 {
-				mockHTTPClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(url string, headers map[string]string, payload []byte, ac auth.IAuthClient) ([]byte, *int, error) {
-						time.Sleep(tt.responseDelay)
-						return tt.httpResponse, &tt.statusCode, tt.httpError
-					}).Times(tt.expectedCalls)
-			} else {
-				mockHTTPClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.httpResponse, &tt.statusCode, tt.httpError).
-					Times(tt.expectedCalls)
-			}
+			// Set up the mock to expect exactly one call
+			mockHTTPClient.EXPECT().
+				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
 
 			n := NewNetwork("test")
 			n.HttpClient = mockHTTPClient
-			n.HCMethod = "eth_blockNumber"
+			n.CallContractMethod = "eth_call"
+			n.RequestAttemptCount = tt.requestAttemptCount
 
-			resBytes, statusCode, err := n.tryBlockNumberRequestWithTimeout("test-url", nil, nil)
+			err := n.archiveModeCheck("http://test.com", nil, nil, tt.quarterBlockHeight)
 
 			if tt.expectError {
 				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				if tt.responseDelay > 0 {
-					// For timeout errors, both resBytes and statusCode should be nil
-					assert.Nil(t, resBytes)
-					assert.Nil(t, statusCode)
-				} else {
-					// For other errors, check status code
-					assert.Equal(t, &tt.statusCode, statusCode)
-				}
+				assert.Contains(t, err.Error(), tt.errorContains)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.httpResponse, resBytes)
-				assert.Equal(t, tt.statusCode, *statusCode)
+			}
+		})
+	}
+}
+
+func TestGetChainID(t *testing.T) {
+	tests := []struct {
+		name                string
+		networkName         string
+		httpResponses       [][]byte
+		statusCodes         []int
+		httpErrors          []error
+		requestAttemptCount int
+		expectedChainID     string
+		expectError         bool
+		errorContains       string
+		expectedAttempts    int
+	}{
+		{
+			name:                "successful ethereum response on first attempt",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    1,
+		},
+		{
+			name:                "successful bitcoin response on first attempt",
+			networkName:         "bitcoin",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":{"chain":"main"}}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "bip122:main",
+			expectError:         false,
+			expectedAttempts:    1,
+		},
+		{
+			name:                "successful solana response on first attempt",
+			networkName:         "solana",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"mainnet-beta"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "solana:mainnet-beta",
+			expectError:         false,
+			expectedAttempts:    1,
+		},
+		{
+			name:                "successful starknet response on first attempt",
+			networkName:         "starknet",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"SN_MAIN"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "starknet:SN_MAIN",
+			expectError:         false,
+			expectedAttempts:    1,
+		},
+		{
+			name:                "success after one failure",
+			httpResponses:       [][]byte{nil, []byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{0, 200},
+			httpErrors:          []error{errors.New("connection failed"), nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    2,
+		},
+		{
+			name:                "non-200 status code with retries exhausted",
+			httpResponses:       [][]byte{[]byte{}, []byte{}, []byte{}},
+			statusCodes:         []int{503, 503, 503},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid json response with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`invalid json`), []byte(`invalid json`), []byte(`invalid json`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error unmarshalling response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "missing result field with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0"}`), []byte(`{"jsonrpc":"2.0"}`), []byte(`{"jsonrpc":"2.0"}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "http client error with retries exhausted",
+			httpResponses:       [][]byte{nil, nil, nil},
+			statusCodes:         []int{0, 0, 0},
+			httpErrors:          []error{errors.New("connection failed"), errors.New("connection failed"), errors.New("connection failed")},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error sending POST request",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid bitcoin response with retries exhausted",
+			networkName:         "bitcoin",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":{}}`), []byte(`{"jsonrpc":"2.0","result":{}}`), []byte(`{"jsonrpc":"2.0","result":{}}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid result type with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":123}`), []byte(`{"jsonrpc":"2.0","result":123}`), []byte(`{"jsonrpc":"2.0","result":123}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "mixed errors with success on final attempt",
+			httpResponses:       [][]byte{nil, []byte(`invalid json`), []byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{0, 200, 200},
+			httpErrors:          []error{errors.New("connection failed"), nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			// Set up expectations for each attempt
+			for i := 0; i < tt.expectedAttempts; i++ {
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.httpResponses[i], &tt.statusCodes[i], tt.httpErrors[i])
+			}
+
+			networkName := tt.networkName
+			if networkName == "" {
+				networkName = "test"
+			}
+
+			n := NewNetwork(networkName)
+			n.HttpClient = mockHTTPClient
+			n.ChainIdMethod = "eth_chainId"
+			n.RequestAttemptCount = tt.requestAttemptCount
+
+			chainID, err := n.getChainID("http://test.com", nil, nil)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Equal(t, tt.expectedChainID, chainID)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedChainID, chainID)
 			}
 		})
 	}

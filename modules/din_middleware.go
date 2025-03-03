@@ -323,7 +323,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			}
 		}
 	}
-	healthStatus := network.Providers[provider].healthStatus.String()
+	providerBlockNumber := network.Providers[provider].getLatestBlockEntry()
+	healthStatus := providerBlockNumber.healthStatus.String()
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
 	if len(bodyBytes) == 0 {

@@ -79,7 +79,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							healthStatus: Healthy,
+							blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 						},
 					},
 					MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
@@ -96,7 +96,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							healthStatus: Healthy,
+							blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 						},
 					},
 					MaxRequestPayloadSizeKB: 0,

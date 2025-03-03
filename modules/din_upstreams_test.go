@@ -61,10 +61,16 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 0,
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 100, healthStatus: Healthy},
+					},
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 0,
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 100, healthStatus: Healthy},
+					},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -74,14 +80,18 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 100, healthStatus: Healthy},
+					},
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: []blockHistoryEntry{
+						{blockNumber: 100, healthStatus: Healthy},
+					},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -93,12 +103,12 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Healthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     0,
-					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -110,12 +120,12 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     0,
-					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -127,27 +137,29 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     0,
-					healthStatus: Unhealthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    " successful, both 1 Priority",
+			name:    "successful, both 1 Priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
-					Priority: 1,
+					upstream:     upstream1,
+					Priority:     1,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
-					Priority: 1,
+					upstream:     upstream2,
+					Priority:     1,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -159,12 +171,12 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Healthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     1,
-					healthStatus: Healthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -176,12 +188,12 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Warning,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     1,
-					healthStatus: Healthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream2},
@@ -193,12 +205,12 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream:     upstream1,
 					Priority:     0,
-					healthStatus: Unhealthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
 				},
 				upstream2.Dial: {
 					upstream:     upstream2,
 					Priority:     1,
-					healthStatus: Unhealthy,
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
 				},
 			},
 			output: []*reverseproxy.Upstream{},
@@ -219,6 +231,31 @@ func TestGetDinUpstreams(t *testing.T) {
 			upstreams, _ := dinUpstreams.GetUpstreams(tt.request)
 			if len(upstreams) != len(tt.output) {
 				t.Errorf("GetUpstreams() = %v, want %v", len(upstreams), len(tt.output))
+			} else {
+				// Create maps of Dial addresses for easier comparison
+				actualDials := make(map[string]bool)
+				expectedDials := make(map[string]bool)
+
+				for _, upstream := range upstreams {
+					actualDials[upstream.Dial] = true
+				}
+
+				for _, upstream := range tt.output {
+					expectedDials[upstream.Dial] = true
+				}
+
+				// Compare the maps instead of the ordered slices
+				for dial := range expectedDials {
+					if !actualDials[dial] {
+						t.Errorf("GetUpstreams() missing expected upstream: %v", dial)
+					}
+				}
+
+				for dial := range actualDials {
+					if !expectedDials[dial] {
+						t.Errorf("GetUpstreams() contains unexpected upstream: %v", dial)
+					}
+				}
 			}
 		})
 	}

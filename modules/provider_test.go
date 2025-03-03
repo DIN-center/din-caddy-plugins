@@ -140,7 +140,7 @@ func TestHealthy(t *testing.T) {
 			now := time.Now()
 			p := &provider{
 				blockHistory: []blockHistoryEntry{
-					{blockNumber: 100, statusCode: tt.healthStatus, timestamp: &now},
+					{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now},
 				},
 			}
 
@@ -178,7 +178,7 @@ func TestWarning(t *testing.T) {
 			now := time.Now()
 			p := &provider{
 				blockHistory: []blockHistoryEntry{
-					{blockNumber: 100, statusCode: tt.healthStatus, timestamp: &now},
+					{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now},
 				},
 			}
 
@@ -198,8 +198,8 @@ func TestBlockHistory(t *testing.T) {
 		{
 			name: "normal history",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-				{blockNumber: 101, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 100, healthStatus: Healthy, timestamp: &now},
+				{blockNumber: 101, healthStatus: Healthy, timestamp: &now},
 			},
 			expected: 2,
 		},
@@ -211,7 +211,7 @@ func TestBlockHistory(t *testing.T) {
 		{
 			name: "single entry",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 100, healthStatus: Healthy, timestamp: &now},
 			},
 			expected: 1,
 		},
@@ -261,7 +261,7 @@ func TestAddBlockEntry(t *testing.T) {
 		{
 			name: "add within size limit",
 			initialHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 100, healthStatus: Healthy, timestamp: &now},
 			},
 			newBlock:       101,
 			newStatus:      Healthy,
@@ -273,9 +273,9 @@ func TestAddBlockEntry(t *testing.T) {
 		{
 			name: "exceed size limit",
 			initialHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy, timestamp: &now},
-				{blockNumber: 101, statusCode: Healthy, timestamp: &now},
-				{blockNumber: 102, statusCode: Healthy, timestamp: &now},
+				{blockNumber: 100, healthStatus: Healthy, timestamp: &now},
+				{blockNumber: 101, healthStatus: Healthy, timestamp: &now},
+				{blockNumber: 102, healthStatus: Healthy, timestamp: &now},
 			},
 			newBlock:       103,
 			newStatus:      Healthy,
@@ -351,44 +351,44 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 		{
 			name: "single healthy entry returns that entry",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 100, statusCode: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 100, healthStatus: Healthy},
 		},
 		{
 			name: "single unhealthy entry returns nil",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Unhealthy},
+				{blockNumber: 100, healthStatus: Unhealthy},
 			},
 			expectedBlock: nil,
 		},
 		{
 			name: "multiple entries returns latest healthy",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Healthy},
-				{blockNumber: 101, statusCode: Unhealthy},
-				{blockNumber: 102, statusCode: Healthy},
-				{blockNumber: 103, statusCode: Unhealthy},
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 101, healthStatus: Unhealthy},
+				{blockNumber: 102, healthStatus: Healthy},
+				{blockNumber: 103, healthStatus: Unhealthy},
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, statusCode: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
 		},
 		{
 			name: "all unhealthy entries returns nil",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Unhealthy},
-				{blockNumber: 101, statusCode: Unhealthy},
-				{blockNumber: 102, statusCode: Unhealthy},
+				{blockNumber: 100, healthStatus: Unhealthy},
+				{blockNumber: 101, healthStatus: Unhealthy},
+				{blockNumber: 102, healthStatus: Unhealthy},
 			},
 			expectedBlock: nil,
 		},
 		{
 			name: "latest entry is healthy returns that entry",
 			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100, statusCode: Unhealthy},
-				{blockNumber: 101, statusCode: Unhealthy},
-				{blockNumber: 102, statusCode: Healthy},
+				{blockNumber: 100, healthStatus: Unhealthy},
+				{blockNumber: 101, healthStatus: Unhealthy},
+				{blockNumber: 102, healthStatus: Healthy},
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, statusCode: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
 		},
 	}
 
@@ -417,9 +417,9 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 					got.blockNumber, tt.expectedBlock.blockNumber)
 			}
 
-			if got.statusCode != tt.expectedBlock.statusCode {
-				t.Errorf("getLatestHealthyBlockEntry() statusCode = %v, want %v",
-					got.statusCode, tt.expectedBlock.statusCode)
+			if got.healthStatus != tt.expectedBlock.healthStatus {
+				t.Errorf("getLatestHealthyBlockEntry() healthStatus = %v, want %v",
+					got.healthStatus, tt.expectedBlock.healthStatus)
 			}
 		})
 	}

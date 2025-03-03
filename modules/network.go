@@ -216,7 +216,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Archive Health Check
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
-	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") {
+	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "starknet") {
 		// check if the provider can return back block data from half of its block height
 		currentBlock := provider.getLatestHealthyBlockEntry()
 		if currentBlock == nil {
@@ -230,7 +230,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		quarterBlockHeightHex := fmt.Sprintf("%#x", quarterBlockHeight)
 
 		// call the network method
-		err := n.archvieModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
+		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
 			return Unhealthy
@@ -291,7 +291,7 @@ func (n *network) getLatestHealthyBlock() int64 {
 		if latestBlock == nil {
 			continue
 		}
-		switch latestBlock.statusCode {
+		switch latestBlock.healthStatus {
 		case Healthy:
 			if latestBlock.blockNumber > latestBlockFromHealthy {
 				latestBlockFromHealthy = latestBlock.blockNumber
@@ -306,8 +306,6 @@ func (n *network) getLatestHealthyBlock() int64 {
 			}
 		}
 	}
-
-	// TODO: make sure this makes sense for warning and unhealthy.
 
 	// Return highest block number, prioritizing by health status
 	if latestBlockFromHealthy > 0 {
@@ -330,7 +328,8 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		resBytes, statusCode, err := n.tryBlockNumberRequestWithTimeout(httpUrl, headers, ac)
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
 			continue
@@ -347,42 +346,6 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	}
 
 	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
-}
-
-// Layer 2: Handle timeout
-func (n *network) tryBlockNumberRequestWithTimeout(httpUrl string, headers map[string]string, ac auth.IAuthClient) ([]byte, *int, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
-
-	// TODO: remove redundant retries
-	// Try the request up to 2 times if it times out
-	for retryCount := 0; retryCount < 2; retryCount++ {
-		// Create a channel for the response
-		type result struct {
-			resBytes   []byte
-			statusCode *int
-			err        error
-		}
-		resChan := make(chan result, 1)
-
-		// Make the request in a goroutine
-		go func(payload []byte) {
-			resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
-			resChan <- result{resBytes, statusCode, err}
-		}(payload)
-
-		// Wait for response or timeout
-		select {
-		case res := <-resChan:
-			return res.resBytes, res.statusCode, res.err
-		case <-time.After(time.Duration(BlockNumberTimeoutSeconds) * time.Second):
-			if retryCount == 1 {
-				return nil, nil, errors.New("request is taking too long after retry")
-			}
-			continue
-		}
-	}
-
-	return nil, nil, errors.New("request timed out")
 }
 
 // Layer 3: Process response
@@ -424,99 +387,124 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 }
 
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
+	var lastErr error
 
-	// Send the POST request
-	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-	if err != nil {
-		return "", errors.Wrap(err, "Error sending POST request")
-	}
+	// Layer 1: Handle attempts
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
 
-	if *statusCode != http.StatusOK {
-		return "", errors.New("Error getting chain ID from response")
-	}
-
-	// response struct
-	var respObject map[string]interface{}
-
-	// Unmarshal the response
-	err = json.Unmarshal(resBytes, &respObject)
-	if err != nil {
-		return "", errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	if _, ok := respObject["result"]; !ok {
-		return "", errors.New("Error getting chain ID from response")
-	}
-
-	var chainReference string
-	var ok bool
-	namespace := EVMNamespace
-
-	// Map network names to their namespaces
-	namespaceMap := map[string]string{
-		"bitcoin":  BitcoinNamespace,
-		"solana":   SolanaNamespace,
-		"starknet": StarknetNamespace,
-	}
-
-	// Check if network name contains any of the special cases
-	for key, ns := range namespaceMap {
-		if strings.Contains(n.Name, key) {
-			namespace = ns
-			break
+		// Send the POST request
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error sending POST request")
+			continue
 		}
+
+		if *statusCode != http.StatusOK {
+			lastErr = errors.New("Error getting chain ID from response")
+			continue
+		}
+
+		// response struct
+		var respObject map[string]interface{}
+
+		// Unmarshal the response
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error unmarshalling response")
+			continue
+		}
+
+		if _, ok := respObject["result"]; !ok {
+			lastErr = errors.New("Error getting chain ID from response")
+			continue
+		}
+
+		var chainReference string
+		var ok bool
+		namespace := EVMNamespace
+
+		// Map network names to their namespaces
+		namespaceMap := map[string]string{
+			"bitcoin":  BitcoinNamespace,
+			"solana":   SolanaNamespace,
+			"starknet": StarknetNamespace,
+		}
+
+		// Check if network name contains any of the special cases
+		for key, ns := range namespaceMap {
+			if strings.Contains(n.Name, key) {
+				namespace = ns
+				break
+			}
+		}
+
+		// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
+		// For all other networks, the chain ID is directly in the result field as a string
+		if strings.Contains(n.Name, "bitcoin") {
+			result, ok := respObject["result"].(map[string]interface{})
+			if !ok || result["chain"] == nil {
+				lastErr = errors.New("Error getting chain ID from response")
+				continue
+			}
+			chainReference = result["chain"].(string)
+		} else {
+			chainReference, ok = respObject["result"].(string)
+			if !ok {
+				lastErr = errors.New("Error getting chain ID from response")
+				continue
+			}
+		}
+
+		fullChainId := namespace + ":" + chainReference
+
+		// Success case - return the chain ID
+		return fullChainId, nil
 	}
 
-	// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
-	// For all other networks, the chain ID is directly in the result field as a string
-	if strings.Contains(n.Name, "bitcoin") {
-		result, ok := respObject["result"].(map[string]interface{})
-		if !ok || result["chain"] == nil {
-			return "", errors.New("Error getting chain ID from response")
-		}
-		chainReference = result["chain"].(string)
-	} else {
-		chainReference, ok = respObject["result"].(string)
-		if !ok {
-			return "", errors.New("Error getting chain ID from response")
-		}
-	}
-
-	fullChainId := namespace + ":" + chainReference
-
-	return fullChainId, nil
+	return "", errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
-// TODO: test for starknet
-func (n *network) archvieModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
+func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
+	var lastErr error
 
-	// Send the POST request
-	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-	if err != nil {
-		return errors.Wrap(err, "Error sending POST request")
+	// Layer 1: Handle attempts
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
+
+		// Send the POST request
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error sending POST request")
+			continue
+		}
+
+		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+			lastErr = errors.New("Network Unavailable")
+			continue
+		}
+
+		// response struct
+		var respObject map[string]interface{}
+
+		// Unmarshal the response
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error unmarshalling response")
+			continue
+		}
+
+		// if the response contains an error, return an error
+		if _, ok := respObject["error"]; ok {
+			lastErr = errors.New("network doesn't support archive mode")
+			continue
+		}
+
+		// Success case - return nil
+		return nil
 	}
 
-	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return errors.New("Network Unavailable")
-	}
-
-	// response struct
-	var respObject map[string]interface{}
-
-	// Unmarshal the response
-	err = json.Unmarshal(resBytes, &respObject)
-	if err != nil {
-		return errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	// if the response contains an error, return an error
-	if _, ok := respObject["error"]; ok {
-		return errors.New("network doesn't support archive mode")
-	}
-
-	return nil
+	return errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 func (n *network) close() {
