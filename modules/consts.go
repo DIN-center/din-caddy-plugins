@@ -47,9 +47,14 @@ const (
 	MaxPriority = 9
 
 	// Chain ID Namespace Constants
-	EVMNamespace      = "eip155"
-	BitcoinNamespace  = "bip122"
-	SolanaNamespace   = "solana"
+	// Namespace:Referece = Chain ID https://chainagnostic.org/CAIPs/caip-2
+	// EVM
+	EVMNamespace = "eip155"
+	// Bitcoin
+	BitcoinNamespace = "bip122"
+	// Solana
+	SolanaNamespace = "solana"
+	// Starknet
 	StarknetNamespace = "starknet"
 )
 

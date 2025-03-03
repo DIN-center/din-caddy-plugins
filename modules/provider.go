@@ -15,17 +15,14 @@ import (
 )
 
 type provider struct {
-	HttpUrl      string
-	path         string
-	host         string
-	Headers      map[string]string
-	upstream     *reverseproxy.Upstream
-	httpClient   *din_http.HTTPClient
-	logger       *zap.Logger
-	healthStatus HealthStatus // 0 = Healthy, 1 = Warning, 2 = Unhealthy
-	Priority     int
-
-	chainId string
+	HttpUrl    string
+	path       string
+	host       string
+	Headers    map[string]string
+	upstream   *reverseproxy.Upstream
+	httpClient *din_http.HTTPClient
+	logger     *zap.Logger
+	Priority   int
 
 	// Registry Configuration Values
 	Methods []*string            `json:"methods"`
@@ -88,7 +85,11 @@ func (p *provider) AuthClient() auth.IAuthClient {
 
 // Healthy returns True if the node is passing healthchecks, False otherwise
 func (p *provider) Healthy() bool {
-	if p.healthStatus == Healthy {
+	latestBlockEntry := p.getLatestBlockEntry()
+	if latestBlockEntry == nil {
+		return false
+	}
+	if latestBlockEntry.statusCode == Healthy {
 		return true
 	} else {
 		return false
@@ -97,7 +98,11 @@ func (p *provider) Healthy() bool {
 
 // Warning returns True if the node is returning warning in healthchecks, False otherwise
 func (p *provider) Warning() bool {
-	if p.healthStatus == Warning {
+	latestBlockEntry := p.getLatestBlockEntry()
+	if latestBlockEntry == nil {
+		return false
+	}
+	if latestBlockEntry.statusCode == Warning {
 		return true
 	} else {
 		return false
@@ -140,4 +145,11 @@ func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
 		}
 	}
 	return nil
+}
+
+func (p *provider) getLatestBlockEntry() *blockHistoryEntry {
+	if len(p.blockHistory) == 0 {
+		return nil
+	}
+	return &p.blockHistory[len(p.blockHistory)-1]
 }

@@ -137,8 +137,11 @@ func TestHealthy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
 			p := &provider{
-				healthStatus: tt.healthStatus,
+				blockHistory: []blockHistoryEntry{
+					{blockNumber: 100, statusCode: tt.healthStatus, timestamp: &now},
+				},
 			}
 
 			result := p.Healthy()
@@ -172,8 +175,11 @@ func TestWarning(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
 			p := &provider{
-				healthStatus: tt.healthStatus,
+				blockHistory: []blockHistoryEntry{
+					{blockNumber: 100, statusCode: tt.healthStatus, timestamp: &now},
+				},
 			}
 
 			result := p.Warning()

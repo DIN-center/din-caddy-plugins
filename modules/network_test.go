@@ -180,12 +180,10 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "healthy provider has highest block",
 			providers: map[string]*provider{
 				"p1": {
-					healthStatus: Healthy,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, statusCode: Healthy}},
 				},
 				"p2": {
-					healthStatus: Warning,
-					blockHistory: []blockHistoryEntry{{blockNumber: 90}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 90, statusCode: Healthy}},
 				},
 			},
 			expected: 100,
@@ -194,12 +192,10 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "warning provider used when no healthy",
 			providers: map[string]*provider{
 				"p1": {
-					healthStatus: Warning,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 100, statusCode: Warning}},
 				},
 				"p2": {
-					healthStatus: Unhealthy,
-					blockHistory: []blockHistoryEntry{{blockNumber: 110}},
+					blockHistory: []blockHistoryEntry{{blockNumber: 110, statusCode: Warning}},
 				},
 			},
 			expected: 100,
@@ -208,7 +204,6 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "empty history returns 0",
 			providers: map[string]*provider{
 				"p1": {
-					healthStatus: Healthy,
 					blockHistory: []blockHistoryEntry{},
 				},
 			},
@@ -379,7 +374,7 @@ func TestArchiveMode(t *testing.T) {
 			n.HttpClient = mockHTTPClient
 			n.CallContractMethod = "eth_call"
 
-			err := n.testArchiveMode("http://test.com", nil, nil, tt.quarterBlockHeight)
+			err := n.archvieModeCheck("http://test.com", nil, nil, tt.quarterBlockHeight)
 
 			if tt.expectError {
 				assert.Error(t, err)

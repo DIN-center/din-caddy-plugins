@@ -103,13 +103,15 @@ func (n *network) healthCheck() {
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
 			if healthStatus == Unhealthy {
+				// Add the block entry and send metric
+				provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
+				n.sendHealthCheckMetric(provider.host, Unhealthy.String())
+
 				continue // Skip further checks for confirmed unhealthy providers
 			}
-
 		}
 		// Evaluate final health status
 		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus, latestNetworkBlock)
-		provider.healthStatus = newStatus
 
 		// Update metrics and history
 		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
@@ -133,9 +135,6 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 	}
 
 	// Provider has exceeded grace period - mark as unhealthy
-	provider.healthStatus = Unhealthy
-	provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
-	n.sendHealthCheckMetric(provider.host, provider.healthStatus.String())
 	return Unhealthy
 }
 
@@ -155,7 +154,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Track the worst status we find
 	worstStatus := healthStatus
 
-	// if provider has no block history, set it to healthy
+	// if provider has no block history, set it to unhealthy
 	if len(provider.BlockHistory()) == 0 {
 		return Unhealthy
 	}
@@ -185,6 +184,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
+	// TODO: Check to see if a provider is stalled AND Lagged, if they are then set them to WARNING
+	// TODO: If all providers are stalled, but are not lagged, then we would still return traffic and consider them HEALTHY.
 	// Check for stalling - all blocks in history are identical
 	if n.isStalled(provider) {
 		if n.allProvidersStalled() {
@@ -226,10 +227,10 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		quarterBlockHeight := currentBlock.blockNumber / 4
 
 		// convert quarterBlockHeight to hex string
-		quarterBlockHeightHex := fmt.Sprintf("0x%x", quarterBlockHeight)
+		quarterBlockHeightHex := fmt.Sprintf("%#x", quarterBlockHeight)
 
 		// call the network method
-		err := n.testArchiveMode(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
+		err := n.archvieModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
 			return Unhealthy
@@ -286,22 +287,27 @@ func (n *network) getLatestHealthyBlock() int64 {
 			continue
 		}
 
-		lastBlock := history[len(history)-1].blockNumber
-		switch provider.healthStatus {
+		latestBlock := provider.getLatestBlockEntry()
+		if latestBlock == nil {
+			continue
+		}
+		switch latestBlock.statusCode {
 		case Healthy:
-			if lastBlock > latestBlockFromHealthy {
-				latestBlockFromHealthy = lastBlock
+			if latestBlock.blockNumber > latestBlockFromHealthy {
+				latestBlockFromHealthy = latestBlock.blockNumber
 			}
 		case Warning:
-			if lastBlock > latestBlockFromWarning {
-				latestBlockFromWarning = lastBlock
+			if latestBlock.blockNumber > latestBlockFromWarning {
+				latestBlockFromWarning = latestBlock.blockNumber
 			}
 		case Unhealthy:
-			if lastBlock > latestBlockFromUnhealthy {
-				latestBlockFromUnhealthy = lastBlock
+			if latestBlock.blockNumber > latestBlockFromUnhealthy {
+				latestBlockFromUnhealthy = latestBlock.blockNumber
 			}
 		}
 	}
+
+	// TODO: make sure this makes sense for warning and unhealthy.
 
 	// Return highest block number, prioritizing by health status
 	if latestBlockFromHealthy > 0 {
@@ -347,6 +353,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 func (n *network) tryBlockNumberRequestWithTimeout(httpUrl string, headers map[string]string, ac auth.IAuthClient) ([]byte, *int, error) {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
 
+	// TODO: remove redundant retries
 	// Try the request up to 2 times if it times out
 	for retryCount := 0; retryCount < 2; retryCount++ {
 		// Create a channel for the response
@@ -481,7 +488,8 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	return fullChainId, nil
 }
 
-func (n *network) testArchiveMode(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
+// TODO: test for starknet
+func (n *network) archvieModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
 
 	// Send the POST request
