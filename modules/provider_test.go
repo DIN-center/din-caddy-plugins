@@ -306,37 +306,6 @@ func TestAddBlockEntry(t *testing.T) {
 	}
 }
 
-func TestProviderGetChainID(t *testing.T) {
-	tests := []struct {
-		name            string
-		chainId         string
-		expectedChainId string
-	}{
-		{
-			name:            "normal chain ID",
-			chainId:         "1",
-			expectedChainId: "1",
-		},
-		{
-			name:            "empty chain ID",
-			chainId:         "",
-			expectedChainId: "",
-		},
-		{
-			name:            "hex chain ID",
-			chainId:         "0x1",
-			expectedChainId: "0x1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.chainId
-			assert.Equal(t, tt.expectedChainId, result)
-		})
-	}
-}
-
 func TestGetLatestHealthyBlockEntry(t *testing.T) {
 	tests := []struct {
 		name          string
