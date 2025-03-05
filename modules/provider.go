@@ -116,6 +116,11 @@ func (p *provider) BlockHistory() []blockHistoryEntry {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	// Keep this critical nil check
+	if p.blockHistory == nil {
+		return []blockHistoryEntry{}
+	}
+
 	history := make([]blockHistoryEntry, 0, p.blockHistory.Len())
 
 	for e := p.blockHistory.Front(); e != nil; e = e.Next() {
@@ -138,8 +143,20 @@ func (p *provider) BlockHistory() []blockHistoryEntry {
 
 // AddBlockEntry adds a new block entry to the history, maintaining the configured history size
 func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistorySize int) {
+	if p == nil {
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if p.blockHistory == nil {
+		p.blockHistory = list.New()
+		// Exit early if initialization failed
+		if p.blockHistory == nil {
+			return
+		}
+	}
 
 	now := time.Now()
 	entry := blockHistoryEntry{
@@ -147,17 +164,32 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 		healthStatus: status,
 		timestamp:    &now,
 	}
-	p.blockHistory.PushBack(entry)
-	// Trim the list if it exceeds the history size
-	for p.blockHistory.Len() > blockHistorySize {
-		p.blockHistory.Remove(p.blockHistory.Front())
+
+	if p.blockHistory != nil {
+		p.blockHistory.PushBack(entry)
+
+		// Trim the list if it exceeds the history size
+		for p.blockHistory.Len() > blockHistorySize {
+			if p.blockHistory.Front() != nil {
+				p.blockHistory.Remove(p.blockHistory.Front())
+			}
+		}
 	}
 }
 
 func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	// Keep critical nil checks
+	if p.blockHistory == nil {
+		return nil
+	}
+
 	if p.blockHistory.Len() == 0 {
 		return nil
 	}
+
 	// Start from the back (most recent) and find the first healthy entry
 	for e := p.blockHistory.Back(); e != nil; e = e.Prev() {
 		entry := e.Value.(blockHistoryEntry)
@@ -169,9 +201,18 @@ func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
 }
 
 func (p *provider) getLatestBlockEntry() *blockHistoryEntry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	// Keep critical nil checks
+	if p.blockHistory == nil {
+		return nil
+	}
+
 	if p.blockHistory.Len() == 0 {
 		return nil
 	}
+
 	entry := p.blockHistory.Back().Value.(blockHistoryEntry)
 	return &entry
 }

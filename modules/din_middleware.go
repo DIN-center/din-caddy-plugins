@@ -26,6 +26,8 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
+	"container/list"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
@@ -208,6 +210,11 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 	}
 	provider.logger = d.logger
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+
+	// Make sure blockHistory is initialized
+	if provider.blockHistory == nil {
+		provider.blockHistory = list.New()
+	}
 
 	return nil
 }
