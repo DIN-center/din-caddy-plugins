@@ -90,6 +90,7 @@ func (n *network) healthCheck() {
 	latestNetworkBlock := n.getLatestHealthyBlock()
 
 	for _, provider := range n.Providers {
+
 		// Get latest block and initial health status
 		var healthStatus HealthStatus = Healthy
 		blockNum, initialHealth, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
@@ -102,6 +103,7 @@ func (n *network) healthCheck() {
 
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
+
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
 				provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
