@@ -2,11 +2,11 @@ package modules
 
 import (
 	"container/list"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -62,18 +62,34 @@ func TestNewProvider(t *testing.T) {
 			p, err := NewProvider(tt.urlStr)
 
 			if tt.expectError {
-				assert.Error(t, err)
-				assert.Nil(t, p)
-				if tt.errorMessage != "" {
-					assert.Contains(t, err.Error(), tt.errorMessage)
+				if err == nil {
+					t.Errorf("expected error, but got nil")
+				}
+				if p != nil {
+					t.Errorf("expected nil provider, but got %v", p)
+				}
+				if tt.errorMessage != "" && (err == nil || !reflect.DeepEqual(err.Error(), tt.errorMessage)) {
+					t.Errorf("expected error message %q, but got %q", tt.errorMessage, err.Error())
 				}
 			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, p)
-				assert.Equal(t, tt.expectedURL, p.HttpUrl)
-				assert.Equal(t, tt.expectedHost, p.host)
-				assert.NotNil(t, p.Headers)
-				assert.Empty(t, p.Headers)
+				if err != nil {
+					t.Errorf("expected no error, but got %v", err)
+				}
+				if p == nil {
+					t.Errorf("expected non-nil provider, but got nil")
+				}
+				if p != nil && p.HttpUrl != tt.expectedURL {
+					t.Errorf("expected URL %q, but got %q", tt.expectedURL, p.HttpUrl)
+				}
+				if p != nil && p.host != tt.expectedHost {
+					t.Errorf("expected host %q, but got %q", tt.expectedHost, p.host)
+				}
+				if p != nil && p.Headers == nil {
+					t.Errorf("expected non-nil headers, but got nil")
+				}
+				if p != nil && len(p.Headers) != 0 {
+					t.Errorf("expected empty headers, but got %v", p.Headers)
+				}
 			}
 		})
 	}
@@ -104,10 +120,11 @@ func TestAuthClient(t *testing.T) {
 			}
 
 			result := p.AuthClient()
-			if tt.expectedResult {
-				assert.NotNil(t, result)
-			} else {
-				assert.Nil(t, result)
+			if tt.expectedResult && result == nil {
+				t.Errorf("expected non-nil result, but got nil")
+			}
+			if !tt.expectedResult && result != nil {
+				t.Errorf("expected nil result, but got %v", result)
 			}
 		})
 	}
@@ -146,7 +163,9 @@ func TestHealthy(t *testing.T) {
 			p.blockHistory.PushBack(entry)
 
 			result := p.Healthy()
-			assert.Equal(t, tt.expectedResult, result)
+			if result != tt.expectedResult {
+				t.Errorf("expected result %v, but got %v", tt.expectedResult, result)
+			}
 		})
 	}
 }
@@ -184,60 +203,8 @@ func TestWarning(t *testing.T) {
 			p.blockHistory.PushBack(entry)
 
 			result := p.Warning()
-			assert.Equal(t, tt.expectedResult, result)
-		})
-	}
-}
-
-func TestBlockHistory(t *testing.T) {
-	now := time.Now()
-	tests := []struct {
-		name         string
-		setupHistory func() *list.List
-		expected     int
-	}{
-		{
-			name: "normal history",
-			setupHistory: func() *list.List {
-				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Healthy, timestamp: &now})
-				return l
-			},
-			expected: 2,
-		},
-		{
-			name: "empty history",
-			setupHistory: func() *list.List {
-				return list.New()
-			},
-			expected: 0,
-		},
-		{
-			name: "single entry",
-			setupHistory: func() *list.List {
-				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
-				return l
-			},
-			expected: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &provider{
-				blockHistory: tt.setupHistory(),
-			}
-
-			result := p.BlockHistory()
-			assert.Equal(t, tt.expected, len(result))
-
-			// Verify it's a copy, not the original slice
-			if len(result) > 0 {
-				// Get the first element from the list
-				firstElement := p.blockHistory.Front().Value.(blockHistoryEntry)
-				assert.NotEqual(t, result[0].blockNumber, firstElement.blockNumber)
+			if result != tt.expectedResult {
+				t.Errorf("expected result %v, but got %v", tt.expectedResult, result)
 			}
 		})
 	}
@@ -308,12 +275,20 @@ func TestAddBlockEntry(t *testing.T) {
 			p.AddBlockEntry(tt.newBlock, tt.newStatus, tt.historySize)
 
 			result := p.BlockHistory()
-			assert.Equal(t, tt.expectedLength, len(result))
+			if len(result) != tt.expectedLength {
+				t.Errorf("expected length %v, but got %v", tt.expectedLength, len(result))
+			}
 
 			if len(result) > 0 {
-				assert.Equal(t, tt.expectedFirst, result[0].blockNumber)
-				assert.Equal(t, tt.expectedLast, result[len(result)-1].blockNumber)
-				assert.NotNil(t, result[len(result)-1].timestamp)
+				if result[0].blockNumber != tt.expectedFirst {
+					t.Errorf("expected first block number %v, but got %v", tt.expectedFirst, result[0].blockNumber)
+				}
+				if result[len(result)-1].blockNumber != tt.expectedLast {
+					t.Errorf("expected last block number %v, but got %v", tt.expectedLast, result[len(result)-1].blockNumber)
+				}
+				if result[len(result)-1].timestamp == nil {
+					t.Errorf("expected non-nil timestamp, but got nil")
+				}
 			}
 		})
 	}
@@ -414,6 +389,196 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			if got.healthStatus != tt.expectedBlock.healthStatus {
 				t.Errorf("getLatestHealthyBlockEntry() healthStatus = %v, want %v",
 					got.healthStatus, tt.expectedBlock.healthStatus)
+			}
+		})
+	}
+}
+
+func TestProviderBlockHistory(t *testing.T) {
+	// Helper function to create a time pointer
+	timePtr := func(t time.Time) *time.Time {
+		return &t
+	}
+
+	now := time.Now()
+	pastTime1 := now.Add(-1 * time.Hour)
+	pastTime2 := now.Add(-2 * time.Hour)
+	pastTime3 := now.Add(-3 * time.Hour)
+
+	tests := []struct {
+		name          string
+		blockHistory  func() *list.List
+		expectedItems []blockHistoryEntry
+	}{
+		{
+			name: "Empty history",
+			blockHistory: func() *list.List {
+				return list.New()
+			},
+			expectedItems: []blockHistoryEntry{},
+		},
+		{
+			name: "Single entry with timestamp",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(now),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(now),
+				},
+			},
+		},
+		{
+			name: "Single entry without timestamp",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  200,
+					healthStatus: Unhealthy,
+					timestamp:    nil,
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  200,
+					healthStatus: Unhealthy,
+					timestamp:    nil,
+				},
+			},
+		},
+		{
+			name: "Multiple entries with mixed timestamps",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  101,
+					healthStatus: Warning,
+					timestamp:    nil,
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  102,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				},
+				{
+					blockNumber:  101,
+					healthStatus: Warning,
+					timestamp:    nil,
+				},
+				{
+					blockNumber:  102,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				},
+			},
+		},
+		{
+			name: "Multiple entries with various health statuses",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  200,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  201,
+					healthStatus: Warning,
+					timestamp:    timePtr(pastTime2),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  202,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  200,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				},
+				{
+					blockNumber:  201,
+					healthStatus: Warning,
+					timestamp:    timePtr(pastTime2),
+				},
+				{
+					blockNumber:  202,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				blockHistory: tt.blockHistory(),
+			}
+
+			history := p.BlockHistory()
+
+			// Check if the length matches
+			if len(history) != len(tt.expectedItems) {
+				t.Errorf("BlockHistory() returned %d items, expected %d", len(history), len(tt.expectedItems))
+				return
+			}
+
+			// Check each item
+			for i, expected := range tt.expectedItems {
+				got := history[i]
+
+				// Check block number
+				if got.blockNumber != expected.blockNumber {
+					t.Errorf("BlockHistory()[%d].blockNumber = %d, expected %d", i, got.blockNumber, expected.blockNumber)
+				}
+
+				// Check health status
+				if got.healthStatus != expected.healthStatus {
+					t.Errorf("BlockHistory()[%d].healthStatus = %v, expected %v", i, got.healthStatus, expected.healthStatus)
+				}
+
+				// Check timestamp
+				if (expected.timestamp == nil && got.timestamp != nil) ||
+					(expected.timestamp != nil && got.timestamp == nil) {
+					t.Errorf("BlockHistory()[%d].timestamp nil status doesn't match: got %v, expected %v",
+						i, got.timestamp != nil, expected.timestamp != nil)
+				} else if expected.timestamp != nil && got.timestamp != nil {
+					if !expected.timestamp.Equal(*got.timestamp) {
+						t.Errorf("BlockHistory()[%d].timestamp = %v, expected %v",
+							i, *got.timestamp, *expected.timestamp)
+					}
+
+					// Verify deep copy by checking the pointer addresses are different
+					if reflect.ValueOf(got.timestamp).Pointer() == reflect.ValueOf(expected.timestamp).Pointer() {
+						t.Errorf("BlockHistory()[%d].timestamp is not a deep copy, got same pointer", i)
+					}
+				}
 			}
 		})
 	}

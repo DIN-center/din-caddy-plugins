@@ -115,10 +115,24 @@ func (p *provider) Warning() bool {
 func (p *provider) BlockHistory() []blockHistoryEntry {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
 	history := make([]blockHistoryEntry, 0, p.blockHistory.Len())
+
 	for e := p.blockHistory.Front(); e != nil; e = e.Next() {
-		history = append(history, e.Value.(blockHistoryEntry))
+		entry := e.Value.(blockHistoryEntry)
+		// Create a deep copy of the entry
+		entryCopy := blockHistoryEntry{
+			blockNumber:  entry.blockNumber,
+			healthStatus: entry.healthStatus,
+		}
+		// Only copy the timestamp if it's not nil
+		if entry.timestamp != nil {
+			timeCopy := *entry.timestamp
+			entryCopy.timestamp = &timeCopy
+		}
+		history = append(history, entryCopy)
 	}
+
 	return history
 }
 
