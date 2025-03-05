@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"net/url"
 	"sync"
 	"time"
@@ -29,7 +30,7 @@ type provider struct {
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
 	consecutiveUnhealthyChecks int
-	blockHistory               []blockHistoryEntry
+	blockHistory               *list.List
 	mu                         sync.RWMutex
 }
 
@@ -59,9 +60,10 @@ func NewProvider(urlStr string) (*provider, error) {
 	}
 
 	p := &provider{
-		HttpUrl: urlStr,
-		host:    url.Host,
-		Headers: make(map[string]string),
+		HttpUrl:      urlStr,
+		host:         url.Host,
+		Headers:      make(map[string]string),
+		blockHistory: list.New(),
 	}
 	return p, nil
 }
@@ -113,8 +115,10 @@ func (p *provider) Warning() bool {
 func (p *provider) BlockHistory() []blockHistoryEntry {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	history := make([]blockHistoryEntry, len(p.blockHistory))
-	copy(history, p.blockHistory)
+	history := make([]blockHistoryEntry, 0, p.blockHistory.Len())
+	for e := p.blockHistory.Front(); e != nil; e = e.Next() {
+		history = append(history, e.Value.(blockHistoryEntry))
+	}
 	return history
 }
 
@@ -129,27 +133,31 @@ func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistoryS
 		healthStatus: status,
 		timestamp:    &now,
 	}
-	p.blockHistory = append(p.blockHistory, entry)
-	if len(p.blockHistory) > blockHistorySize {
-		p.blockHistory = p.blockHistory[1:]
+	p.blockHistory.PushBack(entry)
+	// Trim the list if it exceeds the history size
+	for p.blockHistory.Len() > blockHistorySize {
+		p.blockHistory.Remove(p.blockHistory.Front())
 	}
 }
 
 func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
-	if len(p.blockHistory) == 0 {
+	if p.blockHistory.Len() == 0 {
 		return nil
 	}
-	for i := len(p.blockHistory) - 1; i >= 0; i-- {
-		if p.blockHistory[i].healthStatus == Healthy {
-			return &p.blockHistory[i]
+	// Start from the back (most recent) and find the first healthy entry
+	for e := p.blockHistory.Back(); e != nil; e = e.Prev() {
+		entry := e.Value.(blockHistoryEntry)
+		if entry.healthStatus == Healthy {
+			return &entry
 		}
 	}
 	return nil
 }
 
 func (p *provider) getLatestBlockEntry() *blockHistoryEntry {
-	if len(p.blockHistory) == 0 {
+	if p.blockHistory.Len() == 0 {
 		return nil
 	}
-	return &p.blockHistory[len(p.blockHistory)-1]
+	entry := p.blockHistory.Back().Value.(blockHistoryEntry)
+	return &entry
 }

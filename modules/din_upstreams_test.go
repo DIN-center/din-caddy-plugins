@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"context"
 	"net/http"
 	reflect "reflect"
@@ -61,16 +62,20 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 0,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, healthStatus: Healthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 0,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, healthStatus: Healthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -82,16 +87,20 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 0,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, healthStatus: Healthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 0,
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 100, healthStatus: Healthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -101,14 +110,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -118,14 +135,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -135,14 +160,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -152,14 +185,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     1,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream1,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -169,14 +210,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -186,14 +235,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream2},
@@ -203,14 +260,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{},

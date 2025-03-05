@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"testing"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -121,37 +122,52 @@ func TestVerifyChainID(t *testing.T) {
 func TestIsStalled(t *testing.T) {
 	tests := []struct {
 		name         string
-		blockHistory []blockHistoryEntry
 		historySize  int
+		blockHistory []blockHistoryEntry
 		expected     bool
 	}{
 		{
-			name: "not enough history",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100},
-			},
-			historySize: 2,
-			expected:    false,
+			name:         "empty history",
+			historySize:  3,
+			blockHistory: []blockHistoryEntry{},
+			expected:     false,
 		},
 		{
-			name: "stalled blocks",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100},
-				{blockNumber: 100},
-				{blockNumber: 100},
-			},
+			name:        "single entry",
 			historySize: 3,
-			expected:    true,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+			},
+			expected: false,
 		},
 		{
-			name: "progressing blocks",
-			blockHistory: []blockHistoryEntry{
-				{blockNumber: 100},
-				{blockNumber: 101},
-				{blockNumber: 102},
-			},
+			name:        "multiple entries, not stalled",
 			historySize: 3,
-			expected:    false,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 101, healthStatus: Healthy},
+				{blockNumber: 102, healthStatus: Healthy},
+			},
+			expected: false,
+		},
+		{
+			name:        "multiple entries, stalled",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
+			},
+			expected: true,
+		},
+		{
+			name:        "not enough history",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
+			},
+			expected: false,
 		},
 	}
 
@@ -160,7 +176,13 @@ func TestIsStalled(t *testing.T) {
 			n := NewNetwork("test")
 			n.BlockHistorySize = tt.historySize
 
-			p := &provider{blockHistory: tt.blockHistory}
+			p := &provider{blockHistory: func() *list.List {
+				l := list.New()
+				for _, entry := range tt.blockHistory {
+					l.PushBack(entry)
+				}
+				return l
+			}()}
 
 			result := n.isStalled(p)
 			assert.Equal(t, tt.expected, result)
@@ -178,10 +200,18 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "healthy provider has highest block",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 90, healthStatus: Healthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			expected: 100,
@@ -190,10 +220,18 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "warning provider used when no healthy",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 110, healthStatus: Warning}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			expected: 110,
@@ -202,7 +240,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "empty history returns 0",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{},
+					blockHistory: list.New(),
 				},
 			},
 			expected: 0,
@@ -211,10 +249,18 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "healthy provider preferred over higher warning block",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 150, healthStatus: Warning}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 150, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			expected: 100,
@@ -223,10 +269,18 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "warning provider preferred over higher unhealthy block",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Warning}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 150, healthStatus: Unhealthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 150, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			expected: 100,
@@ -235,22 +289,28 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "mixed health statuses with multiple entries",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 99, healthStatus: Healthy},
-						{blockNumber: 100, healthStatus: Healthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 99, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 110, healthStatus: Warning},
-						{blockNumber: 109, healthStatus: Warning},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 109, healthStatus: Warning})
+						return l
+					}(),
 				},
 				"p3": {
-					blockHistory: []blockHistoryEntry{
-						{blockNumber: 120, healthStatus: Unhealthy},
-						{blockNumber: 119, healthStatus: Unhealthy},
-					},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 120, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 119, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			expected: 100,
@@ -259,10 +319,10 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "no providers with block history",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{},
+					blockHistory: list.New(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{},
+					blockHistory: list.New(),
 				},
 			},
 			expected: 0,
@@ -271,10 +331,18 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			name: "only unhealthy providers with blocks",
 			providers: map[string]*provider{
 				"p1": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Unhealthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 				"p2": {
-					blockHistory: []blockHistoryEntry{{blockNumber: 110, healthStatus: Unhealthy}},
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			expected: 0,

@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"net/http"
@@ -79,7 +80,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+							blockHistory: func() *list.List {
+								l := list.New()
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								return l
+							}(),
 						},
 					},
 					MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
@@ -96,7 +101,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							blockHistory: []blockHistoryEntry{{blockNumber: 100, healthStatus: Healthy}},
+							blockHistory: func() *list.List {
+								l := list.New()
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								return l
+							}(),
 						},
 					},
 					MaxRequestPayloadSizeKB: 0,
