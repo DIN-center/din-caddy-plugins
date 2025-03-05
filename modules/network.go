@@ -192,27 +192,25 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	isStalled := n.isStalled(provider)
 	allStalled := n.allProvidersStalled()
 
-	// 1. If a provider is stalled AND lagged, set to WARNING
-	// 2. If all providers are stalled but not lagged, consider them HEALTHY
-	if isStalled {
-		if isStalled && isLagged {
-			// Provider is both stalled and lagged - set to WARNING
-			n.logProviderWarning("Provider is stalled and lagged", provider,
-				zap.Int64("block_lag", blockLag),
-				zap.Int64("provider_block", currentBlock),
-				zap.Int64("network_block", latestNetworkBlock))
-			if Warning > worstStatus {
-				worstStatus = Warning
-			}
-		} else if allStalled {
-			// All providers are stalled - likely a network outage, don't change status
-			// This is set to healthy because we want to return traffic as it is in the case of a network outage
-			n.logProviderWarning("All providers are stalled", provider)
-		} else {
-			// This provider is stalled while others are progressing - provider outage
-			n.logProviderWarning("Provider is stalled while others are progressing", provider)
-			return Unhealthy // Stalling when others aren't is always Unhealthy
+	if isLagged {
+		// Provider is lagging behind
+		n.logProviderWarning("Provider is lagging behind network", provider,
+			zap.Int64("block_lag", blockLag),
+			zap.Int64("provider_block", currentBlock),
+			zap.Int64("network_block", latestNetworkBlock))
+		if Warning > worstStatus {
+			worstStatus = Warning
 		}
+
+		if isStalled {
+			// Provider is both stalled and lagged - more serious issue
+			n.logProviderWarning("Provider is stalled and lagged", provider)
+			return Unhealthy
+		}
+	} else if isStalled && !allStalled {
+		// Edge case: Provider is stalled but not yet lagged, while others are making progress
+		n.logProviderWarning("Provider is stalled while others are progressing", provider)
+		return Unhealthy
 	}
 
 	// chainId check health check

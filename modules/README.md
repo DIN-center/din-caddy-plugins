@@ -92,33 +92,31 @@ Providers that report blocks too far ahead of the network are marked as unhealth
 ### Stalled Provider Detection
 
 ```go
-isStalled := n.isStalled(provider)
-allStalled := n.allProvidersStalled()
-
-if isStalled {
-    if isStalled && isLagged {
-        // Provider is both stalled and lagged - set to WARNING
-        n.logProviderWarning("Provider is stalled and lagged", provider,
-            zap.Int64("block_lag", blockLag),
-            zap.Int64("provider_block", currentBlock),
-            zap.Int64("network_block", latestNetworkBlock))
-        if Warning > worstStatus {
-            worstStatus = Warning
-        }
-    } else if allStalled {
-        // All providers are stalled - likely a network outage, don't change status
-        // This is set to healthy because we want to return traffic as it is in the case of a network outage
-        n.logProviderWarning("All providers are stalled", provider)
-    } else {
-        // This provider is stalled while others are progressing - provider outage
-        n.logProviderWarning("Provider is stalled while others are progressing", provider)
-        return Unhealthy // Stalling when others aren't is always Unhealthy
+if isLagged {
+    // Provider is lagging behind
+    n.logProviderWarning("Provider is lagging behind network", provider,
+        zap.Int64("block_lag", blockLag),
+        zap.Int64("provider_block", currentBlock),
+        zap.Int64("network_block", latestNetworkBlock))
+    if Warning > worstStatus {
+        worstStatus = Warning
     }
+    
+    if isStalled {
+        // Provider is both stalled and lagged - more serious issue
+        n.logProviderWarning("Provider is stalled and lagged", provider)
+        return Unhealthy
+    }
+} else if isStalled && !allStalled {
+    // Edge case: Provider is stalled but not yet lagged, while others are making progress
+    n.logProviderWarning("Provider is stalled while others are progressing", provider)
+    return Unhealthy
 }
 ```
 
 The system intelligently handles stalled providers:
-- If a provider is both stalled and lagged, it's marked with a warning
+- If a provider is both stalled and lagged, it's marked as unhealthy (serious issue)
+- If a provider is lagged but not stalled, it's marked with a warning
 - If all providers are stalled (indicating a network outage), they remain available
 - If a provider is stalled while others are progressing, it's marked as unhealthy
 
