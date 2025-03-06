@@ -190,10 +190,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
-	// Check for stalling
-	isStalled := n.isStalled(provider)
-	allStalled := n.allProvidersStalled()
-
 	if isLagged {
 		// Provider is lagging behind
 		n.logProviderWarning("Provider is lagging behind network", provider,
@@ -204,12 +200,13 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 			worstStatus = Warning
 		}
 
+		isStalled := n.isStalled(provider)
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
 			n.logProviderWarning("Provider is stalled and lagged", provider)
 			return Unhealthy
 		}
-	} else if isStalled && !allStalled {
+	} else if n.isStalled(provider) && !n.allProvidersStalled() {
 		// Edge case: Provider is stalled but not yet lagged, while others are making progress
 		n.logProviderWarning("Provider is stalled while others are progressing", provider)
 		return Unhealthy
