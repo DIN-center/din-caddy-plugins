@@ -209,7 +209,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	} else if n.isStalled(provider) && !n.allProvidersStalled() {
 		// Edge case: Provider is stalled but not yet lagged, while others are making progress
 		n.logProviderWarning("Provider is stalled while others are progressing", provider)
-		return Unhealthy
+		return Warning
 	}
 
 	// chainId check health check
