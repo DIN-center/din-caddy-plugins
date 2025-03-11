@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -78,7 +79,7 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	if _, ok := d.Whitelist[crypto.PubkeyToAddress(*publicKey).String()]; !ok {
+	if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
 		err := errors.New("unauthorized signer")
 		handleError(err, rw, 401)
 		return err
@@ -155,7 +156,7 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 			switch dispenser.Val() {
 			case "whitelist":
 				for _, v := range dispenser.RemainingArgs() {
-					d.Whitelist[v] = struct{}{}
+					d.Whitelist[strings.ToLower(v)] = struct{}{}
 				}
 			case "secret":
 				dispenser.NextBlock(0)
