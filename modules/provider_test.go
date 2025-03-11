@@ -1,339 +1,584 @@
 package modules
 
 import (
+	"container/list"
+	"reflect"
 	"testing"
+	"time"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
 func TestNewProvider(t *testing.T) {
 	tests := []struct {
-		name   string
-		urlstr string
-		output *provider
-		hasErr bool
+		name         string
+		urlStr       string
+		expectError  bool
+		expectedURL  string
+		expectedHost string
+		errorMessage string
 	}{
 		{
-			name:   "passing localhost",
-			urlstr: "http://localhost:8080",
-			output: &provider{
-				HttpUrl:  "http://localhost:8080",
-				host:     "localhost:8080",
-				path:     "",
-				Headers:  make(map[string]string),
-				Priority: 0,
-			},
-			hasErr: false,
+			name:         "valid http url",
+			urlStr:       "http://example.com",
+			expectError:  false,
+			expectedURL:  "http://example.com",
+			expectedHost: "example.com",
 		},
 		{
-			name:   "passing fullurl with key",
-			urlstr: "https://eth.rpc.test.cloud:443/key",
-			output: &provider{
-				HttpUrl:  "https://eth.rpc.test.cloud:443/key",
-				host:     "eth.rpc.test.cloud:443",
-				Headers:  make(map[string]string),
-				Priority: 0,
-			},
-			hasErr: false,
+			name:         "valid https url with port",
+			urlStr:       "https://example.com:8545",
+			expectError:  false,
+			expectedURL:  "https://example.com:8545",
+			expectedHost: "example.com:8545",
+		},
+		{
+			name:         "invalid url",
+			urlStr:       "not-a-url",
+			expectError:  true,
+			errorMessage: "invalid URL: missing host",
+		},
+		{
+			name:         "empty url",
+			urlStr:       "",
+			expectError:  true,
+			errorMessage: "empty URL",
+		},
+		{
+			name:         "missing scheme",
+			urlStr:       "example.com",
+			expectError:  true,
+			errorMessage: "invalid URL: missing host",
+		},
+		{
+			name:        "empty url",
+			urlStr:      "",
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := NewProvider(tt.urlstr)
-			if err != nil && !tt.hasErr {
-				t.Errorf("urlToProviderObject() = %v, want %v", err, tt.hasErr)
-			}
-			if provider.HttpUrl != tt.output.HttpUrl {
-				t.Errorf("HttpUrl = %v, want %v", provider.HttpUrl, tt.output.HttpUrl)
-			}
-			if provider.host != tt.output.host {
-				t.Errorf("host = %v, want %v", provider.host, tt.output.host)
-			}
-			if provider.path != tt.output.path {
-				t.Errorf("path = %v, want %v", provider.path, tt.output.path)
-			}
-			if len(provider.Headers) != len(tt.output.Headers) {
-				t.Errorf("Headers length = %v, want %v", len(provider.Headers), len(tt.output.Headers))
-			}
-			if provider.Priority != tt.output.Priority {
-				t.Errorf("priority = %v, want %v", provider.Priority, tt.output.Priority)
+			p, err := NewProvider(tt.urlStr)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error, but got nil")
+				}
+				if p != nil {
+					t.Errorf("expected nil provider, but got %v", p)
+				}
+				if tt.errorMessage != "" && (err == nil || !reflect.DeepEqual(err.Error(), tt.errorMessage)) {
+					t.Errorf("expected error message %q, but got %q", tt.errorMessage, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, but got %v", err)
+				}
+				if p == nil {
+					t.Errorf("expected non-nil provider, but got nil")
+				}
+				if p != nil && p.HttpUrl != tt.expectedURL {
+					t.Errorf("expected URL %q, but got %q", tt.expectedURL, p.HttpUrl)
+				}
+				if p != nil && p.host != tt.expectedHost {
+					t.Errorf("expected host %q, but got %q", tt.expectedHost, p.host)
+				}
+				if p != nil && p.Headers == nil {
+					t.Errorf("expected non-nil headers, but got nil")
+				}
+				if p != nil && len(p.Headers) != 0 {
+					t.Errorf("expected empty headers, but got %v", p.Headers)
+				}
 			}
 		})
 	}
 }
 
-func TestAvailable(t *testing.T) {
+func TestAuthClient(t *testing.T) {
 	tests := []struct {
-		name     string
-		provider *provider
-		output   bool
+		name           string
+		auth           *siwe.SIWEClientAuth
+		expectedResult bool
 	}{
 		{
-			name: "Available with healthy upstream",
-			provider: &provider{
-				healthStatus: Healthy,
-				upstream: &reverseproxy.Upstream{
-					Dial: "localhost:8080",
+			name:           "auth client configured",
+			auth:           &siwe.SIWEClientAuth{},
+			expectedResult: true,
+		},
+		{
+			name:           "no auth client",
+			auth:           nil,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				Auth: tt.auth,
+			}
+
+			result := p.AuthClient()
+			if tt.expectedResult && result == nil {
+				t.Errorf("expected non-nil result, but got nil")
+			}
+			if !tt.expectedResult && result != nil {
+				t.Errorf("expected nil result, but got %v", result)
+			}
+		})
+	}
+}
+
+func TestHealthy(t *testing.T) {
+	tests := []struct {
+		name           string
+		healthStatus   HealthStatus
+		expectedResult bool
+	}{
+		{
+			name:           "healthy status",
+			healthStatus:   Healthy,
+			expectedResult: true,
+		},
+		{
+			name:           "warning status",
+			healthStatus:   Warning,
+			expectedResult: false,
+		},
+		{
+			name:           "unhealthy status",
+			healthStatus:   Unhealthy,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			p := &provider{
+				blockHistory: list.New(),
+			}
+			entry := blockHistoryEntry{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now}
+			p.blockHistory.PushBack(entry)
+
+			result := p.Healthy()
+			if result != tt.expectedResult {
+				t.Errorf("expected result %v, but got %v", tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestWarning(t *testing.T) {
+	tests := []struct {
+		name           string
+		healthStatus   HealthStatus
+		expectedResult bool
+	}{
+		{
+			name:           "warning status",
+			healthStatus:   Warning,
+			expectedResult: true,
+		},
+		{
+			name:           "healthy status",
+			healthStatus:   Healthy,
+			expectedResult: false,
+		},
+		{
+			name:           "unhealthy status",
+			healthStatus:   Unhealthy,
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			p := &provider{
+				blockHistory: list.New(),
+			}
+			entry := blockHistoryEntry{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now}
+			p.blockHistory.PushBack(entry)
+
+			result := p.Warning()
+			if result != tt.expectedResult {
+				t.Errorf("expected result %v, but got %v", tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestAddBlockEntry(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name           string
+		setupHistory   func() *list.List
+		newBlock       int64
+		newStatus      HealthStatus
+		historySize    int
+		expectedLength int
+		expectedFirst  int64
+		expectedLast   int64
+	}{
+		{
+			name: "add to empty history",
+			setupHistory: func() *list.List {
+				return list.New()
+			},
+			newBlock:       100,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 1,
+			expectedFirst:  100,
+			expectedLast:   100,
+		},
+		{
+			name: "add within size limit",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
+				return l
+			},
+			newBlock:       101,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 2,
+			expectedFirst:  100,
+			expectedLast:   101,
+		},
+		{
+			name: "exceed size limit",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy, timestamp: &now})
+				return l
+			},
+			newBlock:       103,
+			newStatus:      Healthy,
+			historySize:    3,
+			expectedLength: 3,
+			expectedFirst:  101,
+			expectedLast:   103,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				blockHistory: tt.setupHistory(),
+			}
+
+			p.AddBlockEntry(tt.newBlock, tt.newStatus, tt.historySize)
+
+			result := p.BlockHistory()
+			if len(result) != tt.expectedLength {
+				t.Errorf("expected length %v, but got %v", tt.expectedLength, len(result))
+			}
+
+			if len(result) > 0 {
+				if result[0].blockNumber != tt.expectedFirst {
+					t.Errorf("expected first block number %v, but got %v", tt.expectedFirst, result[0].blockNumber)
+				}
+				if result[len(result)-1].blockNumber != tt.expectedLast {
+					t.Errorf("expected last block number %v, but got %v", tt.expectedLast, result[len(result)-1].blockNumber)
+				}
+				if result[len(result)-1].timestamp == nil {
+					t.Errorf("expected non-nil timestamp, but got nil")
+				}
+			}
+		})
+	}
+}
+
+func TestGetLatestHealthyBlockEntry(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupHistory  func() *list.List
+		expectedBlock *blockHistoryEntry
+	}{
+		{
+			name: "empty history returns nil",
+			setupHistory: func() *list.List {
+				return list.New()
+			},
+			expectedBlock: nil,
+		},
+		{
+			name: "single healthy entry returns that entry",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+				return l
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 100, healthStatus: Healthy},
+		},
+		{
+			name: "single unhealthy entry returns nil",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+				return l
+			},
+			expectedBlock: nil,
+		},
+		{
+			name: "multiple entries returns latest healthy",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 103, healthStatus: Unhealthy})
+				return l
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+		},
+		{
+			name: "all unhealthy entries returns nil",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Unhealthy})
+				return l
+			},
+			expectedBlock: nil,
+		},
+		{
+			name: "latest entry is healthy returns that entry",
+			setupHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
+				return l
+			},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &provider{
+				blockHistory: tt.setupHistory(),
+			}
+
+			got := p.getLatestHealthyBlockEntry()
+
+			if tt.expectedBlock == nil {
+				if got != nil {
+					t.Errorf("getLatestHealthyBlockEntry() = %v, want nil", got)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Errorf("getLatestHealthyBlockEntry() = nil, want %v", tt.expectedBlock)
+				return
+			}
+
+			if got.blockNumber != tt.expectedBlock.blockNumber {
+				t.Errorf("getLatestHealthyBlockEntry() blockNumber = %v, want %v",
+					got.blockNumber, tt.expectedBlock.blockNumber)
+			}
+
+			if got.healthStatus != tt.expectedBlock.healthStatus {
+				t.Errorf("getLatestHealthyBlockEntry() healthStatus = %v, want %v",
+					got.healthStatus, tt.expectedBlock.healthStatus)
+			}
+		})
+	}
+}
+
+func TestProviderBlockHistory(t *testing.T) {
+	// Helper function to create a time pointer
+	timePtr := func(t time.Time) *time.Time {
+		return &t
+	}
+
+	now := time.Now()
+	pastTime1 := now.Add(-1 * time.Hour)
+	pastTime2 := now.Add(-2 * time.Hour)
+	pastTime3 := now.Add(-3 * time.Hour)
+
+	tests := []struct {
+		name          string
+		blockHistory  func() *list.List
+		expectedItems []blockHistoryEntry
+	}{
+		{
+			name: "Empty history",
+			blockHistory: func() *list.List {
+				return list.New()
+			},
+			expectedItems: []blockHistoryEntry{},
+		},
+		{
+			name: "Single entry with timestamp",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(now),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(now),
 				},
 			},
-			output: true,
 		},
 		{
-			name: "Available with unhealthy upstream",
-			provider: &provider{
-				healthStatus: Unhealthy,
-				upstream: &reverseproxy.Upstream{
-					Dial: "localhost:8080",
+			name: "Single entry without timestamp",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  200,
+					healthStatus: Unhealthy,
+					timestamp:    nil,
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  200,
+					healthStatus: Unhealthy,
+					timestamp:    nil,
 				},
 			},
-			output: false,
+		},
+		{
+			name: "Multiple entries with mixed timestamps",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  101,
+					healthStatus: Warning,
+					timestamp:    nil,
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  102,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  100,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				},
+				{
+					blockNumber:  101,
+					healthStatus: Warning,
+					timestamp:    nil,
+				},
+				{
+					blockNumber:  102,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				},
+			},
+		},
+		{
+			name: "Multiple entries with various health statuses",
+			blockHistory: func() *list.List {
+				l := list.New()
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  200,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  201,
+					healthStatus: Warning,
+					timestamp:    timePtr(pastTime2),
+				})
+				l.PushBack(blockHistoryEntry{
+					blockNumber:  202,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				})
+				return l
+			},
+			expectedItems: []blockHistoryEntry{
+				{
+					blockNumber:  200,
+					healthStatus: Healthy,
+					timestamp:    timePtr(pastTime3),
+				},
+				{
+					blockNumber:  201,
+					healthStatus: Warning,
+					timestamp:    timePtr(pastTime2),
+				},
+				{
+					blockNumber:  202,
+					healthStatus: Unhealthy,
+					timestamp:    timePtr(pastTime1),
+				},
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.provider.Available() != tt.output {
-				t.Errorf("Available() = %v, want %v", tt.provider.Available(), tt.output)
+			p := &provider{
+				blockHistory: tt.blockHistory(),
 			}
-		})
-	}
-}
 
-func TestMarkPingFailure(t *testing.T) {
-	tests := []struct {
-		name     string
-		hcThresh int
-		provider *provider
-		output   HealthStatus
-	}{
-		{
-			name: "markPingFailure with 0 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Healthy,
-			},
-			hcThresh: 0,
-			output:   Unhealthy,
-		},
-		{
-			name: "markPingFailure with 1 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Healthy,
-			},
-			hcThresh: 1,
-			output:   Healthy,
-		},
-	}
+			history := p.BlockHistory()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markPingFailure(tt.hcThresh)
-			if tt.provider.healthStatus != tt.output {
-				t.Errorf("markPingFailure() = %v, want %v", tt.provider.healthStatus, tt.output)
+			// Check if the length matches
+			if len(history) != len(tt.expectedItems) {
+				t.Errorf("BlockHistory() returned %d items, expected %d", len(history), len(tt.expectedItems))
+				return
 			}
-		})
-	}
-}
 
-func TestMarkPingSuccess(t *testing.T) {
-	tests := []struct {
-		name     string
-		hcThresh int
-		provider *provider
-		output   HealthStatus
-	}{
-		{
-			name: "markPingSuccess with 0 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Unhealthy,
-			},
-			hcThresh: 0,
-			output:   Healthy,
-		},
-		{
-			name: "markPingSuccess with 1 threshold",
-			provider: &provider{
-				failures:     0,
-				successes:    0,
-				healthStatus: Unhealthy,
-			},
-			hcThresh: 1,
-			output:   Unhealthy,
-		},
-	}
+			// Check each item
+			for i, expected := range tt.expectedItems {
+				got := history[i]
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markPingSuccess(tt.hcThresh)
-			if tt.provider.healthStatus != tt.output {
-				t.Errorf("markPingSuccess() = %v, want %v", tt.provider.healthStatus, tt.output)
-			}
-		})
-	}
-}
+				// Check block number
+				if got.blockNumber != expected.blockNumber {
+					t.Errorf("BlockHistory()[%d].blockNumber = %d, expected %d", i, got.blockNumber, expected.blockNumber)
+				}
 
-func TestMarkHealthy(t *testing.T) {
-	tests := []struct {
-		name                  string
-		hcThresh              int
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
-	}{
-		{
-			name: "markHealthy when already healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markHealthy when unhealthy - not enough consecutive checks",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 2,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 3,
-		},
-		{
-			name: "markHealthy when unhealthy - threshold reached",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 3,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markHealthy when warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 2,
-			},
-			hcThresh:              3,
-			expectedHealthStatus:  Healthy,
-			expectedConsecutiveHC: 0,
-		},
-	}
+				// Check health status
+				if got.healthStatus != expected.healthStatus {
+					t.Errorf("BlockHistory()[%d].healthStatus = %v, expected %v", i, got.healthStatus, expected.healthStatus)
+				}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markHealthy(tt.hcThresh)
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
-			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
-			}
-		})
-	}
-}
+				// Check timestamp
+				if (expected.timestamp == nil && got.timestamp != nil) ||
+					(expected.timestamp != nil && got.timestamp == nil) {
+					t.Errorf("BlockHistory()[%d].timestamp nil status doesn't match: got %v, expected %v",
+						i, got.timestamp != nil, expected.timestamp != nil)
+				} else if expected.timestamp != nil && got.timestamp != nil {
+					if !expected.timestamp.Equal(*got.timestamp) {
+						t.Errorf("BlockHistory()[%d].timestamp = %v, expected %v",
+							i, *got.timestamp, *expected.timestamp)
+					}
 
-func TestMarkWarning(t *testing.T) {
-	tests := []struct {
-		name                  string
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
-	}{
-		{
-			name: "markWarning when healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markWarning when unhealthy",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 3,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markWarning when already warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 2,
-			},
-			expectedHealthStatus:  Warning,
-			expectedConsecutiveHC: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markWarning()
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
-			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
-			}
-		})
-	}
-}
-
-func TestMarkUnhealthy(t *testing.T) {
-	tests := []struct {
-		name                  string
-		provider              *provider
-		expectedHealthStatus  HealthStatus
-		expectedConsecutiveHC int
-	}{
-		{
-			name: "markUnhealthy when healthy",
-			provider: &provider{
-				healthStatus:             Healthy,
-				consecutiveHealthyChecks: 5,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markUnhealthy when warning",
-			provider: &provider{
-				healthStatus:             Warning,
-				consecutiveHealthyChecks: 3,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-		{
-			name: "markUnhealthy when already unhealthy",
-			provider: &provider{
-				healthStatus:             Unhealthy,
-				consecutiveHealthyChecks: 2,
-			},
-			expectedHealthStatus:  Unhealthy,
-			expectedConsecutiveHC: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.provider.markUnhealthy()
-			if tt.provider.healthStatus != tt.expectedHealthStatus {
-				t.Errorf("healthStatus = %v, want %v", tt.provider.healthStatus, tt.expectedHealthStatus)
-			}
-			if tt.provider.consecutiveHealthyChecks != tt.expectedConsecutiveHC {
-				t.Errorf("consecutiveHealthyChecks = %v, want %v", tt.provider.consecutiveHealthyChecks, tt.expectedConsecutiveHC)
+					// Verify deep copy by checking the pointer addresses are different
+					if reflect.ValueOf(got.timestamp).Pointer() == reflect.ValueOf(expected.timestamp).Pointer() {
+						t.Errorf("BlockHistory()[%d].timestamp is not a deep copy, got same pointer", i)
+					}
+				}
 			}
 		})
 	}

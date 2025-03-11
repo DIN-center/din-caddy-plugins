@@ -1,840 +1,731 @@
 package modules
 
 import (
+	"container/list"
 	"testing"
-	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
-	"go.uber.org/zap"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestHealthCheck(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
-	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-	logger := zap.NewNop()
-
+func TestHandleErrorWithGracePeriod(t *testing.T) {
 	tests := []struct {
-		name                string
-		network             *network
-		latestBlockResponse struct {
-			responseBytes []byte
-			statusCode    int
-			err           error
-		}
-		wantProviderStatus map[string]HealthStatus
+		name                   string
+		consecutiveUnhealthy   int
+		healthThreshold        int
+		currentStatus          HealthStatus
+		expectedStatus         HealthStatus
+		expectedUnhealthyCount int
 	}{
 		{
-			name: "single provider, successful response",
-			network: &network{
-				HttpClient:       mockHttpClient,
-				PrometheusClient: mockPrometheusClient,
-				BlockNumberDelta: 10,
-				HCThreshold:      3,
-				Name:             "test-network",
-				logger:           logger,
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-						host:         "provider1",
-						HttpUrl:      "http://provider1",
-					},
-				},
-				latestBlockNumber: 5000000,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-				statusCode:    200,
-				err:           nil,
-			},
-			wantProviderStatus: map[string]HealthStatus{
-				"provider1": Healthy,
-			},
+			name:                   "first error within threshold",
+			consecutiveUnhealthy:   0,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Warning,
+			expectedUnhealthyCount: 1,
 		},
 		{
-			name: "single provider, error response",
-			network: &network{
-				HttpClient:       mockHttpClient,
-				PrometheusClient: mockPrometheusClient,
-				BlockNumberDelta: 10,
-				HCThreshold:      3,
-				Name:             "test-network",
-				logger:           logger,
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-						host:         "provider1",
-						HttpUrl:      "http://provider1",
-						failures:     3, // Set initial failures to trigger unhealthy state
-					},
-				},
-				latestBlockNumber: 5000000,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: nil,
-				statusCode:    400,
-				err:           nil,
-			},
-			wantProviderStatus: map[string]HealthStatus{
-				"provider1": Unhealthy,
-			},
+			name:                   "multiple errors within threshold",
+			consecutiveUnhealthy:   1,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Warning,
+			expectedUnhealthyCount: 2,
 		},
 		{
-			name: "multiple providers, mixed responses",
-			network: &network{
-				HttpClient:       mockHttpClient,
-				PrometheusClient: mockPrometheusClient,
-				BlockNumberDelta: 10,
-				HCThreshold:      3,
-				Name:             "test-network",
-				logger:           logger,
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-						host:         "provider1",
-						HttpUrl:      "http://provider1",
-					},
-					"provider2": {
-						healthStatus: Healthy,
-						host:         "provider2",
-						HttpUrl:      "http://provider2",
-						failures:     3,
-					},
-				},
-				latestBlockNumber: 5000000,
-				CheckedProviders:  map[string][]healthCheckEntry{},
-			},
-			latestBlockResponse: struct {
-				responseBytes []byte
-				statusCode    int
-				err           error
-			}{
-				responseBytes: []byte(`{"jsonrpc": "2.0", "id": 1,"result": "0x4c4b43"}`),
-				statusCode:    200,
-				err:           nil,
-			},
-			wantProviderStatus: map[string]HealthStatus{
-				"provider1": Healthy,
-				"provider2": Healthy,
-			},
+			name:                   "errors beyond threshold",
+			consecutiveUnhealthy:   2,
+			healthThreshold:        3,
+			currentStatus:          Unhealthy,
+			expectedStatus:         Unhealthy,
+			expectedUnhealthyCount: 3,
+		},
+		{
+			name:                   "healthy status resets counter",
+			consecutiveUnhealthy:   2,
+			healthThreshold:        3,
+			currentStatus:          Healthy,
+			expectedStatus:         Healthy,
+			expectedUnhealthyCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up mock expectations
-			for range tt.network.Providers {
-				mockHttpClient.EXPECT().
-					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(tt.latestBlockResponse.responseBytes, &tt.latestBlockResponse.statusCode, tt.latestBlockResponse.err)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-				mockPrometheusClient.EXPECT().
-					HandleLatestBlockMetric(gomock.Any()).
-					Times(1)
+			mockPrometheus := prom.NewMockIPrometheusClient(ctrl)
+			mockPrometheus.EXPECT().
+				HandleHealthCheckMetric(gomock.Any()).
+				AnyTimes()
+
+			p := &provider{
+				consecutiveUnhealthyChecks: tt.consecutiveUnhealthy,
+				host:                       "test.com",
 			}
 
-			// Run health check
-			tt.network.healthCheck()
+			n := NewNetwork("test")
+			n.HCThreshold = tt.healthThreshold
+			n.PrometheusClient = mockPrometheus
 
-			// Verify results
-			for providerName, provider := range tt.network.Providers {
-				wantStatus := tt.wantProviderStatus[providerName]
-				if provider.healthStatus != wantStatus {
-					t.Errorf("healthCheck() for provider %s got status = %v, want %v",
-						providerName, provider.healthStatus, wantStatus)
-				}
-			}
+			status := n.handleErrorWithGracePeriod(p, tt.currentStatus, 100)
+
+			assert.Equal(t, tt.expectedStatus, status)
+			assert.Equal(t, tt.expectedUnhealthyCount, p.consecutiveUnhealthyChecks)
 		})
 	}
 }
 
-func TestPingHealthCheck(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-	logger := zap.NewNop()
+func TestVerifyChainID(t *testing.T) {
+	tests := []struct {
+		name            string
+		networkChainID  string
+		providerChainID string
+		expected        bool
+	}{
+		{
+			name:            "matching chain IDs",
+			networkChainID:  "mainnet",
+			providerChainID: "mainnet",
+			expected:        true,
+		},
+		{
+			name:            "mismatched chain IDs",
+			networkChainID:  "mainnet",
+			providerChainID: "testnet",
+			expected:        false,
+		},
+		{
+			name:            "empty provider chain ID",
+			networkChainID:  "mainnet",
+			providerChainID: "",
+			expected:        false,
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := NewNetwork("test")
+			n.ChainId = tt.networkChainID
+
+			result := n.verifyChainID(tt.providerChainID)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsStalled(t *testing.T) {
 	tests := []struct {
 		name         string
-		providerName string
-		provider     *provider
-		statusCode   int
-		blockNumber  int64
-		want         HealthStatus
-		wantReturn   bool
-		failures     int // Add failures count
+		historySize  int
+		blockHistory []blockHistoryEntry
+		expected     bool
 	}{
 		{
-			name:         "successful response, status 200",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:         "provider1",
-			},
-			statusCode:  200,
-			blockNumber: 5000000,
-			want:        Healthy,
-			wantReturn:  false,
-			failures:    0,
+			name:         "empty history",
+			historySize:  3,
+			blockHistory: []blockHistoryEntry{},
+			expected:     false,
 		},
 		{
-			name:         "rate limited response, status 429",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:         "provider1",
+			name:        "single entry",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
 			},
-			statusCode:  429,
-			blockNumber: 5000000,
-			want:        Warning,
-			wantReturn:  true,
-			failures:    0,
+			expected: false,
 		},
 		{
-			name:         "error response, status 400, first failure",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:         "provider1",
+			name:        "multiple entries, not stalled",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 101, healthStatus: Healthy},
+				{blockNumber: 102, healthStatus: Healthy},
 			},
-			statusCode:  400,
-			blockNumber: 5000000,
-			want:        Healthy, // Still healthy after first failure
-			wantReturn:  true,
-			failures:    0,
+			expected: false,
 		},
 		{
-			name:         "error response, status 400, exceeds threshold",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:         "provider1",
-				failures:     3, // Already has 3 failures
+			name:        "multiple entries, stalled",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
 			},
-			statusCode:  400,
-			blockNumber: 5000000,
-			want:        Unhealthy, // Now becomes unhealthy
-			wantReturn:  true,
-			failures:    3,
+			expected: true,
+		},
+		{
+			name:        "not enough history",
+			historySize: 3,
+			blockHistory: []blockHistoryEntry{
+				{blockNumber: 100, healthStatus: Healthy},
+				{blockNumber: 100, healthStatus: Healthy},
+			},
+			expected: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := &network{
-				PrometheusClient: mockPrometheusClient,
-				logger:           logger,
-				HCThreshold:      3,
-				Name:             "test-network",
-			}
+			n := NewNetwork("test")
+			n.BlockHistorySize = tt.historySize
 
-			// Set initial failures count
-			tt.provider.failures = tt.failures
-
-			if tt.statusCode > 399 {
-				mockPrometheusClient.EXPECT().HandleLatestBlockMetric(gomock.Any()).Times(1)
-			}
-
-			result := n.pingHealthCheck(tt.providerName, tt.provider, tt.statusCode, tt.blockNumber)
-
-			if result != tt.wantReturn {
-				t.Errorf("pingHealthCheck() return = %v, want %v", result, tt.wantReturn)
-			}
-
-			if tt.provider.healthStatus != tt.want {
-				t.Errorf("pingHealthCheck() got = %v, want %v", tt.provider.healthStatus, tt.want)
-			}
-
-			// Verify failures count increased for error responses
-			if tt.statusCode > 399 && tt.statusCode != 429 {
-				expectedFailures := tt.failures + 1
-				if tt.provider.failures != expectedFailures {
-					t.Errorf("pingHealthCheck() failures = %v, want %v", tt.provider.failures, expectedFailures)
+			p := &provider{blockHistory: func() *list.List {
+				l := list.New()
+				for _, entry := range tt.blockHistory {
+					l.PushBack(entry)
 				}
-			}
+				return l
+			}()}
+
+			result := n.isStalled(p)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestBlockNumberDeltaHealthCheck(t *testing.T) {
-	timeNow := time.Now()
+func TestGetLatestHealthyBlock(t *testing.T) {
 	tests := []struct {
-		name             string
-		providerName     string
-		provider         *provider
-		blockNumber      int64
-		network          *network
-		expectUnhealthy  bool
-		expectedStatus   HealthStatus
+		name      string
+		providers map[string]*provider
+		expected  int64
 	}{
 		{
-			name:         "single provider - always healthy",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 5000030,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
+			name: "healthy provider has highest block",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
-				BlockNumberDelta: 20,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
-			expectUnhealthy: false,
-			expectedStatus:  Healthy,
+			expected: 100,
 		},
 		{
-			name:         "provider too far ahead of 75th percentile",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 5000030,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-					"provider3": {host: "provider3"},
+			name: "warning provider used when no healthy",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
-				BlockNumberDelta: 20,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 5000030, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
-					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
-			expectUnhealthy: true,
-			expectedStatus:  Unhealthy,
+			expected: 110,
 		},
 		{
-			name:         "provider too far behind 75th percentile",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 4999970,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-					"provider3": {host: "provider3"},
-				},
-				BlockNumberDelta: 20,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 4999970, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
-					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+			name: "empty history returns 0",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: list.New(),
 				},
 			},
-			expectUnhealthy: true,
-			expectedStatus:  Unhealthy,
+			expected: 0,
 		},
 		{
-			name:         "provider within acceptable range",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 5000010,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-					"provider3": {host: "provider3"},
+			name: "healthy provider preferred over higher warning block",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
-				BlockNumberDelta: 20,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 5000010, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
-					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 150, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
-			expectUnhealthy: false,
-			expectedStatus:  Healthy,
+			expected: 100,
+		},
+		{
+			name: "warning provider preferred over higher unhealthy block",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
+				},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 150, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "mixed health statuses with multiple entries",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 99, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 109, healthStatus: Warning})
+						return l
+					}(),
+				},
+				"p3": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 120, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 119, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "no providers with block history",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: list.New(),
+				},
+				"p2": {
+					blockHistory: list.New(),
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "only unhealthy providers with blocks",
+			providers: map[string]*provider{
+				"p1": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+				"p2": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+			},
+			expected: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.network.logger = zap.NewNop()
-			result := tt.network.blockNumberDeltaHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
+			n := NewNetwork("test")
+			n.Providers = tt.providers
 
-			if result != tt.expectUnhealthy {
-				t.Errorf("blockNumberDeltaHealthCheck() returned %v, want %v", result, tt.expectUnhealthy)
-			}
-
-			if tt.provider.healthStatus != tt.expectedStatus {
-				t.Errorf("blockNumberDeltaHealthCheck() health status = %v, want %v", tt.provider.healthStatus, tt.expectedStatus)
-			}
+			result := n.getLatestHealthyBlock()
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestConsistencyHealthCheck(t *testing.T) {
-	timeNow := time.Now()
+func TestProcessBlockNumberResponse(t *testing.T) {
 	tests := []struct {
-		name                  string
-		providerName         string
-		provider             *provider
-		blockNumber          int64
-		network              *network
-		want                 HealthStatus
-		expectedLatestBlock  int64
+		name           string
+		response       []byte
+		statusCode     int
+		expectedBlock  int64
+		expectedHealth HealthStatus
+		expectError    bool
+		errorContains  string
 	}{
 		{
-			name:         "single provider - always healthy",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 5000000,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-				},
-				BlockLagLimit: 100,
-				HCThreshold:  3,
-			},
-			want:                Healthy,
-			expectedLatestBlock: 5000000,
+			name:           "valid hex response",
+			response:       []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
+			statusCode:     200,
+			expectedBlock:  0x1234,
+			expectedHealth: Healthy,
+			expectError:    false,
 		},
 		{
-			name:         "provider lagging behind 75th percentile",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 4999800,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-					"provider3": {host: "provider3"},
-				},
-				BlockLagLimit: 100,
-				HCThreshold:  3,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 4999800, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
-					"provider3": {{blockNumber: 5000000, timestamp: &timeNow}},
-				},
-			},
-			want:                Warning,
-			expectedLatestBlock: 5000000,
+			name:           "valid decimal response",
+			response:       []byte(`{"jsonrpc":"2.0","result":1234}`),
+			statusCode:     200,
+			expectedBlock:  1234,
+			expectedHealth: Healthy,
+			expectError:    false,
 		},
 		{
-			name:         "provider within acceptable range",
-			providerName: "provider1",
-			provider: &provider{
-				healthStatus: Healthy,
-				host:        "provider1",
-			},
-			blockNumber: 5000000,
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-				},
-				BlockLagLimit: 100,
-				HCThreshold:  3,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
-				},
-			},
-			want:                Healthy,
-			expectedLatestBlock: 5000000,
+			name:           "rate limit error",
+			response:       []byte(`{"error":"rate limited"}`),
+			statusCode:     429,
+			expectedBlock:  0,
+			expectedHealth: Warning,
+			expectError:    true,
+			errorContains:  "rate limit error",
+		},
+		{
+			name:           "server error",
+			response:       []byte(`{"error":"internal error"}`),
+			statusCode:     500,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "error status code: 500",
+		},
+		{
+			name:           "invalid json",
+			response:       []byte(`invalid json`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Error unmarshalling response",
+		},
+		{
+			name:           "missing hex prefix",
+			response:       []byte(`{"jsonrpc":"2.0","result":"1234"}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Invalid block number",
+		},
+		{
+			name:           "invalid hex string",
+			response:       []byte(`{"jsonrpc":"2.0","result":"0xZZZZ"}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "Error converting block number",
+		},
+		{
+			name:           "unsupported result type",
+			response:       []byte(`{"jsonrpc":"2.0","result":{"block":1234}}`),
+			statusCode:     200,
+			expectedBlock:  0,
+			expectedHealth: Unhealthy,
+			expectError:    true,
+			errorContains:  "unsupported block number type",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.network.logger = zap.NewNop()
-			tt.network.consistencyHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
+			n := NewNetwork("test")
+			block, health, err := n.processBlockNumberResponse(tt.response, &tt.statusCode)
 
-			if tt.provider.healthStatus != tt.want {
-				t.Errorf("consistencyHealthCheck() health status = %v, want %v", tt.provider.healthStatus, tt.want)
-			}
-
-			if tt.network.latestBlockNumber != tt.expectedLatestBlock {
-				t.Errorf("consistencyHealthCheck() latest block = %v, want %v", tt.network.latestBlockNumber, tt.expectedLatestBlock)
-			}
-		})
-	}
-}
-
-func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
-	timeNow := time.Now()
-	timeYesterday := timeNow.AddDate(0, 0, -1)
-
-	tests := []struct {
-		name             string
-		network          *network
-		providerName     string
-		healthCheckInput healthCheckEntry
-		want             []healthCheckEntry
-	}{
-		{
-			name: "health check entry added to empty list",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{},
-					},
-				},
-				CheckedProviders: map[string][]healthCheckEntry{},
-			},
-			providerName: "provider1",
-			healthCheckInput: healthCheckEntry{
-				blockNumber: 1,
-				timestamp:   &timeNow,
-			},
-			want: []healthCheckEntry{
-				{
-					blockNumber: 1,
-					timestamp:   &timeNow,
-				},
-			},
-		},
-		{
-			name: "health check entry added to a populated list",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{},
-					},
-				},
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {
-						{
-							blockNumber: 1,
-							timestamp:   &timeYesterday,
-						},
-					},
-				},
-			},
-			providerName: "provider1",
-			healthCheckInput: healthCheckEntry{
-				blockNumber: 2,
-				timestamp:   &timeNow,
-			},
-			want: []healthCheckEntry{
-				{
-					blockNumber: 2,
-					timestamp:   &timeNow,
-				},
-				{
-					blockNumber: 1,
-					timestamp:   &timeYesterday,
-				},
-			},
-		},
-		{
-			name: "health check entry added to a populated list of 10",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						upstream: &reverseproxy.Upstream{},
-					},
-				},
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {
-						{
-							blockNumber: 10,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 9,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 8,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 7,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 6,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 5,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 4,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 3,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 2,
-							timestamp:   &timeYesterday,
-						},
-						{
-							blockNumber: 1,
-							timestamp:   &timeYesterday,
-						},
-					},
-				},
-			},
-			providerName: "provider1",
-			healthCheckInput: healthCheckEntry{
-				blockNumber: 11,
-				timestamp:   &timeNow,
-			},
-			want: []healthCheckEntry{
-				{
-					blockNumber: 11,
-					timestamp:   &timeNow,
-				},
-				{
-					blockNumber: 10,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 9,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 8,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 7,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 6,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 5,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 4,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 3,
-					timestamp:   &timeYesterday,
-				},
-				{
-					blockNumber: 2,
-					timestamp:   &timeYesterday,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.network.addHealthCheckToCheckedProviderList(tt.providerName, tt.healthCheckInput)
-
-			if len(tt.network.CheckedProviders[tt.providerName]) != len(tt.want) {
-				t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, len(tt.network.CheckedProviders[tt.providerName]), len(tt.want))
-			}
-			if len(tt.want) > 0 {
-				if tt.network.CheckedProviders[tt.providerName][0].blockNumber != tt.want[0].blockNumber {
-					t.Errorf("network.addHealthCheckToCheckedProviderList() for %v  = %v, want %v", tt.providerName, tt.network.CheckedProviders[tt.providerName][0].blockNumber, tt.want[0].blockNumber)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
 				}
+			} else {
+				assert.NoError(t, err)
 			}
+			assert.Equal(t, tt.expectedBlock, block)
+			assert.Equal(t, tt.expectedHealth, health)
 		})
 	}
 }
 
-func TestEvaluatecheckedProviders(t *testing.T) {
-	logger := zap.NewNop()
-
+func TestArchiveModeCheck(t *testing.T) {
 	tests := []struct {
-		name    string
-		network *network
-		want    map[string]*provider
+		name                string
+		httpResponse        []byte
+		statusCode          int
+		httpError           error
+		quarterBlockHeight  string
+		requestAttemptCount int
+		expectError         bool
+		errorContains       string
 	}{
 		{
-			name: "1 provider, has older block, marked Warning",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-					},
-				},
-				latestBlockNumber: 10,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {
-						{
-							blockNumber: 1,
-							timestamp:   nil,
-						},
-					},
-				},
-				logger: logger,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Warning,
-				},
-			},
+			name:                "successful archive test",
+			httpResponse:        []byte(`{"jsonrpc":"2.0","result":"0x1234"}`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         false,
 		},
 		{
-			name: "1 provider, has newer block, marked healthy",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-					},
-				},
-				latestBlockNumber: 10,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {
-						{
-							blockNumber: 20,
-							timestamp:   nil,
-						},
-					},
-				},
-				logger: logger,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-			},
+			name:                "service unavailable",
+			httpResponse:        []byte{},
+			statusCode:          503,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Network Unavailable",
 		},
 		{
-			name: "1 provider, has equal block, marked healthy",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {
-						healthStatus: Healthy,
-					},
-				},
-				latestBlockNumber: 10,
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {
-						{
-							blockNumber: 10,
-							timestamp:   nil,
-						},
-					},
-				},
-				logger: logger,
-			},
-			want: map[string]*provider{
-				"provider1": {
-					healthStatus: Healthy,
-				},
-			},
+			name:                "invalid json response",
+			httpResponse:        []byte(`invalid json`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Error unmarshalling response",
+		},
+		{
+			name:                "archive mode not supported",
+			httpResponse:        []byte(`{"error":{"code":-32000,"message":"missing trie node"}}`),
+			statusCode:          200,
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "network doesn't support archive mode",
+		},
+		{
+			name:                "http client error",
+			httpResponse:        []byte{},
+			statusCode:          200,
+			httpError:           errors.New("connection failed"),
+			quarterBlockHeight:  "0x1234",
+			requestAttemptCount: 1,
+			expectError:         true,
+			errorContains:       "Error sending POST request",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.network.evaluateCheckedProviders()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			for providerName, provider := range tt.network.Providers {
-				if provider.healthStatus != tt.want[providerName].healthStatus {
-					t.Errorf("network.evaluatecheckedProviders() for %v  = %v, want %v", providerName, provider.healthStatus, tt.want[providerName].healthStatus)
-				}
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			// Set up the mock to expect exactly one call
+			mockHTTPClient.EXPECT().
+				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
+
+			n := NewNetwork("test")
+			n.HttpClient = mockHTTPClient
+			n.CallContractMethod = "eth_call"
+			n.RequestAttemptCount = tt.requestAttemptCount
+
+			err := n.archiveModeCheck("http://test.com", nil, nil, tt.quarterBlockHeight)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
 }
 
-func TestGetPercentileBlockNumber(t *testing.T) {
-	timeNow := time.Now()
+func TestGetChainID(t *testing.T) {
 	tests := []struct {
-		name       string
-		network    *network
-		percentile float64
-		want       int64
+		name                string
+		networkName         string
+		httpResponses       [][]byte
+		statusCodes         []int
+		httpErrors          []error
+		requestAttemptCount int
+		expectedChainID     string
+		expectError         bool
+		errorContains       string
+		expectedAttempts    int
 	}{
 		{
-			name: "empty providers map",
-			network: &network{
-				Providers:        make(map[string]*provider),
-				CheckedProviders: make(map[string][]healthCheckEntry),
-			},
-			percentile: 0.75,
-			want:      0,
+			name:                "successful ethereum response on first attempt",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    1,
 		},
 		{
-			name: "single provider",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-				},
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 1000, timestamp: &timeNow}},
-				},
-			},
-			percentile: 0.75,
-			want:      1000,
+			name:                "successful bitcoin response on first attempt",
+			networkName:         "bitcoin",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":{"chain":"main"}}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "bip122:main",
+			expectError:         false,
+			expectedAttempts:    1,
 		},
 		{
-			name: "multiple providers - 75th percentile",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-					"provider3": {host: "provider3"},
-					"provider4": {host: "provider4"},
-				},
-				CheckedProviders: map[string][]healthCheckEntry{
-					"provider1": {{blockNumber: 1000, timestamp: &timeNow}},
-					"provider2": {{blockNumber: 1100, timestamp: &timeNow}},
-					"provider3": {{blockNumber: 1200, timestamp: &timeNow}},
-					"provider4": {{blockNumber: 1300, timestamp: &timeNow}},
-				},
-			},
-			percentile: 0.75,
-			want:      1200,
+			name:                "successful solana response on first attempt",
+			networkName:         "solana",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"mainnet-beta"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "solana:mainnet-beta",
+			expectError:         false,
+			expectedAttempts:    1,
 		},
 		{
-			name: "providers with no health checks",
-			network: &network{
-				Providers: map[string]*provider{
-					"provider1": {host: "provider1"},
-					"provider2": {host: "provider2"},
-				},
-				CheckedProviders: make(map[string][]healthCheckEntry),
-			},
-			percentile: 0.75,
-			want:      0,
+			name:                "successful starknet response on first attempt",
+			networkName:         "starknet",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":"SN_MAIN"}`)},
+			statusCodes:         []int{200},
+			httpErrors:          []error{nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "starknet:SN_MAIN",
+			expectError:         false,
+			expectedAttempts:    1,
+		},
+		{
+			name:                "success after one failure",
+			httpResponses:       [][]byte{nil, []byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{0, 200},
+			httpErrors:          []error{errors.New("connection failed"), nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    2,
+		},
+		{
+			name:                "non-200 status code with retries exhausted",
+			httpResponses:       [][]byte{[]byte{}, []byte{}, []byte{}},
+			statusCodes:         []int{503, 503, 503},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid json response with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`invalid json`), []byte(`invalid json`), []byte(`invalid json`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error unmarshalling response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "missing result field with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0"}`), []byte(`{"jsonrpc":"2.0"}`), []byte(`{"jsonrpc":"2.0"}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "http client error with retries exhausted",
+			httpResponses:       [][]byte{nil, nil, nil},
+			statusCodes:         []int{0, 0, 0},
+			httpErrors:          []error{errors.New("connection failed"), errors.New("connection failed"), errors.New("connection failed")},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error sending POST request",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid bitcoin response with retries exhausted",
+			networkName:         "bitcoin",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":{}}`), []byte(`{"jsonrpc":"2.0","result":{}}`), []byte(`{"jsonrpc":"2.0","result":{}}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "invalid result type with retries exhausted",
+			httpResponses:       [][]byte{[]byte(`{"jsonrpc":"2.0","result":123}`), []byte(`{"jsonrpc":"2.0","result":123}`), []byte(`{"jsonrpc":"2.0","result":123}`)},
+			statusCodes:         []int{200, 200, 200},
+			httpErrors:          []error{nil, nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "",
+			expectError:         true,
+			errorContains:       "Error getting chain ID from response",
+			expectedAttempts:    3,
+		},
+		{
+			name:                "mixed errors with success on final attempt",
+			httpResponses:       [][]byte{nil, []byte(`invalid json`), []byte(`{"jsonrpc":"2.0","result":"0x1"}`)},
+			statusCodes:         []int{0, 200, 200},
+			httpErrors:          []error{errors.New("connection failed"), nil, nil},
+			requestAttemptCount: 3,
+			expectedChainID:     "eip155:0x1",
+			expectError:         false,
+			expectedAttempts:    3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.network.getPercentileBlockNumber(tt.percentile)
-			if got != tt.want {
-				t.Errorf("getPercentileBlockNumber() = %v, want %v", got, tt.want)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			// Set up expectations for each attempt
+			for i := 0; i < tt.expectedAttempts; i++ {
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.httpResponses[i], &tt.statusCodes[i], tt.httpErrors[i])
+			}
+
+			networkName := tt.networkName
+			if networkName == "" {
+				networkName = "test"
+			}
+
+			n := NewNetwork(networkName)
+			n.HttpClient = mockHTTPClient
+			n.ChainIdMethod = "eth_chainId"
+			n.RequestAttemptCount = tt.requestAttemptCount
+
+			chainID, err := n.getChainID("http://test.com", nil, nil)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Equal(t, tt.expectedChainID, chainID)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedChainID, chainID)
 			}
 		})
 	}

@@ -17,16 +17,19 @@ const (
 	RequestBodyKey         = "request_body"
 	HealthStatusKey        = "health_status"
 	BlockNumberKey         = "block_number"
+	BlockHistorySize       = 10
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
+	DefaultChainIdMethod           = "eth_chainId"
+	DefaultCallContractMethod      = "eth_call"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)
-	DefaultBlockNumberDelta        = int64(10)
+	DefaultBlockJumpLimit          = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
-
+	DefaultArchiveEnabled          = false
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
@@ -40,6 +43,17 @@ const (
 
 	// Upstream/Selector Constants
 	MaxPriority = 9
+
+	// Chain ID Namespace Constants
+	// Namespace:Referece = Chain ID https://chainagnostic.org/CAIPs/caip-2
+	// EVM
+	EVMNamespace = "eip155"
+	// Bitcoin
+	BitcoinNamespace = "bip122"
+	// Solana
+	SolanaNamespace = "solana"
+	// Starknet
+	StarknetNamespace = "starknet"
 )
 
 // String method to convert MyEnum to string

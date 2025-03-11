@@ -232,7 +232,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 		name                       string
 		regNetwork                 *din.Network
 		newNetwork                 *network
-		methodByBitErr             error
+		blockNumberMethodByBitErr  error
+		chainIdMethodByBitErr      error
+		callContractMethodByBitErr error
 		syncNetworkConfigErr       error
 		createNewProviderErr       error
 		expectedError              error
@@ -262,7 +264,10 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				Name:      "test-network",
 				Providers: map[string]*provider{},
 			},
-			methodByBitErr:             nil,
+			blockNumberMethodByBitErr:  nil,
+			chainIdMethodByBitErr:      nil,
+			callContractMethodByBitErr: nil,
+			syncNetworkConfigErr:       nil,
 			createNewProviderErr:       nil,
 			expectedError:              nil,
 			expectedProviderCount:      1,
@@ -291,7 +296,10 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				Name:      "test-network",
 				Providers: map[string]*provider{},
 			},
-			methodByBitErr:             nil,
+			blockNumberMethodByBitErr:  nil,
+			chainIdMethodByBitErr:      nil,
+			callContractMethodByBitErr: nil,
+			syncNetworkConfigErr:       nil,
 			createNewProviderErr:       nil,
 			expectedError:              nil,
 			expectedProviderCount:      0,
@@ -309,7 +317,11 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			newNetwork: &network{
 				Name: "test-network",
 			},
-			methodByBitErr:             errors.New("sync error"),
+			blockNumberMethodByBitErr:  errors.New("sync error"),
+			chainIdMethodByBitErr:      errors.New("sync error"),
+			callContractMethodByBitErr: errors.New("sync error"),
+			syncNetworkConfigErr:       nil,
+			createNewProviderErr:       nil,
 			expectedError:              errors.New("sync error"),
 			expectedProviderCount:      0,
 			expectedRemainingProviders: 0,
@@ -335,7 +347,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			}
 
 			mockDingoClient.EXPECT().GetNetworkServiceMethods(gomock.Any()).Return([]*string{aws.String("eth_call"), aws.String("eth_blockNumber")}, nil).AnyTimes()
-			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.methodByBitErr).AnyTimes()
+			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.blockNumberMethodByBitErr).AnyTimes()
+			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.chainIdMethodByBitErr).AnyTimes()
+			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.callContractMethodByBitErr).AnyTimes()
 
 			// Call the function being tested
 			err := dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
@@ -358,110 +372,214 @@ func TestSyncNetworkConfig(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	tests := []struct {
-		name                          string
-		regNetwork                    *din.Network
-		network                       *network
-		getNetworkMethodNameByBitErr  error
-		expectedNetwork               *network
-		expectedError                 error
-		expectedHCMethod              string
-		expectedHCInterval            uint64
-		expectedBlockLagLimit         uint64
-		expectedMaxRequestPayloadSize uint64
-		expectedRequestAttemptCount   int
+		name                     string
+		regNetwork               *din.Network
+		existingNetwork          *network
+		hcMethodName             string
+		chainIDMethodName        string
+		callContractMethodName   string
+		archiveEnabled           bool
+		getHCMethodErr           error
+		callsHealthcheckMethod   bool
+		getChainIDMethodErr      error
+		callsChainIDMethod       bool
+		getCallContractMethodErr error
+		callsCallContractMethod  bool
+		expectedError            error
+		expectedNetwork          *network
 	}{
 		{
-			name: "Successful sync with all changes",
+			name: "successful sync with all new values",
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit:    1,
-					HealthcheckIntervalSec:  30,
-					BlockLagLimit:           5,
+					ChainIdMethodBit:        1,
+					CallContractMethodBit:   1,
+					ChainId:                 "0x1",
+					HealthcheckIntervalSec:  20,
+					BlockLagLimit:           10,
+					BlockJumpLimit:          5,
 					MaxRequestPayloadSizeKb: 2048,
-					RequestAttemptCount:     3,
+					RequestAttemptCount:     5,
+					ArchiveEnabled:          true,
 				},
 			},
-			network: &network{
+			existingNetwork: &network{
 				Name:                    "test-network",
 				HCMethod:                "old-method",
+				ChainIdMethod:           "old-chain-method",
+				CallContractMethod:      "old-call-method",
+				ChainId:                 "0x0",
 				HCInterval:              10,
-				BlockLagLimit:           3,
+				BlockLagLimit:           5,
+				BlockJumpLimit:          3,
 				MaxRequestPayloadSizeKB: 1024,
-				RequestAttemptCount:     1,
+				RequestAttemptCount:     3,
+				ArchiveEnabled:          false,
 			},
-			expectedHCMethod:              "new-method",
-			expectedHCInterval:            30,
-			expectedBlockLagLimit:         5,
-			expectedMaxRequestPayloadSize: 2048,
-			expectedRequestAttemptCount:   3,
+			hcMethodName:            "eth_blockNumber",
+			callsHealthcheckMethod:  true,
+			chainIDMethodName:       "eth_chainId",
+			callsChainIDMethod:      true,
+			callContractMethodName:  "eth_call",
+			callsCallContractMethod: true,
 			expectedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
-				HCInterval:              30,
-				BlockLagLimit:           5,
+				HCMethod:                "eth_blockNumber",
+				ChainIdMethod:           "eth_chainId",
+				CallContractMethod:      "eth_call",
+				ChainId:                 "0x1",
+				HCInterval:              20,
+				BlockLagLimit:           10,
+				BlockJumpLimit:          5,
 				MaxRequestPayloadSizeKB: 2048,
-				RequestAttemptCount:     3,
+				RequestAttemptCount:     5,
+				ArchiveEnabled:          true,
 			},
-			expectedError: nil,
 		},
 		{
-			name: "Error getting network method",
+			name: "error getting healthcheck method",
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
 					HealthcheckMethodBit: 1,
 				},
 			},
-			network: &network{
-				Name:     "test-network",
-				HCMethod: "old-method",
+			existingNetwork: &network{
+				Name: "test-network",
 			},
-			getNetworkMethodNameByBitErr: errors.New("failed to get method"),
-			expectedError:                errors.New("failed to get method"),
-			expectedNetwork:              nil,
+			getHCMethodErr:         errors.New("failed to get healthcheck method"),
+			callsHealthcheckMethod: true,
+			expectedError:          errors.New("failed to get network healthcheck method"),
+		},
+		{
+			name: "error getting chain ID method",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				NetworkConfig: &dinreg.NetworkConfig{
+					ChainIdMethodBit: 1,
+				},
+			},
+			existingNetwork:        &network{Name: "test-network"},
+			callsHealthcheckMethod: true,
+			getChainIDMethodErr:    errors.New("failed to get chain ID method"),
+			callsChainIDMethod:     true,
+			expectedError:          errors.New("failed to get network chain ID method"),
+		},
+		{
+			name: "error getting call contract method",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				NetworkConfig: &dinreg.NetworkConfig{
+					CallContractMethodBit: 1,
+				},
+			},
+			existingNetwork: &network{
+				Name: "test-network",
+			},
+			callsHealthcheckMethod:   true,
+			getCallContractMethodErr: errors.New("failed to get call contract method"),
+			callsChainIDMethod:       true,
+			callsCallContractMethod:  true,
+			expectedError:            errors.New("failed to get network call contract method"),
+		},
+		{
+			name: "no updates needed when registry values are zero",
+			regNetwork: &din.Network{
+				Name: "test-network",
+				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit:    1,
+					ChainIdMethodBit:        1,
+					ChainId:                 "0x1",
+					HealthcheckIntervalSec:  0,
+					BlockLagLimit:           0,
+					BlockJumpLimit:          0,
+					MaxRequestPayloadSizeKb: 0,
+					RequestAttemptCount:     0,
+					ArchiveEnabled:          false,
+				},
+			},
+			existingNetwork: &network{
+				Name:                    "test-network",
+				HCMethod:                "eth_blockNumber",
+				ChainIdMethod:           "eth_chainId",
+				CallContractMethod:      "eth_call",
+				ChainId:                 "0x1",
+				HCInterval:              10,
+				BlockLagLimit:           5,
+				BlockJumpLimit:          3,
+				MaxRequestPayloadSizeKB: 1024,
+				RequestAttemptCount:     3,
+				ArchiveEnabled:          false,
+			},
+			callsHealthcheckMethod:  true,
+			callsChainIDMethod:      true,
+			callsCallContractMethod: true,
+			hcMethodName:            "eth_blockNumber",
+			chainIDMethodName:       "eth_chainId",
+			callContractMethodName:  "eth_call",
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HCMethod:                "eth_blockNumber",
+				ChainIdMethod:           "eth_chainId",
+				CallContractMethod:      "eth_call",
+				ChainId:                 "0x1",
+				HCInterval:              10,
+				BlockLagLimit:           5,
+				BlockJumpLimit:          3,
+				MaxRequestPayloadSizeKB: 1024,
+				RequestAttemptCount:     3,
+				ArchiveEnabled:          false,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock DingoClient
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
-
-			// Create logger
 			logger := zaptest.NewLogger(t)
 
-			// Create DinMiddleware instance
+			if tt.callsHealthcheckMethod {
+				mockDingoClient.EXPECT().
+					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.HealthcheckMethodBit).
+					Return(tt.hcMethodName, tt.getHCMethodErr).Times(1)
+			}
+
+			if tt.callsChainIDMethod {
+				mockDingoClient.EXPECT().
+					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.ChainIdMethodBit).
+					Return(tt.chainIDMethodName, tt.getChainIDMethodErr).Times(1)
+			}
+
+			if tt.callsCallContractMethod {
+				mockDingoClient.EXPECT().
+					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.CallContractMethodBit).
+					Return(tt.callContractMethodName, tt.getCallContractMethodErr).Times(1)
+			}
+
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
-				testMode:    true,
 			}
 
-			// Mock GetNetworkMethodNameByBit method
-			mockDingoClient.EXPECT().
-				GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.HealthcheckMethodBit).
-				Return(tt.expectedHCMethod, tt.getNetworkMethodNameByBitErr).
-				AnyTimes()
-
-			// Call syncNetworkConfig
-			updatedNetwork, err := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.network)
-
-			// Assert results
+			result, err := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.existingNetwork)
 			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-				assert.Nil(t, updatedNetwork)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, updatedNetwork)
-
-				// Verify that the network was updated correctly
-				assert.Equal(t, tt.expectedHCMethod, updatedNetwork.HCMethod)
-				assert.Equal(t, tt.expectedHCInterval, updatedNetwork.HCInterval)
-				assert.Equal(t, tt.expectedBlockLagLimit, updatedNetwork.BlockLagLimit)
-				assert.Equal(t, tt.expectedMaxRequestPayloadSize, updatedNetwork.MaxRequestPayloadSizeKB)
-				assert.Equal(t, tt.expectedRequestAttemptCount, updatedNetwork.RequestAttemptCount)
+				assert.Error(t, err)
+				return
 			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedNetwork.HCMethod, result.HCMethod)
+			assert.Equal(t, tt.expectedNetwork.ChainIdMethod, result.ChainIdMethod)
+			assert.Equal(t, tt.expectedNetwork.ChainId, result.ChainId)
+			assert.Equal(t, tt.expectedNetwork.CallContractMethod, result.CallContractMethod)
+			assert.Equal(t, tt.expectedNetwork.HCInterval, result.HCInterval)
+			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, result.BlockLagLimit)
+			assert.Equal(t, tt.expectedNetwork.BlockJumpLimit, result.BlockJumpLimit)
+			assert.Equal(t, tt.expectedNetwork.MaxRequestPayloadSizeKB, result.MaxRequestPayloadSizeKB)
+			assert.Equal(t, tt.expectedNetwork.RequestAttemptCount, result.RequestAttemptCount)
+			assert.Equal(t, tt.expectedNetwork.ArchiveEnabled, result.ArchiveEnabled)
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"context"
 	"net/http"
 	reflect "reflect"
@@ -61,10 +62,20 @@ func TestGetDinUpstreams(t *testing.T) {
 				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -74,14 +85,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -91,14 +110,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					healthStatus: Warning,
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -108,14 +135,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Warning,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					healthStatus: Warning,
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -125,29 +160,47 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Warning,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     0,
-					healthStatus: Unhealthy,
+					upstream: upstream2,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    " successful, both 1 Priority",
+			name:    "successful, both 1 Priority",
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
 					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
 					upstream: upstream2,
 					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
@@ -157,14 +210,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Healthy,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					healthStatus: Healthy,
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream1},
@@ -174,14 +235,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Warning,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					healthStatus: Healthy,
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{upstream2},
@@ -191,14 +260,22 @@ func TestGetDinUpstreams(t *testing.T) {
 			request: &http.Request{},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream:     upstream1,
-					Priority:     0,
-					healthStatus: Unhealthy,
+					upstream: upstream1,
+					Priority: 0,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 				upstream2.Dial: {
-					upstream:     upstream2,
-					Priority:     1,
-					healthStatus: Unhealthy,
+					upstream: upstream2,
+					Priority: 1,
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						return l
+					}(),
 				},
 			},
 			output: []*reverseproxy.Upstream{},
@@ -219,6 +296,31 @@ func TestGetDinUpstreams(t *testing.T) {
 			upstreams, _ := dinUpstreams.GetUpstreams(tt.request)
 			if len(upstreams) != len(tt.output) {
 				t.Errorf("GetUpstreams() = %v, want %v", len(upstreams), len(tt.output))
+			} else {
+				// Create maps of Dial addresses for easier comparison
+				actualDials := make(map[string]bool)
+				expectedDials := make(map[string]bool)
+
+				for _, upstream := range upstreams {
+					actualDials[upstream.Dial] = true
+				}
+
+				for _, upstream := range tt.output {
+					expectedDials[upstream.Dial] = true
+				}
+
+				// Compare the maps instead of the ordered slices
+				for dial := range expectedDials {
+					if !actualDials[dial] {
+						t.Errorf("GetUpstreams() missing expected upstream: %v", dial)
+					}
+				}
+
+				for dial := range actualDials {
+					if !expectedDials[dial] {
+						t.Errorf("GetUpstreams() contains unexpected upstream: %v", dial)
+					}
+				}
 			}
 		})
 	}

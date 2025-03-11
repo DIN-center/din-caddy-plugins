@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -17,28 +16,30 @@ import (
 )
 
 type network struct {
-	Name              string
-	quit              chan struct{}
-	latestBlockNumber int64
-	HttpClient        din_http.IHTTPClient
-	PrometheusClient  prom.IPrometheusClient
-	logger            *zap.Logger
-	machineID         string
+	Name             string
+	quit             chan struct{}
+	HttpClient       din_http.IHTTPClient
+	PrometheusClient prom.IPrometheusClient
+	logger           *zap.Logger
+	machineID        string
 
 	// internal health check values
-	healthCheckListMutex sync.RWMutex
-	HCThreshold          int
-	CheckedProviders     map[string][]healthCheckEntry
+	HCThreshold      int
+	BlockHistorySize int
 
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
 	HCMethod                string               `json:"healthcheck_method"`
+	ChainIdMethod           string               `json:"chainid_method"`
+	ChainId                 string               `json:"chain_id"`
+	CallContractMethod      string               `json:"call_contract_method"`
 	HCInterval              int                  `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
-	BlockNumberDelta        int64                `json:"block_number_delta"`
+	BlockJumpLimit          int64                `json:"healthcheck_blockjump_limit"`
 	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int                  `json:"request_attempt_count"`
+	ArchiveEnabled          bool                 `json:"archive_enabled"`
 }
 
 // NewNetwork creates a new network with the given name
@@ -49,15 +50,17 @@ func NewNetwork(name string) *network {
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCMethod:                DefaultHCMethod,
+		ChainIdMethod:           DefaultChainIdMethod,
+		CallContractMethod:      DefaultCallContractMethod,
 		HCThreshold:             DefaultHCThreshold,
 		HCInterval:              DefaultHCInterval,
 		BlockLagLimit:           DefaultBlockLagLimit,
-		BlockNumberDelta:        DefaultBlockNumberDelta,
+		BlockJumpLimit:          DefaultBlockJumpLimit,
 		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 		RequestAttemptCount:     DefaultRequestAttemptCount,
-
-		CheckedProviders: make(map[string][]healthCheckEntry),
-		Providers:        make(map[string]*provider),
+		BlockHistorySize:        BlockHistorySize,
+		ArchiveEnabled:          DefaultArchiveEnabled,
+		Providers:               make(map[string]*provider),
 	}
 }
 
@@ -81,231 +84,296 @@ func (n *network) startHealthcheck() {
 	}()
 }
 
-type healthCheckEntry struct {
-	blockNumber int64
-	timestamp   *time.Time
-}
-
+// HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
-	// wait group to wait for all the providers to finish their health checks
-	var wg sync.WaitGroup
-	var blockTime time.Time
+	// Get latest network block for comparison
+	latestNetworkBlock := n.getLatestHealthyBlock()
 
-	for name, currentProvider := range n.Providers {
-		// check all of the providers simultaneously using async job management for more accurate blocknumber results.
-		wg.Add(1) // Increment the WaitGroup counter
-		go func(providerName string, provider *provider) {
-			defer wg.Done() // Decrement the counter when the goroutine completes
-			// get the latest block number from the current provider
-			providerBlockNumber, statusCode, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
-			if err != nil {
-				n.handleBlockNumberError(providerName, provider, statusCode, providerBlockNumber, err)
-				return
+	for _, provider := range n.Providers {
+
+		// Get latest block and initial health status
+		var healthStatus HealthStatus = Healthy
+		blockNum, initialHealth, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+		if err != nil {
+			n.logProviderWarning(
+				"Error getting latest block number for provider",
+				provider,
+				zap.Error(err),
+			)
+
+			// Handle error cases with grace period logic
+			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
+
+			if healthStatus == Unhealthy {
+				// Add the block entry and send metric
+				provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
+				n.sendHealthCheckMetric(provider.host, Unhealthy.String())
+
+				continue // Skip further checks for confirmed unhealthy providers
 			}
-			blockTime = time.Now()
-
-			if n.pingHealthCheck(providerName, provider, statusCode, providerBlockNumber) {
-				return
-			}
-
-			if n.blockNumberDeltaHealthCheck(providerName, provider, providerBlockNumber) {
-				return
-			}
-
-			n.consistencyHealthCheck(providerName, provider, providerBlockNumber)
-
-			n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
-
-			// add the current provider to the checked providers map
-			n.addHealthCheckToCheckedProviderList(provider.host, healthCheckEntry{blockNumber: providerBlockNumber, timestamp: &blockTime})
-		}(name, currentProvider) // Pass the loop variable to the goroutine
-	}
-	// Wait for all goroutines to complete
-	wg.Wait()
-}
-
-func (n *network) handleBlockNumberError(providerName string, provider *provider, statusCode int, providerBlockNumber int64, err error) {
-	n.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
-	provider.markPingFailure(n.HCThreshold)
-	n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
-}
-
-func (n *network) pingHealthCheck(providerName string, provider *provider, statusCode int, providerBlockNumber int64) bool {
-	if statusCode > 399 {
-		if statusCode == 429 {
-			n.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", n.Name), zap.String("machine_id", n.machineID))
-			provider.markPingWarning()
-		} else {
-			n.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int("status_code", statusCode), zap.String("machine_id", n.machineID))
-			provider.markPingFailure(n.HCThreshold)
 		}
-		n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
-		return true
+		// Evaluate final health status
+		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus, latestNetworkBlock)
+
+		// Update metrics and history
+		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
+		n.sendHealthCheckMetric(provider.host, newStatus.String())
 	}
-	provider.markPingSuccess(n.HCThreshold)
-	return false
 }
 
-func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *provider, providerBlockNumber int64) bool {
-	// If there's only one provider, any block number is acceptable
-	if len(n.Providers) == 1 {
+// handleErrorWithGracePeriod implements the grace period logic for unhealthy providers
+func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus HealthStatus, blockNum int64) HealthStatus {
+	if healthStatus != Unhealthy {
+		// For Warning status, reset counter and continue with checks
+		provider.consecutiveUnhealthyChecks = 0
+		return healthStatus
+	}
+
+	// Handle Unhealthy status with grace period
+	provider.consecutiveUnhealthyChecks++
+	if provider.consecutiveUnhealthyChecks < n.HCThreshold {
+		// First unhealthy response - give grace period by converting to warning
+		return Warning
+	}
+
+	// Provider has exceeded grace period - mark as unhealthy
+	return Unhealthy
+}
+
+// logProviderWarning logs a warning message with standard provider context
+func (n *network) logProviderWarning(msg string, provider *provider, fields ...zap.Field) {
+	baseFields := []zap.Field{
+		zap.String("provider", provider.host),
+		zap.String("network", n.Name),
+		zap.String("machine_id", n.machineID),
+	}
+
+	n.logger.Warn(msg, append(baseFields, fields...)...)
+}
+
+// evaluateProviderHealth performs both levels of health checks
+func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus, latestNetworkBlock int64) HealthStatus {
+	// Track the worst status we find
+	worstStatus := healthStatus
+
+	// if provider has no block history, set it to unhealthy
+	if len(provider.BlockHistory()) == 0 {
+		return Unhealthy
+	}
+
+	// Check for block lag
+	var isLagged bool
+	var blockLag int64
+
+	if latestNetworkBlock > 0 {
+		blockLag = int64(latestNetworkBlock) - currentBlock
+		// If block lag is greater than limit, mark as warning and set isLagged flag
+		if blockLag > n.BlockLagLimit {
+			isLagged = true
+			n.logProviderWarning("Provider is lagging behind network", provider,
+				zap.Int64("block_lag", blockLag),
+				zap.Int64("provider_block", currentBlock),
+				zap.Int64("network_block", latestNetworkBlock))
+			if Warning > worstStatus {
+				worstStatus = Warning
+			}
+		}
+
+		// Check if block is too far ahead (block jump)
+		blockJump := currentBlock - int64(latestNetworkBlock)
+		if blockJump > n.BlockJumpLimit {
+			n.logProviderWarning("Provider is too far ahead of network", provider,
+				zap.Int64("block_jump", blockJump),
+				zap.Int64("provider_block", currentBlock),
+				zap.Int64("network_block", latestNetworkBlock))
+			return Unhealthy
+		}
+	}
+
+	if isLagged {
+		// Provider is lagging behind
+		n.logProviderWarning("Provider is lagging behind network", provider,
+			zap.Int64("block_lag", blockLag),
+			zap.Int64("provider_block", currentBlock),
+			zap.Int64("network_block", latestNetworkBlock))
+		if Warning > worstStatus {
+			worstStatus = Warning
+		}
+
+		isStalled := n.isStalled(provider)
+		if isStalled {
+			// Provider is both stalled and lagged - more serious issue
+			n.logProviderWarning("Provider is stalled and lagged", provider)
+			return Unhealthy
+		}
+	} else if n.isStalled(provider) && !n.allProvidersStalled() {
+		// Edge case: Provider is stalled but not yet lagged, while others are making progress
+		n.logProviderWarning("Provider is stalled while others are progressing", provider)
+		return Warning
+	}
+
+	// chainId check health check
+	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
+	if err != nil {
+		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err))
+		return Unhealthy
+	}
+
+	if !n.verifyChainID(chainId) {
+		n.logProviderWarning("Provider has incorrect chain ID", provider)
+		return Unhealthy
+	}
+
+	// Archive Health Check
+	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
+	// then check if the provider can return back block data from half of its block height
+	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "starknet") {
+		// check if the provider can return back block data from half of its block height
+		currentBlock := provider.getLatestHealthyBlockEntry()
+		if currentBlock == nil {
+			// if the provider has no healthy block history, return unhealthy
+			return Unhealthy
+		}
+		// get a quarter of the block height
+		quarterBlockHeight := currentBlock.blockNumber / 4
+
+		// convert quarterBlockHeight to hex string
+		quarterBlockHeightHex := fmt.Sprintf("%#x", quarterBlockHeight)
+
+		// call the network method
+		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
+		if err != nil {
+			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
+			return Unhealthy
+		}
+	}
+
+	return worstStatus
+}
+
+// verifyChainID checks if provider is serving correct chain
+func (n *network) verifyChainID(chainId string) bool {
+	return chainId == n.ChainId
+}
+
+// isStalled checks if provider's block numbers haven't changed
+func (n *network) isStalled(provider *provider) bool {
+	history := provider.BlockHistory()
+	// if history is less than the block history size, return false
+	if len(history) < n.BlockHistorySize {
 		return false
 	}
 
-	// Use 75th percentile as reference point
-	referenceBlock := n.getPercentileBlockNumber(0.75)
-	if referenceBlock == 0 {
-		// Not enough data to make a determination
-		return false
+	// if all blocks in history are the same, return true
+	firstBlock := history[0].blockNumber
+	for _, entry := range history[1:] {
+		if entry.blockNumber != firstBlock {
+			return false
+		}
 	}
-
-	// Check if the provider's block number is too far from the reference block
-	if providerBlockNumber > referenceBlock+n.BlockNumberDelta {
-		n.logger.Warn("Provider is too far ahead of the network",
-			zap.String("provider", providerName),
-			zap.String("network", n.Name),
-			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
-		provider.markUnhealthy()
-		return true
-	} else if providerBlockNumber < referenceBlock-n.BlockNumberDelta {
-		n.logger.Warn("Provider is too far behind the network",
-			zap.String("provider", providerName),
-			zap.String("network", n.Name),
-			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
-		provider.markUnhealthy()
-		return true
-	}
-	return false
+	return true
 }
 
-func (n *network) consistencyHealthCheck(providerName string, provider *provider, providerBlockNumber int64) {
-	// For a single provider, always consider it healthy if it's responding
-	if len(n.Providers) == 1 {
-		provider.markHealthy(n.HCThreshold)
-		n.latestBlockNumber = providerBlockNumber
-		return
+// allProvidersStalled checks if all providers are showing no progress
+func (n *network) allProvidersStalled() bool {
+	for _, p := range n.Providers {
+		if !n.isStalled(p) {
+			return false
+		}
 	}
-
-	referenceBlock := n.getPercentileBlockNumber(0.75)
-	if referenceBlock == 0 {
-		// First health check or not enough data
-		n.latestBlockNumber = providerBlockNumber
-		provider.markHealthy(n.HCThreshold)
-		return
-	}
-
-	// Update network's latest block number if we see a higher one
-	// Move this before the lag check to ensure we capture the highest block
-	if providerBlockNumber > n.latestBlockNumber {
-		n.latestBlockNumber = providerBlockNumber
-	}
-	// Also update latest block number with reference block if it's higher
-	if referenceBlock > n.latestBlockNumber {
-		n.latestBlockNumber = referenceBlock
-	}
-
-	if providerBlockNumber+n.BlockLagLimit < referenceBlock {
-		n.logger.Warn("Provider is lagging behind",
-			zap.String("provider", providerName),
-			zap.String("network", n.Name),
-			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
-		provider.markWarning()
-	} else {
-		provider.markHealthy(n.HCThreshold)
-	}
+	return true
 }
 
-func (n *network) sendLatestBlockMetric(providerName string, statusCode int, healthStatus string, providerBlockNumber int64) {
-	n.PrometheusClient.HandleLatestBlockMetric(&prom.PromLatestBlockMetricData{
-		Network:        n.Name,
-		Provider:       providerName,
-		ResponseStatus: statusCode,
-		HealthStatus:   healthStatus,
-		BlockNumber:    providerBlockNumber,
+// getLatestHealthyBlock returns the highest block number among healthy providers
+// Falls back to warning providers if no healthy providers are available
+func (n *network) getLatestHealthyBlock() int64 {
+	var latestBlockFromHealthy int64
+	var latestBlockFromWarning int64
+	var latestBlockFromUnhealthy int64
+
+	// Single pass through providers to track latest blocks by status
+	for _, provider := range n.Providers {
+		history := provider.BlockHistory()
+		if len(history) == 0 {
+			continue
+		}
+
+		latestBlock := provider.getLatestBlockEntry()
+		if latestBlock == nil {
+			continue
+		}
+		switch latestBlock.healthStatus {
+		case Healthy:
+			if latestBlock.blockNumber > latestBlockFromHealthy {
+				latestBlockFromHealthy = latestBlock.blockNumber
+			}
+		case Warning:
+			if latestBlock.blockNumber > latestBlockFromWarning {
+				latestBlockFromWarning = latestBlock.blockNumber
+			}
+		case Unhealthy:
+			if latestBlock.blockNumber > latestBlockFromUnhealthy {
+				latestBlockFromUnhealthy = latestBlock.blockNumber
+			}
+		}
+	}
+
+	// Return highest block number, prioritizing by health status
+	if latestBlockFromHealthy > 0 {
+		return latestBlockFromHealthy
+	}
+	return latestBlockFromWarning
+}
+
+func (n *network) sendHealthCheckMetric(providerName string, healthStatus string) {
+	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
+		Network:      n.Name,
+		Provider:     providerName,
+		HealthStatus: healthStatus,
 	})
 }
 
-func (n *network) getCheckedProviderHCList(providerName string) ([]healthCheckEntry, bool) {
-	n.healthCheckListMutex.RLock()
-	defer n.healthCheckListMutex.RUnlock()
-	values, ok := n.CheckedProviders[providerName]
-	return values, ok
-}
+func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, HealthStatus, error) {
+	var lastErr error
+	var lastHealthStatus HealthStatus = Unhealthy
 
-func (n *network) setCheckedProviderHCList(providerName string, newHealthCheckList []healthCheckEntry) {
-	n.healthCheckListMutex.Lock()
-	defer n.healthCheckListMutex.Unlock()
-	n.CheckedProviders[providerName] = newHealthCheckList
-}
-
-// evaluateCheckedProviders loops through all of the checked providers and sets them as unhealthy if they are not the current provider
-func (n *network) evaluateCheckedProviders() {
-	// read lock the checked providers map
-	n.healthCheckListMutex.RLock()
-	defer n.healthCheckListMutex.RUnlock()
-	// loop through all of the checked providers and set them as unhealthy if they are not the current provider
-	checkedProviders := n.CheckedProviders
-	for providerName, healthCheckList := range checkedProviders {
-		if healthCheckList[0].blockNumber+n.BlockLagLimit < n.latestBlockNumber {
-			n.Providers[providerName].markWarning()
+	// Layer 1: Handle attempts
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
+		if err != nil {
+			lastErr = err
+			continue
 		}
+
+		blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+		if err != nil {
+			lastErr = err
+			lastHealthStatus = health
+			continue
+		}
+
+		return blockNumber, health, nil
 	}
+
+	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
-// addHealthCheckToCheckedProviderList adds a new healthCheckEntry to the beginning of the CheckedProviders healthCheck list for the given provider
-// the list will not exceed 10 entries
-func (n *network) addHealthCheckToCheckedProviderList(providerName string, healthCheckInput healthCheckEntry) {
-	// if the provider is not in the checked providers map, add it with its initial block number and timestamp
-	currentHealthCheckList, ok := n.getCheckedProviderHCList(providerName)
-	if !ok {
-		n.setCheckedProviderHCList(providerName, []healthCheckEntry{healthCheckInput})
-		return
+// Layer 3: Process response
+func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
+	// Evaluate health status based on status code
+	if *statusCode >= 400 {
+		// If status code is 429, set health status to Warning, otherwise return as unhealthy
+		if *statusCode == 429 {
+			return 0, Warning, fmt.Errorf("rate limit error (status code: %d)", *statusCode)
+		}
+		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
 	}
 
-	// to add a new healthCheckEntry to index 0 of the provider's slice, we need to make a new slice and copy the old slice to the new slice
-	newHealthCheckList := []healthCheckEntry{healthCheckInput}
-
-	// if the old slice is full at 10 entries, we need to remove the last entry and append the rest of the entries to the new slice
-	if len(currentHealthCheckList) == 10 {
-		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList[:9]...)
-		n.setCheckedProviderHCList(providerName, currentHealthCheckList)
-	} else {
-		// if the old slice is not full, we can copy the old slice to the new slice and add the new entry to index 0
-		currentHealthCheckList = append(newHealthCheckList, currentHealthCheckList...)
-		n.setCheckedProviderHCList(providerName, currentHealthCheckList)
-	}
-}
-
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, int, error) {
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
-
-	// Send the POST request
-	resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error sending POST request")
-	}
-
-	if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-		return 0, *statusCode, errors.New("Network Unavailable")
-	}
-
-	// response struct
 	var respObject map[string]interface{}
-
-	// Unmarshal the response
-	err = json.Unmarshal(resBytes, &respObject)
+	err := json.Unmarshal(resBytes, &respObject)
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	if _, ok := respObject["result"]; !ok {
-		return 0, 0, errors.New("Error getting block number from response")
+		return 0, Unhealthy, errors.Wrap(err, "Error unmarshalling response")
 	}
 
 	var blockNumber int64
@@ -313,53 +381,143 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	switch result := respObject["result"].(type) {
 	case string:
 		if result == "" || result[:2] != "0x" {
-			return 0, 0, errors.New("Invalid block number")
+			return 0, Unhealthy, errors.New("Invalid block number")
 		}
 
-		// Convert the hexadecimal string to an int64
 		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
 		if err != nil {
-			return 0, 0, errors.Wrap(err, "Error converting block number")
+			return 0, Unhealthy, errors.Wrap(err, "Error converting block number")
 		}
 	case float64:
 		blockNumber = int64(result)
 	default:
-		return 0, 0, errors.New("unsupported block number type")
+		return 0, Unhealthy, errors.New("unsupported block number type")
 	}
-	return blockNumber, *statusCode, nil
+
+	return blockNumber, Healthy, nil
+}
+
+func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
+	var lastErr error
+
+	// Layer 1: Handle attempts
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
+
+		// Send the POST request
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error sending POST request")
+			continue
+		}
+
+		if *statusCode != http.StatusOK {
+			lastErr = errors.New("Error getting chain ID from response")
+			continue
+		}
+
+		// response struct
+		var respObject map[string]interface{}
+
+		// Unmarshal the response
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error unmarshalling response")
+			continue
+		}
+
+		if _, ok := respObject["result"]; !ok {
+			lastErr = errors.New("Error getting chain ID from response")
+			continue
+		}
+
+		var chainReference string
+		var ok bool
+		namespace := EVMNamespace
+
+		// Map network names to their namespaces
+		namespaceMap := map[string]string{
+			"bitcoin":  BitcoinNamespace,
+			"solana":   SolanaNamespace,
+			"starknet": StarknetNamespace,
+		}
+
+		// Check if network name contains any of the special cases
+		for key, ns := range namespaceMap {
+			if strings.Contains(n.Name, key) {
+				namespace = ns
+				break
+			}
+		}
+
+		// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
+		// For all other networks, the chain ID is directly in the result field as a string
+		if strings.Contains(n.Name, "bitcoin") {
+			result, ok := respObject["result"].(map[string]interface{})
+			if !ok || result["chain"] == nil {
+				lastErr = errors.New("Error getting chain ID from response")
+				continue
+			}
+			chainReference = result["chain"].(string)
+		} else {
+			chainReference, ok = respObject["result"].(string)
+			if !ok {
+				lastErr = errors.New("Error getting chain ID from response")
+				continue
+			}
+		}
+
+		fullChainId := namespace + ":" + chainReference
+
+		// Success case - return the chain ID
+		return fullChainId, nil
+	}
+
+	return "", errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+}
+
+func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
+	var lastErr error
+
+	// Layer 1: Handle attempts
+	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
+
+		// Send the POST request
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error sending POST request")
+			continue
+		}
+
+		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
+			lastErr = errors.New("Network Unavailable")
+			continue
+		}
+
+		// response struct
+		var respObject map[string]interface{}
+
+		// Unmarshal the response
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			lastErr = errors.Wrap(err, "Error unmarshalling response")
+			continue
+		}
+
+		// if the response contains an error, return an error
+		if _, ok := respObject["error"]; ok {
+			lastErr = errors.New("network doesn't support archive mode")
+			continue
+		}
+
+		// Success case - return nil
+		return nil
+	}
+
+	return errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 func (n *network) close() {
 	close(n.quit)
-}
-
-// getPercentileBlockNumber returns the block number at the specified percentile across all providers
-// percentile should be between 0 and 1 (e.g., 0.75 for 75th percentile)
-func (n *network) getPercentileBlockNumber(percentile float64) int64 {
-	if len(n.Providers) == 0 {
-		return 0
-	}
-
-	// Collect all block numbers
-	blockNumbers := make([]int64, 0, len(n.Providers))
-	for _, provider := range n.Providers {
-		// Get the most recent block number from the provider's health check entries
-		entries, ok := n.getCheckedProviderHCList(provider.host)
-		if ok && len(entries) > 0 {
-			blockNumbers = append(blockNumbers, entries[0].blockNumber)
-		}
-	}
-
-	if len(blockNumbers) == 0 {
-		return 0
-	}
-
-	// Sort block numbers
-	sort.Slice(blockNumbers, func(i, j int) bool {
-		return blockNumbers[i] < blockNumbers[j]
-	})
-
-	// Calculate the index for the percentile
-	index := int(float64(len(blockNumbers)-1) * percentile)
-	return blockNumbers[index]
 }

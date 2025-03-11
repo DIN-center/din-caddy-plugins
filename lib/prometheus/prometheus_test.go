@@ -104,27 +104,25 @@ func TestHandleRequestMetric(t *testing.T) {
 	}
 }
 
-func TestHandleLatestBlockMetric(t *testing.T) {
+func TestHandleHealthCheckMetric(t *testing.T) {
 	// Initialize the prometheus client
 	client := NewPrometheusClient(zap.NewNop(), "test-machine-id")
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(DinHealthCheckCount, DinProviderBlockNumber)
+	registry.MustRegister(DinHealthCheckCount)
 
 	tests := []struct {
 		name           string
-		data           *PromLatestBlockMetricData
+		data           *PromHealthCheckMetricData
 		expectedLabels map[string]string
 	}{
 		{
 			name: "Valid Data",
-			data: &PromLatestBlockMetricData{
-				Network:        "/ethereum",
-				Provider:       "infura",
-				ResponseStatus: 200,
-				HealthStatus:   "healthy",
-				BlockNumber:    12345,
+			data: &PromHealthCheckMetricData{
+				Network:      "/ethereum",
+				Provider:     "infura",
+				HealthStatus: "healthy",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -136,12 +134,10 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 		},
 		{
 			name: "Invalid Data",
-			data: &PromLatestBlockMetricData{
-				Network:        "/ethereum",
-				Provider:       "infura",
-				ResponseStatus: 500,
-				HealthStatus:   "unhealthy",
-				BlockNumber:    -1,
+			data: &PromHealthCheckMetricData{
+				Network:      "/ethereum",
+				Provider:     "infura",
+				HealthStatus: "unhealthy",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -156,7 +152,7 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Call the function
-			client.HandleLatestBlockMetric(tt.data)
+			client.HandleHealthCheckMetric(tt.data)
 
 			// Use testutil to check if the metric exists with the expected labels and value
 			_, err := registry.Gather()
@@ -171,14 +167,6 @@ func TestHandleLatestBlockMetric(t *testing.T) {
 			))
 
 			assert.Equal(t, float64(1), metric, "Metric should be incremented once")
-
-			blockNumberMetric := testutil.ToFloat64(DinProviderBlockNumber.WithLabelValues(
-				tt.expectedLabels["service"],
-				tt.expectedLabels["provider"],
-				tt.expectedLabels["machine_id"],
-			))
-
-			assert.Equal(t, float64(tt.data.BlockNumber), blockNumberMetric, "Block number metric should be set correctly")
 		})
 	}
 }

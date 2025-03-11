@@ -3,4 +3,21 @@ Caddyfile.private
 data/
 caddy
 din-plugins/
+coverage.out.DS_Store
+.tool-versions
+Caddyfile.private2
+Caddyfile_registry.private3
+bsc_loop.sh
+buildenv_2024-10-24-1828.2echo919146434/
+caddy- -e .DS_Storen.data/ncmd/siwe-tool-versionsnCaddyfile.privatetoken/secretnfoundry.tomlnloc2nCaddyfile_registryal_rivet_script.shnscripts/nservices/.DS_Store >> .gitignore.private3
+bsc_loop.sh
+buildenv_2024-10-24-1828.2919146434/
+caddy-data/
+cmd/siwe-token/secret
+foundry.toml
+local_rivet_script.sh
+scripts/
+services/.DS_Store
+.DS_Store
+*/.DS_Store
 coverage.out

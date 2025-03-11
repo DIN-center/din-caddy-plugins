@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	reflect "reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -64,8 +64,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;"}`
 
-	now := time.Now()
-
 	test := []struct {
 		name     string
 		request  *http.Request
@@ -82,15 +80,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							healthStatus: Healthy,
-						},
-					},
-					CheckedProviders: map[string][]healthCheckEntry{
-						"localhost:8000": {
-							{
-								blockNumber: 1,
-								timestamp:   &now,
-							},
+							blockHistory: func() *list.List {
+								l := list.New()
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								return l
+							}(),
 						},
 					},
 					MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
@@ -107,15 +101,11 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					Name: "eth",
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							healthStatus: Healthy,
-						},
-					},
-					CheckedProviders: map[string][]healthCheckEntry{
-						"localhost:8000": {
-							{
-								blockNumber: 1,
-								timestamp:   &now,
-							},
+							blockHistory: func() *list.List {
+								l := list.New()
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								return l
+							}(),
 						},
 					},
 					MaxRequestPayloadSizeKB: 0,
@@ -147,12 +137,6 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(RequestProviderKey, tt.provider)
-
-			// bodyBytes, err := io.ReadAll(tt.request.Body)
-			// if err != nil {
-			// 	t.Errorf("ServeHTTP() = %v, want %v", err, nil)
-			// }
-			// repl.Set(RequestBodyKey, bodyBytes)
 
 			err := dinMiddleware.ServeHTTP(rw, tt.request, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 			if err == nil && tt.hasErr {
@@ -379,13 +363,42 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 				eth {
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
-						localhost:8000 {
+						http://test-website-1.com/eth {
 							headers {
 								Content-Type application/json
 							}
 							priority 1
 						}
-						localhost:8001 {
+						http://test-website-2.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 2
+						}
+					}
+					chain_id eip155:0x1
+					healthcheck_method GET
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
+				}
+			}`,
+			hasErr: false,
+		},
+		{
+			name: "Invalid Caddyfile - No chain_id",
+			caddyfile: `networks {
+				eth {
+					methods eth_blockNumber eth_getBlockByNumber
+					providers {
+						http://test-website-1.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 1
+						}
+						http://test-website-2.com/eth {
 							headers {
 								Content-Type application/json
 							}
@@ -399,7 +412,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 					max_request_payload_size_kb 100
 				}
 			}`,
-			hasErr: false,
+			hasErr: true,
 		},
 		{
 			name: "Invalid Caddyfile - Missing provider",

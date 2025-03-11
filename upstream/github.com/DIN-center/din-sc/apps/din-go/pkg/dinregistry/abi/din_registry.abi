@@ -93,6 +93,11 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
             "name": "chainIdMethodBit",
             "type": "uint8",
             "internalType": "uint8"
@@ -131,11 +136,6 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
-          },
-          {
-            "name": "chainId",
-            "type": "string",
-            "internalType": "string"
           }
         ]
       },
@@ -403,6 +403,11 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
             "name": "chainIdMethodBit",
             "type": "uint8",
             "internalType": "uint8"
@@ -441,11 +446,6 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
-          },
-          {
-            "name": "chainId",
-            "type": "string",
-            "internalType": "string"
           }
         ]
       }
@@ -634,6 +634,11 @@
             "internalType": "uint8"
           },
           {
+            "name": "chainId",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
             "name": "chainIdMethodBit",
             "type": "uint8",
             "internalType": "uint8"
@@ -672,11 +677,6 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
-          },
-          {
-            "name": "chainId",
-            "type": "string",
-            "internalType": "string"
           }
         ]
       }

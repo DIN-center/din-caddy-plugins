@@ -205,36 +205,111 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 
 // syncNetworkConfig updates the network object with the registry network config data
 func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
+	// Get the healthcheck method name from the registry, usually eth_blockNumber or similar
 	registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
 	if err != nil {
 		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
 		return nil, err
 	}
 
-	// Sync the value if it is not 0 and different from the current middleware network value
+	// Get the chain ID method name from the registry, usually eth_chainId or similar
+	registryChainIdMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.ChainIdMethodBit)
+	if err != nil {
+		d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		return nil, err
+	}
+
+	// Get the call contract method name from the registry, usually eth_call or similar
+	registryCallContractMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.CallContractMethodBit)
+	if err != nil {
+		d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		return nil, err
+	}
+
+	// Update Chain ID if changed
+	if regNetwork.NetworkConfig.ChainId != "" && regNetwork.NetworkConfig.ChainId != network.ChainId {
+		d.logger.Debug("Setting network chain Id",
+			zap.String("network", network.Name),
+			zap.String("chain_id", regNetwork.NetworkConfig.ChainId))
+		network.ChainId = regNetwork.NetworkConfig.ChainId
+	}
+
+	// Update Healthcheck Method if changed
 	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
-		d.logger.Debug("Setting network healthcheck method", zap.String("network", network.Name), zap.String("method", registryHCMethod))
+		d.logger.Debug("Setting network healthcheck method",
+			zap.String("network", network.Name),
+			zap.String("healthcheck_method", registryHCMethod))
 		network.HCMethod = registryHCMethod
 	}
-	registryHCInterval := int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
-	if registryHCInterval != 0 && registryHCInterval != network.HCInterval {
-		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.Name), zap.Int("interval", registryHCInterval))
-		network.HCInterval = registryHCInterval
+
+	// Update Chain ID Method if changed
+	if registryChainIdMethod != "" && registryChainIdMethod != network.ChainIdMethod {
+		d.logger.Debug("Setting network chain ID method",
+			zap.String("network", network.Name),
+			zap.String("chain_id_method", registryChainIdMethod))
+		network.ChainIdMethod = registryChainIdMethod
 	}
-	registryBlockLagLimit := int64(regNetwork.NetworkConfig.BlockLagLimit)
-	if registryBlockLagLimit != 0 && registryBlockLagLimit != network.BlockLagLimit {
-		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", registryBlockLagLimit))
-		network.BlockLagLimit = int64(registryBlockLagLimit)
+
+	// Update Call Contract Method if changed
+	if registryCallContractMethod != "" && registryCallContractMethod != network.CallContractMethod {
+		d.logger.Debug("Setting network call contract method",
+			zap.String("network", network.Name),
+			zap.String("call_contract_method", registryCallContractMethod))
+		network.CallContractMethod = registryCallContractMethod
 	}
-	registryMaxRequestPayloadSizeKB := int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
-	if registryMaxRequestPayloadSizeKB != 0 && registryMaxRequestPayloadSizeKB != network.MaxRequestPayloadSizeKB {
-		d.logger.Debug("Setting network max request payload size", zap.String("network", network.Name), zap.Int64("max_request_payload_size_kb", registryMaxRequestPayloadSizeKB))
-		network.MaxRequestPayloadSizeKB = registryMaxRequestPayloadSizeKB
+
+	// Update Healthcheck Interval if changed
+	hcInterval := int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
+	if hcInterval != 0 && hcInterval != network.HCInterval {
+		d.logger.Debug("Setting network healthcheck interval",
+			zap.String("network", network.Name),
+			zap.Int("interval", hcInterval))
+		network.HCInterval = hcInterval
 	}
-	registryRequestAttemptCount := int(regNetwork.NetworkConfig.RequestAttemptCount)
-	if registryRequestAttemptCount != 0 && registryRequestAttemptCount != network.RequestAttemptCount {
-		d.logger.Debug("Setting network request attempt count", zap.String("network", network.Name), zap.Int("request_attempt_count", registryRequestAttemptCount))
-		network.RequestAttemptCount = int(registryRequestAttemptCount)
+
+	// Update Block Lag Limit if changed
+	blockLagLimit := int64(regNetwork.NetworkConfig.BlockLagLimit)
+	if blockLagLimit != 0 && blockLagLimit != network.BlockLagLimit {
+		d.logger.Debug("Setting network block lag limit",
+			zap.String("network", network.Name),
+			zap.Int64("block_lag_limit", blockLagLimit))
+		network.BlockLagLimit = blockLagLimit
+	}
+
+	// Update Block Jump Limit if changed
+	blockJumpLimit := int64(regNetwork.NetworkConfig.BlockJumpLimit)
+	if blockJumpLimit != 0 && blockJumpLimit != network.BlockJumpLimit {
+		d.logger.Debug("Setting network block jump limit",
+			zap.String("network", network.Name),
+			zap.Int64("block_jump_limit", blockJumpLimit))
+		network.BlockJumpLimit = blockJumpLimit
+	}
+
+	// Update Max Request Payload Size if changed
+	maxPayloadSize := int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
+	if maxPayloadSize != 0 && maxPayloadSize != network.MaxRequestPayloadSizeKB {
+		d.logger.Debug("Setting network max request payload size",
+			zap.String("network", network.Name),
+			zap.Int64("max_payload_size_kb", maxPayloadSize))
+		network.MaxRequestPayloadSizeKB = maxPayloadSize
+	}
+
+	// Update Request Attempt Count if changed
+	requestAttempts := int(regNetwork.NetworkConfig.RequestAttemptCount)
+	if requestAttempts != 0 && requestAttempts != network.RequestAttemptCount {
+		d.logger.Debug("Setting network request attempt count",
+			zap.String("network", network.Name),
+			zap.Int("request_attempts", requestAttempts))
+		network.RequestAttemptCount = requestAttempts
+	}
+
+	// Update Archive Enabled if changed
+	archiveEnabled := regNetwork.NetworkConfig.ArchiveEnabled
+	if archiveEnabled != network.ArchiveEnabled {
+		d.logger.Debug("Setting network archive enabled",
+			zap.String("network", network.Name),
+			zap.Bool("archive_enabled", archiveEnabled))
+		network.ArchiveEnabled = archiveEnabled
 	}
 
 	return network, nil
@@ -295,8 +370,10 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	d.Networks[network.Name].HCMethod = network.HCMethod
 	d.Networks[network.Name].HCInterval = network.HCInterval
 	d.Networks[network.Name].BlockLagLimit = network.BlockLagLimit
+	d.Networks[network.Name].BlockJumpLimit = network.BlockJumpLimit
 	d.Networks[network.Name].MaxRequestPayloadSizeKB = network.MaxRequestPayloadSizeKB
 	d.Networks[network.Name].RequestAttemptCount = network.RequestAttemptCount
+	// Don't override ExpectedChainID as it's a required config value
 
 	// add the new providers to the middleware network.Providers map
 	for _, p := range network.Providers {

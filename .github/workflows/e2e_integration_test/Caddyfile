@@ -1,8 +1,14 @@
 # Caddyfile for Din e2e testing
 {
 	debug
+	order din before reverse_proxy
 }
 :8000 {
+	# Add health check endpoint
+	handle /health {
+		respond "OK" 200
+	}
+
 	route /* {
 		# middleware declaration
 		din {
@@ -20,6 +26,7 @@
 							priority 0
 						}
 					}
+					chain_id eip155:0x1
 				}
 			}
 		}

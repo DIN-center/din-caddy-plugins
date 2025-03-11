@@ -6,11 +6,11 @@ The DIN Proxy is built on Caddy, which is an open source reverse proxy written i
 
 # Caddy Modules
 
-The following headers indicate the DIN plugin implementations of [Caddy’s Module Namespaces](https://caddyserver.com/docs/extending-caddy/namespaces). Most of the Caddy configuration is parsed by the `http.handlers.din` middleware’s `UnmarshalCaddyFile()` method, and passed to other modules.
+The following headers indicate the DIN plugin implementations of [Caddy's Module Namespaces](https://caddyserver.com/docs/extending-caddy/namespaces). Most of the Caddy configuration is parsed by the `http.handlers.din` middleware's `UnmarshalCaddyFile()` method, and passed to other modules.
 
 > **_Warning:_** 
 > 
-> A weird quirk of Caddy is that CaddyModules are JSON serialized and deserialized between the `UnmarshalCaddyFile()` step and the `Provision()` step. This can lead to some unexpected behaviors that it’s important to be aware of.
+> A weird quirk of Caddy is that CaddyModules are JSON serialized and deserialized between the `UnmarshalCaddyFile()` step and the `Provision()` step. This can lead to some unexpected behaviors that it's important to be aware of.
 > 1. Any private struct fields on the module (fields starting with lowercase letters) will be unset between `UnmarshalCaddyFile()` and `Provision()`.
 > 2. Any goroutines started in the `UnmarshalCaddyFile()` step (such as health checks and maintaining API tokens) will be interacting with a different instance of the module than later steps. If goroutines are needed to maintain the state of a CaddyModule struct, they should be started in the `Provision()` step
 
@@ -59,7 +59,7 @@ The Caddy Middleware Module identifies distinct services (typically correspondin
 When a request comes in the middleware identifies which providers are eligible to serve this request and attaches that to the request object. It attempts the request with a configurable number of retries, processes some metrics, and returns the response to the user.
 
 ### http.handlers.din_auth - DIN Authentication Middleware
-The DIN Authentication Middleware doesn’t run on the gateway router, but rather runs on a proxy on the provider side to handle the authentication protocol. Details for the authentication protocol, as documented [here](https://docs.google.com/document/d/1ij3SGpkxNpYToEpJSztGX388FK3Xd5T3MzMGgF6iauM/edit#heading=h.dhke5p1t8lhp).
+The DIN Authentication Middleware doesn't run on the gateway router, but rather runs on a proxy on the provider side to handle the authentication protocol. Details for the authentication protocol, as documented [here](https://docs.google.com/document/d/1ij3SGpkxNpYToEpJSztGX388FK3Xd5T3MzMGgF6iauM/edit#heading=h.dhke5p1t8lhp).
 
 ## http.reverse_proxy.upstreams
 
@@ -67,17 +67,17 @@ Caddy Upstreams modules provide a list of Upstreams that are able to handle the 
 
 ### http.reverse_proxy.upstreams.din_reverse_proxy_policy
 
-DIN’s upstreams module takes the provider list attached to the request by the DIN Router Middleware and selects which ones are eligible to serve this request. It makes this determined based on the configured priority for the provider, and the availability according to healthchecks.
+DIN's upstreams module takes the provider list attached to the request by the DIN Router Middleware and selects which ones are eligible to serve this request. It makes this determined based on the configured priority for the provider, and the availability according to healthchecks.
 
 ## http.reverse_proxy.selection_policies
 Caddy selection policies select one of the upstreams indicated by Caddy Upstreams Module to be the one that serves the current request.
 
 ### http.reverse_proxy.selection_policies.din_reverse_proxy_policy
 
-DIN’s selection policy reviews the providers offered by the Upstreams module, selects one to send traffic to, and makes adjustments to the request as necessary for the specific provider. These request adjustments can include adding authentication headers, changing the request’s path, and signing the request with the DIN Authentication system.
+DIN's selection policy reviews the providers offered by the Upstreams module, selects one to send traffic to, and makes adjustments to the request as necessary for the specific provider. These request adjustments can include adding authentication headers, changing the request's path, and signing the request with the DIN Authentication system.
 
-Note that the primary selection criteria uses Caddy’s native HeaderHashSelection selector on the 
-“Din-Session-Id” header. This means that requests for a given Din-Session-Id will always be routed to the same provider to help ensure session consistency.
+Note that the primary selection criteria uses Caddy's native HeaderHashSelection selector on the 
+"Din-Session-Id" header. This means that requests for a given Din-Session-Id will always be routed to the same provider to help ensure session consistency.
 
 # Authentication
 
@@ -89,7 +89,7 @@ The DIN Authentication Client runs on the DIN Router. For each provider authenti
 
 ## Server
 
-The DIN Authentication Server runs on the DIN Provider’s proxy. 
+The DIN Authentication Server runs on the DIN Provider's proxy. 
 
 Requests for `/auth` will validate a signed message and issue a session key. The issued session keys are JWT Tokens. The signing server should have a secret key used to sign HMAC JWT Tokens. If a provider runs multiple instances of the DIN proxy, each instance should be configured with the same secret so that each instance can validate session keys regardless of which instance they were issued by.
 
@@ -99,6 +99,21 @@ Any other request will look for a JWT token in the `x-api-key` header, validate 
 
 # Healthchecks
 
-In the Middleware's `Provision()` step, a goroutine is started to monitor each Provider. These health checks get the block number from each provider. The method for retrieving the block number is configurable per network. If a provider fails to return a block number at all, the provider is immediately marked as unhealthy. If the block number falls behind other providers by a configurable limit (default 5 blocks), the provider will be marked as unhealthy. Once a provider is marked as unhealthy, it will not return to "healthy" status until it catches up to the latest block seen from any provider on the network.
+The DIN proxy implements a sophisticated health check system to monitor provider availability and reliability. Health checks run in a background goroutine for each network, periodically querying all providers to assess their status.
 
-The `http.reverse_proxy.upstreams.din_reverse_proxy_policy` module that evaluates each request to determine which providers are eligible to serve a given request looks at the healthcheck status of each provider.
+The health check process evaluates several factors:
+- **Block Height**: Providers should return current block numbers that are consistent with the network
+- **Block Lag**: Providers that fall behind the network by a configurable number of blocks are marked with a warning status
+- **Block Jump**: Providers that report blocks too far ahead of the network are marked as unhealthy
+- **Stalled Providers**: Providers that don't update their block numbers are identified
+- **Chain ID Verification**: Ensures providers are serving the correct blockchain network
+- **Archive Mode Support**: For providers that should support historical queries
+
+The system uses three health status levels:
+- **Healthy**: Provider is fully operational
+- **Warning**: Provider has issues but can still serve traffic
+- **Unhealthy**: Provider should not receive traffic
+
+The health check system is intelligent enough to distinguish between network-wide issues (when all providers are stalled) and individual provider problems. This prevents unnecessary service disruption during network outages.
+
+For detailed implementation information, see the [modules/README.md](modules/README.md#healthchecks) file.

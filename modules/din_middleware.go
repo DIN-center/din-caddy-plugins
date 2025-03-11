@@ -26,6 +26,8 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
+	"container/list"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
@@ -209,6 +211,11 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 	provider.logger = d.logger
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
+	// Make sure blockHistory is initialized
+	if provider.blockHistory == nil {
+		provider.blockHistory = list.New()
+	}
+
 	return nil
 }
 
@@ -323,7 +330,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			}
 		}
 	}
-	healthStatus := network.Providers[provider].healthStatus.String()
+	providerBlockNumber := network.Providers[provider].getLatestBlockEntry()
+	healthStatus := providerBlockNumber.healthStatus.String()
 
 	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
 	if len(bodyBytes) == 0 {
@@ -494,6 +502,19 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					case "healthcheck_method":
 						dispenser.Next()
 						d.Networks[networkName].HCMethod = dispenser.Val()
+					case "chainid_method":
+						dispenser.Next()
+						d.Networks[networkName].ChainIdMethod = dispenser.Val()
+					case "chain_id":
+						dispenser.Next()
+						chainId := dispenser.Val()
+						if chainId == "" {
+							return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
+						}
+						d.Networks[networkName].ChainId = chainId
+					case "call_contract_method":
+						dispenser.Next()
+						d.Networks[networkName].CallContractMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -513,13 +534,20 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
 						}
 						d.Networks[networkName].BlockLagLimit = int64(limit)
-					case "healthcheck_blocknumber_delta":
+					case "healthcheck_blockjump_limit":
 						dispenser.Next()
-						blockNumberDelta, err := strconv.Atoi(dispenser.Val())
+						limit, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return fmt.Errorf("invalid healthcheck blocknumber delta: %v", err)
+							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
 						}
-						d.Networks[networkName].BlockNumberDelta = int64(blockNumberDelta)
+						d.Networks[networkName].BlockJumpLimit = int64(limit)
+					case "healthcheck_block_history_size":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid healthcheck block history size: %v", err)
+						}
+						d.Networks[networkName].BlockHistorySize = int(size)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
@@ -534,9 +562,19 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid request attempt count: %v", err)
 						}
 						d.Networks[networkName].RequestAttemptCount = requestAttemptCount
+					case "archive_enabled":
+						dispenser.Next()
+						archiveEnabled, err := strconv.ParseBool(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid archive enabled: %v", err)
+						}
+						d.Networks[networkName].ArchiveEnabled = archiveEnabled
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
+				}
+				if d.Networks[networkName].ChainId == "" {
+					return fmt.Errorf("chain ID is not set for network %s", networkName)
 				}
 			}
 		case "din_registry":
