@@ -8,10 +8,10 @@ import (
 type LoggerClient struct {
 	Logger    *zap.Logger
 	machineId string
-	env       *utils.Environment
+	env       utils.Environment
 }
 
-func NewLoggerClient(logger *zap.Logger, env *utils.Environment) *LoggerClient {
+func NewLoggerClient(logger *zap.Logger, env utils.Environment) *LoggerClient {
 	return &LoggerClient{
 		Logger:    logger,
 		machineId: utils.GetMachineId(),
@@ -23,7 +23,7 @@ func NewLoggerClient(logger *zap.Logger, env *utils.Environment) *LoggerClient {
 func (l *LoggerClient) addCommonFields(fields ...zap.Field) []zap.Field {
 	return append(fields,
 		zap.String("machine_id", l.machineId),
-		zap.String("environment", string(*l.env)))
+		zap.String("environment", string(l.env)))
 }
 
 func (l *LoggerClient) Info(msg string, fields ...zap.Field) {

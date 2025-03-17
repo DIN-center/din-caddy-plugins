@@ -122,7 +122,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 func (d *DinMiddleware) initialize(context caddy.Context) error {
 	var err error
 	d.machineID = utils.GetMachineId()
-	loggerClient := logger.NewLoggerClient(context.Logger(d), &d.Env)
+	loggerClient := logger.NewLoggerClient(context.Logger(d), d.Env)
 	d.logger = loggerClient
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(loggerClient, d.machineID)
@@ -372,7 +372,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 			dispenser.Next()
 			env := utils.Environment(dispenser.Val())
 			// Default to development stage if an invalid stage is provided
-			if env != utils.EnvBeta && env != utils.EnvProd && env != utils.EnvDev {
+			if env != utils.EnvProd && env != utils.EnvBeta && env != utils.EnvDev && env != utils.EnvTest {
 				env = utils.EnvDev
 			}
 			d.Env = env

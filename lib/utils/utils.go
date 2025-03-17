@@ -13,6 +13,7 @@ const (
 	EnvProd Environment = "prod"
 	EnvBeta Environment = "beta"
 	EnvDev  Environment = "dev"
+	EnvTest Environment = "test"
 )
 
 // GetMachineId returns a unique string for the current running process
