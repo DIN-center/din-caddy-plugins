@@ -49,6 +49,8 @@ type DinMiddleware struct {
 	// A map of network paths to network objects
 	Networks map[string]*network `json:"networks"`
 	mu       sync.RWMutex
+	// The current environment (prod, beta, dev)
+	Env Environment
 
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
@@ -365,6 +367,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	siweSignerClient := siwe.NewSIWESignerClient()
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
+		case "environment":
+			// Signifier for production or beta etc.
+			dispenser.Next()
+			env := Environment(dispenser.Val())
+			// Default to development stage if an invalid stage is provided
+			if env != EnvBeta && env != EnvProd && env != EnvDev {
+				env = EnvDev
+			}
+			d.Env = env
 		case "siwe-signer":
 			var key []byte
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {

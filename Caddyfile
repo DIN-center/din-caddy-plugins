@@ -24,6 +24,7 @@
 	route /* {
 		# middleware declaration
 		din {
+			environment prod
 			siwe-signer {
 				secret_file /run/secrets/din-secret-key
 			}

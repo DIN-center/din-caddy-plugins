@@ -146,7 +146,6 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 	baseFields := []zap.Field{
 		zap.String("provider", provider.host),
 		zap.String("network", n.Name),
-		zap.String("machine_id", n.machineID),
 	}
 
 	n.logger.Warn(msg, append(baseFields, fields...)...)

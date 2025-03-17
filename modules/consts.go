@@ -2,6 +2,9 @@ package modules
 
 type HealthStatus int
 
+// Environment represents the deployment environment
+type Environment string
+
 const (
 	// Health status enums
 	Healthy HealthStatus = iota
@@ -54,6 +57,11 @@ const (
 	SolanaNamespace = "solana"
 	// Starknet
 	StarknetNamespace = "starknet"
+
+	// Environment Constants
+	EnvProd Environment = "prod"
+	EnvBeta Environment = "beta"
+	EnvDev  Environment = "dev"
 )
 
 // String method to convert MyEnum to string
