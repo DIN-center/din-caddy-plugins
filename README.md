@@ -1,5 +1,22 @@
 ![DIN Caddy Architecture](Din-Caddy-Architecture.png "Architecture")
 
+# DIN Caddy Plugins
+
+A collection of Caddy server plugins for the DIN (Decentralized Infrastructure Network) project.
+
+## Features
+
+- **Multi-Network Support**: Route requests to different blockchain networks
+- **Provider Load Balancing**: Automatically distribute requests across multiple providers
+- **Health Monitoring**: Continuously check provider health and availability
+- **Chain ID Configuration**: Explicit chain ID support for all networks using standard formats
+- **Environment Support**: Configurable environments (prod, beta, dev, test) with standardized logging
+- **Archive Node Support**: Dedicated configuration for archive nodes
+
+## Configuration
+
+### Basic Structure
+
 # General Design
 
 The DIN Proxy is built on Caddy, which is an open source reverse proxy written in Go. The [github.com/din-center/din-caddy-plugins](https://github.com/din-center/din-caddy-plugins) project implements several Caddy Modules that enable requests to be routed to different providers based on which providers are able to serve which requests, the priority of those providers, and the health status of each provider.
