@@ -180,7 +180,7 @@ func TestInitialize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			// Create logger and mock context
-			logger := logger.NewLoggerClient(zaptest.NewLogger(t))
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), nil)
 
 			// Setup DinMiddleware object
 			dinMiddleware := tt.initialDinMiddleware
@@ -255,7 +255,7 @@ func TestInitializeProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := logger.NewLoggerClient(zaptest.NewLogger(t))
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), nil)
 			dinMiddleware := &DinMiddleware{
 				logger:    logger,
 				machineID: "test-machine-id",
@@ -327,7 +327,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := logger.NewLoggerClient(zaptest.NewLogger(t))
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), nil)
 			dinMiddleware := &DinMiddleware{
 				testMode: true, // Ensure test mode is enabled
 				logger:   logger,

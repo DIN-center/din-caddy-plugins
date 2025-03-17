@@ -50,7 +50,7 @@ type DinMiddleware struct {
 	Networks map[string]*network `json:"networks"`
 	mu       sync.RWMutex
 	// The current environment (prod, beta, dev)
-	Env Environment
+	Env utils.Environment
 
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
@@ -122,7 +122,7 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 func (d *DinMiddleware) initialize(context caddy.Context) error {
 	var err error
 	d.machineID = utils.GetMachineId()
-	loggerClient := logger.NewLoggerClient(context.Logger(d))
+	loggerClient := logger.NewLoggerClient(context.Logger(d), &d.Env)
 	d.logger = loggerClient
 	// Initialize the prometheus client on the din middleware object
 	promClient := prom.NewPrometheusClient(loggerClient, d.machineID)
@@ -370,10 +370,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "environment":
 			// Signifier for production or beta etc.
 			dispenser.Next()
-			env := Environment(dispenser.Val())
+			env := utils.Environment(dispenser.Val())
 			// Default to development stage if an invalid stage is provided
-			if env != EnvBeta && env != EnvProd && env != EnvDev {
-				env = EnvDev
+			if env != utils.EnvBeta && env != utils.EnvProd && env != utils.EnvDev {
+				env = utils.EnvDev
 			}
 			d.Env = env
 		case "siwe-signer":
