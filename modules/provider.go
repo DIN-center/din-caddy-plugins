@@ -11,8 +11,8 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"go.uber.org/zap"
 )
 
 type provider struct {
@@ -22,7 +22,7 @@ type provider struct {
 	Headers    map[string]string
 	upstream   *reverseproxy.Upstream
 	httpClient *din_http.HTTPClient
-	logger     *zap.Logger
+	logger     *logger.LoggerClient
 	Priority   int
 
 	// Registry Configuration Values
