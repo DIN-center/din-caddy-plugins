@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"github.com/pkg/errors"
@@ -18,7 +20,7 @@ import (
 )
 
 func TestSyncRegistryWithLatestBlock(t *testing.T) {
-	logger := zap.NewNop()
+	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
@@ -192,7 +194,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			mockDingoClient.EXPECT().GetNetworkServiceMethods(gomock.Any()).Return([]*string{aws.String("eth_call"), aws.String("eth_blockNumber")}, nil).AnyTimes()
 
 			// Create logger
-			logger := zaptest.NewLogger(t)
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
@@ -334,7 +336,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 
 			// Create logger
-			logger := zaptest.NewLogger(t)
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
@@ -538,7 +540,9 @@ func TestSyncNetworkConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
-			logger := zaptest.NewLogger(t)
+
+			// Create logger
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
 			if tt.callsHealthcheckMethod {
 				mockDingoClient.EXPECT().
@@ -700,7 +704,7 @@ func TestCreateNewProvider(t *testing.T) {
 				DingoClient:       mockDingoClient,
 				SiweSignerClient:  mockSiweSignerClient,
 				RegistryPriority:  10,
-				logger:            zaptest.NewLogger(t),
+				logger:            logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 				testMode:          true,
 				DefaultSiweSigner: defaultSigner,
 			}
@@ -922,7 +926,7 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
 				SiweSignerClient: mockSiweSignerClient,
-				logger:           zaptest.NewLogger(t),
+				logger:           logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 			}
 
 			// Set default signer if required by test case

@@ -13,6 +13,8 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -179,7 +181,7 @@ func TestInitialize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			// Create logger and mock context
-			logger := zaptest.NewLogger(t)
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
 			// Setup DinMiddleware object
 			dinMiddleware := tt.initialDinMiddleware
@@ -254,7 +256,7 @@ func TestInitializeProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zaptest.NewLogger(t)
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
 				logger:    logger,
 				machineID: "test-machine-id",
@@ -326,7 +328,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zaptest.NewLogger(t)
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
 				testMode: true, // Ensure test mode is enabled
 				logger:   logger,

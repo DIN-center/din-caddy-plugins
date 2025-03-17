@@ -10,6 +10,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -20,7 +21,7 @@ type network struct {
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
-	logger           *zap.Logger
+	logger           *logger.LoggerClient
 	machineID        string
 
 	// internal health check values
@@ -145,7 +146,6 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 	baseFields := []zap.Field{
 		zap.String("provider", provider.host),
 		zap.String("network", n.Name),
-		zap.String("machine_id", n.machineID),
 	}
 
 	n.logger.Warn(msg, append(baseFields, fields...)...)

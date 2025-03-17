@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -17,7 +19,7 @@ func TestMain(m *testing.M) {
 func TestHandleRequestMetric(t *testing.T) {
 
 	// Initialize the prometheus client
-	client := NewPrometheusClient(zap.NewNop(), "test-machine-id")
+	client := NewPrometheusClient(logger.NewLoggerClient(zap.NewNop(), utils.Environment("test")), "test-machine-id")
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()
@@ -106,7 +108,7 @@ func TestHandleRequestMetric(t *testing.T) {
 
 func TestHandleHealthCheckMetric(t *testing.T) {
 	// Initialize the prometheus client
-	client := NewPrometheusClient(zap.NewNop(), "test-machine-id")
+	client := NewPrometheusClient(logger.NewLoggerClient(zap.NewNop(), utils.Environment("test")), "test-machine-id")
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()

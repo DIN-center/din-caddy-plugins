@@ -16,7 +16,9 @@ import (
 	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -47,6 +49,8 @@ type DinMiddleware struct {
 	// A map of network paths to network objects
 	Networks map[string]*network `json:"networks"`
 	mu       sync.RWMutex
+	// The current environment (prod, beta, dev)
+	Env utils.Environment
 
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
@@ -60,7 +64,7 @@ type DinMiddleware struct {
 	// The dingo client object
 	DingoClient din.IDingoClient
 
-	logger *zap.Logger
+	logger *logger.LoggerClient
 
 	// The unique machine ID for the current running server instance
 	machineID string
@@ -110,18 +114,18 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 		return fmt.Errorf("error initializing middleware: %v", err)
 	}
 
-	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
+	d.logger.Info("Din middleware provisioned")
 	return nil
 }
 
 // initialize initializes the din middleware object with the necessary configuration values
 func (d *DinMiddleware) initialize(context caddy.Context) error {
 	var err error
-	d.machineID = getMachineId()
-	logger := context.Logger(d)
-	d.logger = logger
+	d.machineID = utils.GetMachineId()
+	loggerClient := logger.NewLoggerClient(context.Logger(d), d.Env)
+	d.logger = loggerClient
 	// Initialize the prometheus client on the din middleware object
-	promClient := prom.NewPrometheusClient(logger, d.machineID)
+	promClient := prom.NewPrometheusClient(loggerClient, d.machineID)
 	d.PrometheusClient = promClient
 	d.SiweSignerClient = siwe.NewSIWESignerClient()
 	d.quit = make(chan struct{})
@@ -137,7 +141,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	}
 
 	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+	d.DingoClient, err = din.NewDinClient(loggerClient.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
 	if err != nil {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
@@ -147,7 +151,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	for networkName, network := range d.Networks {
 		d.logger.Debug("Registered network", zap.String("name", networkName))
 		network.HttpClient = httpClient
-		network.logger = d.logger
+		network.logger = loggerClient
 		network.PrometheusClient = promClient
 		network.machineID = d.machineID
 
@@ -160,7 +164,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		}
 	}
 
-	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
+	d.logger.Info("Din middleware provisioned")
 
 	// Start the latest block number polling for each provider in each network.
 	// This is done in a goroutine that sets the latest block number in the network object,
@@ -188,7 +192,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 }
 
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
-func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_http.HTTPClient, logger *zap.Logger) error {
+func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_http.HTTPClient, logger *logger.LoggerClient) error {
 	url, err := url.Parse(provider.HttpUrl)
 	if err != nil {
 		return fmt.Errorf("error parsing provider URL: %v", err)
@@ -204,8 +208,8 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 	provider.host = url.Host
 	provider.httpClient = httpClient
 	if provider.Auth != nil {
-		if err := provider.Auth.Start(logger); err != nil {
-			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl), zap.String("machine_id", d.machineID))
+		if err := provider.Auth.Start(logger.Logger); err != nil {
+			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 		}
 	}
 	provider.logger = d.logger
@@ -323,10 +327,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			// Unmarshal the byte array into the struct
 			err := json.Unmarshal(bodyData, &request)
 			if err != nil {
-				d.logger.Warn("Failed to unmarshal request body", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+				d.logger.Warn("Failed to unmarshal request body", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			} else {
 				// If the request is a JSON-RPC request, log the request method and params
-				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode), zap.String("machine_id", d.machineID))
+				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
 	}
@@ -363,6 +367,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	siweSignerClient := siwe.NewSIWESignerClient()
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
+		case "environment":
+			// Signifier for production or beta etc.
+			dispenser.Next()
+			env := utils.Environment(dispenser.Val())
+			// Default to development stage if an invalid stage is provided
+			if env != utils.EnvProd && env != utils.EnvBeta && env != utils.EnvDev && env != utils.EnvTest {
+				env = utils.EnvDev
+			}
+			d.Env = env
 		case "siwe-signer":
 			var key []byte
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
@@ -643,9 +656,9 @@ func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
-	d.logger.Info("Starting healthchecks", zap.String("machine_id", d.machineID))
+	d.logger.Info("Starting healthchecks")
 	for _, network := range d.Networks {
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name))
 		network.startHealthcheck()
 	}
 	return nil

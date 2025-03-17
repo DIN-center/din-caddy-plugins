@@ -12,6 +12,7 @@
 	route /* {
 		# middleware declaration
 		din {
+			environment prod
 			# middleware configurtion data, read by DinMiddleware.UnmarshalCaddyfile()
 			networks {
 				eth {
