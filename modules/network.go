@@ -11,6 +11,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ type network struct {
 	latestBlockNumber int64
 	HttpClient        din_http.IHTTPClient
 	PrometheusClient  prom.IPrometheusClient
-	logger            *zap.Logger
+	logger            *logger.LoggerClient
 	machineID         string
 
 	// internal health check values
@@ -125,7 +126,7 @@ func (n *network) healthCheck() {
 }
 
 func (n *network) handleBlockNumberError(providerName string, provider *provider, statusCode int, providerBlockNumber int64, err error) {
-	n.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err), zap.String("machine_id", n.machineID))
+	n.logger.Warn("Error getting latest block number for provider", zap.String("provider", providerName), zap.String("network", n.Name), zap.Error(err))
 	provider.markPingFailure(n.HCThreshold)
 	n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
 }
@@ -133,10 +134,10 @@ func (n *network) handleBlockNumberError(providerName string, provider *provider
 func (n *network) pingHealthCheck(providerName string, provider *provider, statusCode int, providerBlockNumber int64) bool {
 	if statusCode > 399 {
 		if statusCode == 429 {
-			n.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", n.Name), zap.String("machine_id", n.machineID))
+			n.logger.Warn("Provider is rate limited", zap.String("provider", providerName), zap.String("network", n.Name))
 			provider.markPingWarning()
 		} else {
-			n.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int("status_code", statusCode), zap.String("machine_id", n.machineID))
+			n.logger.Warn("Provider returned an error status code", zap.String("provider", providerName), zap.String("network", n.Name), zap.Int("status_code", statusCode))
 			provider.markPingFailure(n.HCThreshold)
 		}
 		n.sendLatestBlockMetric(provider.host, statusCode, provider.healthStatus.String(), providerBlockNumber)
@@ -165,8 +166,7 @@ func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *pro
 			zap.String("provider", providerName),
 			zap.String("network", n.Name),
 			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
+			zap.Int64("reference_block_number", referenceBlock))
 		provider.markUnhealthy()
 		return true
 	} else if providerBlockNumber < referenceBlock-n.BlockNumberDelta {
@@ -174,8 +174,7 @@ func (n *network) blockNumberDeltaHealthCheck(providerName string, provider *pro
 			zap.String("provider", providerName),
 			zap.String("network", n.Name),
 			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
+			zap.Int64("reference_block_number", referenceBlock))
 		provider.markUnhealthy()
 		return true
 	}
@@ -213,8 +212,7 @@ func (n *network) consistencyHealthCheck(providerName string, provider *provider
 			zap.String("provider", providerName),
 			zap.String("network", n.Name),
 			zap.Int64("provider_block_number", providerBlockNumber),
-			zap.Int64("reference_block_number", referenceBlock),
-			zap.String("machine_id", n.machineID))
+			zap.Int64("reference_block_number", referenceBlock))
 		provider.markWarning()
 	} else {
 		provider.markHealthy(n.HCThreshold)

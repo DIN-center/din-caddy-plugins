@@ -2,7 +2,6 @@ package modules
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -139,7 +138,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
 		network.startHealthcheck()
-		d.logger.Info("Starting healthcheck for registry network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+		d.logger.Info("Starting healthcheck for registry network", zap.String("network", network.Name))
 	}
 	return nil
 }
@@ -302,14 +301,4 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	for _, p := range network.Providers {
 		d.Networks[network.Name].Providers[p.host] = p
 	}
-}
-
-// getMachineId returns a unique string for the current running process
-func getMachineId() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "UNKNOWN"
-	}
-	currentPid := os.Getpid()
-	return fmt.Sprintf("@%s:%d", hostname, currentPid)
 }

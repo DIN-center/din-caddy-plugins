@@ -5,6 +5,7 @@ import (
 	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/golang/mock/gomock"
@@ -15,7 +16,7 @@ func TestHealthCheck(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
 	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-	logger := zap.NewNop()
+	logger := logger.NewLoggerClient(zap.NewNop())
 
 	tests := []struct {
 		name                string
@@ -164,7 +165,7 @@ func TestHealthCheck(t *testing.T) {
 func TestPingHealthCheck(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockPrometheusClient := prom.NewMockIPrometheusClient(mockCtrl)
-	logger := zap.NewNop()
+	logger := logger.NewLoggerClient(zap.NewNop())
 
 	tests := []struct {
 		name         string
@@ -271,20 +272,20 @@ func TestPingHealthCheck(t *testing.T) {
 func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 	timeNow := time.Now()
 	tests := []struct {
-		name             string
-		providerName     string
-		provider         *provider
-		blockNumber      int64
-		network          *network
-		expectUnhealthy  bool
-		expectedStatus   HealthStatus
+		name            string
+		providerName    string
+		provider        *provider
+		blockNumber     int64
+		network         *network
+		expectUnhealthy bool
+		expectedStatus  HealthStatus
 	}{
 		{
 			name:         "single provider - always healthy",
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000030,
 			network: &network{
@@ -304,7 +305,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000030,
 			network: &network{
@@ -328,7 +329,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 4999970,
 			network: &network{
@@ -352,7 +353,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000010,
 			network: &network{
@@ -375,7 +376,7 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.network.logger = zap.NewNop()
+			tt.network.logger = logger.NewLoggerClient(zap.NewNop())
 			result := tt.network.blockNumberDeltaHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
 
 			if result != tt.expectUnhealthy {
@@ -392,20 +393,20 @@ func TestBlockNumberDeltaHealthCheck(t *testing.T) {
 func TestConsistencyHealthCheck(t *testing.T) {
 	timeNow := time.Now()
 	tests := []struct {
-		name                  string
-		providerName         string
-		provider             *provider
-		blockNumber          int64
-		network              *network
-		want                 HealthStatus
-		expectedLatestBlock  int64
+		name                string
+		providerName        string
+		provider            *provider
+		blockNumber         int64
+		network             *network
+		want                HealthStatus
+		expectedLatestBlock int64
 	}{
 		{
 			name:         "single provider - always healthy",
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000000,
 			network: &network{
@@ -413,7 +414,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider1": {host: "provider1"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 			},
 			want:                Healthy,
 			expectedLatestBlock: 5000000,
@@ -423,7 +424,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 4999800,
 			network: &network{
@@ -433,7 +434,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider3": {host: "provider3"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {{blockNumber: 4999800, timestamp: &timeNow}},
 					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
@@ -448,7 +449,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 			providerName: "provider1",
 			provider: &provider{
 				healthStatus: Healthy,
-				host:        "provider1",
+				host:         "provider1",
 			},
 			blockNumber: 5000000,
 			network: &network{
@@ -457,7 +458,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 					"provider2": {host: "provider2"},
 				},
 				BlockLagLimit: 100,
-				HCThreshold:  3,
+				HCThreshold:   3,
 				CheckedProviders: map[string][]healthCheckEntry{
 					"provider1": {{blockNumber: 5000000, timestamp: &timeNow}},
 					"provider2": {{blockNumber: 5000000, timestamp: &timeNow}},
@@ -470,7 +471,7 @@ func TestConsistencyHealthCheck(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.network.logger = zap.NewNop()
+			tt.network.logger = logger.NewLoggerClient(zap.NewNop())
 			tt.network.consistencyHealthCheck(tt.providerName, tt.provider, tt.blockNumber)
 
 			if tt.provider.healthStatus != tt.want {
@@ -670,7 +671,7 @@ func TestAddHealthCheckToCheckedProviderList(t *testing.T) {
 }
 
 func TestEvaluatecheckedProviders(t *testing.T) {
-	logger := zap.NewNop()
+	logger := logger.NewLoggerClient(zap.NewNop())
 
 	tests := []struct {
 		name    string
@@ -782,7 +783,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				CheckedProviders: make(map[string][]healthCheckEntry),
 			},
 			percentile: 0.75,
-			want:      0,
+			want:       0,
 		},
 		{
 			name: "single provider",
@@ -795,7 +796,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				},
 			},
 			percentile: 0.75,
-			want:      1000,
+			want:       1000,
 		},
 		{
 			name: "multiple providers - 75th percentile",
@@ -814,7 +815,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				},
 			},
 			percentile: 0.75,
-			want:      1200,
+			want:       1200,
 		},
 		{
 			name: "providers with no health checks",
@@ -826,7 +827,7 @@ func TestGetPercentileBlockNumber(t *testing.T) {
 				CheckedProviders: make(map[string][]healthCheckEntry),
 			},
 			percentile: 0.75,
-			want:      0,
+			want:       0,
 		},
 	}
 

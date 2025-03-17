@@ -8,6 +8,7 @@ import (
 	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"go.uber.org/zap"
@@ -15,12 +16,12 @@ import (
 
 // PrometheusClient is a struct that holds the prometheus client
 type PrometheusClient struct {
-	logger    *zap.Logger
+	logger    *logger.LoggerClient
 	machineID string
 }
 
 // NewPrometheusClient returns a new prometheus client
-func NewPrometheusClient(logger *zap.Logger, machineId string) *PrometheusClient {
+func NewPrometheusClient(logger *logger.LoggerClient, machineId string) *PrometheusClient {
 	return &PrometheusClient{
 		logger:    logger,
 		machineID: machineId,
@@ -104,7 +105,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 
 	err := json.Unmarshal(reqBodyBytes, &requestBody)
 	if err != nil {
-		p.logger.Warn("Error decoding request body", zap.Error(err), zap.String("request_body", string(reqBodyBytes)), zap.Int("response_status", http.StatusBadRequest), zap.String("machine_id", p.machineID))
+		p.logger.Warn("Error decoding request body", zap.Error(err), zap.String("request_body", string(reqBodyBytes)), zap.Int("response_status", http.StatusBadRequest))
 	}
 
 	method := requestBody.Method
@@ -115,7 +116,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 
 	reqBodyByteSize := len(reqBodyBytes)
 
-	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize))
 
 	// Increment prometheus counter metric based on request data
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Inc()
@@ -141,7 +142,7 @@ func (p *PrometheusClient) HandleLatestBlockMetric(data *PromLatestBlockMetricDa
 	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
-	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.String("machine_id", p.machineID))
+	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("response_status", status), zap.String("health_status", data.HealthStatus))
 
 	// Increment prometheus metric based on request data
 	DinHealthCheckCount.WithLabelValues(network, data.Provider, status, data.HealthStatus, p.machineID).Inc()
