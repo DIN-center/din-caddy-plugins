@@ -38,9 +38,9 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -69,10 +69,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -101,10 +101,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -150,10 +150,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -198,10 +198,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -232,10 +232,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -266,10 +266,10 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger:        zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.3,
 				LatencyMetricID:                0.7,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -292,10 +292,15 @@ func TestReputationScoreManager(t *testing.T) {
 					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
 					Logger:        zaptest.NewLogger(t),
 				},
+				&WatcherLatency{
+					WatcherClient: &MockWatcherAPIClient{mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_ONE_PROVIDER_BAD_SCORE}},
+					Logger:        zaptest.NewLogger(t),
+				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 0.0001,
-			}},
+				LatencyMetricID:                0.9999,
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 
@@ -323,9 +328,9 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 		//Run scores once
@@ -368,9 +373,9 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
-			}},
+			}),
 			scoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: 0.7}, NewDefaultHighPassThroughTransformer()),
 		})
 		//Run scores once
@@ -413,9 +418,9 @@ func TestReputationScoreManager(t *testing.T) {
 					Logger: zaptest.NewLogger(t),
 				},
 			},
-			metricCombiner: &WeightedCombiner{Weights: map[string]float64{
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
 				BlockNumberConsistencyMetricID: 1.0,
-			}},
+			}),
 			scoreTransformer: NewDefaultHighPassThroughTransformer(),
 		})
 

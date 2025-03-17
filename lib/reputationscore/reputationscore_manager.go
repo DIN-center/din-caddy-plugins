@@ -84,7 +84,7 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 		for providerID, metrics := range metricsPerProvider {
 			providerRawScore, err := formula.metricCombiner.CombineMetrics(metrics)
 			if err != nil {
-				rm.logger.Error("[REPUTATION_SCORE] Error whilecombining metrics for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Error(err))
+				rm.logger.Error("[REPUTATION_SCORE] Error while combining metrics for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Error(err))
 				return errors.Wrapf(err, "Error while combining metrics for provider %s on network %s", providerID, network)
 			}
 			rawScores[providerID] = providerRawScore
@@ -157,7 +157,17 @@ func (rm *ReputationScoreManager) GetAllScores(network string) map[string]*Score
 	return scores
 }
 
-func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, client watcher.IWatcherAPIClient) {
+func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, client watcher.IWatcherAPIClient) error {
+
+	combiner, err := NewWeightedCombiner(map[string]float64{
+		BlockNumberConsistencyMetricID:   BlockNumberConsistencyWeight,
+		BlockNonStateConsistencyMetricID: BlockNonStateConsistencyWeight,
+		LatencyMetricID:                  LatencyWeight,
+	})
+	if err != nil {
+		rm.logger.Error("[REPUTATION_SCORE] Error while creating weighted combiner", zap.Error(err))
+		return errors.Wrapf(err, "Error while creating weighted combiner")
+	}
 
 	builtInFormula := ScoreFormula{
 		network: network,
@@ -166,14 +176,11 @@ func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, c
 			&WatcherBlockNonStateConsistency{WatcherClient: client, Logger: rm.logger},
 			&WatcherLatency{WatcherClient: client, Logger: rm.logger},
 		},
-		metricCombiner: &WeightedCombiner{Weights: map[string]float64{
-			BlockNumberConsistencyMetricID:   BlockNumberConsistencyWeight,
-			BlockNonStateConsistencyMetricID: BlockNonStateConsistencyWeight,
-			LatencyMetricID:                  LatencyWeight,
-		}},
+		metricCombiner:   combiner,
 		scoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: ScoreSmoothingFactor}, NewDefaultHighPassThroughTransformer()),
 	}
 	rm.AddNetworkFormula(network, builtInFormula)
+	return nil
 }
 
 func (rm *ReputationScoreManager) AddNetworkFormula(network string, formula ScoreFormula) {

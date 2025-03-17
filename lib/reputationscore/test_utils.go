@@ -302,6 +302,13 @@ func MustCreateScore(value float64, time time.Time) *Score {
 	return score
 }
 
+// Helper function to create weighted combiner without error checking
+func MustCreateWeightedCombiner(weights map[string]float64) *WeightedCombiner {
+	combiner, _ := NewWeightedCombiner(weights)
+
+	return combiner
+}
+
 func NewMock(logger *zap.Logger, scores map[string]map[string]*Score, formulas map[string]ScoreFormula) *ReputationScoreManager {
 	return &ReputationScoreManager{
 		scores:   scores,

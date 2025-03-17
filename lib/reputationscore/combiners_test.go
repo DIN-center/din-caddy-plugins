@@ -10,7 +10,7 @@ func TestWeightedCombiner(t *testing.T) {
 
 	t.Run("combines metrics using all weights", func(t *testing.T) {
 		combiner := WeightedCombiner{
-			Weights: map[string]float64{
+			weights: map[string]float64{
 				"metric1": 0.3,
 				"metric2": 0.7,
 			},
@@ -54,7 +54,7 @@ func TestWeightedCombiner(t *testing.T) {
 
 	t.Run("returns error when weight missing for metric", func(t *testing.T) {
 		combiner := WeightedCombiner{
-			Weights: map[string]float64{
+			weights: map[string]float64{
 				"metric1": 0.3,
 				// metric2 weight missing!
 			},
@@ -84,5 +84,47 @@ func TestWeightedCombiner(t *testing.T) {
 		if err.Error() != expectedErr {
 			t.Errorf("expected error message %q, got %q", expectedErr, err.Error())
 		}
+	})
+
+	t.Run("returns error when weights sum is not 1", func(t *testing.T) {
+		_, err := NewWeightedCombiner(map[string]float64{
+			"metric1": 0.3,
+			"metric2": 0.71,
+		})
+
+		if err == nil {
+			t.Fatal("expected error when weights sum is not 1, got nil")
+		}
+	})
+
+	t.Run("returns error when weights map is empty", func(t *testing.T) {
+		_, err := NewWeightedCombiner(map[string]float64{})
+		if err == nil {
+			t.Fatal("expected error when weights map is empty, got nil")
+		}
+
+	})
+
+	t.Run("returns error when weights map has different length than metrics", func(t *testing.T) {
+		metrics := []*ProviderMetric{
+			{
+				metricID:     "metric1",
+				providerName: "provider1",
+				value:        0.9,
+				lastUpdated:  now,
+			},
+		}
+
+		combiner, _ := NewWeightedCombiner(map[string]float64{
+			"metric1": 0.3,
+			"metric2": 0.7,
+		})
+
+		_, err := combiner.CombineMetrics(metrics)
+
+		if err == nil {
+			t.Fatal("expected error when weights map has different length than metrics, got nil")
+		}
+
 	})
 }
