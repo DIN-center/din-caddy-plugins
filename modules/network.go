@@ -96,12 +96,10 @@ func (n *network) healthCheck() {
 		var healthStatus HealthStatus = Healthy
 		blockNum, initialHealth, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
-			n.logProviderWarning(
-				"Error getting latest block number for provider",
-				provider,
-				zap.Error(err),
-			)
-
+			n.logProviderWarning("Error getting latest block number for provider", provider,
+				zap.Int64("block_number", blockNum),
+				zap.String("provider", provider.host),
+				zap.Error(err))
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
 
@@ -227,7 +225,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// chainId check health check
 	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
 	if err != nil {
-		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err),
+		n.logProviderWarning("Error getting chain ID", provider,
 			zap.String("chain_id", chainId),
 			zap.String("expected_chain_id", n.ChainId))
 		return Unhealthy
@@ -257,9 +255,10 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// call the network method
 		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
 		if err != nil {
-			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err),
+			n.logProviderWarning("Error testing archive mode", provider,
 				zap.Int64("quarter_block_height", quarterBlockHeight),
-				zap.String("quarter_block_height_hex", quarterBlockHeightHex))
+				zap.String("quarter_block_height_hex", quarterBlockHeightHex),
+				zap.Error(err))
 			return Unhealthy
 		}
 	}
