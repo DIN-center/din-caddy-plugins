@@ -138,6 +138,10 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 	}
 
 	// Provider has exceeded grace period - mark as unhealthy
+	n.logProviderWarning("Provider has exceeded grace period, marking as unhealthy", provider,
+		zap.Int64("block_number", blockNum),
+		zap.Int("consecutive_unhealthy_checks", provider.consecutiveUnhealthyChecks),
+		zap.Int("healthcheck_threshold", n.HCThreshold))
 	return Unhealthy
 }
 
@@ -158,6 +162,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 	// if provider has no block history, set it to unhealthy
 	if len(provider.BlockHistory()) == 0 {
+		n.logProviderWarning("Provider has no block history, marking as unhealthy", provider,
+			zap.Int64("current_block", currentBlock),
+			zap.Int64("latest_network_block", latestNetworkBlock))
 		return Unhealthy
 	}
 
@@ -203,39 +210,46 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		isStalled := n.isStalled(provider)
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
-			n.logProviderWarning("Provider is stalled and lagged", provider)
+			n.logProviderWarning("Provider is stalled and lagged", provider,
+				zap.Int64("block_lag", blockLag),
+				zap.Int64("provider_block", currentBlock),
+				zap.Int64("network_block", latestNetworkBlock))
 			return Unhealthy
 		}
 	} else if n.isStalled(provider) && !n.allProvidersStalled() {
 		// Edge case: Provider is stalled but not yet lagged, while others are making progress
-		n.logProviderWarning("Provider is stalled while others are progressing", provider)
+		n.logProviderWarning("Provider is stalled while others are progressing", provider,
+			zap.Int64("provider_block", currentBlock),
+			zap.Int64("network_block", latestNetworkBlock))
 		return Warning
 	}
 
 	// chainId check health check
 	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
 	if err != nil {
-		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err))
+		n.logProviderWarning("Error getting chain ID", provider, zap.Error(err),
+			zap.String("chain_id", chainId),
+			zap.String("expected_chain_id", n.ChainId))
 		return Unhealthy
 	}
 
 	if !n.verifyChainID(chainId) {
-		n.logProviderWarning("Provider has incorrect chain ID", provider)
+		n.logProviderWarning("Provider has incorrect chain ID", provider,
+			zap.String("chain_id", chainId),
+			zap.String("expected_chain_id", n.ChainId))
 		return Unhealthy
 	}
 
 	// Archive Health Check
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
-	// then check if the provider can return back block data from half of its block height
+	// then check if the provider can return back block data from a quarter of its block height
 	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "starknet") {
-		// check if the provider can return back block data from half of its block height
-		currentBlock := provider.getLatestHealthyBlockEntry()
-		if currentBlock == nil {
-			// if the provider has no healthy block history, return unhealthy
+		if currentBlock == 0 {
+			n.logProviderWarning("Provider has no block history for archive check, marking as unhealthy", provider)
 			return Unhealthy
 		}
 		// get a quarter of the block height
-		quarterBlockHeight := currentBlock.blockNumber / 4
+		quarterBlockHeight := currentBlock / 4
 
 		// convert quarterBlockHeight to hex string
 		quarterBlockHeightHex := fmt.Sprintf("%#x", quarterBlockHeight)
@@ -243,7 +257,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// call the network method
 		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
 		if err != nil {
-			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
+			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err),
+				zap.Int64("quarter_block_height", quarterBlockHeight),
+				zap.String("quarter_block_height_hex", quarterBlockHeightHex))
 			return Unhealthy
 		}
 	}
