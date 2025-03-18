@@ -99,6 +99,7 @@ func (n *network) healthCheck() {
 			n.logProviderWarning("Error getting latest block number for provider", provider,
 				zap.Int64("block_number", blockNum),
 				zap.String("provider", provider.host),
+				zap.String("health_status", initialHealth.String()),
 				zap.Error(err))
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
@@ -139,7 +140,8 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 	n.logProviderWarning("Provider has exceeded grace period, marking as unhealthy", provider,
 		zap.Int64("block_number", blockNum),
 		zap.Int("consecutive_unhealthy_checks", provider.consecutiveUnhealthyChecks),
-		zap.Int("healthcheck_threshold", n.HCThreshold))
+		zap.Int("healthcheck_threshold", n.HCThreshold),
+		zap.String("health_status", Unhealthy.String()))
 	return Unhealthy
 }
 
@@ -162,7 +164,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	if len(provider.BlockHistory()) == 0 {
 		n.logProviderWarning("Provider has no block history, marking as unhealthy", provider,
 			zap.Int64("current_block", currentBlock),
-			zap.Int64("latest_network_block", latestNetworkBlock))
+			zap.Int64("latest_network_block", latestNetworkBlock),
+			zap.String("health_status", Unhealthy.String()))
 		return Unhealthy
 	}
 
@@ -176,9 +179,11 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if blockLag > n.BlockLagLimit {
 			isLagged = true
 			n.logProviderWarning("Provider is lagging behind network", provider,
+				zap.Int64("block_lag_limit", n.BlockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
-				zap.Int64("network_block", latestNetworkBlock))
+				zap.Int64("network_block", latestNetworkBlock),
+				zap.String("health_status", Warning.String()))
 			if Warning > worstStatus {
 				worstStatus = Warning
 			}
@@ -188,9 +193,11 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		blockJump := currentBlock - int64(latestNetworkBlock)
 		if blockJump > n.BlockJumpLimit {
 			n.logProviderWarning("Provider is too far ahead of network", provider,
+				zap.Int64("block_jump_limit", n.BlockJumpLimit),
 				zap.Int64("block_jump", blockJump),
 				zap.Int64("provider_block", currentBlock),
-				zap.Int64("network_block", latestNetworkBlock))
+				zap.Int64("network_block", latestNetworkBlock),
+				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
 		}
 	}
@@ -198,9 +205,11 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	if isLagged {
 		// Provider is lagging behind
 		n.logProviderWarning("Provider is lagging behind network", provider,
+			zap.Int64("block_lag_limit", n.BlockLagLimit),
 			zap.Int64("block_lag", blockLag),
 			zap.Int64("provider_block", currentBlock),
-			zap.Int64("network_block", latestNetworkBlock))
+			zap.Int64("network_block", latestNetworkBlock),
+			zap.String("health_status", Warning.String()))
 		if Warning > worstStatus {
 			worstStatus = Warning
 		}
@@ -209,16 +218,19 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
 			n.logProviderWarning("Provider is stalled and lagged", provider,
+				zap.Int64("block_lag_limit", n.BlockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
-				zap.Int64("network_block", latestNetworkBlock))
+				zap.Int64("network_block", latestNetworkBlock),
+				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
 		}
 	} else if n.isStalled(provider) && !n.allProvidersStalled() {
 		// Edge case: Provider is stalled but not yet lagged, while others are making progress
 		n.logProviderWarning("Provider is stalled while others are progressing", provider,
 			zap.Int64("provider_block", currentBlock),
-			zap.Int64("network_block", latestNetworkBlock))
+			zap.Int64("network_block", latestNetworkBlock),
+			zap.String("health_status", Warning.String()))
 		return Warning
 	}
 
@@ -227,14 +239,16 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	if err != nil {
 		n.logProviderWarning("Error getting chain ID", provider,
 			zap.String("chain_id", chainId),
-			zap.String("expected_chain_id", n.ChainId))
+			zap.String("expected_chain_id", n.ChainId),
+			zap.String("health_status", Unhealthy.String()))
 		return Unhealthy
 	}
 
 	if !n.verifyChainID(chainId) {
 		n.logProviderWarning("Provider has incorrect chain ID", provider,
 			zap.String("chain_id", chainId),
-			zap.String("expected_chain_id", n.ChainId))
+			zap.String("expected_chain_id", n.ChainId),
+			zap.String("health_status", Unhealthy.String()))
 		return Unhealthy
 	}
 
@@ -243,7 +257,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// then check if the provider can return back block data from a quarter of its block height
 	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "starknet") {
 		if currentBlock == 0 {
-			n.logProviderWarning("Provider has no block history for archive check, marking as unhealthy", provider)
+			n.logProviderWarning("Provider has no block history for archive check, marking as unhealthy", provider,
+				zap.Int64("current_block", currentBlock),
+				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
 		}
 		// get a quarter of the block height
@@ -258,7 +274,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 			n.logProviderWarning("Error testing archive mode", provider,
 				zap.Int64("quarter_block_height", quarterBlockHeight),
 				zap.String("quarter_block_height_hex", quarterBlockHeightHex),
-				zap.Error(err))
+				zap.Error(err),
+				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
 		}
 	}
