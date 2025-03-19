@@ -50,7 +50,7 @@ func TestReputationScoreManager(t *testing.T) {
 		if !score.HasValue() {
 			t.Errorf("expected score has value to be true, got false")
 		}
-		if score.Value() != 0.95 {
+		if !Float64Equal(score.Value(), 0.95) {
 			t.Errorf("expected score value to be 0.95, got %f", score.Value())
 		}
 	})
@@ -82,8 +82,8 @@ func TestReputationScoreManager(t *testing.T) {
 		if !score.HasValue() {
 			t.Errorf("expected score has value to be true, got false")
 		}
-		if score.Value() != 0.915 {
-			t.Errorf("expected score value to be 0.915, got %f", score.Value())
+		if !Float64Equal(score.Value(), 0.86712) {
+			t.Errorf("expected score value to be 0.86712, got %f", score.Value())
 		}
 	})
 
@@ -118,11 +118,11 @@ func TestReputationScoreManager(t *testing.T) {
 		//P1:                 0.95           *              0.3         +      0.9        *       0.7 = Raw Score => 0.915
 		//P2:                 0.2            *              0.3         +      0.5         *       0.7 = Raw Score => 0.41
 
-		if !scoreP1.HasValue() || scoreP1.Value() != 0.915 {
-			t.Errorf("expected score value to be 0.915, got %f", scoreP1.Value())
+		if !scoreP1.HasValue() || !Float64Equal(scoreP1.Value(), 0.86712) {
+			t.Errorf("expected score value to be 0.86712, got %f", scoreP1.Value())
 		}
-		if !scoreP2.HasValue() || scoreP2.Value() != 0.41 {
-			t.Errorf("expected score value to be 0.41, got %f", scoreP2.Value())
+		if !scoreP2.HasValue() || !Float64Equal(scoreP2.Value(), 0.25516) {
+			t.Errorf("expected score value to be 0.25516, got %f", scoreP2.Value())
 		}
 	})
 
@@ -163,11 +163,11 @@ func TestReputationScoreManager(t *testing.T) {
 		firstScoreP1 := rm.GetScore("gyro", "provider1.com")
 		firstScoreP2 := rm.GetScore("gyro", "provider2.com")
 
-		if !firstScoreP1.HasValue() || firstScoreP1.Value() != 0.915 || !firstScoreP1.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected first score value to be Value=0.915 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP1.Value(), firstScoreP1.LastUpdated())
+		if !firstScoreP1.HasValue() || !Float64Equal(firstScoreP1.Value(), 0.86712) || !firstScoreP1.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected first score value to be Value=0.86712 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP1.Value(), firstScoreP1.LastUpdated())
 		}
-		if !firstScoreP2.HasValue() || firstScoreP2.Value() != 0.41 || !firstScoreP2.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected first score value to be Value=0.3094 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP2.Value(), firstScoreP2.LastUpdated())
+		if !firstScoreP2.HasValue() || !Float64Equal(firstScoreP2.Value(), 0.25516) || !firstScoreP2.LastUpdated().Equal(time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected first score value to be Value=0.25516 and Time=2023-01-01T00:00:00Z, got Value=%f and Time=%v", firstScoreP2.Value(), firstScoreP2.LastUpdated())
 		}
 
 		// Run it again
@@ -176,11 +176,11 @@ func TestReputationScoreManager(t *testing.T) {
 		secondScoreP1 := rm.GetScore("gyro", "provider1.com")
 		secondScoreP2 := rm.GetScore("gyro", "provider2.com")
 
-		if !secondScoreP1.HasValue() || secondScoreP1.Value() != 0.915 || !secondScoreP1.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected second score value to be Value=0.915 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP1.Value(), secondScoreP1.LastUpdated())
+		if !secondScoreP1.HasValue() || !Float64Equal(secondScoreP1.Value(), 0.86712) || !secondScoreP1.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected second score value to be Value=0.86712 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP1.Value(), secondScoreP1.LastUpdated())
 		}
-		if !secondScoreP2.HasValue() || secondScoreP2.Value() != 0.41 || !secondScoreP2.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("expected second score value to be Value=0.41 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP2.Value(), secondScoreP2.LastUpdated())
+		if !secondScoreP2.HasValue() || !Float64Equal(secondScoreP2.Value(), 0.25516) || !secondScoreP2.LastUpdated().Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("expected second score value to be Value=0.25516 and Time=2024-01-01T00:00:00Z, got Value=%f and Time=%v", secondScoreP2.Value(), secondScoreP2.LastUpdated())
 		}
 	})
 
@@ -247,8 +247,8 @@ func TestReputationScoreManager(t *testing.T) {
 		if !scoreP1.HasValue() || scoreP1.Value() != 0.0 {
 			t.Errorf("expected score has value to be 0.0, got %f", scoreP1.Value())
 		}
-		if !scoreP2.HasValue() || scoreP2.Value() != 0.59 {
-			t.Errorf("expected score has value to be 0.59, got %f", scoreP2.Value())
+		if !scoreP2.HasValue() || scoreP2.Value() != 0.435160 {
+			t.Errorf("expected score has value to be 0.435160, got %f", scoreP2.Value())
 		}
 	})
 

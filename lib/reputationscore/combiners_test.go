@@ -55,8 +55,8 @@ func TestWeightedCombiner(t *testing.T) {
 	t.Run("returns error when weight missing for metric", func(t *testing.T) {
 		combiner := WeightedCombiner{
 			weights: map[string]float64{
-				"metric1": 0.3,
-				// metric2 weight missing!
+				"metric1":           0.3,
+				"metricNotMatching": 0.7,
 			},
 		}
 

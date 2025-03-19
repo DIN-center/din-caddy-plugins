@@ -71,7 +71,7 @@ func (m *ProviderMetric) Equal(other *ProviderMetric) bool {
 	return m.metricID == other.metricID &&
 		m.providerName == other.providerName &&
 		m.providerURL.String() == other.providerURL.String() &&
-		math.Abs(m.value-other.value) < 0.00001 &&
+		Float64Equal(m.value, other.value) &&
 		m.lastUpdated.Equal(other.lastUpdated)
 }
 
@@ -134,4 +134,9 @@ type ProviderMetricCombiner interface {
 // For example, a score transformer could be used to transform the scores to a different scale.
 type ScoreTransformer interface {
 	TransformScore(scores map[string]*Score) (map[string]*Score, error)
+}
+
+// Helper function to compare two float64 with a precision of 1e-9
+func Float64Equal(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
 }

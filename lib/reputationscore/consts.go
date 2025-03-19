@@ -2,7 +2,8 @@ package reputationscore
 
 const (
 	MetricDefaultInterval                 = "5min"
-	MaxAcceptableLatencyInMilliseconds    = 1000.0 // 1 second
+	HighLatencyInMillis                   = 1000.0 // 1 second
+	LowLatencyInMillis                    = 50.0   // 50ms
 	MaxAcceptableRequestSuccessPercentage = 99.5   // If less than [threshold] of requests are successful, Metric is zero
 	BlockNumberConsistencyMetricID        = "block_number_consistency"
 	BlockNonStateConsistencyMetricID      = "block_non_state_consistency"

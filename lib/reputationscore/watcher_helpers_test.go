@@ -66,14 +66,29 @@ func TestCalculateLatencyMetric(t *testing.T) {
 			expected float64
 		}{
 			{
-				name:     "0ms latency",
-				p95:      0.0,
+				name:     "5ms latency",
+				p95:      5.0,
 				expected: 1.0,
+			},
+			{
+				name:     "50ms latency",
+				p95:      50.0,
+				expected: 1.0,
+			},
+			{
+				name:     "55ms latency",
+				p95:      55.0,
+				expected: 0.9799,
 			},
 			{
 				name:     "500ms latency",
 				p95:      500.0,
-				expected: 0.5,
+				expected: 0.2788,
+			},
+			{
+				name:     "950ms latency",
+				p95:      950.0,
+				expected: 0.0211,
 			},
 			{
 				name:     "1000ms latency",
@@ -195,7 +210,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 			"test_metric_latency",
 			"provider1",
 			"https://provider1.com",
-			0.9,
+			0.8316,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
 		if !metrics[0].Equal(expectedMetric1) {
@@ -206,7 +221,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 			"test_metric_latency",
 			"provider2",
 			"https://provider2.com",
-			0.5,
+			0.2788,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
 		if !metrics[1].Equal(expectedMetric2) {

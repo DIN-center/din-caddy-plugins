@@ -31,9 +31,26 @@ func calculateLatencyMetric(responseStatus watcher.Status, latencyStats watcher.
 
 	// Convert P95 to a rank between 0 and 1
 	// Lower latency = higher rank
-	// Using maxAcceptableLatency as the baseline for normalization
-	rank := 1 - (latencyStats.P95 / MaxAcceptableLatencyInMilliseconds)
-	return math.Max(0, math.Min(1, rank))
+	// The highest score is when P95 is less or equal than 50ms, rank is 1
+	// The lowest score is when P95 is greater or equal than 1000ms, rank is 0
+	// Using LowLatencyInMillis as the baseline for normalization
+	var rank float64
+	if latencyStats.P95 <= LowLatencyInMillis {
+		rank = 1.0
+	} else if latencyStats.P95 >= HighLatencyInMillis {
+		rank = 0.0
+	} else {
+		// Otherwise, logarithmic interpolation between 50ms and 1000ms
+		// This makes the score decrease faster as latency approaches 1000ms
+		// The value 9.0 is chosen to make the score decrease faster as latency approaches 1000ms
+		// and also for convenience to have a nice range of values:
+		// When normalizedLatency = 0 (best case): score = 1.0 - Log10(1) = 1.0
+		// When normalizedLatency = 1 (worst case): score = 1.0 - Log10(10) = 0.0
+		normalizedLatency := (latencyStats.P95 - LowLatencyInMillis) / (HighLatencyInMillis - LowLatencyInMillis)
+		rank = 1.0 - math.Log10(1.0+9.0*normalizedLatency)
+	}
+	// Round to 4 decimal places
+	return math.Max(0, math.Min(1, math.Round(rank*10000)/10000))
 
 }
 

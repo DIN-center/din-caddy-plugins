@@ -103,7 +103,7 @@ func TestWatcherLatencyGenerateMetrics(t *testing.T) {
 			LatencyMetricID,
 			"provider1",
 			"https://provider1.com",
-			0.9,
+			0.8316,
 			time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		)
 		if !metrics[0].Equal(expectedMetric) {
