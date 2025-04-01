@@ -5,10 +5,13 @@ import (
 	"testing"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestHandleErrorWithGracePeriod(t *testing.T) {
@@ -72,6 +75,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 			n := NewNetwork("test")
 			n.HCThreshold = tt.healthThreshold
 			n.PrometheusClient = mockPrometheus
+			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
 
 			status := n.handleErrorWithGracePeriod(p, tt.currentStatus, 100)
 
