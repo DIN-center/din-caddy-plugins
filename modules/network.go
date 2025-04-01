@@ -191,11 +191,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	}
 
 	if isLagged {
-		// Provider is lagging behind
-		n.logProviderWarning("Provider is lagging behind network", provider,
-			zap.Int64("block_lag", blockLag),
-			zap.Int64("provider_block", currentBlock),
-			zap.Int64("network_block", latestNetworkBlock))
 		if Warning > worstStatus {
 			worstStatus = Warning
 		}
