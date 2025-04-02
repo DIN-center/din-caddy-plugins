@@ -264,7 +264,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 			return Unhealthy
 		}
 		// get a quarter of the block height
-		quarterBlockHeight := currentBlock / 4
+		quarterBlockHeight := currentBlock.blockNumber / 4
 
 		var quarterBlockHeightString string
 		if strings.Contains(n.Name, "starknet") {
@@ -280,7 +280,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider,
 				zap.Int64("quarter_block_height", quarterBlockHeight),
-				zap.String("quarter_block_height_hex", quarterBlockHeightHex),
+				zap.String("quarter_block_height_hex", quarterBlockHeightString),
 				zap.Error(err),
 				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
