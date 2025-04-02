@@ -227,7 +227,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Archive Health Check
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
-	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "starknet") {
+	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && len(provider.BlockHistory()) > 1 {
 		// check if the provider can return back block data from half of its block height
 		currentBlock := provider.getLatestHealthyBlockEntry()
 		if currentBlock == nil {
@@ -237,11 +237,17 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// get a quarter of the block height
 		quarterBlockHeight := currentBlock.blockNumber / 4
 
-		// convert quarterBlockHeight to hex string
-		quarterBlockHeightHex := fmt.Sprintf("%#x", quarterBlockHeight)
+		var quarterBlockHeightString string
+		if strings.Contains(n.Name, "starknet") {
+			// Starknet uses decimal for block height, no need to convert to hex
+			quarterBlockHeightString = strconv.FormatInt(quarterBlockHeight, 10)
+		} else {
+			// convert quarterBlockHeight to hex string
+			quarterBlockHeightString = fmt.Sprintf("%#x", quarterBlockHeight)
+		}
 
 		// call the network method
-		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightHex)
+		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightString)
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider, zap.Error(err))
 			return Unhealthy
@@ -476,12 +482,25 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	return "", errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
-func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeightHex string) error {
+func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeight string) error {
 	var lastErr error
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeightHex))
+		var payload []byte
+		if strings.Contains(n.Name, "starknet") {
+			// For Starknet, quarterBlockHeight is already in decimal format
+			blockNum, err := strconv.ParseInt(quarterBlockHeight, 10, 64)
+			if err != nil {
+				lastErr = errors.Wrap(err, "Failed to parse quarter block height")
+				continue
+			}
+
+			// Starknet uses a different method for archive mode check
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"block_number":%d}]}`, StarknetArchiveMethod, blockNum))
+		} else {
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
+		}
 
 		// Send the POST request
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
@@ -509,6 +528,25 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 		if _, ok := respObject["error"]; ok {
 			lastErr = errors.New("network doesn't support archive mode")
 			continue
+		}
+
+		if strings.Contains(n.Name, "starknet") {
+			// Starknet uses a different response structure
+			result, ok := respObject["result"].(map[string]interface{})
+			if !ok {
+				lastErr = errors.New("Error getting archive mode check from response: missing or invalid result object")
+				continue
+			}
+
+			// Check for block_hash field
+			blockHash, ok := result["block_hash"].(string)
+			if !ok || blockHash == "" {
+				lastErr = errors.New("Error getting archive mode check from response: missing or invalid block_hash")
+				continue
+			}
+
+			// Success case - block_hash exists and is non-empty
+			return nil
 		}
 
 		// Success case - return nil
