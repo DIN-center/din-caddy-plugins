@@ -12,6 +12,7 @@ import (
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -23,7 +24,7 @@ type network struct {
 	PrometheusClient prom.IPrometheusClient
 	logger           *logger.LoggerClient
 	machineID        string
-
+	Environment      utils.Environment
 	// internal health check values
 	HCThreshold      int
 	BlockHistorySize int
@@ -46,7 +47,7 @@ type network struct {
 // NewNetwork creates a new network with the given name
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string) *network {
+func NewNetwork(name string, environment utils.Environment) *network {
 	return &network{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
@@ -61,6 +62,7 @@ func NewNetwork(name string) *network {
 		RequestAttemptCount:     DefaultRequestAttemptCount,
 		BlockHistorySize:        BlockHistorySize,
 		ArchiveEnabled:          DefaultArchiveEnabled,
+		Environment:             environment,
 		Providers:               make(map[string]*provider),
 	}
 }
@@ -107,7 +109,7 @@ func (n *network) healthCheck() {
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
 				provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
-				n.sendHealthCheckMetric(provider.host, Unhealthy.String())
+				n.sendHealthCheckMetric(provider.host, Unhealthy.String(), blockNum, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
 			}
@@ -117,7 +119,7 @@ func (n *network) healthCheck() {
 
 		// Update metrics and history
 		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
-		n.sendHealthCheckMetric(provider.host, newStatus.String())
+		n.sendHealthCheckMetric(provider.host, newStatus.String(), blockNum, string(n.Environment))
 	}
 }
 
@@ -357,11 +359,13 @@ func (n *network) getLatestHealthyBlock() int64 {
 	return latestBlockFromWarning
 }
 
-func (n *network) sendHealthCheckMetric(providerName string, healthStatus string) {
+func (n *network) sendHealthCheckMetric(providerName string, healthStatus string, blockNumber int64, environment string) {
 	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
 		Network:      n.Name,
 		Provider:     providerName,
 		HealthStatus: healthStatus,
+		BlockNumber:  blockNumber,
+		Environment:  environment,
 	})
 }
 

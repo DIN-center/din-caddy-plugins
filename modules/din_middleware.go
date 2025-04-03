@@ -353,6 +353,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		HostName:       r.Host,
 		ResponseStatus: rww.statusCode,
 		HealthStatus:   healthStatus,
+		Environment:    string(d.Env),
 	}, bodyBytes, duration)
 
 	return nil
@@ -414,7 +415,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
-				d.Networks[networkName] = NewNetwork(networkName) // Create a new network object
+				d.Networks[networkName] = NewNetwork(networkName, d.Env) // Create a new network object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
