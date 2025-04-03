@@ -716,7 +716,7 @@ func TestGetChainID(t *testing.T) {
 				networkName = "test"
 			}
 
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork(networkName, utils.Environment("test"))
 			n.HttpClient = mockHTTPClient
 			n.ChainIdMethod = "eth_chainId"
 			n.RequestAttemptCount = tt.requestAttemptCount
