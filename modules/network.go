@@ -283,7 +283,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.String("quarter_block_height_hex", quarterBlockHeightString),
 				zap.Error(err),
 				zap.String("health_status", Unhealthy.String()))
-			return Unhealthy
+			return Warning
 		}
 	}
 
