@@ -53,7 +53,8 @@ const (
 	// Solana
 	SolanaNamespace = "solana"
 	// Starknet
-	StarknetNamespace = "starknet"
+	StarknetNamespace     = "starknet"
+	StarknetArchiveMethod = "starknet_getBlockWithTxs"
 )
 
 // String method to convert MyEnum to string
