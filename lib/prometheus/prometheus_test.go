@@ -45,6 +45,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				HostName:       "node1",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
+				Environment:    "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -54,6 +55,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"response_status": "200",
 				"health_status":   "healthy",
 				"machine_id":      client.machineID,
+				"environment":     "test",
 			},
 			expectedValue: 1,
 		},
@@ -68,6 +70,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				HostName:       "node1",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
+				Environment:    "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -77,6 +80,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"response_status": "200",
 				"health_status":   "healthy",
 				"machine_id":      client.machineID,
+				"environment":     "test",
 			},
 			expectedValue: 1,
 		},
@@ -99,6 +103,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
 				tt.expectedLabels["machine_id"],
+				tt.expectedLabels["environment"],
 			))
 
 			assert.Equal(t, tt.expectedValue, metric, "Metric should be incremented once")
@@ -125,6 +130,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 				Network:      "/ethereum",
 				Provider:     "infura",
 				HealthStatus: "healthy",
+				Environment:  "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -132,6 +138,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 				"response_status": "200",
 				"health_status":   "healthy",
 				"machine_id":      client.machineID,
+				"environment":     "test",
 			},
 		},
 		{
@@ -140,6 +147,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 				Network:      "/ethereum",
 				Provider:     "infura",
 				HealthStatus: "unhealthy",
+				Environment:  "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -147,6 +155,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 				"response_status": "500",
 				"health_status":   "unhealthy",
 				"machine_id":      client.machineID,
+				"environment":     "test",
 			},
 		},
 	}
@@ -166,6 +175,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
 				tt.expectedLabels["machine_id"],
+				tt.expectedLabels["environment"],
 			))
 
 			assert.Equal(t, float64(1), metric, "Metric should be incremented once")

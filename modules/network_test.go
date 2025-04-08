@@ -72,7 +72,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 				host:                       "test.com",
 			}
 
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			n.HCThreshold = tt.healthThreshold
 			n.PrometheusClient = mockPrometheus
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
@@ -114,7 +114,7 @@ func TestVerifyChainID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			n.ChainId = tt.networkChainID
 
 			result := n.verifyChainID(tt.providerChainID)
@@ -177,7 +177,7 @@ func TestIsStalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			n.BlockHistorySize = tt.historySize
 
 			p := &provider{blockHistory: func() *list.List {
@@ -355,7 +355,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			n.Providers = tt.providers
 
 			result := n.getLatestHealthyBlock()
@@ -448,7 +448,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			block, health, err := n.processBlockNumberResponse(tt.response, &tt.statusCode)
 
 			if tt.expectError {
@@ -535,7 +535,7 @@ func TestArchiveModeCheck(t *testing.T) {
 				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
 
-			n := NewNetwork("test")
+			n := NewNetwork("test", utils.Environment("test"))
 			n.HttpClient = mockHTTPClient
 			n.CallContractMethod = "eth_call"
 			n.RequestAttemptCount = tt.requestAttemptCount
@@ -716,7 +716,7 @@ func TestGetChainID(t *testing.T) {
 				networkName = "test"
 			}
 
-			n := NewNetwork(networkName)
+			n := NewNetwork(networkName, utils.Environment("test"))
 			n.HttpClient = mockHTTPClient
 			n.ChainIdMethod = "eth_chainId"
 			n.RequestAttemptCount = tt.requestAttemptCount
