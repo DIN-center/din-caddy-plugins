@@ -35,6 +35,11 @@ The system uses three status levels to classify provider health:
 ### 1. Block Height Monitoring
 The system tracks each provider's current block number and compares it with other providers in the network.
 
+**Health Status Impact:**
+- **Healthy**: Block height within normal range
+- **Warning**: Minor block height discrepancies
+- **Unhealthy**: Significant block height deviation
+
 ```go
 // Example configuration in Caddyfile
 din {
@@ -53,10 +58,19 @@ din {
 - Triggers warning if provider falls behind by more than `block_lag_limit` blocks
 - Useful for detecting slow-syncing nodes
 
+**Health Status Impact:**
+- **Healthy**: Block lag < `block_lag_limit`
+- **Warning**: Block lag > `block_lag_limit`
+- **Unhealthy**: Block lag + stalled state
+
 ### 3. Block Jump Detection
 - Identifies providers reporting blocks too far ahead
 - Helps detect potential chain forks or misconfigured nodes
 - Marks providers as unhealthy if they exceed `block_jump_limit`
+
+**Health Status Impact:**
+- **Healthy**: Block jump < `block_jump_limit`
+- **Unhealthy**: Block jump > `block_jump_limit`
 
 ### 4. Stall Detection
 The system has smart logic to detect different types of stalls:
@@ -64,16 +78,60 @@ The system has smart logic to detect different types of stalls:
 - Network-wide stalls (all providers stopped - possible network issue)
 - Differential stalls (some providers moving, others stalled)
 
+**Health Status Impact:**
+- **Healthy**: No stall detected
+- **Warning**: Temporary stall while others progress
+- **Unhealthy**: 
+  - Stalled + lagged state
+  - Stalled while other providers progress
+  - Exception: All providers stalled (potential network issue) remain in current state
+
 ### 5. Chain ID Verification
 - Ensures providers are serving the correct blockchain network
 - Critical for preventing cross-chain issues
 - Immediate unhealthy status if chain ID mismatch detected
+
+**Health Status Impact:**
+- **Healthy**: Chain ID matches configured value
+- **Unhealthy**: 
+  - Chain ID mismatch
+  - Unable to retrieve chain ID
+  - Error in chain ID response
 
 ### 6. Archive Node Verification
 For networks supporting archive mode:
 - Verifies access to historical data
 - Tests queries at 1/4 of the current block height
 - Only applies to supported networks (excludes Bitcoin, Solana, Starknet)
+
+**Health Status Impact:**
+- **Healthy**: Successfully queries historical blocks
+- **Unhealthy**:
+  - Cannot access historical data
+  - Error in historical block response
+  - No block history available for testing
+
+### Grace Period Behavior
+The system implements a grace period for transitioning to unhealthy status:
+
+**Health Status Transitions:**
+- First failure → **Warning** status
+- Consecutive failures up to threshold → remains in **Warning**
+- Failures exceed threshold → transitions to **Unhealthy**
+- Success at any point → resets to **Healthy**
+
+```go
+// Example of grace period configuration
+din {
+  services {
+    ethereum {
+      healthcheck_threshold 3    # Number of consecutive failures before unhealthy
+    }
+  }
+}
+```
+
+This grace period helps prevent status flapping and provides stability during temporary network issues while still maintaining strict health monitoring for persistent problems.
 
 ## How Health Checks Work
 
