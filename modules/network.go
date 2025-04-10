@@ -29,6 +29,8 @@ type network struct {
 	HCThreshold      int
 	BlockHistorySize int
 
+	MethodFilter     *methodFilter
+
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`
