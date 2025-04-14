@@ -162,16 +162,18 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				return fmt.Errorf("error initializing provider: %v", err)
 			}
 		}
-		for method, _ := range network.FilteredMethods {
-			match := false
-			for _, provider := range network.Providers {
-				if _, ok := provider.Methods[method]; ok {
-					match = true
-					break
+		if network.MethodFilter != nil {
+			for method, _ := range network.MethodFilter.FilteredMethods {
+				match := false
+				for _, provider := range network.Providers {
+					if _, ok := provider.Methods[method]; ok {
+						match = true
+						break
+					}
 				}
-			}
-			if !match {
-				d.logger.Warn("Method marked as routed, but not offered by any providers", zap.String("network", networkName), zap.String("method", method))
+				if !match {
+					d.logger.Warn("Method marked as routed, but not offered by any providers", zap.String("network", networkName), zap.String("method", method))
+				}
 			}
 		}
 	}
