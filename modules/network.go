@@ -29,6 +29,10 @@ type network struct {
 	HCThreshold      int
 	BlockHistorySize int
 
+	// MethodFilter can be used to route requests based on the method. It implements
+	// the ProviderFilter interface, but for now is the only implementation.
+	MethodFilter     *methodFilter
+
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
 	Methods                 []*string            `json:"methods"`

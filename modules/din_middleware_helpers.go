@@ -337,7 +337,12 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network service methods: %w", err)
 	}
-	provider.Methods = networkServiceMethods
+
+	// TODO: Figure out how to customize this per provider via registry
+	provider.Methods = make(map[string]struct{})
+	for _, method := range networkServiceMethods {
+		provider.Methods[*method] = struct{}{}
+	}
 
 	return provider, nil
 }

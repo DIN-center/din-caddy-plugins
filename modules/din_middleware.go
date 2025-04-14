@@ -162,6 +162,20 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				return fmt.Errorf("error initializing provider: %v", err)
 			}
 		}
+		if network.MethodFilter != nil {
+			for method, _ := range network.MethodFilter.FilteredMethods {
+				match := false
+				for _, provider := range network.Providers {
+					if _, ok := provider.Methods[method]; ok {
+						match = true
+						break
+					}
+				}
+				if !match {
+					d.logger.Warn("Method marked as routed, but not offered by any providers", zap.String("network", networkName), zap.String("method", method))
+				}
+			}
+		}
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -266,8 +280,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
 
-	// Set the upstreams in the context for the request
-	repl.Set(DinUpstreamsContextKey, network.Providers)
+	if network.MethodFilter != nil {
+		// Set the upstreams in the context for the request
+		repl.Set(DinUpstreamsContextKey, network.MethodFilter.FilterProviders(r, network.Providers))
+	} else {
+		// Set the upstreams in the context for the request
+		repl.Set(DinUpstreamsContextKey, network.Providers)
+	}
+
 
 	reqStartTime := time.Now()
 
@@ -426,6 +446,21 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if !dispenser.Args(d.Networks[networkName].Methods...) {
 							return dispenser.Errf("invalid 'methods' argument for network %s", networkName)
 						}
+					case "routed_methods":
+						methods := make([]*string, dispenser.CountRemainingArgs())
+						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
+							methods[i] = new(string)
+						}
+						if !dispenser.Args(methods...) {
+							return dispenser.Errf("invalid 'routed_methods' argument for network %s", networkName)
+						}
+						methodMap := make(map[string]struct{})
+						for _, method := range methods {
+							methodMap[*method] = struct{}{}
+						}
+						d.Networks[networkName].MethodFilter = &methodFilter{
+							FilteredMethods: methodMap,
+						}
 					case "providers":
 						for dispenser.NextBlock(nesting + 1) {
 							providerObj, err := NewProvider(dispenser.Val())
@@ -434,6 +469,18 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							}
 							for dispenser.NextBlock(nesting + 2) {
 								switch dispenser.Val() {
+								case "methods":
+									methods := make([]*string, dispenser.CountRemainingArgs())
+									for i := 0; i < dispenser.CountRemainingArgs(); i++ {
+										methods[i] = new(string)
+									}
+									if !dispenser.Args(methods...) {
+										return dispenser.Errf("invalid 'methods' argument for provider %s", providerObj.HttpUrl)
+									}
+									providerObj.Methods = make(map[string]struct{})
+									for _, method := range methods {
+										providerObj.Methods[*method] = struct{}{}
+									}
 								case "auth":
 									auth := siweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
 									for dispenser.NextBlock(nesting + 3) {
