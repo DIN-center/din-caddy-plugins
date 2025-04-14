@@ -7,10 +7,19 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+
+// ProviderFilter offers an interface for determining which providers can handle
+// a particular request. This is similar to what happens in the upstreams module,
+// but lets us attach filtering logic to specific networks.
 type ProviderFilter interface {
     FilterProviders(*http.Request, map[string]*provider) map[string]*provider
 }
 
+
+// methodFilter implements the ProviderFilter. If a network needs to route specific
+// methods to a subset of providers, they can indicate the method's importance here,
+// and the methodFilter will compare against the providers' method sets to decide where
+// to route.
 type methodFilter struct {
 	FilteredMethods map[string]struct{}
 }
@@ -43,6 +52,7 @@ func (mf *methodFilter) FilterProviders(r *http.Request, p map[string]*provider)
 	}
 	for k, provider := range p {
 		if _, ok := provider.Methods[request.Method]; ok {
+			// This provider supports the specified filtered method, and is elligible to serve the request
 			result[k] = provider
 		}
 	}
