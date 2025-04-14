@@ -194,13 +194,29 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// Check if block is too far ahead (block jump)
 		blockJump := currentBlock - int64(latestNetworkBlock)
 		if blockJump > n.BlockJumpLimit {
-			n.logProviderWarning("Provider is too far ahead of network", provider,
-				zap.Int64("block_jump_limit", n.BlockJumpLimit),
-				zap.Int64("block_jump", blockJump),
-				zap.Int64("provider_block", currentBlock),
-				zap.Int64("network_block", latestNetworkBlock),
-				zap.String("health_status", Unhealthy.String()))
-			return Unhealthy
+			// Only mark as unhealthy if there's at least one other healthy provider
+			// This prevents false-negative unhealthy status during network recovery
+			// scenarios where a provider might be ahead of others because it's
+			// recovering faster from a network-wide issue
+			if n.hasOtherHealthyProviders(provider) {
+				n.logProviderWarning("Provider is too far ahead of network", provider,
+					zap.Int64("block_jump_limit", n.BlockJumpLimit),
+					zap.Int64("block_jump", blockJump),
+					zap.Int64("provider_block", currentBlock),
+					zap.Int64("network_block", latestNetworkBlock),
+					zap.String("health_status", Unhealthy.String()))
+				return Unhealthy
+			} else {
+				// If there are no other healthy providers, assume this one is correct
+				// and healthy because it might be the first to recover from a network outage
+				n.logProviderWarning("Provider is far ahead but keeping as healthy (no other healthy providers)", provider,
+					zap.Int64("block_jump_limit", n.BlockJumpLimit),
+					zap.Int64("block_jump", blockJump),
+					zap.Int64("provider_block", currentBlock),
+					zap.Int64("network_block", latestNetworkBlock),
+					zap.String("health_status", Healthy.String()))
+				return Healthy
+			}
 		}
 	}
 
@@ -588,4 +604,27 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 
 func (n *network) close() {
 	close(n.quit)
+}
+
+// hasOtherHealthyProviders checks if there are any other healthy providers in the pool
+// besides the one being evaluated. This is used during block jump detection to avoid
+// marking a provider as unhealthy when it might actually be correct (e.g., during network
+// recovery scenarios where a single provider might recover faster than others).
+//
+// The function returns:
+//   - true if at least one other provider (not the one being evaluated) has a healthy status
+//   - false if all other providers are either unhealthy or in warning state
+//
+// This helps prevent situations where all providers might be marked unhealthy during
+// network-wide issues when one provider recovers faster than others.
+func (n *network) hasOtherHealthyProviders(provider *provider) bool {
+	for _, p := range n.Providers {
+		if p != provider {
+			entry := p.getLatestHealthyBlockEntry()
+			if entry != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
