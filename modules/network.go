@@ -188,6 +188,12 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.String("health_status", Warning.String()))
 			if Warning > worstStatus {
 				worstStatus = Warning
+				n.logProviderWarning("Provider status changed to warning due to block lag", provider,
+					zap.Int64("block_lag_limit", n.BlockLagLimit),
+					zap.Int64("block_lag", blockLag),
+					zap.Int64("provider_block", currentBlock),
+					zap.Int64("network_block", latestNetworkBlock),
+					zap.String("health_status", Warning.String()))
 			}
 		}
 
@@ -204,12 +210,13 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
+	isStalled := n.isStalled(provider)
+
 	if isLagged {
 		if Warning > worstStatus {
 			worstStatus = Warning
 		}
 
-		isStalled := n.isStalled(provider)
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
 			n.logProviderWarning("Provider is stalled and lagged", provider,
@@ -220,8 +227,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.String("health_status", Unhealthy.String()))
 			return Unhealthy
 		}
-	} else if n.isStalled(provider) && !n.allProvidersStalled() {
-		// Edge case: Provider is stalled but not yet lagged, while others are making progress
+	} else if isStalled && !n.allProvidersStalled() {
 		n.logProviderWarning("Provider is stalled while others are progressing", provider,
 			zap.Int64("provider_block", currentBlock),
 			zap.Int64("network_block", latestNetworkBlock),
@@ -277,7 +283,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.Int64("quarter_block_height", quarterBlockHeight),
 				zap.String("quarter_block_height_hex", quarterBlockHeightString),
 				zap.Error(err),
-				zap.String("health_status", Unhealthy.String()))
+				zap.String("health_status", Warning.String()))
 			return Warning
 		}
 	}
