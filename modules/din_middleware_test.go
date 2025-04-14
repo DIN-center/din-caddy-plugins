@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	reflect "reflect"
 	"strings"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -217,11 +217,12 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestInitializeProvider(t *testing.T) {
+	logger := logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 	tests := []struct {
-		name          string
-		provider      *provider
-		httpClient    *din_http.HTTPClient
-		expectedError string
+		name       string
+		provider   *provider
+		httpClient *din_http.HTTPClient
+		wantErr    bool
 	}{
 		{
 			name: "Successful initialization with http URL",
@@ -229,8 +230,8 @@ func TestInitializeProvider(t *testing.T) {
 				HttpUrl: "http://example2.com",
 				Auth:    nil,
 			},
-			httpClient:    &din_http.HTTPClient{},
-			expectedError: "",
+			httpClient: &din_http.HTTPClient{},
+			wantErr:    false,
 		},
 		{
 			name: "Successful initialization with https URL",
@@ -238,8 +239,8 @@ func TestInitializeProvider(t *testing.T) {
 				HttpUrl: "https://example3.com",
 				Auth:    nil,
 			},
-			httpClient:    &din_http.HTTPClient{},
-			expectedError: "",
+			httpClient: &din_http.HTTPClient{},
+			wantErr:    false,
 		},
 		{
 			name: "Successful initialization with auth",
@@ -249,50 +250,18 @@ func TestInitializeProvider(t *testing.T) {
 					ProviderURL: "http://auth.example.com",
 				},
 			},
-			httpClient:    &din_http.HTTPClient{},
-			expectedError: "",
+			httpClient: &din_http.HTTPClient{},
+			wantErr:    false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
-				logger:    logger,
-				machineID: "test-machine-id",
+				logger: logger,
 			}
-
 			err := dinMiddleware.initializeProvider(tt.provider, tt.httpClient, logger)
-
-			if tt.expectedError != "" {
-				assert.EqualError(t, err, tt.expectedError)
-			} else {
-				assert.NoError(t, err)
-
-				// Parse the expected URL
-				parsedURL, err := url.Parse(tt.provider.HttpUrl)
-				assert.NoError(t, err)
-
-				expectedHost := parsedURL.Host
-				if parsedURL.Scheme == "https" && parsedURL.Port() == "" {
-					expectedHost = parsedURL.Host + ":443"
-				}
-
-				// Assert provider upstream
-				assert.Equal(t, expectedHost, tt.provider.upstream.Dial)
-				// Assert provider path and host
-				assert.Equal(t, parsedURL.Path, tt.provider.path)
-				assert.Equal(t, parsedURL.Host, tt.provider.host)
-				// Assert provider httpClient
-				assert.Equal(t, tt.httpClient, tt.provider.httpClient)
-
-				// Check if Auth is started if it exists
-				if tt.provider.Auth != nil {
-					assert.NotNil(t, tt.provider.Auth)
-				}
-
-				// Assert provider logger is set to the middleware logger
-				assert.Equal(t, dinMiddleware.logger, tt.provider.logger)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

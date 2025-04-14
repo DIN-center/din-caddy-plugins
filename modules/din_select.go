@@ -59,10 +59,12 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		providers = v.(map[string]*provider)
 	}
+
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
 	for _, provider := range providers {
+
 		// If the upstream is found in the providers, set the path and headers for the request
 		if selectedUpstream == provider.upstream {
 			r.URL.RawPath = provider.path
