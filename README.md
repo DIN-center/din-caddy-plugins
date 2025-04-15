@@ -149,9 +149,9 @@ While method-based routing provides powerful flexibility, it comes with some con
 
 For detailed implementation information, see the [docs/network_specific_routing.md](docs/network_specific_routing.md) file.
 
-# Registry Synchronization
+# DIN Onchain Registry Synchronization
 
-The DIN Registry Sync system automatically synchronizes your DIN proxy with a central registry of blockchain networks and providers.
+The DIN Onchain Registry Synchronization system automatically synchronizes your DIN proxy with a central registry of blockchain networks and providers.
 
 Key features of the registry sync system:
 - **Automated Updates**: No manual configuration needed for new networks and providers
