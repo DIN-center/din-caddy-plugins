@@ -255,8 +255,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
 	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && len(provider.BlockHistory()) > 1 {
-		// Simply use the currentBlock parameter that's already passed to this function
-		// No need to look it up from the history
 
 		// get a quarter of the block height
 		quarterBlockHeight := currentBlock / 4
