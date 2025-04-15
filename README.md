@@ -133,4 +133,33 @@ The system uses three health status levels:
 
 The health check system is intelligent enough to distinguish between network-wide issues (when all providers are stalled) and individual provider problems. This prevents unnecessary service disruption during network outages.
 
-For detailed implementation information, see the [modules/README.md](modules/README.md#healthchecks) file.
+For detailed implementation information, see the [docs/health_checks.md](docs/health_checks.md) file.
+
+# Network-Specific Routing
+
+The DIN proxy supports routing specific RPC methods to specific providers, allowing specialized endpoints to handle particular types of requests.
+
+Key features of the routing system:
+- **Method-Based Routing**: Direct specific methods to specialized providers
+- **Provider Capabilities**: Configure which providers can handle which methods
+- **Flexible Configuration**: Simple Caddyfile syntax for method routing rules
+- **Method Filtering**: Only providers that support a method will receive requests for it
+
+While method-based routing provides powerful flexibility, it comes with some consistency considerations when used with session-based routing.
+
+For detailed implementation information, see the [docs/network_specific_routing.md](docs/network_specific_routing.md) file.
+
+# Registry Synchronization
+
+The DIN Registry Sync system automatically synchronizes your DIN proxy with a central registry of blockchain networks and providers.
+
+Key features of the registry sync system:
+- **Automated Updates**: No manual configuration needed for new networks and providers
+- **Block-Based Scheduling**: Syncs occur at configurable block intervals
+- **Configuration Synchronization**: Updates network parameters, providers, and settings
+- **Provider Management**: Automatically adds new providers and removes inactive ones
+- **Centralized Consistency**: Ensures all DIN proxies use the same configurations
+
+The sync system uses an efficient block-based approach to determine when updates should occur, balancing freshness with resource usage.
+
+For detailed implementation information, see the [docs/registry_sync.md](docs/registry_sync.md) file.
