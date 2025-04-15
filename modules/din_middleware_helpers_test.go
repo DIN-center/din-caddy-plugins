@@ -588,6 +588,14 @@ func TestSyncNetworkConfig(t *testing.T) {
 	}
 }
 
+func expectedMethodsMap(m []*string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, k := range m {
+		result[*k] = struct{}{}
+	}
+	return result
+}
+
 func TestCreateNewProvider(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -727,7 +735,7 @@ func TestCreateNewProvider(t *testing.T) {
 				assert.NotNil(t, createdProvider)
 
 				// Verify that the provider was updated correctly
-				assert.DeepEqual(t, tt.expectedMethods, createdProvider.Methods)
+				assert.DeepEqual(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
 				assert.Equal(t, dinMiddleware.RegistryPriority, createdProvider.Priority)
 				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
 			}

@@ -26,7 +26,7 @@ type provider struct {
 	Priority   int
 
 	// Registry Configuration Values
-	Methods []*string            `json:"methods"`
+	Methods map[string]struct{}  `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
 	consecutiveUnhealthyChecks int
