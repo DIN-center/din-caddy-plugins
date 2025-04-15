@@ -31,7 +31,7 @@ type network struct {
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
-	MethodFilter     *methodFilter
+	MethodFilter *methodFilter
 
 	// Registry configuration values
 	Providers               map[string]*provider `json:"providers"`
@@ -277,15 +277,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
 	// then check if the provider can return back block data from half of its block height
 	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && len(provider.BlockHistory()) > 1 {
-		// check if the provider can return back block data from half of its block height
-		currentBlock := provider.getLatestHealthyBlockEntry()
-		if currentBlock == nil {
-			// if the provider has no healthy block history, return unhealthy
 
-			return Unhealthy
-		}
 		// get a quarter of the block height
-		quarterBlockHeight := currentBlock.blockNumber / 4
+		quarterBlockHeight := currentBlock / 4
 
 		var quarterBlockHeightString string
 		if strings.Contains(n.Name, "starknet") {
