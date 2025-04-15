@@ -67,10 +67,16 @@ din {
 - Identifies providers reporting blocks too far ahead
 - Helps detect potential chain forks or misconfigured nodes
 - Marks providers as unhealthy if they exceed `block_jump_limit`
+- Implements smart recovery mechanism during network-wide issues
 
 **Health Status Impact:**
-- **Healthy**: Block jump < `block_jump_limit`
-- **Unhealthy**: Block jump > `block_jump_limit`
+- **Healthy**: Block jump < `block_jump_limit` OR the provider is the first to recover during network-wide outage
+- **Unhealthy**: Block jump > `block_jump_limit` (only if other healthy providers exist)
+
+**Smart Recovery Logic:**
+- Only marks a provider as unhealthy for block jumps if at least one other healthy provider exists
+- If no other healthy providers are available, assumes the ahead provider might be the first to recover from a network outage
+- Prevents all providers from being marked unhealthy during network recovery scenarios
 
 ### 4. Stall Detection
 The system has smart logic to detect different types of stalls:

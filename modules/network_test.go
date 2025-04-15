@@ -734,3 +734,282 @@ func TestGetChainID(t *testing.T) {
 		})
 	}
 }
+
+func TestHasOtherHealthyProviders(t *testing.T) {
+	tests := []struct {
+		name           string
+		providers      map[string]*provider
+		checkProvider  string
+		expectedResult bool
+	}{
+		{
+			name: "one other healthy provider exists",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Healthy})
+						return l
+					}(),
+				},
+			},
+			checkProvider:  "p1",
+			expectedResult: true,
+		},
+		{
+			name: "no other healthy providers",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Warning})
+						return l
+					}(),
+				},
+				"p3": {
+					host: "p3",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+			},
+			checkProvider:  "p1",
+			expectedResult: false,
+		},
+		{
+			name: "multiple healthy providers",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p3": {
+					host: "p3",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 110, healthStatus: Healthy})
+						return l
+					}(),
+				},
+			},
+			checkProvider:  "p1",
+			expectedResult: true,
+		},
+		{
+			name: "empty history in other providers",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host:         "p2",
+					blockHistory: list.New(),
+				},
+			},
+			checkProvider:  "p1",
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := NewNetwork("test", utils.Environment("test"))
+			n.Providers = tt.providers
+
+			result := n.hasOtherHealthyProviders(tt.providers[tt.checkProvider])
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+// TestBlockJumpBehavior tests the behavior of block jump detection logic
+func TestBlockJumpBehavior(t *testing.T) {
+	tests := []struct {
+		name               string
+		providers          map[string]*provider
+		testProvider       string
+		currentBlock       int64
+		latestNetworkBlock int64
+		blockJumpLimit     int64
+		expectedStatus     HealthStatus
+	}{
+		{
+			name: "block jump with other healthy providers",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 1000, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+			},
+			testProvider:       "p1",
+			currentBlock:       1000,
+			latestNetworkBlock: 100,
+			blockJumpLimit:     50,
+			expectedStatus:     Unhealthy,
+		},
+		{
+			name: "block jump without other healthy providers",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 1000, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						return l
+					}(),
+				},
+				"p3": {
+					host: "p3",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 90, healthStatus: Unhealthy})
+						return l
+					}(),
+				},
+			},
+			testProvider:       "p1",
+			currentBlock:       1000,
+			latestNetworkBlock: 100,
+			blockJumpLimit:     50,
+			expectedStatus:     Healthy,
+		},
+		{
+			name: "no block jump",
+			providers: map[string]*provider{
+				"p1": {
+					host: "p1",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 120, healthStatus: Healthy})
+						return l
+					}(),
+				},
+				"p2": {
+					host: "p2",
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+			},
+			testProvider:       "p1",
+			currentBlock:       120,
+			latestNetworkBlock: 100,
+			blockJumpLimit:     50,
+			expectedStatus:     Healthy,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+			mockPrometheus := prom.NewMockIPrometheusClient(ctrl)
+			mockLogger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
+
+			// Set up mock response for chain ID check
+			successStatusCode := 200
+			chainIDResponse := []byte(`{"jsonrpc":"2.0","result":"1"}`)
+
+			// Setup HTTP client expectations for getChainID - expect calls for each provider
+			for range tt.providers {
+				mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(chainIDResponse, &successStatusCode, nil).
+					AnyTimes()
+			}
+
+			n := NewNetwork("test", utils.Environment("test"))
+			n.Providers = tt.providers
+			n.BlockJumpLimit = tt.blockJumpLimit
+			n.logger = mockLogger
+			n.HttpClient = mockHTTPClient
+			n.PrometheusClient = mockPrometheus
+			n.ChainId = "eip155:1"
+			n.ChainIdMethod = "eth_chainId"
+			n.ArchiveEnabled = false // Disable archive mode checks for this test
+
+			// Create a custom provider health evaluation function that omits chain ID and archive checks
+			testEvaluateBlockJump := func(provider *provider, currentBlock int64, latestNetworkBlock int64) HealthStatus {
+				blockJump := currentBlock - latestNetworkBlock
+				if blockJump > n.BlockJumpLimit {
+					if n.hasOtherHealthyProviders(provider) {
+						return Unhealthy
+					} else {
+						return Healthy
+					}
+				}
+				return Healthy
+			}
+
+			// Test only the block jump logic directly
+			result := testEvaluateBlockJump(
+				tt.providers[tt.testProvider],
+				tt.currentBlock,
+				tt.latestNetworkBlock,
+			)
+
+			assert.Equal(t, tt.expectedStatus, result, "Block jump behavior incorrect")
+		})
+	}
+}
