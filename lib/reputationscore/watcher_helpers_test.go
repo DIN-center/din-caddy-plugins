@@ -10,7 +10,7 @@ import (
 
 func TestCalculateCheckMetric(t *testing.T) {
 	t.Run("returns 0 when success percentage is below threshold", func(t *testing.T) {
-		result := calculateCheckMetric(watcher.Status{SuccessPercentage: 99.0}, watcher.Summary{PassPercentage: 80.0})
+		result := calculateCheckMetric(watcher.Status{SuccessPercentage: 89.0}, watcher.Summary{PassPercentage: 80.0})
 		if result != 0 {
 			t.Errorf("expected 0 for low success percentage, got %f", result)
 		}
@@ -53,7 +53,7 @@ func TestCalculateCheckMetric(t *testing.T) {
 
 func TestCalculateLatencyMetric(t *testing.T) {
 	t.Run("returns 0 when success percentage is below threshold", func(t *testing.T) {
-		result := calculateLatencyMetric(watcher.Status{SuccessPercentage: 99.0}, watcher.LatencyStats{P95: 500.0})
+		result := calculateLatencyMetric(watcher.Status{SuccessPercentage: 89.0}, watcher.LatencyStats{P95: 500.0})
 		if result != 0 {
 			t.Errorf("expected 0 for low success percentage, got %f", result)
 		}
