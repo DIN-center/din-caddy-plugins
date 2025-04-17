@@ -68,9 +68,9 @@ func (t *EWMATransformer) TransformScore(network string, scores map[string]*Scor
 			zap.String("network", network),
 			zap.String("provider", providerID),
 			zap.Float64("alpha", t.alpha),
-			zap.Float64("score", score.Value()),
+			zap.Float64("currentScore", score.Value()),
 			zap.Float64("previousScore", previousScore.Value()),
-			zap.Float64("transformedScore", transformedScore))
+			zap.Float64("newScore", transformedScore))
 		smoothedScores[providerID], _ = NewScore(math.Round(transformedScore*10000)/10000, score.LastUpdated())
 	}
 
