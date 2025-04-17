@@ -31,27 +31,37 @@ func calculateLatencyMetric(responseStatus watcher.Status, latencyStats watcher.
 
 	// Convert P95 to a rank between 0 and 1
 	// Lower latency = higher rank
-	// The highest score is when P95 is less or equal than 50ms, rank is 1
-	// The lowest score is when P95 is greater or equal than 1000ms, rank is 0
-	// Using LowLatencyInMillis as the baseline for normalization
 	var rank float64
 	if latencyStats.P95 <= LowLatencyInMillis {
+		// Perfect rank for latencies under 50ms
 		rank = 1.0
 	} else if latencyStats.P95 >= HighLatencyInMillis {
+		// Zero rank for latencies over 1000ms
 		rank = 0.0
 	} else {
-		// Otherwise, logarithmic interpolation between 50ms and 1000ms
-		// This makes the score decrease faster as latency approaches 1000ms
-		// The value 9.0 is chosen to make the score decrease faster as latency approaches 1000ms
-		// and also for convenience to have a nice range of values:
-		// When normalizedLatency = 0 (best case): score = 1.0 - Log10(1) = 1.0
-		// When normalizedLatency = 1 (worst case): score = 1.0 - Log10(10) = 0.0
+		// Normalized exponential function with k=1
+		// f(x) = (e^(kx) - 1) / (e^k - 1)
 		normalizedLatency := (latencyStats.P95 - LowLatencyInMillis) / (HighLatencyInMillis - LowLatencyInMillis)
-		rank = 1.0 - math.Log10(1.0+9.0*normalizedLatency)
+		k := 1.0 // This is the slope of the curve, TODO: make this configurable
+		// We invert it since we want higher latencies to have lower scores
+		rank = 1.0 - (math.Exp(k*normalizedLatency)-1.0)/(math.Exp(k)-1.0)
+		// Visualization of the latency ranking function (k=1):
+		// Rank
+		// 1.0 |  ****
+		//     |      ****
+		//     |          ***
+		// 0.5 |             ***
+		//     |                **
+		//     |                  **
+		//     |                    **
+		// 0.0 |                      ****
+		//     +--------------------------------
+		//     0   200  400  600  800  1000 1200ms
+		//     |    Low                High   |
+		//     |  (50ms)             (1000ms) |
 	}
 	// Round to 4 decimal places
 	return math.Max(0, math.Min(1, math.Round(rank*10000)/10000))
-
 }
 
 func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.CheckQueryParams, metricID string, logger *zap.Logger) ([]*ProviderMetric, error) {
