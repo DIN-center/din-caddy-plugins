@@ -193,12 +193,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.String("health_status", Warning.String()))
 			if Warning > worstStatus {
 				worstStatus = Warning
-				n.logProviderWarning("Provider status changed to warning due to block lag", provider,
-					zap.Int64("block_lag_limit", n.BlockLagLimit),
-					zap.Int64("block_lag", blockLag),
-					zap.Int64("provider_block", currentBlock),
-					zap.Int64("network_block", latestNetworkBlock),
-					zap.String("health_status", Warning.String()))
 			}
 		}
 
