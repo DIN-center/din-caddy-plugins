@@ -1,33 +1,38 @@
 package reputationscore
 
 import (
+	"net/url"
 	"testing"
 	"time"
+
+	"go.uber.org/zap/zaptest"
 )
 
 func TestWeightedCombiner(t *testing.T) {
 	now := time.Now()
 
 	t.Run("combines metrics using all weights", func(t *testing.T) {
-		combiner := WeightedCombiner{
-			weights: map[string]float64{
-				"metric1": 0.3,
-				"metric2": 0.7,
-			},
-		}
+		combiner, _ := NewWeightedCombiner(map[string]float64{
+			"metric1": 0.3,
+			"metric2": 0.7,
+		}, zaptest.NewLogger(t))
 
 		time1 := now
 		time2 := time1.Add(time.Hour)
 		metrics := []*ProviderMetric{
 			{
 				metricID:     "metric1",
+				network:      "network",
 				providerName: "provider1",
+				providerURL:  &url.URL{Scheme: "https", Host: "provider1.com"},
 				value:        0.9,
 				lastUpdated:  time1,
 			},
 			{
 				metricID:     "metric2",
+				network:      "network",
 				providerName: "provider1",
+				providerURL:  &url.URL{Scheme: "https", Host: "provider1.com"},
 				value:        0.1,
 				lastUpdated:  time2,
 			},
@@ -53,23 +58,25 @@ func TestWeightedCombiner(t *testing.T) {
 	})
 
 	t.Run("returns error when weight missing for metric", func(t *testing.T) {
-		combiner := WeightedCombiner{
-			weights: map[string]float64{
-				"metric1":           0.3,
-				"metricNotMatching": 0.7,
-			},
-		}
+		combiner, _ := NewWeightedCombiner(map[string]float64{
+			"metric1":           0.3,
+			"metricNotMatching": 0.7,
+		}, zaptest.NewLogger(t))
 
 		metrics := []*ProviderMetric{
 			{
 				metricID:     "metric1",
+				network:      "network",
 				providerName: "provider1",
+				providerURL:  &url.URL{Scheme: "https", Host: "provider1.com"},
 				value:        0.9,
 				lastUpdated:  now,
 			},
 			{
 				metricID:     "metric2",
+				network:      "network",
 				providerName: "provider1",
+				providerURL:  &url.URL{Scheme: "https", Host: "provider1.com"},
 				value:        0.1,
 				lastUpdated:  now,
 			},
@@ -90,7 +97,7 @@ func TestWeightedCombiner(t *testing.T) {
 		_, err := NewWeightedCombiner(map[string]float64{
 			"metric1": 0.3,
 			"metric2": 0.71,
-		})
+		}, zaptest.NewLogger(t))
 
 		if err == nil {
 			t.Fatal("expected error when weights sum is not 1, got nil")
@@ -98,7 +105,7 @@ func TestWeightedCombiner(t *testing.T) {
 	})
 
 	t.Run("returns error when weights map is empty", func(t *testing.T) {
-		_, err := NewWeightedCombiner(map[string]float64{})
+		_, err := NewWeightedCombiner(map[string]float64{}, zaptest.NewLogger(t))
 		if err == nil {
 			t.Fatal("expected error when weights map is empty, got nil")
 		}
@@ -109,7 +116,9 @@ func TestWeightedCombiner(t *testing.T) {
 		metrics := []*ProviderMetric{
 			{
 				metricID:     "metric1",
+				network:      "network",
 				providerName: "provider1",
+				providerURL:  &url.URL{Scheme: "https", Host: "provider1.com"},
 				value:        0.9,
 				lastUpdated:  now,
 			},
@@ -118,7 +127,7 @@ func TestWeightedCombiner(t *testing.T) {
 		combiner, _ := NewWeightedCombiner(map[string]float64{
 			"metric1": 0.3,
 			"metric2": 0.7,
-		})
+		}, zaptest.NewLogger(t))
 
 		_, err := combiner.CombineMetrics(metrics)
 

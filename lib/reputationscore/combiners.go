@@ -2,15 +2,19 @@ package reputationscore
 
 import (
 	"fmt"
+	"math"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // A weighted combiner is a base implementation of combiner that uses weights to aggregate metrics.
 type WeightedCombiner struct {
 	weights map[string]float64
+	logger  *zap.Logger
 }
 
-func NewWeightedCombiner(weights map[string]float64) (*WeightedCombiner, error) {
+func NewWeightedCombiner(weights map[string]float64, logger *zap.Logger) (*WeightedCombiner, error) {
 	if len(weights) == 0 {
 		return nil, fmt.Errorf("weights map cannot be empty")
 	}
@@ -24,7 +28,7 @@ func NewWeightedCombiner(weights map[string]float64) (*WeightedCombiner, error) 
 		return nil, fmt.Errorf("weights must sum to 1.0, got %f", totalWeight)
 	}
 
-	return &WeightedCombiner{weights: weights}, nil
+	return &WeightedCombiner{weights: weights, logger: logger}, nil
 }
 
 func (c *WeightedCombiner) CombineMetrics(metrics []*ProviderMetric) (*Score, error) {
@@ -39,7 +43,22 @@ func (c *WeightedCombiner) CombineMetrics(metrics []*ProviderMetric) (*Score, er
 	weightedValue := 0.0
 	for _, metric := range metrics {
 		if weight, exists := c.weights[metric.MetricID()]; exists {
-			weightedValue += metric.Value() * weight
+
+			metricWeightedValue := metric.Value() * weight
+			c.logger.Info("[REPUTATION_SCORE] Combining metric (weighted)",
+				zap.String("metricID", metric.MetricID()),
+				zap.String("network", metric.Network()),
+				zap.String("provider", metric.ProviderID()),
+				zap.Float64("weight", weight),
+				zap.Float64("value", metric.Value()),
+				zap.Float64("weightedValue", metricWeightedValue),
+				zap.Float64("fullnessRatio", func() float64 {
+					if weight == 0 {
+						return 0
+					}
+					return math.Round((metricWeightedValue/weight)*10000) / 10000
+				}()))
+			weightedValue += metricWeightedValue
 		} else {
 			return NewEmptyScore(), fmt.Errorf("no weight for metric %s", metric.MetricID())
 		}

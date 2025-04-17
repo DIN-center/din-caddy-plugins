@@ -121,7 +121,11 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 		}
 
 		// Call the function
-		metrics, err := buildMetricsForCheckQuery(mockClient, watcher.CheckQueryParams{}, "test_metric", zaptest.NewLogger(t))
+		metrics, err := buildMetricsForCheckQuery(mockClient,
+			watcher.CheckQueryParams{Network: "network"},
+			"test_metric",
+			zaptest.NewLogger(t),
+		)
 
 		// Verify no error occurred
 		if err != nil {
@@ -135,6 +139,7 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 
 		expectedMetric1, _ := NewProviderMetric(
 			"test_metric",
+			"network",
 			"provider1",
 			"https://provider1.com",
 			0.95,
@@ -146,6 +151,7 @@ func TestBuildMetricsForCheckQuery(t *testing.T) {
 
 		expectedMetric2, _ := NewProviderMetric(
 			"test_metric",
+			"network",
 			"provider2",
 			"https://provider2.com",
 			0.20,
@@ -194,7 +200,11 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 		}
 
 		// Call the function
-		metrics, err := buildMetricsForLatencyQuery(mockClient, watcher.LatencyQueryParams{}, "test_metric_latency", zaptest.NewLogger(t))
+		metrics, err := buildMetricsForLatencyQuery(mockClient,
+			watcher.LatencyQueryParams{Network: "network"},
+			"test_metric_latency",
+			zaptest.NewLogger(t),
+		)
 
 		// Verify no error occurred
 		if err != nil {
@@ -208,6 +218,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 
 		expectedMetric1, _ := NewProviderMetric(
 			"test_metric_latency",
+			"network",
 			"provider1",
 			"https://provider1.com",
 			0.8316,
@@ -219,6 +230,7 @@ func TestBuildMetricsForLatencyQuery(t *testing.T) {
 
 		expectedMetric2, _ := NewProviderMetric(
 			"test_metric_latency",
+			"network",
 			"provider2",
 			"https://provider2.com",
 			0.2788,

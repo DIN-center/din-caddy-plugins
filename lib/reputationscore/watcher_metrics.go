@@ -21,7 +21,7 @@ func (g *WatcherBlockNumberConsistency) GenerateMetrics(network string) ([]*Prov
 
 	// Query for block number consistency check
 	queryParams := watcher.CheckQueryParams{
-		CheckID:  "blockNumberConsistency",
+		CheckID:  BlockNumberConsistencyMetricID,
 		Network:  network,
 		Interval: MetricDefaultInterval,
 	}
@@ -51,7 +51,7 @@ func (g *WatcherBlockNonStateConsistency) MetricID() string {
 func (g *WatcherBlockNonStateConsistency) GenerateMetrics(network string) ([]*ProviderMetric, error) {
 	// Query for block number consistency check
 	queryParams := watcher.CheckQueryParams{
-		CheckID:  "blockNonStateConsistency",
+		CheckID:  BlockNonStateConsistencyMetricID,
 		Network:  network,
 		Interval: MetricDefaultInterval,
 	}

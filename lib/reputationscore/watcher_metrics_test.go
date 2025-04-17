@@ -24,6 +24,7 @@ func TestWatcherBlockNumberConsistencyGenerateMetrics(t *testing.T) {
 		}
 		expectedMetric, _ := NewProviderMetric(
 			BlockNumberConsistencyMetricID,
+			"test_network",
 			"provider1",
 			"https://provider1.com",
 			0.95,
@@ -63,6 +64,7 @@ func TestWatcherBlockNonStateConsistencyGenerateMetrics(t *testing.T) {
 		}
 		expectedMetric, _ := NewProviderMetric(
 			BlockNonStateConsistencyMetricID,
+			"test_network",
 			"provider1",
 			"https://provider1.com",
 			0.95,
@@ -101,6 +103,7 @@ func TestWatcherLatencyGenerateMetrics(t *testing.T) {
 		}
 		expectedMetric, _ := NewProviderMetric(
 			LatencyMetricID,
+			"test_network",
 			"provider1",
 			"https://provider1.com",
 			0.8316,

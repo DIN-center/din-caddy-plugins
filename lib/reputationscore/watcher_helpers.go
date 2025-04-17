@@ -57,16 +57,25 @@ func calculateLatencyMetric(responseStatus watcher.Status, latencyStats watcher.
 func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.CheckQueryParams, metricID string, logger *zap.Logger) ([]*ProviderMetric, error) {
 	// Query watcher API for check
 	logger.Debug("[REPUTATION_SCORE] Querying watcher API for check", zap.Any("params", params))
+
 	response := client.GetCheck(params)
 	if response.IsErr() {
 		logger.Error("[REPUTATION_SCORE] Error getting check data", zap.Error(response.UnwrapErr()))
 		return nil, errors.Wrapf(response.UnwrapErr(), "Error while querying check %s for network %s", params.CheckID, params.Network)
 	}
 
-	// Transform check response to metrics
+	// Convert check response to metrics
 	checkResponse := response.Unwrap()
 	metrics := []*ProviderMetric{}
 	for _, provider := range checkResponse.Providers {
+		logger.Info("[REPUTATION_SCORE] Watcher check response",
+			zap.String("cycleStart", checkResponse.CycleStart),
+			zap.String("cycleEnd", checkResponse.CycleEnd),
+			zap.String("checkID", params.CheckID),
+			zap.String("network", params.Network),
+			zap.String("provider", provider.Provider),
+			zap.Any("responseStatus", provider.ResponseStatus),
+			zap.Any("checkSummary", provider.CheckSummary))
 		metricValue := calculateCheckMetric(provider.ResponseStatus, provider.CheckSummary)
 
 		// Parse timestamp, but verify that it's not empty
@@ -79,6 +88,7 @@ func buildMetricsForCheckQuery(client watcher.IWatcherAPIClient, params watcher.
 		}
 		metric, _ := NewProviderMetric(
 			metricID,
+			params.Network,
 			provider.Provider,
 			provider.EndpointURL,
 			metricValue,
@@ -103,6 +113,13 @@ func buildMetricsForLatencyQuery(client watcher.IWatcherAPIClient, params watche
 	// Transform latency response to metrics
 	metrics := []*ProviderMetric{}
 	for _, provider := range latencyResponse.Providers {
+		logger.Info("[REPUTATION_SCORE] Watcher latency response",
+			zap.String("cycleStart", latencyResponse.CycleStart),
+			zap.String("cycleEnd", latencyResponse.CycleEnd),
+			zap.String("network", params.Network),
+			zap.String("provider", provider.Provider),
+			zap.Any("responseStatus", provider.ResponseStatus),
+			zap.Any("latencySummary", provider.Latency))
 		metricValue := calculateLatencyMetric(provider.ResponseStatus, provider.Latency)
 
 		// Parse timestamp, but verify that it's not empty
@@ -115,6 +132,7 @@ func buildMetricsForLatencyQuery(client watcher.IWatcherAPIClient, params watche
 		}
 		metric, _ := NewProviderMetric(
 			metricID,
+			params.Network,
 			provider.Provider,
 			provider.EndpointURL,
 			metricValue,

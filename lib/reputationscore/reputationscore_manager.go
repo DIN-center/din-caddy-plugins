@@ -56,7 +56,7 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
-	rm.logger.Debug("[REPUTATION_SCORE] Computing reputation scores...")
+	rm.logger.Info("[REPUTATION_SCORE] Computing reputation scores...")
 
 	// Process each formula that defines how to compute the score for a network
 	for _, formula := range rm.formulas {
@@ -91,7 +91,7 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 		}
 
 		// Apply the score transformer
-		transformedScores, err := formula.scoreTransformer.TransformScore(rawScores)
+		transformedScores, err := formula.scoreTransformer.TransformScore(network, rawScores)
 		if err != nil {
 			rm.logger.Error("[REPUTATION_SCORE] Error while transforming scores for network", zap.String("network", network), zap.Error(err))
 			return errors.Wrapf(err, "Error while transforming scores for network %s", network)
@@ -106,7 +106,12 @@ func (rm *ReputationScoreManager) ComputeScores() error {
 			}
 
 			// Add the final score to the scores map
-			rm.logger.Debug("[REPUTATION_SCORE] Adding score for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Any("score", score))
+			rm.logger.Info("[REPUTATION_SCORE] Provider score",
+				zap.String("network", network),
+				zap.String("provider", providerID),
+				zap.Bool("isValid", score.HasValue()),
+				zap.Float64("score", score.Value()),
+				zap.Time("lastUpdated", score.LastUpdated()))
 			rm.scores[network][providerID] = score
 		}
 	}
@@ -163,7 +168,7 @@ func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, c
 		BlockNumberConsistencyMetricID:   BlockNumberConsistencyWeight,
 		BlockNonStateConsistencyMetricID: BlockNonStateConsistencyWeight,
 		LatencyMetricID:                  LatencyWeight,
-	})
+	}, rm.logger)
 	if err != nil {
 		rm.logger.Error("[REPUTATION_SCORE] Error while creating weighted combiner", zap.Error(err))
 		return errors.Wrapf(err, "Error while creating weighted combiner")
@@ -177,7 +182,7 @@ func (rm *ReputationScoreManager) AddNetworkWithBuiltInFormula(network string, c
 			&WatcherLatency{WatcherClient: client, Logger: rm.logger},
 		},
 		metricCombiner:   combiner,
-		scoreTransformer: NewCompositeTransformer(&EWMATransformer{alpha: ScoreSmoothingFactor}, NewDefaultHighPassThroughTransformer()),
+		scoreTransformer: NewCompositeTransformer(NewEWMATransformer(ScoreSmoothingFactor, rm.logger), NewDefaultHighPassThroughTransformer(rm.logger)),
 	}
 	rm.AddNetworkFormula(network, builtInFormula)
 	return nil

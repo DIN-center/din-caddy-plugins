@@ -2,45 +2,9 @@ package reputationscore
 
 import (
 	"math"
+
+	"go.uber.org/zap"
 )
-
-// ShareOfTotalTransformer adjust the input score so the sum of all scores is 1.
-// In other words, adjusted score represents the percentage of the total score.
-type ShareOfTotalTransformer struct {
-}
-
-func (t *ShareOfTotalTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
-	if len(scores) == 0 {
-		return scores, nil
-	}
-
-	sumOfScores := 0.0
-	for _, score := range scores {
-		if score.HasValue() {
-			sumOfScores += score.Value()
-		}
-	}
-
-	if sumOfScores < 0.001 { // prevent division by 0 and very small raw scores
-		return scores, nil
-	}
-
-	normalizedScores := map[string]*Score{}
-	for providerID, score := range scores {
-		if !score.HasValue() {
-			normalizedScores[providerID] = EmptyScore
-			continue
-		}
-
-		normalizedScore, _ := NewScore(
-			math.Round(score.Value()/sumOfScores*10000)/10000,
-			score.LastUpdated(),
-		)
-		normalizedScores[providerID] = normalizedScore
-	}
-
-	return normalizedScores, nil
-}
 
 // CompositeTransformer is a transformer that chains multiple transformers.
 // It applies the result of each transformer in the chain to the next one in the chain and returns the final result.
@@ -48,11 +12,11 @@ type CompositeTransformer struct {
 	chain []ScoreTransformer
 }
 
-func (t *CompositeTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
+func (t *CompositeTransformer) TransformScore(network string, scores map[string]*Score) (map[string]*Score, error) {
 	var transformedScores = scores
 	var err error
 	for _, transformer := range t.chain {
-		transformedScores, err = transformer.TransformScore(transformedScores)
+		transformedScores, err = transformer.TransformScore(network, transformedScores)
 		if err != nil {
 			return nil, err
 		}
@@ -72,9 +36,10 @@ type EWMATransformer struct {
 	alpha             float64
 	previousScores    map[string]*Score
 	hasPreviousScores bool
+	logger            *zap.Logger
 }
 
-func (t *EWMATransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
+func (t *EWMATransformer) TransformScore(network string, scores map[string]*Score) (map[string]*Score, error) {
 	// If this is the first time we're running the transformer, initialize the previousScores and return same scores
 	if !t.hasPreviousScores {
 		t.previousScores = scores
@@ -99,6 +64,13 @@ func (t *EWMATransformer) TransformScore(scores map[string]*Score) (map[string]*
 		//The update formula is:
 		// S_t = alpha * S_t + (1 - alpha) * S_t-1
 		transformedScore := score.Value()*t.alpha + (1-t.alpha)*previousScore.Value()
+		t.logger.Info("[REPUTATION_SCORE] EWMA transformed score",
+			zap.String("network", network),
+			zap.String("provider", providerID),
+			zap.Float64("alpha", t.alpha),
+			zap.Float64("score", score.Value()),
+			zap.Float64("previousScore", previousScore.Value()),
+			zap.Float64("transformedScore", transformedScore))
 		smoothedScores[providerID], _ = NewScore(math.Round(transformedScore*10000)/10000, score.LastUpdated())
 	}
 
@@ -108,23 +80,29 @@ func (t *EWMATransformer) TransformScore(scores map[string]*Score) (map[string]*
 	return smoothedScores, nil
 }
 
-func NewEWMATransformer(alpha float64) *EWMATransformer {
-	return &EWMATransformer{alpha: alpha}
+func NewEWMATransformer(alpha float64, logger *zap.Logger) *EWMATransformer {
+	return &EWMATransformer{alpha: alpha, logger: logger}
 }
 
 // HighPassThroughTransformer is a transformer that returns the same scores it receives
 // but only if the score has a value greater than a cutoff value. Otherwise, it returns a score with a value of 0.
 type HighPassThroughTransformer struct {
 	cutoffValue float64
+	logger      *zap.Logger
 }
 
-func (t *HighPassThroughTransformer) TransformScore(scores map[string]*Score) (map[string]*Score, error) {
+func (t *HighPassThroughTransformer) TransformScore(network string, scores map[string]*Score) (map[string]*Score, error) {
 	transformedScores := map[string]*Score{}
 	for providerID, score := range scores {
 		if score.HasValue() {
 			if score.Value() > t.cutoffValue {
 				transformedScores[providerID] = score
 			} else {
+				t.logger.Debug("[REPUTATION_SCORE] Score below cutoff value",
+					zap.String("network", network),
+					zap.String("provider", providerID),
+					zap.Float64("score", score.Value()),
+					zap.Float64("cutoffValue", t.cutoffValue))
 				transformedScores[providerID], _ = NewScore(0.0, score.LastUpdated())
 			}
 		} else {
@@ -134,6 +112,6 @@ func (t *HighPassThroughTransformer) TransformScore(scores map[string]*Score) (m
 	return transformedScores, nil
 }
 
-func NewDefaultHighPassThroughTransformer() *HighPassThroughTransformer {
-	return &HighPassThroughTransformer{cutoffValue: 0.001}
+func NewDefaultHighPassThroughTransformer(logger *zap.Logger) *HighPassThroughTransformer {
+	return &HighPassThroughTransformer{cutoffValue: 0.001, logger: logger}
 }

@@ -303,8 +303,8 @@ func MustCreateScore(value float64, time time.Time) *Score {
 }
 
 // Helper function to create weighted combiner without error checking
-func MustCreateWeightedCombiner(weights map[string]float64) *WeightedCombiner {
-	combiner, _ := NewWeightedCombiner(weights)
+func MustCreateWeightedCombiner(weights map[string]float64, logger *zap.Logger) *WeightedCombiner {
+	combiner, _ := NewWeightedCombiner(weights, logger)
 
 	return combiner
 }
