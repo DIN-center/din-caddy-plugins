@@ -9,9 +9,9 @@ services:
       - 2019:2019
       - 8000:8000
     volumes:
-      - ./Caddyfile.private:/etc/caddy/Caddyfile
+      - ./Caddyfile.private:/etc/caddy/Caddyfile.private
       - ./caddy-data:/srv
-    command: /bin/sh -c "chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile"
+    command: /bin/sh -c "chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile.private --adapter caddyfile"
     environment:
       - OTEL_SERVICE_NAME=din-caddy
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -29,3 +29,57 @@ services:
       - 4317:4317
       - 8888:8888 # for Prometheus metrics /metrics
     command: ["--config=/etc/otel/config/config.yml"]
+  
+  # Monitoring stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    depends_on:
+      - otel-collector
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    volumes:
+      - ./services/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    volumes:
+      - ./services/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./services/grafana/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml
+      - ./services/grafana/dashboards/caddy-dashboard.json:/etc/grafana/dashboards/caddy-dashboard.json
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/caddy-dashboard.json
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+# Define named volumes for persistent storage
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:

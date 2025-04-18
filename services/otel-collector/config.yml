@@ -40,6 +40,14 @@ exporters:
       insecure: false
     headers:
       "signoz-access-token": ""
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    tenant_id: "tenant1"
+    labels:
+      attributes:
+        service.name: "service"
+      resource:
+        container.name: "container"
   logging:
     verbosity: detailed
 
@@ -52,7 +60,7 @@ service:
     logs:
       receivers: [filelog]
       processors: [memory_limiter, batch]
-      exporters: [otlp]
+      exporters: [otlp, loki]
   telemetry:
     metrics:
       level: detailed
