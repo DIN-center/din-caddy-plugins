@@ -5,6 +5,7 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+    uid: P8E80F9AEF21F6940
     jsonData:
       maxLines: 1000
       derivedFields:
@@ -14,4 +15,4 @@ datasources:
           urlDisplayLabel: "Open Trace"
     basicAuth: false
     isDefault: false
-    editable: false 
+    editable: true 

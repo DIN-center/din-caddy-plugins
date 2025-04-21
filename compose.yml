@@ -1,77 +1,94 @@
 ### This file is for LOCAL development purposes ONLY ###
 version: '3.7'
+
+# for local development
 services:
   din-caddy:
     image: din-caddy
     container_name: din-caddy
-    restart: always
+    restart: unless-stopped
+    networks:
+      - din-network
     ports:
       - 2019:2019
       - 8000:8000
     volumes:
-      - ./Caddyfile.private:/etc/caddy/Caddyfile.private
-      - ./caddy-data:/srv
-    command: /bin/sh -c "chmod 644 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile.private --adapter caddyfile"
+      - ./Caddyfile.private:/etc/caddy/Caddyfile
+      - ./logs:/srv/logs
+    command: /bin/sh -c "mkdir -p /srv/logs && touch /srv/logs/caddy.log && chmod 666 /srv/logs/caddy.log && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tee -a /srv/logs/caddy.log"
     environment:
       - OTEL_SERVICE_NAME=din-caddy
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_INSECURE=true
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
       - DIN_REGISTRY_CONTRACT_ADDRESS=0x3c8760ee73f4cbd37e5c0e6e0087eaf3916f1385
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=din_caddy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2019/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   otel-collector:
-    container_name: otel-collector
     image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: otel-collector
+    restart: unless-stopped
+    networks:
+      - din-network
+    command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
-      - ./caddy-data:/srv
+      - ./services/otel-collector/config.yml:/etc/otel-collector-config.yaml
+      - ./logs:/srv/logs
     ports:
-      - 4317:4317
-      - 8888:8888 # for Prometheus metrics /metrics
-    command: ["--config=/etc/otel/config/config.yml"]
+      - "4317:4317"   # OTLP gRPC receiver
+      - "8888:8888"   # Prometheus metrics
+      - "8889:8889"   # Prometheus exporter
+    depends_on:
+      - din-caddy
   
   # Monitoring stack
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
+    networks:
+      - din-network
     volumes:
       - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
     depends_on:
       - otel-collector
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:2.9.6
     container_name: loki
     restart: unless-stopped
+    networks:
+      - din-network
     volumes:
       - ./services/loki/loki-config.yml:/etc/loki/local-config.yaml
-      - loki-data:/loki
+      - loki_data:/loki
     ports:
       - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
 
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
+    networks:
+      - din-network
     volumes:
-      - ./services/grafana/datasources:/etc/grafana/provisioning/datasources
       - ./services/grafana/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml
-      - ./services/grafana/dashboards/caddy-dashboard.json:/etc/grafana/dashboards/caddy-dashboard.json
-      - grafana-data:/var/lib/grafana
+      - ./services/grafana/dashboards/:/etc/grafana/dashboards/
+      - ./services/grafana/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/caddy-dashboard.json
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/d/din-overview/din-overview-dashboard
     ports:
       - "3000:3000"
     depends_on:
@@ -80,6 +97,11 @@ services:
 
 # Define named volumes for persistent storage
 volumes:
-  prometheus-data:
-  loki-data:
-  grafana-data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+
+# Define custom networks
+networks:
+  din-network:
+    driver: bridge

@@ -5,11 +5,10 @@ receivers:
     config:
       scrape_configs:
         - job_name: 'din-caddy-metrics-collector'
-          scrape_interval: 60s #default 60s
+          scrape_interval: 60s
           static_configs:
             - targets: ['din-caddy:2019']
   otlp:
-    # https://github.com/open-telemetry/opentelemetry-collector/tree/main/receiver/otlpreceiver
     protocols:
       grpc:
       http:
@@ -18,19 +17,35 @@ receivers:
             - "http://*"
             - "https://*"
   filelog:
-    include: [/srv/caddy.log]
-    start_at: beginning # This ensures that the collector starts reading from the beginning of the log file
+    include: [/srv/logs/caddy.log]
+    start_at: beginning
+    include_file_path: true
+    include_file_name: true
     operators:
       - type: json_parser
-        id: caddy_log_parser
+        parse_to: attributes
 
 processors:
+  resource:
+    attributes:
+      - action: insert
+        key: service.name
+        value: din-caddy
   batch:
-    # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+    timeout: 1s
+    send_batch_size: 10
   memory_limiter:
     check_interval: 1s
     limit_mib: 400
     spike_limit_mib: 100
+  attributes:
+    actions:
+      - action: insert
+        key: job
+        value: "din-caddy"
+      - action: insert
+        key: container
+        value: "din-caddy"
 
 exporters:
   otlp:
@@ -40,27 +55,34 @@ exporters:
       insecure: false
     headers:
       "signoz-access-token": ""
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: ""
+    const_labels:
+      exported_by: "otel-collector"
   loki:
     endpoint: "http://loki:3100/loki/api/v1/push"
-    tenant_id: "tenant1"
-    labels:
-      attributes:
-        service.name: "service"
-      resource:
-        container.name: "container"
+    default_labels_enabled:
+      exporter: true
+      job: true
+      container: true
+      instance: true
+      level: true
   logging:
     verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
 
 service:
   pipelines:
     metrics:
       receivers: [prometheus]
       processors: [batch]
-      exporters: [otlp]
+      exporters: [otlp, prometheus]
     logs:
       receivers: [filelog]
-      processors: [memory_limiter, batch]
-      exporters: [otlp, loki]
+      processors: [resource, attributes, memory_limiter, batch]
+      exporters: [otlp, loki, logging]
   telemetry:
     metrics:
       level: detailed
