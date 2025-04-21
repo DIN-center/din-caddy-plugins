@@ -14,8 +14,8 @@ services:
       - 8000:8000
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
-      - ./logs:/srv/logs
-    command: /bin/sh -c "mkdir -p /srv/logs && touch /srv/logs/caddy.log && chmod 666 /srv/logs/caddy.log && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tee -a /srv/logs/caddy.log"
+      - ./caddy-data:/srv
+    command: /bin/sh -c "mkdir -p /srv && touch /srv/caddy.log && chmod 666 /srv/caddy.log && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tee -a /srv/caddy.log"
     environment:
       - OTEL_SERVICE_NAME=din-caddy
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
@@ -38,7 +38,7 @@ services:
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./services/otel-collector/config.yml:/etc/otel-collector-config.yaml
-      - ./logs:/srv/logs
+      - ./caddy-data:/srv
     ports:
       - "4317:4317"   # OTLP gRPC receiver
       - "8888:8888"   # Prometheus metrics
@@ -88,7 +88,7 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/d/din-overview/din-overview-dashboard
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/din-overview-dashboard.json
     ports:
       - "3000:3000"
     depends_on:

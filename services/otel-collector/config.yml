@@ -17,23 +17,16 @@ receivers:
             - "http://*"
             - "https://*"
   filelog:
-    include: [/srv/logs/caddy.log]
+    include: [/srv/caddy.log]
     start_at: beginning
-    include_file_path: true
-    include_file_name: true
     operators:
       - type: json_parser
         parse_to: attributes
+        id: caddy_log_parser
+
 
 processors:
-  resource:
-    attributes:
-      - action: insert
-        key: service.name
-        value: din-caddy
   batch:
-    timeout: 1s
-    send_batch_size: 10
   memory_limiter:
     check_interval: 1s
     limit_mib: 400
@@ -81,7 +74,7 @@ service:
       exporters: [otlp, prometheus]
     logs:
       receivers: [filelog]
-      processors: [resource, attributes, memory_limiter, batch]
+      processors: [attributes, memory_limiter, batch]
       exporters: [otlp, loki, logging]
   telemetry:
     metrics:
