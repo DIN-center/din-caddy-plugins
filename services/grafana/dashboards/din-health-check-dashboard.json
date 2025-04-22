@@ -284,8 +284,142 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "labels"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tsNs"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceID"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id"
+            },
+            "properties": []
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "sum by(attributes_network) (count_over_time({job=\"din-caddy\"} | json [5m]))",
+          "legendFormat": "{{attributes_network}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Health Check Logs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
       },
       "description": "",
       "fieldConfig": {
@@ -346,7 +480,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 26
       },
       "id": 2,
       "options": {
@@ -366,14 +500,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
           },
+          "direction": "backward",
           "editorMode": "code",
-          "expr": "count by (network, provider) (count_over_time({environment=~\"$env\", network=~\"$network\"}[5m]))",
-          "interval": "",
-          "legendFormat": "{{network}} {{provider}}",
-          "range": true,
+          "expr": "sum by(attributes_network, attributes_provider) (count_over_time({job=\"din-caddy\"} | json [5m]))",
+          "legendFormat": "{{attributes_network}} {{attributes_provider}}",
+          "queryType": "range",
           "refId": "A"
         }
       ],
@@ -383,7 +517,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "description": "",
       "fieldConfig": {
@@ -441,12 +575,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
+        "h": 6,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 32
       },
-      "id": 3,
+      "id": 7,
       "options": {
         "legend": {
           "calcs": [],
@@ -465,17 +599,16 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "Prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service, provider, response_status) (increase(din_http_request_count{service=~\"$network\", environment=~\"$env\", response_status!=\"200\"}[5m]))",
-          "interval": "",
-          "legendFormat": "{{service}} {{provider}} {{response_status}}",
+          "expr": "sum by(provider, network) (din_http_request_count_total{environment=\"$env\", service=~\"$network\", response_status!=\"200\"})",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "DIN Request Errors (response != 200)",
+      "title": "Health Check Logs by provider",
       "type": "timeseries"
     },
     {
@@ -542,7 +675,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 38
       },
       "id": 4,
       "options": {
@@ -566,7 +699,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (service, provider, health_status) (increase(din_http_request_count{service=~\"$network\", environment=~\"$env\"}[5m]))",
+          "expr": "sum by (service, provider, health_status) (increase(din_http_request_count_total{service=~\"$network\", environment=~\"$env\"}[5m]))",
           "interval": "",
           "legendFormat": "{{service}} {{provider}} {{health_status}}",
           "range": true,
@@ -640,7 +773,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 45
       },
       "id": 5,
       "options": {
@@ -664,7 +797,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (service, provider, health_status) (increase(din_health_check_count{service=~\"$network\", environment=~\"$env\"}[5m]))",
+          "expr": "sum by (service, provider, health_status) (increase(din_health_check_count_total{service=~\"$network\", environment=~\"$env\"}[5m]))",
           "interval": "",
           "legendFormat": "{{service}} {{provider}} {{health_status}}",
           "range": true,
@@ -744,12 +877,12 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "DIN Health Check Dashboard",
   "uid": "din-health-check",
-  "version": 5
+  "version": 7
 }
