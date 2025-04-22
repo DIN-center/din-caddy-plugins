@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 5,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -139,7 +139,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "attributes"
+            "displayName": "count (sum)"
           }
         ]
       },
@@ -152,7 +152,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{job=\"din-caddy\"} | json | attributes_environment=\"$env\" and attributes_network=\"$network\"",
+          "expr": "{job=\"din-caddy\"} | json | attributes_environment=\"$env\" and attributes_network=\"$network\" | attributes_level!=\"info\" and attributes_level!=\"debug\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -687,15 +687,15 @@
     "list": [
       {
         "current": {
-          "text": "prod",
-          "value": "prod"
+          "text": "test",
+          "value": "test"
         },
         "description": "Select the environment to show data in",
         "includeAll": false,
         "name": "env",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": "test",
             "value": "test"
           },
@@ -710,7 +710,7 @@
             "value": "dev"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "prod",
             "value": "prod"
           }
@@ -720,17 +720,21 @@
       },
       {
         "current": {
-          "text": "All",
-          "value": "$__all"
+          "text": [
+            "bsc-mainnet"
+          ],
+          "value": [
+            "bsc-mainnet"
+          ]
         },
-        "definition": "label_values(din_health_check_count,service)",
+        "definition": "label_values(service)",
         "includeAll": true,
         "multi": true,
         "name": "network",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(din_health_check_count,service)",
+          "query": "label_values(service)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -747,5 +751,5 @@
   "timezone": "",
   "title": "DIN Health Check Dashboard",
   "uid": "din-health-check",
-  "version": 9
+  "version": 5
 }

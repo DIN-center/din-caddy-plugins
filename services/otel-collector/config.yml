@@ -23,21 +23,24 @@ receivers:
       - type: json_parser
         parse_to: attributes
         id: caddy_log_parser
+    attributes:
+      job: din-caddy
+      container: din-caddy
 
 
 processors:
   batch:
+    send_batch_size: 8192
+    timeout: 1s
+    send_batch_max_size: 0
   memory_limiter:
     check_interval: 1s
     limit_mib: 400
     spike_limit_mib: 100
-  attributes:
-    actions:
+  resource:
+    attributes:
       - action: insert
-        key: job
-        value: "din-caddy"
-      - action: insert
-        key: container
+        key: service.name
         value: "din-caddy"
 
 exporters:
@@ -69,14 +72,16 @@ exporters:
 service:
   pipelines:
     metrics:
-      receivers: [prometheus]
-      processors: [batch]
+      receivers: [prometheus, otlp]
+      processors: [batch, resource]
       exporters: [otlp, prometheus]
     logs:
-      receivers: [filelog]
-      processors: [attributes, memory_limiter, batch]
+      receivers: [filelog, otlp]
+      processors: [resource, memory_limiter, batch]
       exporters: [otlp, loki, logging]
   telemetry:
+    logs:
+      level: debug
     metrics:
       level: detailed
       address: ':8888'
