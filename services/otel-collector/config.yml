@@ -8,6 +8,12 @@ receivers:
           scrape_interval: 60s #default 60s
           static_configs:
             - targets: ['din-caddy:2019']
+          relabel_configs:
+            # Use hostname as instance ID
+            - target_label: instance_id
+              replacement: '${HOSTNAME}'
+            - target_label: environment
+              replacement: '${ENV}'
   otlp:
     # https://github.com/open-telemetry/opentelemetry-collector/tree/main/receiver/otlpreceiver
     protocols:
