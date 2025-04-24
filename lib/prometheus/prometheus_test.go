@@ -127,10 +127,11 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 		{
 			name: "Valid Data",
 			data: &PromHealthCheckMetricData{
-				Network:      "/ethereum",
-				Provider:     "infura",
-				HealthStatus: "healthy",
-				Environment:  "test",
+				Network:        "/ethereum",
+				Provider:       "infura",
+				ResponseStatus: 200,
+				HealthStatus:   "healthy",
+				Environment:    "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
@@ -144,10 +145,11 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 		{
 			name: "Invalid Data",
 			data: &PromHealthCheckMetricData{
-				Network:      "/ethereum",
-				Provider:     "infura",
-				HealthStatus: "unhealthy",
-				Environment:  "test",
+				Network:        "/ethereum",
+				Provider:       "infura",
+				ResponseStatus: 500,
+				HealthStatus:   "unhealthy",
+				Environment:    "test",
 			},
 			expectedLabels: map[string]string{
 				"service":         "ethereum",

@@ -74,7 +74,7 @@ func RegisterMetrics() {
 			Name: "din_health_check_count",
 			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
-		[]string{"service", "provider", "health_status", "machine_id", "environment"},
+		[]string{"service", "provider", "response_status", "health_status", "machine_id", "environment"},
 	)
 
 	DinHealthCheckBlockNumber = prometheus.NewGaugeVec(
@@ -131,11 +131,12 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 }
 
 type PromHealthCheckMetricData struct {
-	Network      string
-	Provider     string
-	HealthStatus string
-	BlockNumber  int64
-	Environment  string
+	Network        string
+	Provider       string
+	ResponseStatus int
+	HealthStatus   string
+	BlockNumber    int64
+	Environment    string
 }
 
 func (p *PrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricData) {
@@ -144,7 +145,7 @@ func (p *PrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricDa
 	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("health_status", data.HealthStatus), zap.String("environment", data.Environment))
 
 	// Increment prometheus metric based on request data
-	DinHealthCheckCount.WithLabelValues(network, data.Provider, data.HealthStatus, p.machineID, data.Environment).Inc()
+	DinHealthCheckCount.WithLabelValues(network, data.Provider, strconv.Itoa(data.ResponseStatus), data.HealthStatus, p.machineID, data.Environment).Inc()
 
 	// Update prometheus metric based on block number
 	DinHealthCheckBlockNumber.WithLabelValues(network, data.Provider, p.machineID, data.Environment).Set(float64(data.BlockNumber))
