@@ -185,21 +185,15 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// If block lag is greater than limit, mark as warning and set isLagged flag
 		if blockLag > n.BlockLagLimit {
 			isLagged = true
+			if Warning > worstStatus {
+				worstStatus = Warning
+			}
 			n.logProviderWarning("Provider is lagging behind network", provider,
 				zap.Int64("block_lag_limit", n.BlockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
 				zap.String("health_status", Warning.String()))
-			if Warning > worstStatus {
-				worstStatus = Warning
-				n.logProviderWarning("Provider status changed to warning due to block lag", provider,
-					zap.Int64("block_lag_limit", n.BlockLagLimit),
-					zap.Int64("block_lag", blockLag),
-					zap.Int64("provider_block", currentBlock),
-					zap.Int64("network_block", latestNetworkBlock),
-					zap.String("health_status", Warning.String()))
-			}
 		}
 
 		// Check if block is too far ahead (block jump)
