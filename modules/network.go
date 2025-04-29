@@ -100,30 +100,31 @@ func (n *network) healthCheck() {
 
 		// Get latest block and initial health status
 		var healthStatus HealthStatus = Healthy
-		blockNum, initialHealth, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
 		if err != nil {
 			n.logProviderWarning("Error getting latest block number for provider", provider,
-				zap.Int64("block_number", blockNum),
+				zap.Int64("block_number", latestBlockResult.blockNumber),
 				zap.String("provider", provider.host),
-				zap.String("health_status", initialHealth.String()),
+				zap.Int("response_status", latestBlockResult.responseStatus),
+				zap.String("health_status", latestBlockResult.healthStatus.String()),
 				zap.Error(err))
 			// Handle error cases with grace period logic
-			healthStatus := n.handleErrorWithGracePeriod(provider, initialHealth, blockNum)
+			healthStatus := n.handleErrorWithGracePeriod(provider, latestBlockResult.healthStatus, latestBlockResult.blockNumber)
 
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
-				provider.AddBlockEntry(blockNum, Unhealthy, n.BlockHistorySize)
-				n.sendHealthCheckMetric(provider.host, Unhealthy.String(), blockNum, string(n.Environment))
+				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.BlockHistorySize)
+				n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
 			}
 		}
 		// Evaluate final health status
-		newStatus := n.evaluateProviderHealth(provider, blockNum, healthStatus, latestNetworkBlock)
+		newStatus := n.evaluateProviderHealth(provider, latestBlockResult.blockNumber, healthStatus, latestNetworkBlock)
 
 		// Update metrics and history
-		provider.AddBlockEntry(blockNum, newStatus, n.BlockHistorySize)
-		n.sendHealthCheckMetric(provider.host, newStatus.String(), blockNum, string(n.Environment))
+		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.BlockHistorySize)
+		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
 	}
 }
 
@@ -184,21 +185,15 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// If block lag is greater than limit, mark as warning and set isLagged flag
 		if blockLag > n.BlockLagLimit {
 			isLagged = true
+			if Warning > worstStatus {
+				worstStatus = Warning
+			}
 			n.logProviderWarning("Provider is lagging behind network", provider,
 				zap.Int64("block_lag_limit", n.BlockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
 				zap.String("health_status", Warning.String()))
-			if Warning > worstStatus {
-				worstStatus = Warning
-				n.logProviderWarning("Provider status changed to warning due to block lag", provider,
-					zap.Int64("block_lag_limit", n.BlockLagLimit),
-					zap.Int64("block_lag", blockLag),
-					zap.Int64("provider_block", currentBlock),
-					zap.Int64("network_block", latestNetworkBlock),
-					zap.String("health_status", Warning.String()))
-			}
 		}
 
 		// Check if block is too far ahead (block jump)
@@ -379,19 +374,27 @@ func (n *network) getLatestHealthyBlock() int64 {
 	return latestBlockFromWarning
 }
 
-func (n *network) sendHealthCheckMetric(providerName string, healthStatus string, blockNumber int64, environment string) {
+func (n *network) sendHealthCheckMetric(providerName string, responseStatus int, healthStatus string, blockNumber int64, environment string) {
 	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
-		Network:      n.Name,
-		Provider:     providerName,
-		HealthStatus: healthStatus,
-		BlockNumber:  blockNumber,
-		Environment:  environment,
+		Network:        n.Name,
+		Provider:       providerName,
+		ResponseStatus: responseStatus,
+		HealthStatus:   healthStatus,
+		BlockNumber:    blockNumber,
+		Environment:    environment,
 	})
 }
 
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (int64, HealthStatus, error) {
+type getLatestBlockNumberResult struct {
+	blockNumber    int64
+	healthStatus   HealthStatus
+	responseStatus int
+}
+
+func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (*getLatestBlockNumberResult, error) {
 	var lastErr error
 	var lastHealthStatus HealthStatus = Unhealthy
+	var lastResponseStatus int = 0
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
@@ -399,6 +402,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
+			lastResponseStatus = *statusCode
 			continue
 		}
 
@@ -406,13 +410,22 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		if err != nil {
 			lastErr = err
 			lastHealthStatus = health
+			lastResponseStatus = *statusCode
 			continue
 		}
 
-		return blockNumber, health, nil
+		return &getLatestBlockNumberResult{
+			blockNumber:    blockNumber,
+			healthStatus:   health,
+			responseStatus: *statusCode,
+		}, nil
 	}
 
-	return 0, lastHealthStatus, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+	return &getLatestBlockNumberResult{
+		blockNumber:    0,
+		healthStatus:   lastHealthStatus,
+		responseStatus: lastResponseStatus,
+	}, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 // Layer 3: Process response
