@@ -23,7 +23,7 @@ func TestHandleRequestMetric(t *testing.T) {
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(DinRequestCount, DinRequestDurationMilliseconds, DinRequestBodyBytes)
+	registry.MustRegister(DinRequestCount, DinRequestDurationSeconds, DinRequestBodyBytes)
 
 	tests := []struct {
 		name           string
