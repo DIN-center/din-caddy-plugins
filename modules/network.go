@@ -707,29 +707,36 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
-	// No auth needed for self-check (unless your endpoint requires it)
-	// Use the existing HTTP client (timeout is managed by the client implementation)
+
 	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+	currentResponseStatus := 0 // Default status code if statusCode is nil
+	if statusCode != nil {
+		currentResponseStatus = *statusCode
+	}
+
 	if err != nil {
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,
 			healthStatus:   Unhealthy,
-			responseStatus: *statusCode,
+			responseStatus: currentResponseStatus, // Use the safe value
 		}, errors.Wrap(err, "Self loopback health check failed")
 	}
 
+	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
 	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
 	if err != nil {
+		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
+		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,
-			healthStatus:   health,
-			responseStatus: *statusCode,
+			healthStatus:   health, // Health status from processBlockNumberResponse
+			responseStatus: currentResponseStatus,
 		}, errors.Wrap(err, "Self loopback health check response error")
 	}
 
 	return &getLatestBlockNumberResult{
 		blockNumber:    blockNumber,
 		healthStatus:   health,
-		responseStatus: *statusCode,
+		responseStatus: currentResponseStatus, // Should be *statusCode from successful Post
 	}, nil
 }
