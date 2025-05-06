@@ -402,7 +402,9 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
-			lastResponseStatus = *statusCode
+			if statusCode != nil {
+				lastResponseStatus = *statusCode
+			}
 			continue
 		}
 
@@ -410,14 +412,21 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		if err != nil {
 			lastErr = err
 			lastHealthStatus = health
-			lastResponseStatus = *statusCode
+			if statusCode != nil {
+				lastResponseStatus = *statusCode
+			}
+
 			continue
+		}
+
+		if lastResponseStatus == 0 && statusCode != nil {
+			lastResponseStatus = *statusCode
 		}
 
 		return &getLatestBlockNumberResult{
 			blockNumber:    blockNumber,
 			healthStatus:   health,
-			responseStatus: *statusCode,
+			responseStatus: lastResponseStatus,
 		}, nil
 	}
 
