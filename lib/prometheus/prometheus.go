@@ -54,7 +54,7 @@ func RegisterMetrics() {
 		prometheus.HistogramOpts{
 			Name:    "din_http_request_duration_milliseconds",
 			Help:    "Metric for measuring the duration of requests to the din http server",
-			Buckets: prometheus.DefBuckets,
+			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
 		},
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
 	)
