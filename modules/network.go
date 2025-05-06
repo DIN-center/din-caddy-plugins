@@ -440,6 +440,10 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 // Layer 3: Process response
 func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
 	// Evaluate health status based on status code
+	if statusCode == nil {
+		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
+	}
+
 	if *statusCode >= 400 {
 		// If status code is 429, set health status to Warning, otherwise return as unhealthy
 		if *statusCode == 429 {
