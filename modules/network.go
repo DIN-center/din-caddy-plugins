@@ -93,6 +93,43 @@ func (n *network) startHealthcheck() {
 
 // HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
+	// Self loopback health check (run asynchronously)
+	go func() {
+		startTime := time.Now()
+		selfResult, selfErr := n.checkSelfLoopbackHealth()
+		duration := time.Since(startTime)
+
+		// Prepare metric data regardless of error, as we want to capture response status and duration
+		metricData := &prom.PromNetworkHealthCheckMetricData{
+			Network:        n.Name, // Use n.Name directly for the network label
+			ResponseStatus: 0,      // Default to 0 if selfResult is nil
+			Duration:       duration,
+			Environment:    string(n.Environment),
+		}
+
+		if selfResult != nil {
+			metricData.ResponseStatus = selfResult.responseStatus
+		}
+
+		n.PrometheusClient.HandleNetworkHealthCheckMetric(metricData)
+
+		if selfErr != nil {
+			n.logger.Warn("Self loopback health check failed",
+				zap.Error(selfErr),
+				zap.String("network", n.Name),
+				zap.Int("response_status", metricData.ResponseStatus),
+				zap.Duration("duration", duration),
+			)
+		} else {
+			n.logger.Info("Self loopback health check succeeded",
+				zap.String("network", n.Name),
+				zap.Int64("block_number", selfResult.blockNumber),
+				zap.Int("response_status", metricData.ResponseStatus),
+				zap.Duration("duration", duration),
+			)
+		}
+	}()
+
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()
 
@@ -660,4 +697,39 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 		}
 	}
 	return false
+}
+
+// checkSelfLoopbackHealth performs a health check on the router's own endpoint (loopback)
+func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
+	url := fmt.Sprintf("http://localhost:8000/%s", n.Name)
+	// Use the payload for getLatestBlockNumber
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	// No auth needed for self-check (unless your endpoint requires it)
+	// Use the existing HTTP client (timeout is managed by the client implementation)
+	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+	if err != nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: *statusCode,
+		}, errors.Wrap(err, "Self loopback health check failed")
+	}
+
+	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+	if err != nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   health,
+			responseStatus: *statusCode,
+		}, errors.Wrap(err, "Self loopback health check response error")
+	}
+
+	return &getLatestBlockNumberResult{
+		blockNumber:    blockNumber,
+		healthStatus:   health,
+		responseStatus: *statusCode,
+	}, nil
 }
