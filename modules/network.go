@@ -561,6 +561,8 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 
 			// Starknet uses a different method for archive mode check
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"block_number":%d}]}`, StarknetArchiveMethod, blockNum))
+		} else if strings.Contains(n.Name, "zksync") {
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3", "to": "0x0000000000000000000000000000000000000000"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
 		} else {
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
 		}
