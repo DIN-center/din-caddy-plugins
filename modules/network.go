@@ -419,7 +419,8 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			continue
 		}
 
-		if lastResponseStatus == 0 && statusCode != nil {
+		// If the current attempt was successful, its status code should be used.
+		if statusCode != nil {
 			lastResponseStatus = *statusCode
 		}
 
