@@ -272,7 +272,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, ok := d.Networks[networkPath]
+	networkObj, ok := d.Networks[networkPath]
 	if !ok {
 		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
 		if networkPath == "" {
@@ -295,28 +295,37 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Check if the request payload is too large
-	if (len(bodyBytes) / 1024) > int(network.MaxRequestPayloadSizeKB) {
+	if (len(bodyBytes) / 1024) > int(networkObj.MaxRequestPayloadSizeKB) {
 		// If the request payload is too large, return an error
 		rw.WriteHeader(http.StatusRequestEntityTooLarge)
 		rw.Write([]byte("Request payload too large\n"))
 		return fmt.Errorf("request payload too large")
 	}
 
+	// Check to see if the request is empty,
+	if len(bodyBytes) == 0 {
+		// if the request body is empty, do not increment the prometheus metric, return an error
+		// this is specifically for OPTIONS requests and invalid requests payload bodies
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body is empty\n"))
+		return fmt.Errorf("request body is empty")
+	}
+
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
 
-	if network.MethodFilter != nil {
+	if networkObj.MethodFilter != nil {
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, network.MethodFilter.FilterProviders(r, network.Providers))
+		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(r, networkObj.Providers))
 	} else {
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, network.Providers)
+		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
 	}
 
 	reqStartTime := time.Now()
 
 	// Retry the request if it fails up to the max attempt request count
-	for attempt := 0; attempt < network.RequestAttemptCount; attempt++ {
+	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
 
 		// If the request fails, reset the request body and custom header if its present to the original request state
@@ -360,6 +369,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 
+		// Log failed requests (non-200 status)
 		if rww.statusCode != http.StatusOK {
 			var bodyData []byte
 			var request din_http.JSONRPCRequest
@@ -368,23 +378,28 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				bodyData = v.([]byte)
 			}
 
-			// Unmarshal the byte array into the struct
-			err := json.Unmarshal(bodyData, &request)
-			if err != nil {
-				d.logger.Warn("Failed to unmarshal request body", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+			errUnmarshal := json.Unmarshal(bodyData, &request)
+			if errUnmarshal != nil {
+				d.logger.Warn("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyData[:min(len(bodyData), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			} else {
-				// If the request is a JSON-RPC request, log the request method and params
 				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
-	}
-	providerBlockNumber := network.Providers[provider].getLatestBlockEntry()
-	healthStatus := providerBlockNumber.healthStatus.String()
 
-	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
-	if len(bodyBytes) == 0 {
-		return nil
+		// START - Asynchronous HCMethod response processing
+		responseBodyCopy := make([]byte, len(rww.body.Bytes()))
+		copy(responseBodyCopy, rww.body.Bytes())
+
+		currentNetworkObj := networkObj
+		currentNetworkPath := networkPath
+		responseStatusCode := rww.statusCode
+
+		go d.processHCMethodResponseAsync(currentNetworkObj, currentNetworkPath, responseBodyCopy, responseStatusCode, repl)
+		// END - Asynchronous HCMethod response processing
 	}
+
+	providerBlockNumber := networkObj.Providers[provider].getLatestBlockEntry()
+	healthStatus := providerBlockNumber.healthStatus.String()
 
 	if d.testMode {
 		return nil
@@ -432,7 +447,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				case "secret":
 					dispenser.NextBlock(n1)
 					hexKey := dispenser.Val()
-					hexKey = strings.TrimPrefix(hexKey, "0x")
+					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
 					key, err = hex.DecodeString(hexKey)
 					if err != nil {
 						return dispenser.Errf("error parsing %v: %v", hexKey, err.Error())
@@ -534,7 +549,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 												case "secret":
 													dispenser.NextBlock(nesting + 4)
 													hexKey := dispenser.Val()
-													hexKey = strings.TrimPrefix(hexKey, "0x")
+													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
 													key, err = hex.DecodeString(hexKey)
 													if err != nil {
 														return fmt.Errorf("failed to decode secret: %v", err)
@@ -773,4 +788,51 @@ func (d *DinMiddleware) closeAll() {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// processHCMethodResponseAsync handles the asynchronous processing of a response
+// when the request method matches the network's Health Check method.
+func (d *DinMiddleware) processHCMethodResponseAsync(netw *network, netPath string, respBody []byte, respStatus int, r *caddy.Replacer) {
+	var originalReqBody []byte
+	if v, ok := r.Get(RequestBodyKey); ok {
+		if valBytes, cok := v.([]byte); cok {
+			originalReqBody = make([]byte, len(valBytes))
+			copy(originalReqBody, valBytes)
+		}
+	}
+
+	if len(originalReqBody) == 0 || netw == nil || netw.HCMethod == "" {
+		return
+	}
+
+	var currentRequest din_http.JSONRPCRequest
+	errUnmarshalReq := json.Unmarshal(originalReqBody, &currentRequest)
+	if errUnmarshalReq != nil {
+		d.logger.Debug("Goroutine: Failed to unmarshal original request body for HCMethod check", zap.Error(errUnmarshalReq), zap.String("network", netPath), zap.String("original_request_body_snippet", string(originalReqBody[:min(len(originalReqBody), 100)])))
+		return
+	}
+
+	if currentRequest.Method == netw.HCMethod {
+		d.logger.Info("Goroutine: Processing response for HCMethod", zap.String("method", currentRequest.Method), zap.String("network", netPath))
+
+		// Pass the address of respStatus to processBlockNumberResponse
+		// processBlockNumberResponse already checks for respStatus >= 400
+		blockNumber, _, processingError := netw.processBlockNumberResponse(respBody, &respStatus)
+
+		if processingError != nil {
+			// Log the original response body snippet if processing fails
+			d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", netPath), zap.String("response_body_snippet", string(respBody[:min(len(respBody), 100)])))
+			fmt.Printf("Goroutine - Network: %s, HCMethod: %s, Error processing block number: %v, Response: %s\n", netPath, netw.HCMethod, processingError, string(respBody[:min(len(respBody), 100)]))
+		} else {
+			d.logger.Info("Goroutine: HCMethod matched, successfully processed block number", zap.Int64("block_number", blockNumber), zap.String("network", netPath))
+			fmt.Printf("Goroutine - Network: %s, HCMethod: %s, Extracted Block Number: %d\n", netPath, netw.HCMethod, blockNumber)
+		}
+	}
 }

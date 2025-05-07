@@ -1,11 +1,15 @@
 package modules
 
 import (
+	"bytes"
 	"container/list"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	reflect "reflect"
 	"strings"
 	"testing"
@@ -20,7 +24,9 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -320,6 +326,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		})
 	}
 }
+
 func TestUnmarshalCaddyfile(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 
@@ -444,6 +451,201 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
 			if err != nil && !tt.hasErr {
 				t.Errorf("UnmarshalCaddyfile() = %v, want %v", err, tt.hasErr)
+			}
+		})
+	}
+}
+
+func TestProcessHCMethodResponseAsync(t *testing.T) {
+	// Helper to capture stdout for fmt.Printf checks
+	captureOutput := func(f func()) string {
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		// Note: log.SetOutput(w) might be needed if fmt.Printf is redirected through std log, but usually not.
+
+		f()
+
+		w.Close()
+		os.Stdout = oldStdout
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		return buf.String()
+	}
+
+	tests := []struct {
+		name                string
+		setupNetwork        func(netw *network)
+		netPath             string
+		respBody            []byte
+		respStatus          int
+		setupReplacer       func(repl *caddy.Replacer)
+		expectNoProcessLogs bool // True if we expect no "Processing response for HCMethod" or error/success logs from it
+	}{
+		{
+			name: "Successful processing",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			netPath:    "test/eth",
+			respBody:   []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`), // Block 100
+			respStatus: http.StatusOK,
+			setupReplacer: func(repl *caddy.Replacer) {
+				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "eth_blockNumber", ID: json.RawMessage(`1`)}
+				bodyBytes, _ := json.Marshal(req)
+				repl.Set("request.body", bodyBytes)
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "HCMethod does not match",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			netPath:    "test/eth",
+			respBody:   []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus: http.StatusOK,
+			setupReplacer: func(repl *caddy.Replacer) {
+				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "other_method", ID: json.RawMessage(`1`)}
+				bodyBytes, _ := json.Marshal(req)
+				repl.Set("request.body", bodyBytes)
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "Original request body empty in replacer",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set("request.body", []byte{})
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "Network object HCMethod empty",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = ""
+			},
+			setupReplacer: func(repl *caddy.Replacer) {
+				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "eth_blockNumber", ID: json.RawMessage(`1`)}
+				bodyBytes, _ := json.Marshal(req)
+				repl.Set("request.body", bodyBytes)
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "Error unmarshalling original request body",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set("request.body", []byte("invalid_json"))
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "RequestBodyKey not present in replacer",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			setupReplacer: func(repl *caddy.Replacer) {
+				// Do nothing, so "request.body" key is not set
+			},
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "RequestBodyKey value in replacer is not []byte",
+			setupNetwork: func(netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+			},
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set("request.body", 12345) // Set an int instead of []byte
+			},
+			expectNoProcessLogs: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use zaptest.NewLogger for robust test logging and capture
+			// zaptest.NewLogger(t) automatically routes logs to the test output if a test fails.
+			// To capture logs for assertion, we can use a observer/hook or a custom core.
+			// For simplicity here, we'll keep the buffer but ensure the logger is correctly plumbed.
+
+			var logBuf bytes.Buffer
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel) // observer is from zap/observer
+
+			// Create a multi-core: one for console/test output (optional), one for observation
+			// and one for the existing buffer method to see if it can be made to work.
+			consoleCore := zapcore.NewCore(
+				zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+				zapcore.AddSync(os.Stderr), // Write to Stderr for visibility during test run
+				zap.DebugLevel,
+			)
+			bufferCore := zapcore.NewCore(
+				zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+				zapcore.AddSync(&logBuf),
+				zap.DebugLevel,
+			)
+
+			teeCore := zapcore.NewTee(
+				observedZapCore,
+				consoleCore,
+				bufferCore,
+			)
+			testZapLogger := zap.New(teeCore)
+
+			dm := &DinMiddleware{
+				logger: logger.NewLoggerClient(testZapLogger, utils.EnvTest),
+			}
+
+			netw := &network{}
+			if tt.setupNetwork != nil {
+				tt.setupNetwork(netw)
+			}
+
+			repl := caddy.NewReplacer()
+			if tt.setupReplacer != nil {
+				tt.setupReplacer(repl)
+			}
+
+			printfOutput := captureOutput(func() {
+				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, repl)
+			})
+			_ = testZapLogger.Sync()
+
+			// Check logs from the observer first
+			numLogsFromObserver := observedLogs.Len()
+			// Concatenate observed log messages for assertion
+			var observedLogOutput strings.Builder
+			for _, obsLog := range observedLogs.AllUntimed() { // Untimed to simplify string matching
+				observedLogOutput.WriteString(obsLog.Message)
+				for _, field := range obsLog.Context {
+					observedLogOutput.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Interface))
+				}
+				observedLogOutput.WriteString("\n")
+			}
+			actualLogOutput := observedLogOutput.String()
+			// Fallback to buffer if observer didn't capture as expected, or for comparison
+			if numLogsFromObserver == 0 {
+				actualLogOutput = logBuf.String() // Use buffer if observer is empty
+			}
+
+			_ = printfOutput // Suppress unused variable warning for printfOutput
+
+			if tt.expectNoProcessLogs {
+				assert.NotContains(t, actualLogOutput, "Processing response for HCMethod", "Should not log 'Processing response' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "successfully processed block number", "Should not log 'successfully processed' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "error processing block number", "Should not log 'error processing' for this case: "+tt.name)
+			} else {
+				assert.Contains(t, actualLogOutput, "Processing response for HCMethod", "Expected 'Processing response for HCMethod' log for case: "+tt.name+"; Log: "+actualLogOutput)
+
+				if tt.name == "Successful processing" {
+					assert.Contains(t, actualLogOutput, "successfully processed block number", "Expected 'successfully processed block number' log for successful case; Log: "+actualLogOutput)
+				} else if tt.name == "Error from processBlockNumberResponse - malformed respBody" || tt.name == "Error from processBlockNumberResponse - http error status" {
+					assert.Contains(t, actualLogOutput, "error processing block number from response using processBlockNumberResponse", "Expected 'error processing block number' log for error cases; Log: "+actualLogOutput)
+				}
 			}
 		})
 	}
