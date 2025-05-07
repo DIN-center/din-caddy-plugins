@@ -402,7 +402,9 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
-			lastResponseStatus = *statusCode
+			if statusCode != nil {
+				lastResponseStatus = *statusCode
+			}
 			continue
 		}
 
@@ -410,14 +412,22 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		if err != nil {
 			lastErr = err
 			lastHealthStatus = health
-			lastResponseStatus = *statusCode
+			if statusCode != nil {
+				lastResponseStatus = *statusCode
+			}
+
 			continue
+		}
+
+		// If the current attempt was successful, its status code should be used.
+		if statusCode != nil {
+			lastResponseStatus = *statusCode
 		}
 
 		return &getLatestBlockNumberResult{
 			blockNumber:    blockNumber,
 			healthStatus:   health,
-			responseStatus: *statusCode,
+			responseStatus: lastResponseStatus,
 		}, nil
 	}
 
@@ -431,6 +441,10 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 // Layer 3: Process response
 func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
 	// Evaluate health status based on status code
+	if statusCode == nil {
+		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
+	}
+
 	if *statusCode >= 400 {
 		// If status code is 429, set health status to Warning, otherwise return as unhealthy
 		if *statusCode == 429 {
