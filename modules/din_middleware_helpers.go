@@ -92,7 +92,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	network := NewNetwork(regNetwork.ProxyName, d.Env)
+	network := NewNetwork(regNetwork.ProxyName, d.Env, d.CaddyPort)
 	network, err := d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
 		d.logger.Error("Failed to sync network config", zap.Error(err))
