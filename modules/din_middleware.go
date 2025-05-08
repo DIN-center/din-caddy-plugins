@@ -421,6 +421,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "port":
+			// Only needs to be set if the caddy server port is not via the Caddyfile8000
 			dispenser.Next()
 			caddyPort = dispenser.Val()
 			if caddyPort == "" {
