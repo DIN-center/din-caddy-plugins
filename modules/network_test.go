@@ -366,13 +366,14 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 func TestProcessBlockNumberResponse(t *testing.T) {
 	tests := []struct {
-		name           string
-		response       []byte
-		statusCode     int
-		expectedBlock  int64
-		expectedHealth HealthStatus
-		expectError    bool
-		errorContains  string
+		name              string
+		response          []byte
+		statusCode        int
+		passNilStatusCode bool
+		expectedBlock     int64
+		expectedHealth    HealthStatus
+		expectError       bool
+		errorContains     string
 	}{
 		{
 			name:           "valid hex response",
@@ -444,12 +445,28 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 			expectError:    true,
 			errorContains:  "unsupported block number type",
 		},
+		{
+			name:              "nil status code pointer",
+			response:          []byte{},
+			statusCode:        0,
+			passNilStatusCode: true,
+			expectedBlock:     0,
+			expectedHealth:    Unhealthy,
+			expectError:       true,
+			errorContains:     "received nil statusCode in processBlockNumberResponse",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewNetwork("test", utils.Environment("test"))
-			block, health, err := n.processBlockNumberResponse(tt.response, &tt.statusCode)
+			var sc *int
+			if !tt.passNilStatusCode {
+				statusCodeVal := tt.statusCode
+				sc = &statusCodeVal
+			}
+
+			block, health, err := n.processBlockNumberResponse(tt.response, sc)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -1010,6 +1027,186 @@ func TestBlockJumpBehavior(t *testing.T) {
 			)
 
 			assert.Equal(t, tt.expectedStatus, result, "Block jump behavior incorrect")
+		})
+	}
+}
+
+// TestGetLatestBlockNumber tests the getLatestBlockNumber function in network.go
+func TestGetLatestBlockNumber(t *testing.T) {
+	type mockPostResponse struct {
+		resBytes          []byte
+		statusCodeVal     int
+		passNilStatusCode bool
+		err               error
+	}
+
+	tests := []struct {
+		name                   string
+		mockPostResponses      []mockPostResponse
+		requestAttemptCount    int
+		hcMethod               string
+		expectedBlockNumber    int64
+		expectedHealthStatus   HealthStatus
+		expectedResponseStatus int
+		expectError            bool
+		errorContains          string
+	}{
+		{
+			name: "success on first attempt",
+			mockPostResponses: []mockPostResponse{
+				{resBytes: []byte(`{"jsonrpc":"2.0","result":"0x123"}`), statusCodeVal: 200, err: nil},
+			},
+			requestAttemptCount:    1,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0x123,
+			expectedHealthStatus:   Healthy,
+			expectedResponseStatus: 200,
+			expectError:            false,
+		},
+		{
+			name: "HttpClient.Post error on first attempt, success on second",
+			mockPostResponses: []mockPostResponse{
+				{err: errors.New("network hiccup"), statusCodeVal: 503, passNilStatusCode: false}, // passNilStatusCode can be false if statusCodeVal is used
+				{resBytes: []byte(`{"jsonrpc":"2.0","result":"0x124"}`), statusCodeVal: 200, err: nil},
+			},
+			requestAttemptCount:    2,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0x124,
+			expectedHealthStatus:   Healthy,
+			expectedResponseStatus: 200,
+			expectError:            false,
+		},
+		{
+			name: "HttpClient.Post error with nil status code on first attempt, success on second",
+			mockPostResponses: []mockPostResponse{
+				{err: errors.New("network hiccup with nil status"), passNilStatusCode: true},
+				{resBytes: []byte(`{"jsonrpc":"2.0","result":"0x125"}`), statusCodeVal: 200, err: nil},
+			},
+			requestAttemptCount:    2,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0x125,
+			expectedHealthStatus:   Healthy,
+			expectedResponseStatus: 200, // Status from the successful attempt
+			expectError:            false,
+		},
+		{
+			name: "all attempts fail with HttpClient.Post errors (non-nil status codes)",
+			mockPostResponses: []mockPostResponse{
+				{err: errors.New("attempt 1 fail"), statusCodeVal: 500},
+				{err: errors.New("attempt 2 fail"), statusCodeVal: 502},
+			},
+			requestAttemptCount:    2,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0,
+			expectedHealthStatus:   Unhealthy, // Default initial
+			expectedResponseStatus: 502,       // Status from the last attempt
+			expectError:            true,
+			errorContains:          "attempt 2 fail",
+		},
+		{
+			name: "all attempts fail with HttpClient.Post errors (mixed nil/non-nil status codes)",
+			mockPostResponses: []mockPostResponse{
+				{err: errors.New("attempt 1 fail"), statusCodeVal: 500},
+				{err: errors.New("attempt 2 fail with nil status"), passNilStatusCode: true},
+			},
+			requestAttemptCount:    2,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0,
+			expectedHealthStatus:   Unhealthy,
+			expectedResponseStatus: 500, // Status from the last attempt *that had one*
+			expectError:            true,
+			errorContains:          "attempt 2 fail with nil status",
+		},
+		{
+			name: "HttpClient.Post returns nil status code, processBlockNumberResponse then errors",
+			mockPostResponses: []mockPostResponse{
+				// This will cause processBlockNumberResponse to return "received nil statusCode in processBlockNumberResponse"
+				{resBytes: []byte(`{}`), passNilStatusCode: true, err: nil},
+			},
+			requestAttemptCount:    1,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0,
+			expectedHealthStatus:   Unhealthy, // From processBlockNumberResponse's error
+			expectedResponseStatus: 0,         // lastResponseStatus not updated due to nil statusCode from Post
+			expectError:            true,
+			errorContains:          "received nil statusCode in processBlockNumberResponse",
+		},
+		{
+			name: "HttpClient.Post returns data causing processBlockNumberResponse to error (e.g. invalid json)",
+			mockPostResponses: []mockPostResponse{
+				{resBytes: []byte(`invalid json`), statusCodeVal: 200, err: nil},
+			},
+			requestAttemptCount:    1,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0,
+			expectedHealthStatus:   Unhealthy, // From processBlockNumberResponse
+			expectedResponseStatus: 200,       // Status from Post was 200
+			expectError:            true,
+			errorContains:          "Error unmarshalling response",
+		},
+		{
+			name: "first attempt Post error with status, second attempt Post success with nil status (leads to process error)",
+			mockPostResponses: []mockPostResponse{
+				{err: errors.New("attempt 1 fail"), statusCodeVal: 503},
+				{resBytes: []byte(`{}`), passNilStatusCode: true, err: nil}, // This leads to "received nil statusCode" error from processBlockNumberResponse
+			},
+			requestAttemptCount:    2,
+			hcMethod:               "eth_blockNumber",
+			expectedBlockNumber:    0,
+			expectedHealthStatus:   Unhealthy, // From processBlockNumberResponse's error on 2nd attempt
+			expectedResponseStatus: 503,       // From first attempt, as second attempt's Post had nil statusCode
+			expectError:            true,
+			errorContains:          "received nil statusCode in processBlockNumberResponse",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+			network := NewNetwork("test-network", utils.Environment("test"))
+			network.HttpClient = mockHTTPClient
+			network.RequestAttemptCount = tt.requestAttemptCount
+			network.HCMethod = tt.hcMethod
+			// Suppress logs for cleaner test output, or use a mock logger
+			network.logger = logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
+
+			callIndex := 0
+			mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(url string, headers map[string]string, payload []byte, ac interface{}) ([]byte, *int, error) {
+					if callIndex >= len(tt.mockPostResponses) {
+						t.Fatalf("Mock Post called more times than expected responses defined")
+						return nil, nil, errors.New("unexpected call to mock Post")
+					}
+					resp := tt.mockPostResponses[callIndex]
+					callIndex++
+					if resp.passNilStatusCode {
+						return resp.resBytes, nil, resp.err
+					}
+					// Make a copy for pointer safety if statusCodeVal is used in parallel subtests (not an issue here but good practice)
+					statusCode := resp.statusCodeVal
+					return resp.resBytes, &statusCode, resp.err
+				}).Times(len(tt.mockPostResponses))
+
+			result, err := network.getLatestBlockNumber("http://dummyurl.com", nil, nil)
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected an error but got none")
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains, "Error message does not contain expected string")
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error but got one")
+			}
+
+			assert.NotNil(t, result, "Result should not be nil")
+			if result != nil {
+				assert.Equal(t, tt.expectedBlockNumber, result.blockNumber, "Block number mismatch")
+				assert.Equal(t, tt.expectedHealthStatus, result.healthStatus, "Health status mismatch")
+				assert.Equal(t, tt.expectedResponseStatus, result.responseStatus, "Response status mismatch")
+			}
 		})
 	}
 }

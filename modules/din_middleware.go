@@ -313,7 +313,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		repl.Set(DinUpstreamsContextKey, network.Providers)
 	}
 
-
 	reqStartTime := time.Now()
 
 	// Retry the request if it fails up to the max attempt request count
@@ -410,18 +409,10 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
+	d.Env = utils.GetEnv()
 	siweSignerClient := siwe.NewSIWESignerClient()
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
-		case "environment":
-			// Signifier for production or beta etc.
-			dispenser.Next()
-			env := utils.Environment(dispenser.Val())
-			// Default to development stage if an invalid stage is provided
-			if env != utils.EnvProd && env != utils.EnvBeta && env != utils.EnvDev && env != utils.EnvTest {
-				env = utils.EnvDev
-			}
-			d.Env = env
 		case "siwe-signer":
 			var key []byte
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
