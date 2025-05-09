@@ -12,12 +12,13 @@ const (
 	LineaSepolia = "linea-sepolia"
 
 	// Module Context Key constants
-	DinUpstreamsContextKey = "din.internal.upstreams"
-	RequestProviderKey     = "request_provider"
-	RequestBodyKey         = "request_body"
-	HealthStatusKey        = "health_status"
-	BlockNumberKey         = "block_number"
-	BlockHistorySize       = 10
+	DinUpstreamsContextKey          = "din.internal.upstreams"
+	RequestProviderKey              = "request_provider"
+	RequestBodyKey                  = "request_body"
+	HealthStatusKey                 = "health_status"
+	BlockNumberKey                  = "block_number"
+	DefaultProviderBlockHistorySize = 10
+	DefaultNetworkBlockHistorySize  = 128
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"

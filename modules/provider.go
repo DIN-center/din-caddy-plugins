@@ -35,7 +35,9 @@ type provider struct {
 }
 
 type blockHistoryEntry struct {
-	blockNumber  int64
+	blockNumber int64
+	// TODO: enable blockHash capture
+	// blockHash    string
 	healthStatus HealthStatus
 	timestamp    *time.Time
 }

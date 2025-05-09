@@ -1,11 +1,13 @@
 package modules
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -26,8 +28,11 @@ type network struct {
 	machineID        string
 	Environment      utils.Environment
 	// internal health check values
-	HCThreshold      int
-	BlockHistorySize int
+	HCThreshold              int
+	ProviderBlockHistorySize int
+	NetworkBlockHistorySize  int
+	blockHistory             *list.List
+	blockHistoryMu           sync.RWMutex
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
@@ -55,19 +60,21 @@ func NewNetwork(name string, environment utils.Environment) *network {
 	return &network{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
-		HCMethod:                DefaultHCMethod,
-		ChainIdMethod:           DefaultChainIdMethod,
-		CallContractMethod:      DefaultCallContractMethod,
-		HCThreshold:             DefaultHCThreshold,
-		HCInterval:              DefaultHCInterval,
-		BlockLagLimit:           DefaultBlockLagLimit,
-		BlockJumpLimit:          DefaultBlockJumpLimit,
-		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
-		RequestAttemptCount:     DefaultRequestAttemptCount,
-		BlockHistorySize:        BlockHistorySize,
-		ArchiveEnabled:          DefaultArchiveEnabled,
-		Environment:             environment,
-		Providers:               make(map[string]*provider),
+		HCMethod:                 DefaultHCMethod,
+		ChainIdMethod:            DefaultChainIdMethod,
+		CallContractMethod:       DefaultCallContractMethod,
+		HCThreshold:              DefaultHCThreshold,
+		HCInterval:               DefaultHCInterval,
+		BlockLagLimit:            DefaultBlockLagLimit,
+		BlockJumpLimit:           DefaultBlockJumpLimit,
+		MaxRequestPayloadSizeKB:  DefaultMaxRequestPayloadSizeKB,
+		RequestAttemptCount:      DefaultRequestAttemptCount,
+		ProviderBlockHistorySize: DefaultProviderBlockHistorySize,
+		NetworkBlockHistorySize:  DefaultNetworkBlockHistorySize,
+		blockHistory:             list.New(),
+		ArchiveEnabled:           DefaultArchiveEnabled,
+		Environment:              environment,
+		Providers:                make(map[string]*provider),
 	}
 }
 
@@ -113,7 +120,7 @@ func (n *network) healthCheck() {
 
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
-				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.BlockHistorySize)
+				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.ProviderBlockHistorySize)
 				n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
@@ -123,7 +130,7 @@ func (n *network) healthCheck() {
 		newStatus := n.evaluateProviderHealth(provider, latestBlockResult.blockNumber, healthStatus, latestNetworkBlock)
 
 		// Update metrics and history
-		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.BlockHistorySize)
+		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.ProviderBlockHistorySize)
 		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
 	}
 }
@@ -309,7 +316,7 @@ func (n *network) verifyChainID(chainId string) bool {
 func (n *network) isStalled(provider *provider) bool {
 	history := provider.BlockHistory()
 	// if history is less than the block history size, return false
-	if len(history) < n.BlockHistorySize {
+	if len(history) < n.ProviderBlockHistorySize {
 		return false
 	}
 
@@ -658,4 +665,87 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 		}
 	}
 	return false
+}
+
+// AddNetworkBlockEntry adds a new block entry to the network's history,
+// maintaining the configured history size. It is concurrency-safe.
+func (n *network) AddNetworkBlockEntry(block int64) {
+	if n == nil {
+		return
+	}
+
+	n.blockHistoryMu.Lock()
+	defer n.blockHistoryMu.Unlock()
+
+	if n.blockHistory == nil {
+		n.blockHistory = list.New()
+		// Exit early if initialization failed (though list.New() should not fail here)
+		if n.blockHistory == nil {
+			n.logger.Error("Failed to initialize network block history list")
+			return
+		}
+	}
+
+	// Check if the new block number is greater than the latest entry
+	if n.blockHistory.Len() > 0 {
+		latestEntryValue := n.blockHistory.Back().Value
+		latestEntry, ok := latestEntryValue.(blockHistoryEntry)
+		if !ok {
+			n.logger.Error("Invalid type in network block history during add check")
+			return // Or handle error appropriately
+		}
+		if block <= latestEntry.blockNumber {
+			n.logger.Debug("New block number is not greater than the latest, skipping addition",
+				zap.Int64("new_block", block),
+				zap.Int64("latest_block", latestEntry.blockNumber),
+				zap.String("network", n.Name),
+			)
+			return
+		}
+	}
+
+	now := time.Now()
+	entry := blockHistoryEntry{
+		blockNumber: block,
+		timestamp:   &now,
+	}
+
+	n.blockHistory.PushBack(entry)
+
+	// Trim the list if it exceeds the history size
+	for n.blockHistory.Len() > n.NetworkBlockHistorySize {
+		if n.blockHistory.Front() != nil {
+			n.blockHistory.Remove(n.blockHistory.Front())
+		} else {
+			// Should not happen if Len() > 0
+			break
+		}
+	}
+}
+
+// getLatestBlockEntry returns the most recent block history entry for the network.
+// It is concurrency-safe.
+func (n *network) getLatestBlockEntry() *blockHistoryEntry {
+	if n == nil {
+		return nil
+	}
+	n.blockHistoryMu.RLock()
+	defer n.blockHistoryMu.RUnlock()
+
+	// Keep critical nil checks
+	if n.blockHistory == nil {
+		return nil
+	}
+
+	if n.blockHistory.Len() == 0 {
+		return nil
+	}
+
+	entry, ok := n.blockHistory.Back().Value.(blockHistoryEntry)
+	if !ok {
+		// This should ideally not happen if entries are always blockHistoryEntry
+		n.logger.Error("Invalid type in network block history")
+		return nil
+	}
+	return &entry
 }

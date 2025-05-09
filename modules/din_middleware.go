@@ -641,13 +641,20 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
 						}
 						d.Networks[networkName].BlockJumpLimit = int64(limit)
-					case "healthcheck_block_history_size":
+					case "healthcheck_provider_block_history_size":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return fmt.Errorf("invalid healthcheck block history size: %v", err)
+							return fmt.Errorf("invalid healthcheck provider block history size: %v", err)
 						}
-						d.Networks[networkName].BlockHistorySize = int(size)
+						d.Networks[networkName].ProviderBlockHistorySize = int(size)
+					case "network_block_history_size":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid network block history size: %v", err)
+						}
+						d.Networks[networkName].NetworkBlockHistorySize = int(size)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
@@ -797,9 +804,13 @@ func min(a, b int) int {
 	return b
 }
 
-// processHCMethodResponseAsync handles the asynchronous processing of a response
-// when the request method matches the network's Health Check method.
-func (d *DinMiddleware) processHCMethodResponseAsync(netw *network, netPath string, respBody []byte, respStatus int, r *caddy.Replacer) {
+// processHCMethodResponseAsync asynchronously processes responses for health check method requests.
+// It extracts the original request body from the replacer, verifies if the request method matches
+// the network's health check method (HCMethod), and if so, processes the block number from the response.
+// This function is designed to run in a separate goroutine to avoid blocking the main request handling flow.
+// It updates the network's health status based on the block number response, which is crucial for
+// the load balancing and failover mechanisms to properly route subsequent requests to healthy providers.
+func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, r *caddy.Replacer) {
 	var originalReqBody []byte
 	if v, ok := r.Get(RequestBodyKey); ok {
 		if valBytes, cok := v.([]byte); cok {
@@ -808,31 +819,30 @@ func (d *DinMiddleware) processHCMethodResponseAsync(netw *network, netPath stri
 		}
 	}
 
-	if len(originalReqBody) == 0 || netw == nil || netw.HCMethod == "" {
+	if len(originalReqBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
 		return
 	}
 
 	var currentRequest din_http.JSONRPCRequest
 	errUnmarshalReq := json.Unmarshal(originalReqBody, &currentRequest)
 	if errUnmarshalReq != nil {
-		d.logger.Debug("Goroutine: Failed to unmarshal original request body for HCMethod check", zap.Error(errUnmarshalReq), zap.String("network", netPath), zap.String("original_request_body_snippet", string(originalReqBody[:min(len(originalReqBody), 100)])))
+		d.logger.Debug("Goroutine: Failed to unmarshal original request body for HCMethod check", zap.Error(errUnmarshalReq), zap.String("network", networkPath), zap.String("original_request_body_snippet", string(originalReqBody)))
 		return
 	}
 
-	if currentRequest.Method == netw.HCMethod {
-		d.logger.Info("Goroutine: Processing response for HCMethod", zap.String("method", currentRequest.Method), zap.String("network", netPath))
+	if currentRequest.Method == networkObj.HCMethod {
+		d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", currentRequest.Method), zap.String("network", networkPath))
 
 		// Pass the address of respStatus to processBlockNumberResponse
 		// processBlockNumberResponse already checks for respStatus >= 400
-		blockNumber, _, processingError := netw.processBlockNumberResponse(respBody, &respStatus)
-
+		blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 		if processingError != nil {
-			// Log the original response body snippet if processing fails
-			d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", netPath), zap.String("response_body_snippet", string(respBody[:min(len(respBody), 100)])))
-			fmt.Printf("Goroutine - Network: %s, HCMethod: %s, Error processing block number: %v, Response: %s\n", netPath, netw.HCMethod, processingError, string(respBody[:min(len(respBody), 100)]))
-		} else {
-			d.logger.Info("Goroutine: HCMethod matched, successfully processed block number", zap.Int64("block_number", blockNumber), zap.String("network", netPath))
-			fmt.Printf("Goroutine - Network: %s, HCMethod: %s, Extracted Block Number: %d\n", netPath, netw.HCMethod, blockNumber)
+			d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", networkPath), zap.String("response_body_snippet", string(respBody)))
+			return
 		}
+		// save the block number to the network object's history
+		networkObj.AddNetworkBlockEntry(blockNumber) // Add the block number to the network object's history as long as its the the latest block number
+		d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
+		return
 	}
 }
