@@ -707,7 +707,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	if n.CaddyPort == "" {
 		return nil, errors.New("Caddy port is not set")
 	}
-	url := fmt.Sprintf("http://localhost:%s/%s", n.CaddyPort, n.Name)
+	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
 	// Use the payload for getLatestBlockNumber
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
 	headers := map[string]string{
