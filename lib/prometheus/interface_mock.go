@@ -47,6 +47,18 @@ func (mr *MockIPrometheusClientMockRecorder) HandleHealthCheckMetric(data interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleHealthCheckMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleHealthCheckMetric), data)
 }
 
+// HandleNetworkHealthCheckMetric mocks base method.
+func (m *MockIPrometheusClient) HandleNetworkHealthCheckMetric(data *PromNetworkHealthCheckMetricData) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "HandleNetworkHealthCheckMetric", data)
+}
+
+// HandleNetworkHealthCheckMetric indicates an expected call of HandleNetworkHealthCheckMetric.
+func (mr *MockIPrometheusClientMockRecorder) HandleNetworkHealthCheckMetric(data interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleNetworkHealthCheckMetric", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleNetworkHealthCheckMetric), data)
+}
+
 // HandleRequestMetrics mocks base method.
 func (m *MockIPrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *http.JSONRPCRequest) {
 	m.ctrl.T.Helper()

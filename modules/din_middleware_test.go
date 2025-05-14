@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -475,93 +476,81 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		setupNetwork        func(netw *network)
+		setupNetwork        func(t *testing.T, netw *network)
 		netPath             string
 		respBody            []byte
 		respStatus          int
-		setupReplacer       func(repl *caddy.Replacer)
-		expectNoProcessLogs bool // True if we expect no "Processing response for HCMethod" or error/success logs from it
+		callMethod          string
+		expectNoProcessLogs bool
 	}{
 		{
 			name: "Successful processing",
-			setupNetwork: func(netw *network) {
+			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = "eth_blockNumber"
+				netw.GetBlockByNumberMethod = "mock_getBlockByNumber"
+				netw.CaddyPort = "8000"
+
+				mockCtrl := gomock.NewController(t)
+				// defer mockCtrl.Finish() // Defers in callbacks can be tricky; manage Finish in t.Run if issues arise.
+
+				mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
+				netw.HttpClient = mockHttpClient
+
+				mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(url string, headers map[string]string, payload []byte, authClient auth.IAuthClient) ([]byte, *int, error) {
+						status := http.StatusOK
+						blockResp := din_http.JSONRPCEVMBlockResponse{
+							Jsonrpc: "2.0",
+							ID:      1,
+							Result: din_http.EVMBlockResult{ //
+								Hash:   "0x123abc",
+								Number: "0x64",
+							},
+						}
+						respBytes, _ := json.Marshal(blockResp)
+						return respBytes, &status, nil
+					}).AnyTimes()
 			},
-			netPath:    "test/eth",
-			respBody:   []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`), // Block 100
-			respStatus: http.StatusOK,
-			setupReplacer: func(repl *caddy.Replacer) {
-				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "eth_blockNumber", ID: json.RawMessage(`1`)}
-				bodyBytes, _ := json.Marshal(req)
-				repl.Set("request.body", bodyBytes)
-			},
-			expectNoProcessLogs: true,
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
+			expectNoProcessLogs: false,
 		},
 		{
 			name: "HCMethod does not match",
-			setupNetwork: func(netw *network) {
+			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = "eth_blockNumber"
+				// No HttpClient mock needed as getBlockByNumber won't be called
 			},
-			netPath:    "test/eth",
-			respBody:   []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
-			respStatus: http.StatusOK,
-			setupReplacer: func(repl *caddy.Replacer) {
-				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "other_method", ID: json.RawMessage(`1`)}
-				bodyBytes, _ := json.Marshal(req)
-				repl.Set("request.body", bodyBytes)
-			},
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "other_method",
 			expectNoProcessLogs: true,
 		},
 		{
-			name: "Original request body empty in replacer",
-			setupNetwork: func(netw *network) {
+			name: "Response body empty",
+			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = "eth_blockNumber"
+				// No HttpClient mock needed
 			},
-			setupReplacer: func(repl *caddy.Replacer) {
-				repl.Set("request.body", []byte{})
-			},
+			netPath:             "test/eth",
+			respBody:            []byte{},
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
 			expectNoProcessLogs: true,
 		},
 		{
 			name: "Network object HCMethod empty",
-			setupNetwork: func(netw *network) {
+			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = ""
+				// No HttpClient mock needed
 			},
-			setupReplacer: func(repl *caddy.Replacer) {
-				req := din_http.JSONRPCRequest{JSONRPC: "2.0", Method: "eth_blockNumber", ID: json.RawMessage(`1`)}
-				bodyBytes, _ := json.Marshal(req)
-				repl.Set("request.body", bodyBytes)
-			},
-			expectNoProcessLogs: true,
-		},
-		{
-			name: "Error unmarshalling original request body",
-			setupNetwork: func(netw *network) {
-				netw.HCMethod = "eth_blockNumber"
-			},
-			setupReplacer: func(repl *caddy.Replacer) {
-				repl.Set("request.body", []byte("invalid_json"))
-			},
-			expectNoProcessLogs: true,
-		},
-		{
-			name: "RequestBodyKey not present in replacer",
-			setupNetwork: func(netw *network) {
-				netw.HCMethod = "eth_blockNumber"
-			},
-			setupReplacer: func(repl *caddy.Replacer) {
-				// Do nothing, so "request.body" key is not set
-			},
-			expectNoProcessLogs: true,
-		},
-		{
-			name: "RequestBodyKey value in replacer is not []byte",
-			setupNetwork: func(netw *network) {
-				netw.HCMethod = "eth_blockNumber"
-			},
-			setupReplacer: func(repl *caddy.Replacer) {
-				repl.Set("request.body", 12345) // Set an int instead of []byte
-			},
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
 			expectNoProcessLogs: true,
 		},
 	}
@@ -600,18 +589,24 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 				logger: logger.NewLoggerClient(testZapLogger, utils.EnvTest),
 			}
 
-			netw := &network{}
-			if tt.setupNetwork != nil {
-				tt.setupNetwork(netw)
+			// mockCtrl and mockHttpClient setup will be handled by tt.setupNetwork for relevant cases
+
+			netw := &network{
+				logger:     dm.logger,
+				HttpClient: nil, // Initialize as nil; setupNetwork can override for specific tests
 			}
 
-			repl := caddy.NewReplacer()
-			if tt.setupReplacer != nil {
-				tt.setupReplacer(repl)
+			if tt.setupNetwork != nil {
+				tt.setupNetwork(t, netw) // Pass t to setupNetwork
+			}
+
+			// Ensure that if HttpClient is used (e.g., in "Successful processing"), it has been mocked by setupNetwork
+			if tt.name == "Successful processing" && netw.HttpClient == nil {
+				t.Fatalf("HttpClient mock not set up for 'Successful processing' test case in setupNetwork")
 			}
 
 			printfOutput := captureOutput(func() {
-				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, method)
+				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, tt.callMethod)
 			})
 			_ = testZapLogger.Sync()
 

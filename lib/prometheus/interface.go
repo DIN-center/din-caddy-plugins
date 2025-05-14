@@ -9,4 +9,5 @@ import (
 type IPrometheusClient interface {
 	HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *dinHttp.JSONRPCRequest)
 	HandleHealthCheckMetric(data *PromHealthCheckMetricData)
+	HandleNetworkHealthCheckMetric(data *PromNetworkHealthCheckMetricData)
 }

@@ -55,6 +55,9 @@ type DinMiddleware struct {
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
 
+	// The Caddy port to listen on
+	CaddyPort string
+
 	// The default siwe signer client
 	SiweSignerClient siwe.ISIWESignerClient
 
@@ -138,6 +141,9 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	}
 	if d.RegistryPriority == 0 {
 		d.RegistryPriority = DefaultRegistryPriority
+	}
+	if d.CaddyPort == "" {
+		d.CaddyPort = DefaultPort
 	}
 
 	// Initialize the din registry configuration values
@@ -435,6 +441,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
 func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	var err error
+	var caddyPort string
 	if d.Networks == nil {
 		d.Networks = make(map[string]*network)
 	}
@@ -442,6 +449,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	siweSignerClient := siwe.NewSIWESignerClient()
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
+		case "port":
+			// Only needs to be set if the caddy server port is not via the Caddyfile8000
+			dispenser.Next()
+			caddyPort = dispenser.Val()
+			if caddyPort == "" {
+				caddyPort = DefaultPort
+			}
+			d.logger.Debug("Caddy port set to", zap.String("port", caddyPort))
+			d.CaddyPort = caddyPort
 		case "siwe-signer":
 			var key []byte
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
@@ -480,7 +496,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
-				d.Networks[networkName] = NewNetwork(networkName, d.Env) // Create a new network object
+				d.Networks[networkName] = NewNetwork(networkName, d.Env, caddyPort) // Create a new network object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
 					case "methods":
@@ -629,6 +645,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					case "call_contract_method":
 						dispenser.Next()
 						d.Networks[networkName].CallContractMethod = dispenser.Val()
+					case "get_block_by_number_method":
+						dispenser.Next()
+						d.Networks[networkName].GetBlockByNumberMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -846,15 +865,13 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 		return
 	}
 
-	var blockHash string
-	blockHash, err := networkObj.GetBlockHash(blockNumber)
+	block, err := networkObj.getBlockByNumber(blockNumber)
 	if err != nil {
 		d.logger.Warn("Goroutine: HCMethod matched, error getting block hash for block number", zap.Error(err), zap.String("network", networkPath), zap.Int64("block_number", blockNumber))
 		return
 	}
 
 	// save the block number to the network object's history
-	networkObj.AddNetworkBlockEntry(blockNumber, blockHash) // Add the block number and block hash to the network object's history as long as its the the latest block number
+	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
 	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
-	return
 }

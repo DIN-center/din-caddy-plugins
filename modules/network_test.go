@@ -76,7 +76,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 				host:                       "test.com",
 			}
 
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.HCThreshold = tt.healthThreshold
 			n.PrometheusClient = mockPrometheus
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
@@ -118,7 +118,7 @@ func TestVerifyChainID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.ChainId = tt.networkChainID
 
 			result := n.verifyChainID(tt.providerChainID)
@@ -181,7 +181,7 @@ func TestIsStalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.ProviderBlockHistorySize = tt.historySize
 
 			p := &provider{blockHistory: func() *list.List {
@@ -359,7 +359,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.Providers = tt.providers
 
 			result := n.getLatestHealthyBlock()
@@ -463,7 +463,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			var sc *int
 			if !tt.passNilStatusCode {
 				statusCodeVal := tt.statusCode
@@ -556,7 +556,7 @@ func TestArchiveModeCheck(t *testing.T) {
 				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(tt.httpResponse, &tt.statusCode, tt.httpError)
 
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.HttpClient = mockHTTPClient
 			n.CallContractMethod = "eth_call"
 			n.RequestAttemptCount = tt.requestAttemptCount
@@ -737,7 +737,7 @@ func TestGetChainID(t *testing.T) {
 				networkName = "test"
 			}
 
-			n := NewNetwork(networkName, utils.Environment("test"))
+			n := NewNetwork(networkName, utils.Environment("test"), "test")
 			n.HttpClient = mockHTTPClient
 			n.ChainIdMethod = "eth_chainId"
 			n.RequestAttemptCount = tt.requestAttemptCount
@@ -871,7 +871,7 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.Providers = tt.providers
 
 			result := n.hasOtherHealthyProviders(tt.providers[tt.checkProvider])
@@ -1000,7 +1000,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 					AnyTimes()
 			}
 
-			n := NewNetwork("test", utils.Environment("test"))
+			n := NewNetwork("test", utils.Environment("test"), "test")
 			n.Providers = tt.providers
 			n.BlockJumpLimit = tt.blockJumpLimit
 			n.logger = mockLogger
@@ -1170,7 +1170,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-			network := NewNetwork("test-network", utils.Environment("test"))
+			network := NewNetwork("test-network", utils.Environment("test"), "test")
 			network.HttpClient = mockHTTPClient
 			network.RequestAttemptCount = tt.requestAttemptCount
 			network.HCMethod = tt.hcMethod
@@ -1247,16 +1247,6 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 		assert.Equal(t, 1, n.blockHistory.Len())
 		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
 		assert.Equal(t, int64(100), entry.blockNumber)
-		assert.NotNil(t, entry.timestamp)
-	})
-
-	t.Run("add entry with empty block hash", func(t *testing.T) {
-		n := newTestNetwork("test_empty_hash", 3)
-		n.AddNetworkBlockEntry(102, "")
-		assert.Equal(t, 1, n.blockHistory.Len(), "Should have 1 entry even with empty hash")
-		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
-		assert.Equal(t, int64(102), entry.blockNumber)
-		assert.Equal(t, "", entry.blockHash, "blockHash should be empty string")
 		assert.NotNil(t, entry.timestamp)
 	})
 

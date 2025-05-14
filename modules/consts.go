@@ -25,6 +25,7 @@ const (
 	DefaultHCMethod                = "eth_blockNumber"
 	DefaultChainIdMethod           = "eth_chainId"
 	DefaultCallContractMethod      = "eth_call"
+	DefaultGetBlockByNumberMethod  = "eth_getBlockByNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)
@@ -36,7 +37,7 @@ const (
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
-
+	DefaultPort                          = "8000"
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 

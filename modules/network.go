@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ type network struct {
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
+	CaddyPort        string
 	logger           *logger.LoggerClient
 	machineID        string
 	Environment      utils.Environment
@@ -45,6 +47,7 @@ type network struct {
 	ChainIdMethod           string               `json:"chainid_method"`
 	ChainId                 string               `json:"chain_id"`
 	CallContractMethod      string               `json:"call_contract_method"`
+	GetBlockByNumberMethod  string               `json:"get_block_by_number_method"`
 	HCInterval              int                  `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
 	BlockJumpLimit          int64                `json:"healthcheck_blockjump_limit"`
@@ -56,13 +59,14 @@ type network struct {
 // NewNetwork creates a new network with the given name
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, environment utils.Environment) *network {
+func NewNetwork(name string, environment utils.Environment, caddyPort string) *network {
 	return &network{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCMethod:                 DefaultHCMethod,
 		ChainIdMethod:            DefaultChainIdMethod,
 		CallContractMethod:       DefaultCallContractMethod,
+		GetBlockByNumberMethod:   DefaultGetBlockByNumberMethod,
 		HCThreshold:              DefaultHCThreshold,
 		HCInterval:               DefaultHCInterval,
 		BlockLagLimit:            DefaultBlockLagLimit,
@@ -75,6 +79,7 @@ func NewNetwork(name string, environment utils.Environment) *network {
 		ArchiveEnabled:           DefaultArchiveEnabled,
 		Environment:              environment,
 		Providers:                make(map[string]*provider),
+		CaddyPort:                caddyPort,
 	}
 }
 
@@ -100,6 +105,9 @@ func (n *network) startHealthcheck() {
 
 // HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
+	// Self loopback health check (run asynchronously)
+	go n.LoopbackHealthCheck()
+
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()
 
@@ -132,6 +140,43 @@ func (n *network) healthCheck() {
 		// Update metrics and history
 		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.ProviderBlockHistorySize)
 		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+	}
+}
+
+// LoopbackHealthCheck performs a self loopback health check and logs/metrics the result.
+func (n *network) LoopbackHealthCheck() {
+	startTime := time.Now()
+	selfResult, selfErr := n.checkSelfLoopbackHealth()
+	duration := time.Since(startTime)
+
+	// Prepare metric data regardless of error, as we want to capture response status and duration
+	metricData := &prom.PromNetworkHealthCheckMetricData{
+		Network:        n.Name, // Use n.Name directly for the network label
+		ResponseStatus: 0,      // Default to 0 if selfResult is nil
+		Duration:       duration,
+		Environment:    string(n.Environment),
+	}
+
+	if selfResult != nil {
+		metricData.ResponseStatus = selfResult.responseStatus
+	}
+
+	n.PrometheusClient.HandleNetworkHealthCheckMetric(metricData)
+
+	if selfErr != nil {
+		n.logger.Warn("Self loopback health check failed",
+			zap.Error(selfErr),
+			zap.String("network", n.Name),
+			zap.Int("response_status", metricData.ResponseStatus),
+			zap.Duration("duration", duration),
+		)
+	} else {
+		n.logger.Info("Self loopback health check succeeded",
+			zap.String("network", n.Name),
+			zap.Int64("block_number", selfResult.blockNumber),
+			zap.Int("response_status", metricData.ResponseStatus),
+			zap.Duration("duration", duration),
+		)
 	}
 }
 
@@ -405,7 +450,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
@@ -492,7 +537,7 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.ChainIdMethod))
 
 		// Send the POST request
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
@@ -582,6 +627,8 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 
 			// Starknet uses a different method for archive mode check
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"block_number":%d}]}`, StarknetArchiveMethod, blockNum))
+		} else if strings.Contains(n.Name, "zksync") {
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3", "to": "0x0000000000000000000000000000000000000000"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
 		} else {
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
 		}
@@ -669,8 +716,15 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 
 // AddNetworkBlockEntry adds a new block entry to the network's history,
 // maintaining the configured history size. It is concurrency-safe.
-func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
-	if n == nil {
+func (n *network) AddNetworkBlockEntry(blockNumber int64, blockData interface{}) {
+	if n == nil { // Guard against nil network pointer
+		// Cannot use n.logger here. Consider a global logger for such rare cases if necessary.
+		return
+	}
+
+	// blockData is allowed to be nil. The check for blockNumber is important.
+	if blockNumber <= 0 {
+		n.logger.Error("Invalid block number in AddNetworkBlockEntry", zap.Int64("blockNumber", blockNumber), zap.Any("blockData", blockData))
 		return
 	}
 
@@ -679,8 +733,7 @@ func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
 
 	if n.blockHistory == nil {
 		n.blockHistory = list.New()
-		// Exit early if initialization failed (though list.New() should not fail here)
-		if n.blockHistory == nil {
+		if n.blockHistory == nil { // Should not happen with list.New(), but defensive
 			n.logger.Error("Failed to initialize network block history list")
 			return
 		}
@@ -691,12 +744,12 @@ func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
 		latestEntryValue := n.blockHistory.Back().Value
 		latestEntry, ok := latestEntryValue.(blockHistoryEntry)
 		if !ok {
-			n.logger.Error("Invalid type in network block history during add check")
-			return // Or handle error appropriately
+			n.logger.Error("Invalid type in network block history during add check, skipping addition")
+			return // Or handle error appropriately, e.g., clear history if corrupted
 		}
-		if block <= latestEntry.blockNumber {
+		if blockNumber <= latestEntry.blockNumber {
 			n.logger.Debug("New block number is not greater than the latest, skipping addition",
-				zap.Int64("new_block", block),
+				zap.Int64("new_block", blockNumber),
 				zap.Int64("latest_block", latestEntry.blockNumber),
 				zap.String("network", n.Name),
 			)
@@ -704,9 +757,36 @@ func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
 		}
 	}
 
+	// Safely extract block hash from blockData
+	blockHash := ""
+	if blockData != nil {
+		switch data := blockData.(type) {
+		case string:
+			blockHash = data
+		case din_http.JSONRPCSolanaBlockResponse:
+			if strings.Contains(n.Name, "solana") {
+				blockHash = data.Result.Blockhash
+			} else {
+				n.logger.Warn("Received Solana block data for non-Solana network type in AddNetworkBlockEntry", zap.String("network", n.Name))
+			}
+		case din_http.JSONRPCEVMBlockResponse:
+			// Assuming non-Solana, non-Bitcoin, non-Starknet is EVM
+			if !strings.Contains(n.Name, "solana") && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "starknet") {
+				blockHash = data.Result.Hash
+			} else {
+				n.logger.Warn("Received EVM block data for non-EVM network type in AddNetworkBlockEntry", zap.String("network", n.Name))
+			}
+		default:
+			// If it's not one of the recognized structs or a string, log a warning.
+			// This can happen if getBlockByNumber returns a different type or if blockData is an unexpected struct.
+			n.logger.Warn("Unsupported blockData type in AddNetworkBlockEntry", zap.String("dataType", reflect.TypeOf(blockData).String()), zap.String("network", n.Name))
+		}
+	}
+
 	now := time.Now()
 	entry := blockHistoryEntry{
-		blockNumber: block,
+		blockNumber: blockNumber,
+		blockHash:   blockHash, // blockHash might be empty if not extractable or for bitcoin/starknet
 		timestamp:   &now,
 	}
 
@@ -717,7 +797,6 @@ func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
 		if n.blockHistory.Front() != nil {
 			n.blockHistory.Remove(n.blockHistory.Front())
 		} else {
-			// Should not happen if Len() > 0
 			break
 		}
 	}
@@ -748,4 +827,122 @@ func (n *network) getLatestBlockEntry() *blockHistoryEntry {
 		return nil
 	}
 	return &entry
+}
+
+// checkSelfLoopbackHealth performs a health check on the router's own endpoint (loopback)
+func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
+	if n.CaddyPort == "" {
+		return nil, errors.New("Caddy port is not set")
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+	// Use the payload for getLatestBlockNumber
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+	currentResponseStatus := 0 // Default status code if statusCode is nil
+	if statusCode != nil {
+		currentResponseStatus = *statusCode
+	}
+
+	if err != nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: currentResponseStatus, // Use the safe value
+		}, errors.Wrap(err, "Self loopback health check failed")
+	}
+
+	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
+	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+	if err != nil {
+		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
+		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   health, // Health status from processBlockNumberResponse
+			responseStatus: currentResponseStatus,
+		}, errors.Wrap(err, "Self loopback health check response error")
+	}
+
+	return &getLatestBlockNumberResult{
+		blockNumber:    blockNumber,
+		healthStatus:   health,
+		responseStatus: currentResponseStatus, // Should be *statusCode from successful Post
+	}, nil
+}
+
+// getBlock returns the block for a given block or hash
+func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
+	n.logger.Debug("getBlockByNumber called", zap.Int64("blockNumber", blockNumber), zap.String("networkName", n.Name))
+
+	if n.CaddyPort == "" {
+		return nil, errors.New("Caddy port is not set")
+	}
+
+	// convert blockNumber to hex
+	blockNumberHex := fmt.Sprintf("0x%x", blockNumber) // Ensure 0x prefix for hex
+	n.logger.Debug("Converted block number to hex", zap.Int64("originalBlockNumber", blockNumber), zap.String("hexBlockNumber", blockNumberHex))
+
+	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	if strings.Contains(n.Name, "bitcoin") || strings.Contains(n.Name, "starknet") {
+		n.logger.Debug("Network is bitcoin or starknet, skipping getBlockByNumber", zap.String("networkName", n.Name))
+		return nil, nil
+	} else if strings.Contains(n.Name, "solana") {
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[%s, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, n.GetBlockByNumberMethod, strconv.FormatInt(blockNumber, 10))) // Solana uses decimal block number in params
+		n.logger.Debug("Sending Solana getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
+		resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error sending POST request")
+		}
+		n.logger.Debug("Received Solana getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
+
+		if *statusCode != http.StatusOK {
+			n.logger.Warn("Error getting block hash from Solana response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
+			return nil, errors.New("Error getting block hash from response")
+		}
+
+		// Parse the response for the block hash
+		var respObject din_http.JSONRPCSolanaBlockResponse
+		err = json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error unmarshalling response")
+		}
+		n.logger.Debug("Successfully unmarshalled Solana block response", zap.Any("respObject.Result.Blockhash", respObject.Result.Blockhash), zap.String("networkName", n.Name))
+
+		return respObject, nil
+	}
+
+	// default to EVM getBlockByNumber processing
+	// EVM typically expects the block number as a hex string, and a boolean for full transaction objects.
+	// We request non-full transaction objects by passing 'false'.
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":["%s", false]}`, n.GetBlockByNumberMethod, blockNumberHex))
+	n.logger.Debug("Sending EVM getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
+
+	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error sending POST request")
+	}
+	n.logger.Debug("Received EVM getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
+
+	if *statusCode != http.StatusOK {
+		n.logger.Warn("Error getting block hash from EVM response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
+		return nil, errors.New("Error getting block hash from response")
+	}
+	// Parse the response for the block hash
+	var respObject din_http.JSONRPCEVMBlockResponse
+	err = json.Unmarshal(resBytes, &respObject)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error unmarshalling response")
+	}
+	n.logger.Debug("Successfully unmarshalled EVM block response", zap.String("respObject.Result.Hash", respObject.Result.Hash), zap.String("networkName", n.Name))
+
+	// EVM default to return the block
+	return respObject, nil
 }
