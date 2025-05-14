@@ -15,6 +15,7 @@ const (
 	DinUpstreamsContextKey          = "din.internal.upstreams"
 	RequestProviderKey              = "request_provider"
 	RequestBodyKey                  = "request_body"
+	RequestMethodKey                = "request_method"
 	HealthStatusKey                 = "health_status"
 	BlockNumberKey                  = "block_number"
 	DefaultProviderBlockHistorySize = 10

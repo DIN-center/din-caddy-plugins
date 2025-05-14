@@ -611,7 +611,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			}
 
 			printfOutput := captureOutput(func() {
-				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, repl)
+				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, method)
 			})
 			_ = testZapLogger.Sync()
 

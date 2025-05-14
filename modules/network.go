@@ -669,7 +669,7 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 
 // AddNetworkBlockEntry adds a new block entry to the network's history,
 // maintaining the configured history size. It is concurrency-safe.
-func (n *network) AddNetworkBlockEntry(block int64) {
+func (n *network) AddNetworkBlockEntry(block int64, blockHash string) {
 	if n == nil {
 		return
 	}

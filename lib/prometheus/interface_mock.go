@@ -8,6 +8,7 @@ import (
 	reflect "reflect"
 	time "time"
 
+	http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -47,13 +48,13 @@ func (mr *MockIPrometheusClientMockRecorder) HandleHealthCheckMetric(data interf
 }
 
 // HandleRequestMetrics mocks base method.
-func (m *MockIPrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration) {
+func (m *MockIPrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *http.JSONRPCRequest) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "HandleRequestMetrics", data, reqBodyBytes, duration)
+	m.ctrl.Call(m, "HandleRequestMetrics", data, duration, requestBody)
 }
 
 // HandleRequestMetrics indicates an expected call of HandleRequestMetrics.
-func (mr *MockIPrometheusClientMockRecorder) HandleRequestMetrics(data, reqBodyBytes, duration interface{}) *gomock.Call {
+func (mr *MockIPrometheusClientMockRecorder) HandleRequestMetrics(data, duration, requestBody interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleRequestMetrics", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleRequestMetrics), data, reqBodyBytes, duration)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleRequestMetrics", reflect.TypeOf((*MockIPrometheusClient)(nil).HandleRequestMetrics), data, duration, requestBody)
 }

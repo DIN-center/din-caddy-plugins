@@ -1,8 +1,12 @@
 package prometheus
 
-import "time"
+import (
+	"time"
+
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+)
 
 type IPrometheusClient interface {
-	HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration)
+	HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *dinHttp.JSONRPCRequest)
 	HandleHealthCheckMetric(data *PromHealthCheckMetricData)
 }

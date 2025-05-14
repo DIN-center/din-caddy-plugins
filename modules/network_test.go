@@ -2,6 +2,7 @@ package modules
 
 import (
 	"container/list"
+	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -1227,13 +1228,13 @@ func newTestNetwork(name string, historySize int) *network {
 func TestAddNetworkBlockEntry(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var n *network
-		assert.NotPanics(t, func() { n.AddNetworkBlockEntry(100) }, "Calling AddNetworkBlockEntry on nil network should not panic")
+		assert.NotPanics(t, func() { n.AddNetworkBlockEntry(100, "test_block_hash") }, "Calling AddNetworkBlockEntry on nil network should not panic")
 	})
 
 	t.Run("nil blockHistory initialization", func(t *testing.T) {
 		n := newTestNetwork("test_init", 3)
 		n.blockHistory = nil // Force nil history
-		n.AddNetworkBlockEntry(100)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
 		assert.NotNil(t, n.blockHistory, "blockHistory should be initialized")
 		assert.Equal(t, 1, n.blockHistory.Len(), "Should have 1 entry after initialization and add")
 		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
@@ -1242,17 +1243,27 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 
 	t.Run("add first entry", func(t *testing.T) {
 		n := newTestNetwork("test_first", 3)
-		n.AddNetworkBlockEntry(100)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
 		assert.Equal(t, 1, n.blockHistory.Len())
 		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
 		assert.Equal(t, int64(100), entry.blockNumber)
 		assert.NotNil(t, entry.timestamp)
 	})
 
+	t.Run("add entry with empty block hash", func(t *testing.T) {
+		n := newTestNetwork("test_empty_hash", 3)
+		n.AddNetworkBlockEntry(102, "")
+		assert.Equal(t, 1, n.blockHistory.Len(), "Should have 1 entry even with empty hash")
+		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(102), entry.blockNumber)
+		assert.Equal(t, "", entry.blockHash, "blockHash should be empty string")
+		assert.NotNil(t, entry.timestamp)
+	})
+
 	t.Run("add higher block", func(t *testing.T) {
 		n := newTestNetwork("test_higher", 3)
-		n.AddNetworkBlockEntry(100)
-		n.AddNetworkBlockEntry(101)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(101, "test_block_hash")
 		assert.Equal(t, 2, n.blockHistory.Len())
 		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
 		assert.Equal(t, int64(101), entry.blockNumber)
@@ -1260,8 +1271,8 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 
 	t.Run("skip equal block", func(t *testing.T) {
 		n := newTestNetwork("test_equal", 3)
-		n.AddNetworkBlockEntry(100)
-		n.AddNetworkBlockEntry(100) // Attempt to add equal block
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(100, "test_block_hash") // Attempt to add equal block
 
 		assert.Equal(t, 1, n.blockHistory.Len(), "History length should remain 1")
 		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
@@ -1270,8 +1281,8 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 
 	t.Run("skip lower block", func(t *testing.T) {
 		n := newTestNetwork("test_lower", 3)
-		n.AddNetworkBlockEntry(100)
-		n.AddNetworkBlockEntry(99) // Attempt to add lower block
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(99, "test_block_hash") // Attempt to add lower block
 
 		assert.Equal(t, 1, n.blockHistory.Len(), "History length should remain 1")
 		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
@@ -1282,7 +1293,7 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 		historySize := 3
 		n := newTestNetwork("test_trim", historySize)
 		for i := 1; i <= historySize+2; i++ {
-			n.AddNetworkBlockEntry(int64(100 + i))
+			n.AddNetworkBlockEntry(int64(100+i), fmt.Sprintf("hash_%d", i))
 		}
 		assert.Equal(t, historySize, n.blockHistory.Len(), "History should be trimmed to NetworkBlockHistorySize")
 		firstEntry := n.blockHistory.Front().Value.(blockHistoryEntry)
@@ -1295,7 +1306,7 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 		n := newTestNetwork("test_invalid_type", 3)
 		n.blockHistory.PushBack("not_a_block_history_entry") // Manually add invalid type
 
-		n.AddNetworkBlockEntry(100)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
 		assert.Equal(t, 1, n.blockHistory.Len(), "History length should be 1 (the invalid entry)")
 	})
 
@@ -1311,7 +1322,7 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 			go func(startBlock int) {
 				defer wg.Done()
 				for j := 0; j < blocksPerGoroutine; j++ {
-					n.AddNetworkBlockEntry(int64(startBlock + j))
+					n.AddNetworkBlockEntry(int64(startBlock+j), "test_block_hash")
 				}
 			}(i * blocksPerGoroutine)
 		}
@@ -1392,7 +1403,7 @@ func TestGetLatestBlockEntry(t *testing.T) {
 				case <-stopCh:
 					return
 				default:
-					n.AddNetworkBlockEntry(int64(i))
+					n.AddNetworkBlockEntry(int64(i), "test_block_hash")
 					time.Sleep(1 * time.Millisecond)
 				}
 			}
