@@ -402,6 +402,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		responseBodyCopy := make([]byte, len(rww.body.Bytes()))
 		copy(responseBodyCopy, rww.body.Bytes())
 
+		// Some Providers return gzipped responses, decompress if necessary
+		responseBodyCopy = decompressGzipBodyIfNecessary(rww.Header(), responseBodyCopy, d.logger, networkPath)
+
 		currentNetworkObj := networkObj
 		currentNetworkPath := networkPath
 		responseStatusCode := rww.statusCode
@@ -450,13 +453,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "port":
-			// Only needs to be set if the caddy server port is not via the Caddyfile8000
 			dispenser.Next()
 			caddyPort = dispenser.Val()
 			if caddyPort == "" {
 				caddyPort = DefaultPort
 			}
-			d.logger.Debug("Caddy port set to", zap.String("port", caddyPort))
 			d.CaddyPort = caddyPort
 		case "siwe-signer":
 			var key []byte
@@ -496,6 +497,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
+				if caddyPort == "" {
+					caddyPort = DefaultPort
+				}
 				d.Networks[networkName] = NewNetwork(networkName, d.Env, caddyPort) // Create a new network object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
@@ -858,7 +862,7 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
 
 	// Pass the address of respStatus to processBlockNumberResponse
-	// processBlockNumberResponse already checks for respStatus >= 400
+	// processBlockNumberResponse checks for respStatus >= 400
 	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
 		d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", networkPath), zap.String("response_body_snippet", string(respBody)))

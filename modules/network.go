@@ -882,10 +882,6 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.New("Caddy port is not set")
 	}
 
-	// convert blockNumber to hex
-	blockNumberHex := fmt.Sprintf("0x%x", blockNumber) // Ensure 0x prefix for hex
-	n.logger.Debug("Converted block number to hex", zap.Int64("originalBlockNumber", blockNumber), zap.String("hexBlockNumber", blockNumberHex))
-
 	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
 	headers := map[string]string{
 		"Content-Type": "application/json",
@@ -895,7 +891,7 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		n.logger.Debug("Network is bitcoin or starknet, skipping getBlockByNumber", zap.String("networkName", n.Name))
 		return nil, nil
 	} else if strings.Contains(n.Name, "solana") {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[%s, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, n.GetBlockByNumberMethod, strconv.FormatInt(blockNumber, 10))) // Solana uses decimal block number in params
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, n.GetBlockByNumberMethod, blockNumber)) // Solana uses decimal block number in params
 		n.logger.Debug("Sending Solana getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
 		resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
 		if err != nil {
@@ -907,7 +903,6 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 			n.logger.Warn("Error getting block hash from Solana response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
 			return nil, errors.New("Error getting block hash from response")
 		}
-
 		// Parse the response for the block hash
 		var respObject din_http.JSONRPCSolanaBlockResponse
 		err = json.Unmarshal(resBytes, &respObject)
@@ -922,6 +917,11 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 	// default to EVM getBlockByNumber processing
 	// EVM typically expects the block number as a hex string, and a boolean for full transaction objects.
 	// We request non-full transaction objects by passing 'false'.
+
+	// convert blockNumber to hex
+	blockNumberHex := fmt.Sprintf("0x%x", blockNumber) // Ensure 0x prefix for hex
+	n.logger.Debug("Converted block number to hex", zap.Int64("originalBlockNumber", blockNumber), zap.String("hexBlockNumber", blockNumberHex))
+
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":["%s", false]}`, n.GetBlockByNumberMethod, blockNumberHex))
 	n.logger.Debug("Sending EVM getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
 

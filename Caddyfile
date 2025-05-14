@@ -441,6 +441,7 @@
 					providers {
 						https://din-mainnet.rpc.extrnode.com/key
 					}
+					get_block_by_number_method getBlock
 					healthcheck_method getBlockHeight
 				}
 				solana-devnet {
@@ -450,6 +451,7 @@
 					}
 					healthcheck_method getBlockHeight
 					chainid_method getGenesisHash
+					get_block_by_number_method getBlock
 					chain_id solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
 				}
 				solana-devnet {
