@@ -397,27 +397,29 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
+	}
 
-		// START - Asynchronous HCMethod response processing
-		responseBodyCopy := make([]byte, len(rww.body.Bytes()))
-		copy(responseBodyCopy, rww.body.Bytes())
+	// Post-Request Processing //
 
-		// Some Providers return gzipped responses, decompress if necessary
-		responseBodyCopy = decompressGzipBodyIfNecessary(rww.Header(), responseBodyCopy, d.logger, networkPath)
+	// Copy the response body to a new byte slice
+	responseBodyCopy := make([]byte, len(rww.body.Bytes()))
+	copy(responseBodyCopy, rww.body.Bytes())
 
-		currentNetworkObj := networkObj
-		currentNetworkPath := networkPath
-		responseStatusCode := rww.statusCode
+	// Some Providers return gzipped responses, decompress if necessary
+	responseBodyCopy = decompressGzipBodyIfNecessary(rww.Header(), responseBodyCopy, d.logger, networkPath)
 
-		// Get the request method from the replacer
-		method, err := getRequestMethod(repl)
-		if err != nil {
-			d.logger.Warn("Goroutine: Failed to get request method for HCMethod check", zap.Error(err), zap.String("network", networkPath))
-			return nil
-		}
+	// Get the request method from the replacer
+	method, err := getRequestMethod(repl)
+	if err != nil {
+		d.logger.Warn("Goroutine: Failed to get request method for HCMethod check", zap.Error(err), zap.String("network", networkPath))
+		return nil
+	}
 
-		go d.processHCMethodResponseAsync(currentNetworkObj, currentNetworkPath, responseBodyCopy, responseStatusCode, method)
-		// END - Asynchronous HCMethod response processing
+	// Asynchronous HCMethod response processing
+	// Check if the request method matches the network's health check method
+	// aka. do we have access to the block number?
+	if method == networkObj.HCMethod {
+		go d.processHCMethodResponseAsync(networkObj, networkPath, responseBodyCopy, rww.statusCode, method)
 	}
 
 	providerBlockNumber := networkObj.Providers[provider].getLatestBlockEntry()
@@ -427,7 +429,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return nil
 	}
 
-	// Increment prometheus metric based on request data
+	// Prometheus Metrics Request Reporting
 	// debug logging of metric is found in here.
 	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Network:        r.RequestURI,
@@ -850,12 +852,6 @@ func min(a, b int) int {
 // and ensuring proper synchronization across providers.
 func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
 	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
-		return
-	}
-
-	// Check if the request method matches the network's health check method
-	// aka. do we have access to the block number?
-	if method != networkObj.HCMethod {
 		return
 	}
 
