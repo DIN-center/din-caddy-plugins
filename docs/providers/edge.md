@@ -106,7 +106,7 @@ This configures the primary DIN middleware.
 
 The proxy can simultaneously support multiple networks. If you support multiple networks for DIN, you can use one set of proxy instances to serve all networks.
 
-You can also list multiple providers for the same network. If you run multiple nodes, you can use the proxy as a load balancer across your nodes.
+You can also list multiple providers for the same network. If you run multiple nodes, you can use the proxy as a load balancer across your nodes. Additionally, the proxy can support different API keys, either in the path portion of the URL, or in headers. The DIN proxy also has built-in healthchecks to route only to healthy instances.
 
 ```
 reverse_proxy {
@@ -123,14 +123,14 @@ reverse_proxy {
 }
 ```
 
-This configure's Caddy's native reverse proxy middleware with DIN's loadbalancing and selection policies. These should be left alone to take advantage of DIN's healthcheck implementations. Note that in the `transport` section, `tls` is commented out. If your node authenticates over HTTPS, you should uncomment that line.
+This configure's Caddy's native reverse proxy middleware with DIN's loadbalancing and selection policies. These should be left alone to take advantage of DIN's healthcheck implementations. Note that in the `transport` section, `tls` is commented out. If your targets authenticate over HTTPS, you should uncomment that line. Notably, however, Caddy does not support mixing HTTPS targets and HTTP targets in the same config - TLS is enabled or disabled globally.
 
 ## Running with Docker
 
 Once you have your Caddyfile saved, you can run it with:
 
 ```
-docker run -d --restart=always -p 8000:8000 -v /path/to/Caddyfile:/etc/caddy/Caddyfile din-center/din-caddy:latest
+docker run -d --restart=always -p 8000:8000 -v /path/to/Caddyfile:/etc/caddy/Caddyfile dincenter/din-caddy:latest
 ```
 
 ## Running with Binaries

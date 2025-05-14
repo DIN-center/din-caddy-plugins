@@ -101,7 +101,7 @@ This configure's Caddy's native reverse proxy middleware with DIN's loadbalancin
 Once you have your Caddyfile saved, you can run it with:
 
 ```
-docker run -d --restart=always -p 8000:8000 -v /path/to/Caddyfile:/etc/caddy/Caddyfile din-center/din-caddy:latest
+docker run -d --restart=always -p 8000:8000 -v /path/to/Caddyfile:/etc/caddy/Caddyfile dincenter/din-caddy:latest
 ```
 
 ## Running with Binaries
