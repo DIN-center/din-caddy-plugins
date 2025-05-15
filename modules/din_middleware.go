@@ -306,7 +306,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	if networkObj.MethodFilter != nil {
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(repl, networkObj.Providers))
+		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(requestBody, networkObj.Providers))
 	} else {
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)

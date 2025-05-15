@@ -919,7 +919,7 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 	// We request non-full transaction objects by passing 'false'.
 
 	// convert blockNumber to hex
-	blockNumberHex := fmt.Sprintf("0x%x", blockNumber) // Ensure 0x prefix for hex
+	blockNumberHex := fmt.Sprintf("%#x", blockNumber)
 	n.logger.Debug("Converted block number to hex", zap.Int64("originalBlockNumber", blockNumber), zap.String("hexBlockNumber", blockNumberHex))
 
 	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":["%s", false]}`, n.GetBlockByNumberMethod, blockNumberHex))

@@ -1,12 +1,14 @@
 package modules
 
-import "github.com/caddyserver/caddy/v2"
+import (
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+)
 
 // ProviderFilter offers an interface for determining which providers can handle
 // a particular request. This is similar to what happens in the upstreams module,
 // but lets us attach filtering logic to specific networks.
 type ProviderFilter interface {
-	FilterProviders(string, map[string]*provider) map[string]*provider
+	FilterProviders(requestBody *dinHttp.JSONRPCRequest, p map[string]*provider) map[string]*provider
 }
 
 // methodFilter implements the ProviderFilter. If a network needs to route specific
@@ -17,16 +19,13 @@ type methodFilter struct {
 	FilteredMethods map[string]struct{}
 }
 
-func (mf *methodFilter) FilterProviders(repl *caddy.Replacer, p map[string]*provider) map[string]*provider {
+func (mf *methodFilter) FilterProviders(requestBody *dinHttp.JSONRPCRequest, p map[string]*provider) map[string]*provider {
 	// If there are no filtered methods, or the method is empty, return all providers
 	if len(mf.FilteredMethods) == 0 {
 		return p
 	}
 
-	method, err := getRequestMethod(repl)
-	if err != nil {
-		return p
-	}
+	method := requestBody.Method
 	// If the request method is empty, return all providers
 	if method == "" {
 		return p
