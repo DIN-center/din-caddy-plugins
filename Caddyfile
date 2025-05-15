@@ -24,6 +24,7 @@
 	route /* {
 		# middleware declaration
 		din {
+			port 8000 # the port to listen on, defining here to reference from inside the middleware
 			siwe-signer {
 				secret_file /run/secrets/din-secret-key
 			}

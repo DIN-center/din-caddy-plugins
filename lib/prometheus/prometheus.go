@@ -97,7 +97,7 @@ func RegisterMetrics() {
 			Name: "din_network_health_check_count",
 			Help: "Metric for counting network-level health checks",
 		},
-		[]string{"network", "response_status", "machine_id", "environment"},
+		[]string{"service", "response_status", "machine_id", "environment"},
 	)
 
 	DinNetworkRequestHealthCheckDurationMilliseconds = prometheus.NewHistogramVec(
@@ -106,7 +106,7 @@ func RegisterMetrics() {
 			Help:    "Metric for measuring the duration of network-level health checks",
 			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
 		},
-		[]string{"network", "response_status", "machine_id", "environment"},
+		[]string{"service", "response_status", "machine_id", "environment"},
 	)
 
 	prometheus.MustRegister(DinNetworkHealthCheckCount, DinNetworkRequestHealthCheckDurationMilliseconds)
