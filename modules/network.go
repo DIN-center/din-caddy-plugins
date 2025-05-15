@@ -22,6 +22,7 @@ type network struct {
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
+	CaddyPort        string
 	logger           *logger.LoggerClient
 	machineID        string
 	Environment      utils.Environment
@@ -51,7 +52,7 @@ type network struct {
 // NewNetwork creates a new network with the given name
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, environment utils.Environment) *network {
+func NewNetwork(name string, environment utils.Environment, caddyPort string) *network {
 	return &network{
 		Name: name,
 		// Default health check values, to be overridden if specified in the Caddyfile
@@ -68,6 +69,7 @@ func NewNetwork(name string, environment utils.Environment) *network {
 		ArchiveEnabled:          DefaultArchiveEnabled,
 		Environment:             environment,
 		Providers:               make(map[string]*provider),
+		CaddyPort:               caddyPort,
 	}
 }
 
@@ -93,6 +95,9 @@ func (n *network) startHealthcheck() {
 
 // HealthCheck performs health checks on all providers and updates their status
 func (n *network) healthCheck() {
+	// Self loopback health check (run asynchronously)
+	go n.LoopbackHealthCheck()
+
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()
 
@@ -125,6 +130,43 @@ func (n *network) healthCheck() {
 		// Update metrics and history
 		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.BlockHistorySize)
 		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+	}
+}
+
+// LoopbackHealthCheck performs a self loopback health check and logs/metrics the result.
+func (n *network) LoopbackHealthCheck() {
+	startTime := time.Now()
+	selfResult, selfErr := n.checkSelfLoopbackHealth()
+	duration := time.Since(startTime)
+
+	// Prepare metric data regardless of error, as we want to capture response status and duration
+	metricData := &prom.PromNetworkHealthCheckMetricData{
+		Network:        n.Name, // Use n.Name directly for the network label
+		ResponseStatus: 0,      // Default to 0 if selfResult is nil
+		Duration:       duration,
+		Environment:    string(n.Environment),
+	}
+
+	if selfResult != nil {
+		metricData.ResponseStatus = selfResult.responseStatus
+	}
+
+	n.PrometheusClient.HandleNetworkHealthCheckMetric(metricData)
+
+	if selfErr != nil {
+		n.logger.Warn("Self loopback health check failed",
+			zap.Error(selfErr),
+			zap.String("network", n.Name),
+			zap.Int("response_status", metricData.ResponseStatus),
+			zap.Duration("duration", duration),
+		)
+	} else {
+		n.logger.Info("Self loopback health check succeeded",
+			zap.String("network", n.Name),
+			zap.Int64("block_number", selfResult.blockNumber),
+			zap.Int("response_status", metricData.ResponseStatus),
+			zap.Duration("duration", duration),
+		)
 	}
 }
 
@@ -398,7 +440,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.HCMethod))
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
@@ -485,7 +527,7 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","params":[],"id":1}`, n.ChainIdMethod))
+		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.ChainIdMethod))
 
 		// Send the POST request
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
@@ -660,4 +702,49 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 		}
 	}
 	return false
+}
+
+// checkSelfLoopbackHealth performs a health check on the router's own endpoint (loopback)
+func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
+	if n.CaddyPort == "" {
+		return nil, errors.New("Caddy port is not set")
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+	// Use the payload for getLatestBlockNumber
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
+	currentResponseStatus := 0 // Default status code if statusCode is nil
+	if statusCode != nil {
+		currentResponseStatus = *statusCode
+	}
+
+	if err != nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: currentResponseStatus, // Use the safe value
+		}, errors.Wrap(err, "Self loopback health check failed")
+	}
+
+	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
+	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+	if err != nil {
+		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
+		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   health, // Health status from processBlockNumberResponse
+			responseStatus: currentResponseStatus,
+		}, errors.Wrap(err, "Self loopback health check response error")
+	}
+
+	return &getLatestBlockNumberResult{
+		blockNumber:    blockNumber,
+		healthStatus:   health,
+		responseStatus: currentResponseStatus, // Should be *statusCode from successful Post
+	}, nil
 }
