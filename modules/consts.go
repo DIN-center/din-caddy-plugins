@@ -12,17 +12,20 @@ const (
 	LineaSepolia = "linea-sepolia"
 
 	// Module Context Key constants
-	DinUpstreamsContextKey = "din.internal.upstreams"
-	RequestProviderKey     = "request_provider"
-	RequestBodyKey         = "request_body"
-	HealthStatusKey        = "health_status"
-	BlockNumberKey         = "block_number"
-	BlockHistorySize       = 10
+	DinUpstreamsContextKey          = "din.internal.upstreams"
+	RequestProviderKey              = "request_provider"
+	RequestBodyKey                  = "request_body"
+	RequestMethodKey                = "request_method"
+	HealthStatusKey                 = "health_status"
+	BlockNumberKey                  = "block_number"
+	DefaultProviderBlockHistorySize = 10
+	DefaultNetworkBlockHistorySize  = 128
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
 	DefaultChainIdMethod           = "eth_chainId"
 	DefaultCallContractMethod      = "eth_call"
+	DefaultGetBlockByNumberMethod  = "eth_getBlockByNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)

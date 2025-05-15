@@ -1,8 +1,6 @@
 package prometheus
 
 import (
-	"encoding/json"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -123,35 +121,21 @@ type PromRequestMetricData struct {
 }
 
 // HandleRequestMetrics increments prometheus metric based on request data passed in
-func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, reqBodyBytes []byte, duration time.Duration) {
+func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *din_http.JSONRPCRequest) {
 	// First extract method data from body
-	// define struct to hold request data
-	var requestBody din_http.JSONRPCRequest
-
-	err := json.Unmarshal(reqBodyBytes, &requestBody)
-	if err != nil {
-		p.logger.Warn("Error decoding request body", zap.Error(err), zap.String("request_body", string(reqBodyBytes)), zap.Int("response_status", http.StatusBadRequest), zap.String("environment", data.Environment))
-	}
-
 	method := requestBody.Method
 	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 
 	durationMS := duration.Milliseconds()
 
-	reqBodyByteSize := len(reqBodyBytes)
-
-	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.Int("body_size", reqBodyByteSize), zap.String("environment", data.Environment))
+	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
 
 	// Increment prometheus counter metric based on request data
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
 
 	// Observe prometheus histogram based on request duration and data
 	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
-
-	// Observe prometheus histogram based on request body size and data
-	// Disabled to avoid high metric count on prometheus
-	// DinRequestBodyBytes.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID).Observe(float64(reqBodyByteSize))
 }
 
 type PromHealthCheckMetricData struct {

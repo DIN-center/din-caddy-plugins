@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,19 +29,17 @@ func TestHandleRequestMetric(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		reqBodyBytes   []byte
+		requestBody    *din_http.JSONRPCRequest
 		duration       time.Duration
 		data           *PromRequestMetricData
-		machineID      string
 		expectedLabels map[string]string
 		expectedValue  float64
 	}{
 		{
-			name:         "Valid JSON",
-			reqBodyBytes: []byte(`{"method": "eth_getBlockByNumber"}`),
-			duration:     1 * time.Second,
+			name:        "Valid JSON",
+			requestBody: &din_http.JSONRPCRequest{Method: "eth_getBlockByNumber"},
+			duration:    1 * time.Second,
 			data: &PromRequestMetricData{
-				Method:         "POST",
 				Network:        "/ethereum",
 				Provider:       "infura",
 				HostName:       "node1",
@@ -61,11 +60,10 @@ func TestHandleRequestMetric(t *testing.T) {
 			expectedValue: 1,
 		},
 		{
-			name:         "Invalid JSON",
-			reqBodyBytes: []byte(`{"method": invalid}`),
-			duration:     1 * time.Second,
+			name:        "Invalid JSON (simulated by empty method)",
+			requestBody: &din_http.JSONRPCRequest{Method: ""},
+			duration:    1 * time.Second,
 			data: &PromRequestMetricData{
-				Method:         "POST",
 				Network:        "/ethereum",
 				Provider:       "infura",
 				HostName:       "node1",
@@ -89,8 +87,8 @@ func TestHandleRequestMetric(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Call the function
-			client.HandleRequestMetrics(tt.data, tt.reqBodyBytes, tt.duration)
+			// Call the function with the new signature
+			client.HandleRequestMetrics(tt.data, tt.duration, tt.requestBody)
 
 			// Use  testutil to check if the metric exists with the expected labels and value
 			_, err := registry.Gather()

@@ -1,15 +1,20 @@
 package modules
 
 import (
+	"bytes"
 	"container/list"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	reflect "reflect"
 	"strings"
 	"testing"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -20,7 +25,9 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -54,6 +61,7 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 	dinMiddleware.testMode = true
+	dinMiddleware.logger = logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest)
 
 	// Large payload to test max request payload size. This is greater than 1KB.
 	largePayload := `{";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -320,6 +328,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		})
 	}
 }
+
 func TestUnmarshalCaddyfile(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 
@@ -444,6 +453,198 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
 			if err != nil && !tt.hasErr {
 				t.Errorf("UnmarshalCaddyfile() = %v, want %v", err, tt.hasErr)
+			}
+		})
+	}
+}
+
+func TestProcessHCMethodResponseAsync(t *testing.T) {
+	// Helper to capture stdout for fmt.Printf checks
+	captureOutput := func(f func()) string {
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		// Note: log.SetOutput(w) might be needed if fmt.Printf is redirected through std log, but usually not.
+
+		f()
+
+		w.Close()
+		os.Stdout = oldStdout
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		return buf.String()
+	}
+
+	tests := []struct {
+		name                string
+		setupNetwork        func(t *testing.T, netw *network)
+		netPath             string
+		respBody            []byte
+		respStatus          int
+		callMethod          string
+		expectNoProcessLogs bool
+	}{
+		{
+			name: "Successful processing",
+			setupNetwork: func(t *testing.T, netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+				netw.GetBlockByNumberMethod = "mock_getBlockByNumber"
+				netw.CaddyPort = "8000"
+
+				mockCtrl := gomock.NewController(t)
+				// defer mockCtrl.Finish() // Defers in callbacks can be tricky; manage Finish in t.Run if issues arise.
+
+				mockHttpClient := din_http.NewMockIHTTPClient(mockCtrl)
+				netw.HttpClient = mockHttpClient
+
+				mockHttpClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(url string, headers map[string]string, payload []byte, authClient auth.IAuthClient) ([]byte, *int, error) {
+						status := http.StatusOK
+						blockResp := din_http.JSONRPCEVMBlockResponse{
+							Jsonrpc: "2.0",
+							ID:      1,
+							Result: din_http.EVMBlockResult{ //
+								Hash:   "0x123abc",
+								Number: "0x64",
+							},
+						}
+						respBytes, _ := json.Marshal(blockResp)
+						return respBytes, &status, nil
+					}).AnyTimes()
+			},
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
+			expectNoProcessLogs: false,
+		},
+		{
+			name: "HCMethod does not match",
+			setupNetwork: func(t *testing.T, netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+				netw.CaddyPort = "8001" // Add a dummy CaddyPort to prevent nil errors if getBlockByNumber is unexpectedly called
+				// No HttpClient mock needed as getBlockByNumber ideally won't be called
+			},
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "other_method",
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "Response body empty",
+			setupNetwork: func(t *testing.T, netw *network) {
+				netw.HCMethod = "eth_blockNumber"
+				netw.CaddyPort = "8002" // Add a dummy CaddyPort
+				// No HttpClient mock needed
+			},
+			netPath:             "test/eth",
+			respBody:            []byte{},
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
+			expectNoProcessLogs: true,
+		},
+		{
+			name: "Network object HCMethod empty",
+			setupNetwork: func(t *testing.T, netw *network) {
+				netw.HCMethod = ""
+				netw.CaddyPort = "8003" // Add a dummy CaddyPort
+				// No HttpClient mock needed
+			},
+			netPath:             "test/eth",
+			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:          http.StatusOK,
+			callMethod:          "eth_blockNumber",
+			expectNoProcessLogs: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use zaptest.NewLogger for robust test logging and capture
+			// zaptest.NewLogger(t) automatically routes logs to the test output if a test fails.
+			// To capture logs for assertion, we can use a observer/hook or a custom core.
+			// For simplicity here, we'll keep the buffer but ensure the logger is correctly plumbed.
+
+			var logBuf bytes.Buffer
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel) // observer is from zap/observer
+
+			// Create a multi-core: one for console/test output (optional), one for observation
+			// and one for the existing buffer method to see if it can be made to work.
+			consoleCore := zapcore.NewCore(
+				zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+				zapcore.AddSync(os.Stderr), // Write to Stderr for visibility during test run
+				zap.DebugLevel,
+			)
+			bufferCore := zapcore.NewCore(
+				zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+				zapcore.AddSync(&logBuf),
+				zap.DebugLevel,
+			)
+
+			teeCore := zapcore.NewTee(
+				observedZapCore,
+				consoleCore,
+				bufferCore,
+			)
+			testZapLogger := zap.New(teeCore)
+
+			dm := &DinMiddleware{
+				logger: logger.NewLoggerClient(testZapLogger, utils.EnvTest),
+			}
+
+			// mockCtrl and mockHttpClient setup will be handled by tt.setupNetwork for relevant cases
+
+			netw := &network{
+				logger:     dm.logger,
+				HttpClient: nil, // Initialize as nil; setupNetwork can override for specific tests
+			}
+
+			if tt.setupNetwork != nil {
+				tt.setupNetwork(t, netw) // Pass t to setupNetwork
+			}
+
+			// Ensure that if HttpClient is used (e.g., in "Successful processing"), it has been mocked by setupNetwork
+			if tt.name == "Successful processing" && netw.HttpClient == nil {
+				t.Fatalf("HttpClient mock not set up for 'Successful processing' test case in setupNetwork")
+			}
+
+			printfOutput := captureOutput(func() {
+				dm.processHCMethodResponseAsync(netw, tt.netPath, tt.respBody, tt.respStatus, tt.callMethod)
+			})
+			_ = testZapLogger.Sync()
+
+			// Check logs from the observer first
+			numLogsFromObserver := observedLogs.Len()
+			// Concatenate observed log messages for assertion
+			var observedLogOutput strings.Builder
+			for _, obsLog := range observedLogs.AllUntimed() { // Untimed to simplify string matching
+				observedLogOutput.WriteString(obsLog.Message)
+				for _, field := range obsLog.Context {
+					observedLogOutput.WriteString(fmt.Sprintf(" %s=%v", field.Key, field.Interface))
+				}
+				observedLogOutput.WriteString("\n")
+			}
+			actualLogOutput := observedLogOutput.String()
+			// Fallback to buffer if observer didn't capture as expected, or for comparison
+			if numLogsFromObserver == 0 {
+				actualLogOutput = logBuf.String() // Use buffer if observer is empty
+			}
+
+			_ = printfOutput // Suppress unused variable warning for printfOutput
+
+			if tt.expectNoProcessLogs {
+				assert.NotContains(t, actualLogOutput, "Processing response for HCMethod", "Should not log 'Processing response' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "successfully processed block number", "Should not log 'successfully processed' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "error processing block number", "Should not log 'error processing' for this case: "+tt.name)
+			} else {
+				assert.Contains(t, actualLogOutput, "Processing response for HCMethod", "Expected 'Processing response for HCMethod' log for case: "+tt.name+"; Log: "+actualLogOutput)
+
+				if tt.name == "Successful processing" {
+					assert.Contains(t, actualLogOutput, "successfully processed block number", "Expected 'successfully processed block number' log for successful case; Log: "+actualLogOutput)
+				} else if tt.name == "Error from processBlockNumberResponse - malformed respBody" || tt.name == "Error from processBlockNumberResponse - http error status" {
+					assert.Contains(t, actualLogOutput, "error processing block number from response using processBlockNumberResponse", "Expected 'error processing block number' log for error cases; Log: "+actualLogOutput)
+				}
 			}
 		})
 	}

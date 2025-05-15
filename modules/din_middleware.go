@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
@@ -153,7 +153,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	}
 
 	// Initialize the HTTP client for each network and provider
-	httpClient := din_http.NewHTTPClient()
+	httpClient := dinHttp.NewHTTPClient()
 	for networkName, network := range d.Networks {
 		d.logger.Debug("Registered network", zap.String("name", networkName))
 		network.HttpClient = httpClient
@@ -211,30 +211,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	return nil
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
-// by appending a counter if necessary. Returns the unique host value.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
-	// Get existing hosts with the same base name
-	baseHosts := []string{}
-
-	for existingHost := range d.Networks[networkName].Providers {
-		// We need to match exact host or host-N pattern
-		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
-			baseHosts = append(baseHosts, existingHost)
-		}
-	}
-
-	// If no hosts with this base exist yet, use base host without suffix
-	if len(baseHosts) == 0 {
-		return host
-	}
-
-	// For subsequent hosts, use host-1, host-2, etc.
-	return fmt.Sprintf("%s-%d", host, len(baseHosts))
-}
-
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
-func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_http.HTTPClient, logger *logger.LoggerClient) error {
+func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 	url, err := url.Parse(provider.HttpUrl)
 	if err != nil {
 		return fmt.Errorf("error parsing provider URL: %v", err)
@@ -278,7 +256,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	networkPath := strings.TrimPrefix(r.URL.Path, "/")
-	network, ok := d.Networks[networkPath]
+	networkObj, ok := d.Networks[networkPath]
 	if !ok {
 		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
 		if networkPath == "" {
@@ -301,28 +279,43 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Check if the request payload is too large
-	if (len(bodyBytes) / 1024) > int(network.MaxRequestPayloadSizeKB) {
+	if (len(bodyBytes) / 1024) > int(networkObj.MaxRequestPayloadSizeKB) {
 		// If the request payload is too large, return an error
 		rw.WriteHeader(http.StatusRequestEntityTooLarge)
 		rw.Write([]byte("Request payload too large\n"))
 		return fmt.Errorf("request payload too large")
 	}
 
+	// Check to see if the request is empty,
+	if len(bodyBytes) == 0 {
+		// if the request body is empty, do not increment the prometheus metric, return an error
+		// this is specifically for OPTIONS requests and invalid requests payload bodies
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body is empty\n"))
+		return fmt.Errorf("request body is empty")
+	}
+
+	requestBody, err := getRequestBody(repl)
+	if err != nil {
+		return fmt.Errorf("failed to get request body: %w", err)
+	}
+	repl.Set(RequestMethodKey, requestBody.Method)
+
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
 
-	if network.MethodFilter != nil {
+	if networkObj.MethodFilter != nil {
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, network.MethodFilter.FilterProviders(r, network.Providers))
+		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(requestBody, networkObj.Providers))
 	} else {
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, network.Providers)
+		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
 	}
 
 	reqStartTime := time.Now()
 
 	// Retry the request if it fails up to the max attempt request count
-	for attempt := 0; attempt < network.RequestAttemptCount; attempt++ {
+	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
 
 		// If the request fails, reset the request body and custom header if its present to the original request state
@@ -366,45 +359,36 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 
+		// Log failed requests (non-200 status)
 		if rww.statusCode != http.StatusOK {
-			var bodyData []byte
-			var request din_http.JSONRPCRequest
+			var bodyDataForErrorLog []byte
+			var requestForErrorLog dinHttp.JSONRPCRequest
 
 			if v, ok := repl.Get(RequestBodyKey); ok {
-				bodyData = v.([]byte)
+				bodyDataForErrorLog, _ = v.([]byte)
 			}
 
-			// Unmarshal the byte array into the struct
-			err := json.Unmarshal(bodyData, &request)
-			if err != nil {
-				d.logger.Warn("Failed to unmarshal request body", zap.String("request_body", string(bodyData)), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+			errUnmarshal := json.Unmarshal(bodyDataForErrorLog, &requestForErrorLog)
+			if errUnmarshal != nil {
+				d.logger.Warn("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyDataForErrorLog[:min(len(bodyDataForErrorLog), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			} else {
-				// If the request is a JSON-RPC request, log the request method and params
-				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+				d.logger.Warn("Request failed", zap.String("request_method", requestForErrorLog.Method), zap.Any("request_params", requestForErrorLog.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
 	}
-	providerBlockNumber := network.Providers[provider].getLatestBlockEntry()
-	healthStatus := providerBlockNumber.healthStatus.String()
 
-	// If the request body is empty, do not increment the prometheus metric. specifically for OPTIONS requests
-	if len(bodyBytes) == 0 {
-		return nil
-	}
-
-	if d.testMode {
-		return nil
-	}
-	// Increment prometheus metric based on request data
-	// debug logging of metric is found in here.
-	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
-		Network:        r.RequestURI,
-		Provider:       provider,
-		HostName:       r.Host,
-		ResponseStatus: rww.statusCode,
-		HealthStatus:   healthStatus,
-		Environment:    string(d.Env),
-	}, bodyBytes, duration)
+	// Post-Request Processing is now handled by the helper function
+	handlePostRequestTasks(PostRequestTaskParams{
+		DinMiddleware: d,
+		RWWrapper:     rww,
+		NetworkObj:    networkObj,
+		NetworkPath:   networkPath,
+		Provider:      provider,
+		Replacer:      repl,
+		Duration:      duration,
+		OriginalReq:   r,
+		ParsedReqBody: requestBody,
+	})
 
 	return nil
 }
@@ -421,13 +405,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "port":
-			// Only needs to be set if the caddy server port is not via the Caddyfile8000
 			dispenser.Next()
 			caddyPort = dispenser.Val()
 			if caddyPort == "" {
 				caddyPort = DefaultPort
 			}
-			d.logger.Debug("Caddy port set to", zap.String("port", caddyPort))
 			d.CaddyPort = caddyPort
 		case "siwe-signer":
 			var key []byte
@@ -448,7 +430,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				case "secret":
 					dispenser.NextBlock(n1)
 					hexKey := dispenser.Val()
-					hexKey = strings.TrimPrefix(hexKey, "0x")
+					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
 					key, err = hex.DecodeString(hexKey)
 					if err != nil {
 						return dispenser.Errf("error parsing %v: %v", hexKey, err.Error())
@@ -467,6 +449,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 		case "networks":
 			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
 				networkName := dispenser.Val()
+				if caddyPort == "" {
+					caddyPort = DefaultPort
+				}
 				d.Networks[networkName] = NewNetwork(networkName, d.Env, caddyPort) // Create a new network object
 				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
 					switch dispenser.Val() {
@@ -550,7 +535,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 												case "secret":
 													dispenser.NextBlock(nesting + 4)
 													hexKey := dispenser.Val()
-													hexKey = strings.TrimPrefix(hexKey, "0x")
+													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
 													key, err = hex.DecodeString(hexKey)
 													if err != nil {
 														return fmt.Errorf("failed to decode secret: %v", err)
@@ -616,6 +601,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					case "call_contract_method":
 						dispenser.Next()
 						d.Networks[networkName].CallContractMethod = dispenser.Val()
+					case "get_block_by_number_method":
+						dispenser.Next()
+						d.Networks[networkName].GetBlockByNumberMethod = dispenser.Val()
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -642,13 +630,20 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
 						}
 						d.Networks[networkName].BlockJumpLimit = int64(limit)
-					case "healthcheck_block_history_size":
+					case "healthcheck_provider_block_history_size":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
 						if err != nil {
-							return fmt.Errorf("invalid healthcheck block history size: %v", err)
+							return fmt.Errorf("invalid healthcheck provider block history size: %v", err)
 						}
-						d.Networks[networkName].BlockHistorySize = int(size)
+						d.Networks[networkName].ProviderBlockHistorySize = int(size)
+					case "network_block_history_size":
+						dispenser.Next()
+						size, err := strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid network block history size: %v", err)
+						}
+						d.Networks[networkName].NetworkBlockHistorySize = int(size)
 					case "max_request_payload_size_kb":
 						dispenser.Next()
 						size, err := strconv.Atoi(dispenser.Val())
@@ -789,4 +784,11 @@ func (d *DinMiddleware) closeAll() {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -2,7 +2,11 @@ package modules
 
 import (
 	"container/list"
+	"fmt"
+	"math/rand"
+	"sync"
 	"testing"
+	"time"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -178,7 +182,8 @@ func TestIsStalled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewNetwork("test", utils.Environment("test"), "8000")
-			n.BlockHistorySize = tt.historySize
+			n.NetworkBlockHistorySize = tt.historySize
+			n.ProviderBlockHistorySize = tt.historySize
 
 			p := &provider{blockHistory: func() *list.List {
 				l := list.New()
@@ -1209,6 +1214,217 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Helper to create a new network for testing
+func newTestNetwork(name string, historySize int) *network {
+	return &network{
+		Name:                    name,
+		logger:                  logger.NewLoggerClient(zap.NewNop(), utils.EnvTest),
+		NetworkBlockHistorySize: historySize,
+		blockHistory:            list.New(),
+	}
+}
+
+func TestAddNetworkBlockEntry(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var n *network
+		assert.NotPanics(t, func() { n.AddNetworkBlockEntry(100, "test_block_hash") }, "Calling AddNetworkBlockEntry on nil network should not panic")
+	})
+
+	t.Run("nil blockHistory initialization", func(t *testing.T) {
+		n := newTestNetwork("test_init", 3)
+		n.blockHistory = nil // Force nil history
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		assert.NotNil(t, n.blockHistory, "blockHistory should be initialized")
+		assert.Equal(t, 1, n.blockHistory.Len(), "Should have 1 entry after initialization and add")
+		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100), entry.blockNumber)
+	})
+
+	t.Run("add first entry", func(t *testing.T) {
+		n := newTestNetwork("test_first", 3)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		assert.Equal(t, 1, n.blockHistory.Len())
+		entry := n.blockHistory.Front().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100), entry.blockNumber)
+		assert.NotNil(t, entry.timestamp)
+	})
+
+	t.Run("add higher block", func(t *testing.T) {
+		n := newTestNetwork("test_higher", 3)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(101, "test_block_hash")
+		assert.Equal(t, 2, n.blockHistory.Len())
+		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(101), entry.blockNumber)
+	})
+
+	t.Run("skip equal block", func(t *testing.T) {
+		n := newTestNetwork("test_equal", 3)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(100, "test_block_hash") // Attempt to add equal block
+
+		assert.Equal(t, 1, n.blockHistory.Len(), "History length should remain 1")
+		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100), entry.blockNumber, "Latest block should still be 100")
+	})
+
+	t.Run("skip lower block", func(t *testing.T) {
+		n := newTestNetwork("test_lower", 3)
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		n.AddNetworkBlockEntry(99, "test_block_hash") // Attempt to add lower block
+
+		assert.Equal(t, 1, n.blockHistory.Len(), "History length should remain 1")
+		entry := n.blockHistory.Back().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100), entry.blockNumber, "Latest block should still be 100")
+	})
+
+	t.Run("history trimming", func(t *testing.T) {
+		historySize := 3
+		n := newTestNetwork("test_trim", historySize)
+		for i := 1; i <= historySize+2; i++ {
+			n.AddNetworkBlockEntry(int64(100+i), fmt.Sprintf("hash_%d", i))
+		}
+		assert.Equal(t, historySize, n.blockHistory.Len(), "History should be trimmed to NetworkBlockHistorySize")
+		firstEntry := n.blockHistory.Front().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100+2+1), firstEntry.blockNumber, "Oldest entry is incorrect after trimming")
+		lastEntry := n.blockHistory.Back().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(100+historySize+2), lastEntry.blockNumber, "Newest entry is incorrect after trimming")
+	})
+
+	t.Run("error on invalid type assertion during add check - defensive", func(t *testing.T) {
+		n := newTestNetwork("test_invalid_type", 3)
+		n.blockHistory.PushBack("not_a_block_history_entry") // Manually add invalid type
+
+		n.AddNetworkBlockEntry(100, "test_block_hash")
+		assert.Equal(t, 1, n.blockHistory.Len(), "History length should be 1 (the invalid entry)")
+	})
+
+	t.Run("concurrency test for AddNetworkBlockEntry", func(t *testing.T) {
+		numGoroutines := 100
+		blocksPerGoroutine := 10
+		historySize := 50
+		n := newTestNetwork("test_concurrent_add", historySize)
+
+		var wg sync.WaitGroup
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func(startBlock int) {
+				defer wg.Done()
+				for j := 0; j < blocksPerGoroutine; j++ {
+					n.AddNetworkBlockEntry(int64(startBlock+j), "test_block_hash")
+				}
+			}(i * blocksPerGoroutine)
+		}
+		wg.Wait()
+
+		assert.LessOrEqual(t, n.blockHistory.Len(), historySize, "History should not exceed max size")
+
+		var prevBlock int64 = -1
+		for e := n.blockHistory.Front(); e != nil; e = e.Next() {
+			currentEntry := e.Value.(blockHistoryEntry)
+			assert.Greater(t, currentEntry.blockNumber, prevBlock, "Block history should be strictly increasing")
+			prevBlock = currentEntry.blockNumber
+		}
+	})
+}
+
+func TestGetLatestBlockEntry(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var n *network
+		var entry *blockHistoryEntry
+		assert.NotPanics(t, func() { entry = n.getLatestBlockEntry() }, "Calling getLatestBlockEntry on nil network should not panic")
+		assert.Nil(t, entry, "Result should be nil for nil network")
+	})
+
+	t.Run("nil blockHistory", func(t *testing.T) {
+		n := newTestNetwork("test_get_nil_hist", 3)
+		n.blockHistory = nil // Force nil history
+		entry := n.getLatestBlockEntry()
+		assert.Nil(t, entry, "Result should be nil if blockHistory is nil")
+	})
+
+	t.Run("empty blockHistory", func(t *testing.T) {
+		n := newTestNetwork("test_get_empty_hist", 3)
+		entry := n.getLatestBlockEntry()
+		assert.Nil(t, entry, "Result should be nil if blockHistory is empty")
+	})
+
+	t.Run("get from populated list", func(t *testing.T) {
+		n := newTestNetwork("test_get_populated", 3)
+		time1 := time.Now().Add(-time.Minute)
+		time2 := time.Now()
+		n.blockHistory.PushBack(blockHistoryEntry{blockNumber: 100, timestamp: &time1})
+		n.blockHistory.PushBack(blockHistoryEntry{blockNumber: 101, timestamp: &time2})
+
+		entry := n.getLatestBlockEntry()
+		assert.NotNil(t, entry, "Expected an entry")
+		assert.Equal(t, int64(101), entry.blockNumber)
+		assert.NotNil(t, entry.timestamp)
+		if entry.timestamp != nil {
+			assert.Equal(t, time2.UnixNano(), entry.timestamp.UnixNano(), "Timestamp should match the latest entry")
+		}
+
+		originalLen := n.blockHistory.Len()
+		entry.blockNumber = 999
+		lastListEntry := n.blockHistory.Back().Value.(blockHistoryEntry)
+		assert.Equal(t, int64(101), lastListEntry.blockNumber, "Modifying returned entry should not affect list content")
+		assert.Equal(t, originalLen, n.blockHistory.Len())
+	})
+
+	t.Run("error on invalid type assertion in getLatest - defensive", func(t *testing.T) {
+		n := newTestNetwork("test_get_invalid_type", 3)
+		n.blockHistory.PushBack("not_a_block_history_entry")
+
+		entry := n.getLatestBlockEntry()
+		assert.Nil(t, entry, "Entry should be nil on type assertion error")
+	})
+
+	t.Run("concurrency test for getLatestBlockEntry with adds", func(t *testing.T) {
+		n := newTestNetwork("test_concurrent_get_add", 200)
+		stopCh := make(chan struct{})
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-stopCh:
+					return
+				default:
+					n.AddNetworkBlockEntry(int64(i), "test_block_hash")
+					time.Sleep(1 * time.Millisecond)
+				}
+			}
+		}()
+
+		numReaders := 50
+		for i := 0; i < numReaders; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					entry := n.getLatestBlockEntry()
+					if entry != nil {
+						assert.GreaterOrEqual(t, entry.blockNumber, int64(0))
+					}
+					time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
+				}
+			}()
+		}
+
+		time.Sleep(200 * time.Millisecond)
+		close(stopCh)
+		wg.Wait()
+
+		latest := n.getLatestBlockEntry()
+		assert.NotNil(t, latest, "Should have a latest block entry after concurrent operations")
+		if latest != nil {
+			t.Logf("Final latest block after concurrency test: %d", latest.blockNumber)
+		}
+	})
 }
 
 func TestCheckSelfLoopbackHealth(t *testing.T) {
