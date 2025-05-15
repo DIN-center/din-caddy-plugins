@@ -1166,7 +1166,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-			network := NewNetwork("test-network", utils.Environment("test"))
+			network := NewNetwork("test-network", utils.Environment("test"), "8000")
 			network.HttpClient = mockHTTPClient
 			network.RequestAttemptCount = tt.requestAttemptCount
 			network.HCMethod = tt.hcMethod
