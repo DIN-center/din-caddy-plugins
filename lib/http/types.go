@@ -12,7 +12,8 @@ type JSONRPCRequest struct {
 }
 
 type EVMBlockResult struct {
-	Hash string `json:"hash"`
+	Hash   string `json:"hash"`
+	Number string `json:"number"`
 }
 
 type JSONRPCEVMBlockResponse struct {
