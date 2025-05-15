@@ -211,28 +211,6 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	return nil
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
-// by appending a counter if necessary. Returns the unique host value.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
-	// Get existing hosts with the same base name
-	baseHosts := []string{}
-
-	for existingHost := range d.Networks[networkName].Providers {
-		// We need to match exact host or host-N pattern
-		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
-			baseHosts = append(baseHosts, existingHost)
-		}
-	}
-
-	// If no hosts with this base exist yet, use base host without suffix
-	if len(baseHosts) == 0 {
-		return host
-	}
-
-	// For subsequent hosts, use host-1, host-2, etc.
-	return fmt.Sprintf("%s-%d", host, len(baseHosts))
-}
-
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
 func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 	url, err := url.Parse(provider.HttpUrl)
@@ -383,62 +361,34 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		// Log failed requests (non-200 status)
 		if rww.statusCode != http.StatusOK {
-			var bodyData []byte
-			var request dinHttp.JSONRPCRequest
+			var bodyDataForErrorLog []byte
+			var requestForErrorLog dinHttp.JSONRPCRequest
 
 			if v, ok := repl.Get(RequestBodyKey); ok {
-				bodyData = v.([]byte)
+				bodyDataForErrorLog, _ = v.([]byte)
 			}
 
-			errUnmarshal := json.Unmarshal(bodyData, &request)
+			errUnmarshal := json.Unmarshal(bodyDataForErrorLog, &requestForErrorLog)
 			if errUnmarshal != nil {
-				d.logger.Warn("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyData[:min(len(bodyData), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+				d.logger.Warn("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyDataForErrorLog[:min(len(bodyDataForErrorLog), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			} else {
-				d.logger.Warn("Request failed", zap.String("request_method", request.Method), zap.Any("request_params", request.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+				d.logger.Warn("Request failed", zap.String("request_method", requestForErrorLog.Method), zap.Any("request_params", requestForErrorLog.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
 	}
 
-	// Post-Request Processing //
-
-	// Copy the response body to a new byte slice
-	responseBodyCopy := make([]byte, len(rww.body.Bytes()))
-	copy(responseBodyCopy, rww.body.Bytes())
-
-	// Some Providers return gzipped responses, decompress if necessary
-	responseBodyCopy = decompressGzipBodyIfNecessary(rww.Header(), responseBodyCopy, d.logger, networkPath)
-
-	// Get the request method from the replacer
-	method, err := getRequestMethod(repl)
-	if err != nil {
-		d.logger.Warn("Goroutine: Failed to get request method for HCMethod check", zap.Error(err), zap.String("network", networkPath))
-		return nil
-	}
-
-	// Asynchronous HCMethod response processing
-	// Check if the request method matches the network's health check method
-	// aka. do we have access to the block number?
-	if method == networkObj.HCMethod {
-		go d.processHCMethodResponseAsync(networkObj, networkPath, responseBodyCopy, rww.statusCode, method)
-	}
-
-	providerBlockNumber := networkObj.Providers[provider].getLatestBlockEntry()
-	healthStatus := providerBlockNumber.healthStatus.String()
-
-	if d.testMode {
-		return nil
-	}
-
-	// Prometheus Metrics Request Reporting
-	// debug logging of metric is found in here.
-	d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
-		Network:        r.RequestURI,
-		Provider:       provider,
-		HostName:       r.Host,
-		ResponseStatus: rww.statusCode,
-		HealthStatus:   healthStatus,
-		Environment:    string(d.Env),
-	}, duration, requestBody)
+	// Post-Request Processing is now handled by the helper function
+	handlePostRequestTasks(PostRequestTaskParams{
+		DinMiddleware: d,
+		RWWrapper:     rww,
+		NetworkObj:    networkObj,
+		NetworkPath:   networkPath,
+		Provider:      provider,
+		Replacer:      repl,
+		Duration:      duration,
+		OriginalReq:   r,
+		ParsedReqBody: requestBody,
+	})
 
 	return nil
 }
@@ -841,37 +791,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// processHCMethodResponseAsync asynchronously processes responses for health check method requests.
-// It extracts the request method from the replacer, verifies if it matches the network's health check
-// method (HCMethod), and if so, processes the block number from the response body.
-// This function is designed to run in a separate goroutine to avoid blocking the main request handling flow.
-// When a valid block number is extracted, it also retrieves the corresponding block hash and adds both
-// to the network's block history. This information is crucial for tracking the network's current state
-// and ensuring proper synchronization across providers.
-func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
-	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
-		return
-	}
-
-	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
-
-	// Pass the address of respStatus to processBlockNumberResponse
-	// processBlockNumberResponse checks for respStatus >= 400
-	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
-	if processingError != nil {
-		d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", networkPath), zap.String("response_body_snippet", string(respBody)))
-		return
-	}
-
-	block, err := networkObj.getBlockByNumber(blockNumber)
-	if err != nil {
-		d.logger.Warn("Goroutine: HCMethod matched, error getting block hash for block number", zap.Error(err), zap.String("network", networkPath), zap.Int64("block_number", blockNumber))
-		return
-	}
-
-	// save the block number to the network object's history
-	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
-	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
 }

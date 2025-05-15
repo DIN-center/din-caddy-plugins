@@ -7,6 +7,7 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"go.uber.org/zap"
@@ -122,6 +123,7 @@ type PromRequestMetricData struct {
 
 // HandleRequestMetrics increments prometheus metric based on request data passed in
 func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *din_http.JSONRPCRequest) {
+	spew.Dump(data)
 	// First extract method data from body
 	method := requestBody.Method
 	network := strings.TrimPrefix(data.Network, "/")

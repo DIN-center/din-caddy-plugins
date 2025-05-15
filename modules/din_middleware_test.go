@@ -61,6 +61,7 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 	dinMiddleware.testMode = true
+	dinMiddleware.logger = logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest)
 
 	// Large payload to test max request payload size. This is greater than 1KB.
 	largePayload := `{";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -521,7 +522,8 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			name: "HCMethod does not match",
 			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = "eth_blockNumber"
-				// No HttpClient mock needed as getBlockByNumber won't be called
+				netw.CaddyPort = "8001" // Add a dummy CaddyPort to prevent nil errors if getBlockByNumber is unexpectedly called
+				// No HttpClient mock needed as getBlockByNumber ideally won't be called
 			},
 			netPath:             "test/eth",
 			respBody:            []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
@@ -533,6 +535,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			name: "Response body empty",
 			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = "eth_blockNumber"
+				netw.CaddyPort = "8002" // Add a dummy CaddyPort
 				// No HttpClient mock needed
 			},
 			netPath:             "test/eth",
@@ -545,6 +548,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			name: "Network object HCMethod empty",
 			setupNetwork: func(t *testing.T, netw *network) {
 				netw.HCMethod = ""
+				netw.CaddyPort = "8003" // Add a dummy CaddyPort
 				// No HttpClient mock needed
 			},
 			netPath:             "test/eth",
