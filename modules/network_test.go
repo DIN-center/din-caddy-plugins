@@ -1426,13 +1426,120 @@ func TestGetLatestBlockEntry(t *testing.T) {
 	})
 }
 
-var randSeed = time.Now().UnixNano()
-var randLock sync.Mutex
+func TestCheckSelfLoopbackHealth(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-func randIntn(n int) int {
-	randLock.Lock()
-	randSeed = (randSeed*1664525 + 1013904223) & 0x7fffffff
-	val := int(randSeed % int64(n))
-	randLock.Unlock()
-	return val
+	tests := []struct {
+		name                string
+		networkName         string
+		hcMethod            string
+		mockPostSetup       func(mockHTTPClient *din_http.MockIHTTPClient)
+		expectedBlockNumber int64
+		expectedHealth      HealthStatus
+		expectedStatus      int
+		expectError         bool
+		errorContains       string
+	}{
+		{
+			name:        "Successful loopback check",
+			networkName: "test-network",
+			hcMethod:    "eth_blockNumber",
+			mockPostSetup: func(mockHTTPClient *din_http.MockIHTTPClient) {
+				respBody := []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`)
+				statusCode := 200
+				mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(respBody, &statusCode, nil)
+			},
+			expectedBlockNumber: 100,
+			expectedHealth:      Healthy,
+			expectedStatus:      200,
+			expectError:         false,
+		},
+		{
+			name:        "HTTP client Post returns error",
+			networkName: "test-network-http-error",
+			hcMethod:    "eth_blockNumber",
+			mockPostSetup: func(mockHTTPClient *din_http.MockIHTTPClient) {
+				statusCode := 503
+				mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, &statusCode, errors.New("simulated HTTP error"))
+			},
+			expectedBlockNumber: 0,
+			expectedHealth:      Unhealthy,
+			expectedStatus:      503,
+			expectError:         true,
+			errorContains:       "Self loopback health check failed: simulated HTTP error",
+		},
+		{
+			name:        "HTTP client Post returns error and nil statusCode",
+			networkName: "test-network-http-error-nil-status",
+			hcMethod:    "eth_blockNumber",
+			mockPostSetup: func(mockHTTPClient *din_http.MockIHTTPClient) {
+				mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, errors.New("simulated HTTP error with nil status"))
+			},
+			expectedBlockNumber: 0,
+			expectedHealth:      Unhealthy,
+			expectedStatus:      0, // Default when statusCode is nil
+			expectError:         true,
+			errorContains:       "Self loopback health check failed: simulated HTTP error with nil status",
+		},
+		{
+			name:        "processBlockNumberResponse returns error",
+			networkName: "test-network-process-error",
+			hcMethod:    "eth_blockNumber",
+			mockPostSetup: func(mockHTTPClient *din_http.MockIHTTPClient) {
+				respBody := []byte(`invalid json`)
+				statusCode := 200
+				mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(respBody, &statusCode, nil)
+			},
+			expectedBlockNumber: 0,
+			expectedHealth:      Unhealthy, // Based on processBlockNumberResponse logic for bad JSON
+			expectedStatus:      200,
+			expectError:         true,
+			errorContains:       "Self loopback health check response error: Error unmarshalling response",
+		},
+		{
+			name:        "processBlockNumberResponse returns 429 error",
+			networkName: "test-network-process-429-error",
+			hcMethod:    "eth_blockNumber",
+			mockPostSetup: func(mockHTTPClient *din_http.MockIHTTPClient) {
+				respBody := []byte(`{}`)
+				statusCode := 429
+				mockHTTPClient.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(respBody, &statusCode, nil)
+			},
+			expectedBlockNumber: 0,
+			expectedHealth:      Warning, // Based on processBlockNumberResponse logic for 429
+			expectedStatus:      429,
+			expectError:         true,
+			errorContains:       "Self loopback health check response error: rate limit error (status code: 429)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+			tt.mockPostSetup(mockHTTPClient)
+
+			n := NewNetwork(tt.networkName, utils.Environment("test"), "8000")
+			n.HCMethod = tt.hcMethod
+			n.HttpClient = mockHTTPClient
+			// n.logger and n.PrometheusClient can be nil for this specific function test if not used directly by it
+			// or mock them if they are strictly necessary for some side effects not being tested here.
+
+			result, err := n.checkSelfLoopbackHealth()
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected an error")
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains, "Error message does not contain expected substring")
+				}
+			} else {
+				assert.NoError(t, err, "Did not expect an error")
+			}
+
+			assert.NotNil(t, result, "Result should not be nil")
+			assert.Equal(t, tt.expectedBlockNumber, result.blockNumber, "Block number mismatch")
+			assert.Equal(t, tt.expectedHealth, result.healthStatus, "Health status mismatch")
+			assert.Equal(t, tt.expectedStatus, result.responseStatus, "Response status mismatch")
+		})
+	}
 }
