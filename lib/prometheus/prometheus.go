@@ -31,9 +31,9 @@ func NewPrometheusClient(logger *logger.LoggerClient, machineId string) *Prometh
 // prometheus metric initialization
 var (
 	// Din Client Request Metrics
-	DinRequestCount           *prometheus.CounterVec
-	DinRequestDurationSeconds *prometheus.HistogramVec
-	DinRequestBodyBytes       *prometheus.HistogramVec
+	DinRequestCount                *prometheus.CounterVec
+	DinRequestDurationMilliseconds *prometheus.HistogramVec
+	DinRequestBodyBytes            *prometheus.HistogramVec
 
 	// Din Health Check Metrics
 	DinHealthCheckCount       *prometheus.CounterVec
@@ -50,9 +50,9 @@ func RegisterMetrics() {
 		},
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
 	)
-	DinRequestDurationSeconds = prometheus.NewHistogramVec(
+	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "din_http_request_duration_seconds",
+			Name:    "din_http_request_duration_milliseconds",
 			Help:    "Metric for measuring the duration of requests to the din http server",
 			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
 		},
@@ -85,7 +85,7 @@ func RegisterMetrics() {
 		[]string{"service", "provider", "machine_id", "environment"},
 	)
 
-	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationSeconds, DinRequestBodyBytes, DinHealthCheckBlockNumber)
+	prometheus.MustRegister(DinRequestCount, DinHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinHealthCheckBlockNumber)
 }
 
 type PromRequestMetricData struct {
@@ -123,9 +123,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, req
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	// convert milliseconds to second
-	durationSeconds := float64(durationMS) / 1000
-	DinRequestDurationSeconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(durationSeconds)
+	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
 
 	// Observe prometheus histogram based on request body size and data
 	// Disabled to avoid high metric count on prometheus
