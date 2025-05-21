@@ -12,17 +12,20 @@ const (
 	LineaSepolia = "linea-sepolia"
 
 	// Module Context Key constants
-	DinUpstreamsContextKey = "din.internal.upstreams"
-	RequestProviderKey     = "request_provider"
-	RequestBodyKey         = "request_body"
-	HealthStatusKey        = "health_status"
-	BlockNumberKey         = "block_number"
-	BlockHistorySize       = 10
+	DinUpstreamsContextKey          = "din.internal.upstreams"
+	RequestProviderKey              = "request_provider"
+	RequestBodyKey                  = "request_body"
+	RequestMethodKey                = "request_method"
+	HealthStatusKey                 = "health_status"
+	BlockNumberKey                  = "block_number"
+	DefaultProviderBlockHistorySize = 10
+	DefaultNetworkBlockHistorySize  = 128
 
 	// Health check constants
 	DefaultHCMethod                = "eth_blockNumber"
 	DefaultChainIdMethod           = "eth_chainId"
 	DefaultCallContractMethod      = "eth_call"
+	DefaultGetBlockByNumberMethod  = "eth_getBlockByNumber"
 	DefaultHCThreshold             = 2
 	DefaultHCInterval              = 5
 	DefaultBlockLagLimit           = int64(5)
@@ -34,7 +37,7 @@ const (
 	DefaultRegistryBlockCheckIntervalSec = uint64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
-
+	DefaultPort                          = "8000"
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 
@@ -53,7 +56,8 @@ const (
 	// Solana
 	SolanaNamespace = "solana"
 	// Starknet
-	StarknetNamespace = "starknet"
+	StarknetNamespace     = "starknet"
+	StarknetArchiveMethod = "starknet_getBlockWithTxs"
 )
 
 // String method to convert MyEnum to string

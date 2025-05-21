@@ -26,7 +26,7 @@ type provider struct {
 	Priority   int
 
 	// Registry Configuration Values
-	Methods []*string            `json:"methods"`
+	Methods map[string]struct{}  `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
 	consecutiveUnhealthyChecks int
@@ -36,6 +36,7 @@ type provider struct {
 
 type blockHistoryEntry struct {
 	blockNumber  int64
+	blockHash    string
 	healthStatus HealthStatus
 	timestamp    *time.Time
 }

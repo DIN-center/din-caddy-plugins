@@ -19,12 +19,14 @@
 		}
 	}
 }
-# caddy server main port
+# caddy server main port, not using 8000 as the default port, please update the port in the din middleware to match
 :8000 {
 	route /* {
 		# middleware declaration
 		din {
-			environment dev
+			# the port to listen on, defining here to reference from inside the middleware
+			# only needs to be set if the port is not 8000
+			port 8000 
 			siwe-signer {
 				secret_file /run/secrets/din-secret-key
 			}
@@ -439,6 +441,7 @@
 					providers {
 						https://din-mainnet.rpc.extrnode.com/key
 					}
+					get_block_by_number_method getBlock
 					healthcheck_method getBlockHeight
 				}
 				solana-devnet {
@@ -448,6 +451,7 @@
 					}
 					healthcheck_method getBlockHeight
 					chainid_method getGenesisHash
+					get_block_by_number_method getBlock
 					chain_id solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
 				}
 				solana-devnet {

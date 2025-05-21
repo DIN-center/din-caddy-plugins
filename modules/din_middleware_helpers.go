@@ -92,7 +92,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	network := NewNetwork(regNetwork.ProxyName)
+	network := NewNetwork(regNetwork.ProxyName, d.Env, d.CaddyPort)
 	network, err := d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
 		d.logger.Error("Failed to sync network config", zap.Error(err))
@@ -337,7 +337,12 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network service methods: %w", err)
 	}
-	provider.Methods = networkServiceMethods
+
+	// TODO: Figure out how to customize this per provider via registry
+	provider.Methods = make(map[string]struct{})
+	for _, method := range networkServiceMethods {
+		provider.Methods[*method] = struct{}{}
+	}
 
 	return provider, nil
 }
