@@ -1,14 +1,97 @@
 package modules
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
+	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 )
+
+// Helper function to log a failed request attempt that will be retried.
+// This function is intended to be run as a goroutine.
+func logFailedRetryAttemptAsync(
+	lg *logger.LoggerClient,
+	networkPath string,
+	failedAttemptNumber int, // 1-indexed
+	maxAttempts int,
+	statusCodeOfFailure int,
+	upstreamErr error, // Can be nil
+	repl *caddy.Replacer, // Added: Caddy replacer to get context data
+	parsedReqBody *din_http.JSONRPCRequest, // Added: Parsed request body
+) {
+	// --- Extract data within the async function ---
+	provider := "unknown"
+	if provVal, provOk := repl.Get(RequestProviderKey); provOk {
+		if pStr, strOk := provVal.(string); strOk {
+			provider = pStr
+		}
+	}
+
+	var requestMethod string
+	var requestParams json.RawMessage
+	rawRequestBodySnippet := ""
+
+	if parsedReqBody != nil {
+		requestMethod = parsedReqBody.Method
+		if len(parsedReqBody.Params) > 0 {
+			requestParams = parsedReqBody.Params
+		}
+	} else {
+		// Fallback if parsedReqBody was nil (e.g. initial parsing failed)
+		if v, okGet := repl.Get(RequestBodyKey); okGet {
+			if bodyBytes, okCast := v.([]byte); okCast {
+				if len(bodyBytes) > 0 {
+					// Use a helper for min if not available; assuming min is defined elsewhere or use direct comparison
+					length := 100
+					if len(bodyBytes) < length {
+						length = len(bodyBytes)
+					}
+					rawRequestBodySnippet = string(bodyBytes[:length])
+				}
+			}
+		}
+	}
+	// --- End data extraction ---
+
+	logFields := []zap.Field{
+		zap.String("network", networkPath),
+		zap.String("provider", provider),
+		zap.Int("failedAttemptNumber", failedAttemptNumber),
+		zap.Int("maxAttempts", maxAttempts),
+		zap.Int("statusCodeOfFailure", statusCodeOfFailure),
+	}
+
+	if upstreamErr != nil {
+		logFields = append(logFields, zap.NamedError("upstreamError", upstreamErr))
+	}
+
+	if requestMethod != "" {
+		logFields = append(logFields, zap.String("requestMethod", requestMethod))
+	}
+
+	if len(requestParams) > 0 && string(requestParams) != "null" {
+		var decodedParams interface{}
+		if errUnmarshal := json.Unmarshal(requestParams, &decodedParams); errUnmarshal == nil {
+			logFields = append(logFields, zap.Any("requestParams", decodedParams))
+		} else {
+			logFields = append(logFields, zap.String("rawRequestParams", string(requestParams)))
+			lg.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
+				zap.Error(errUnmarshal),
+				zap.String("rawParamsAttempted", string(requestParams)))
+		}
+	} else if requestMethod == "" && rawRequestBodySnippet != "" {
+		// Only log rawRequestBodySnippet if we didn't even have a requestMethod
+		logFields = append(logFields, zap.String("rawRequestBodySnippet", rawRequestBodySnippet))
+	}
+
+	lg.Error("Request attempt failed, initiating retry", logFields...)
+}
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {

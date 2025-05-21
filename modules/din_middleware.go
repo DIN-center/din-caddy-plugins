@@ -337,8 +337,25 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			// If the request was successful, break out of the loop
 			break
 		}
-		// If the first attempt fails, log the failure and retry
-		d.logger.Debug("Retrying request", zap.String("network", networkPath), zap.Int("attempt", attempt), zap.Int("status", rww.statusCode))
+
+		// Log an error if this attempt failed and a retry will occur
+		if attempt < networkObj.RequestAttemptCount-1 { // Check if more retries are pending
+			// Call the helper function as a goroutine
+			// Data extraction for logging is now handled within logFailedRetryAttemptAsync
+			go logFailedRetryAttemptAsync(
+				d.logger, // Pass the logger client
+				networkPath,
+				attempt+1, // Attempt number is 1-indexed for logging
+				networkObj.RequestAttemptCount,
+				rww.statusCode,
+				err, // upstream error from next.ServeHTTP
+				repl,
+				requestBody, // Pass the parsed request body (can be nil)
+			)
+		}
+
+		// If the attempt (0-indexed) fails, log the failure and that we are retrying
+		d.logger.Debug("Retrying request", zap.String("network", networkPath), zap.Int("failedAttemptIndex", attempt), zap.Int("status", rww.statusCode))
 	}
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
@@ -370,9 +387,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 			errUnmarshal := json.Unmarshal(bodyDataForErrorLog, &requestForErrorLog)
 			if errUnmarshal != nil {
-				d.logger.Warn("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyDataForErrorLog[:min(len(bodyDataForErrorLog), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+				d.logger.Error("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyDataForErrorLog[:min(len(bodyDataForErrorLog), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			} else {
-				d.logger.Warn("Request failed", zap.String("request_method", requestForErrorLog.Method), zap.Any("request_params", requestForErrorLog.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
+				d.logger.Error("Request failed", zap.String("request_method", requestForErrorLog.Method), zap.Any("request_params", requestForErrorLog.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
 			}
 		}
 	}
