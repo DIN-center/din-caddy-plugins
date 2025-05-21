@@ -338,24 +338,18 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			break
 		}
 
-		// Log an error if this attempt failed and a retry will occur
-		if attempt < networkObj.RequestAttemptCount-1 { // Check if more retries are pending
-			// Call the helper function as a goroutine
-			// Data extraction for logging is now handled within logFailedRetryAttemptAsync
-			go logFailedRetryAttemptAsync(
-				d.logger, // Pass the logger client
-				networkPath,
-				attempt+1, // Attempt number is 1-indexed for logging
-				networkObj.RequestAttemptCount,
-				rww.statusCode,
-				err, // upstream error from next.ServeHTTP
-				repl,
-				requestBody, // Pass the parsed request body (can be nil)
-			)
-		}
-
-		// If the attempt (0-indexed) fails, log the failure and that we are retrying
-		d.logger.Debug("Retrying request", zap.String("network", networkPath), zap.Int("failedAttemptIndex", attempt), zap.Int("status", rww.statusCode))
+		// Call the helper function as a goroutine
+		// Data extraction for logging is now handled within logFailedRetryAttemptAsync
+		go logFailedRetryAttemptAsync(
+			d.logger, // Pass the logger client
+			networkPath,
+			attempt+1, // Attempt number is 1-indexed for logging
+			networkObj.RequestAttemptCount,
+			rww.statusCode,
+			err, // upstream error from next.ServeHTTP
+			repl,
+			requestBody, // Pass the parsed request body (can be nil)
+		)
 	}
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
