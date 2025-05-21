@@ -15,7 +15,7 @@ import (
 
 // Helper function to log a failed request attempt that will be retried.
 // This function is intended to be run as a goroutine.
-func logFailedRetryAttemptAsync(
+func logFailedAttemptAsync(
 	lg *logger.LoggerClient,
 	networkPath string,
 	failedAttemptNumber int, // 1-indexed

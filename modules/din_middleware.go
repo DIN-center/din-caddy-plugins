@@ -340,7 +340,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		// Call the helper function as a goroutine
 		// Data extraction for logging is now handled within logFailedRetryAttemptAsync
-		go logFailedRetryAttemptAsync(
+		go logFailedAttemptAsync(
 			d.logger, // Pass the logger client
 			networkPath,
 			attempt+1, // Attempt number is 1-indexed for logging

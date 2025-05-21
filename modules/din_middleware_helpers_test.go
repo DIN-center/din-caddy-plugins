@@ -32,7 +32,7 @@ const (
 	testRequestBodyKey     = "request_body"
 )
 
-func TestLogFailedRetryAttemptAsync(t *testing.T) {
+func TestLogFailedAttemptAsync(t *testing.T) {
 	tests := []struct {
 		name                          string
 		networkPath                   string
@@ -177,8 +177,8 @@ func TestLogFailedRetryAttemptAsync(t *testing.T) {
 			}
 
 			// Call the function (it's async, but for testing its internal logic, direct call is fine)
-			// In real use, it's `go logFailedRetryAttemptAsync(...)`
-			logFailedRetryAttemptAsync(
+			// In real use, it's `go logFailedAttemptAsync(...)`
+			logFailedAttemptAsync(
 				loggerClient,
 				tt.networkPath,
 				tt.failedAttemptNumber,
