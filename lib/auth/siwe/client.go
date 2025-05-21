@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,9 +24,9 @@ import (
 )
 
 type ISIWESignerClient interface {
-	GenPrivKey(sc *SigningConfig) error
-	Sign(msg string, sc *SigningConfig) ([]byte, error)
-	CreateNewSIWEAuth(authUrl string, sessionCount int) *SIWEClientAuth
+	GenPrivKey(*SigningConfig) error
+	Sign(string, *SigningConfig) ([]byte, error)
+	CreateNewSIWEAuth(string, int) *SIWEClientAuth
 }
 
 type SIWESignerClient struct{}
@@ -34,6 +36,20 @@ type SigningConfig struct {
 	privateKey *ecdsa.PrivateKey
 	SignerURL  string
 	Address    string
+	ProviderID *big.Int
+	NFTManager *NFTManager
+}
+
+// TODO: Get registry auth to add provider data as Keccak256(network.Name + provider.Name)
+func (sc *SigningConfig) WithProvider(pid *big.Int) *SigningConfig {
+	return &SigningConfig{
+		PrivateKey: sc.PrivateKey,
+		privateKey: sc.privateKey,
+		SignerURL: sc.SignerURL,
+		Address: sc.Address,
+		ProviderID: pid,
+		NFTManager: sc.NFTManager,
+	}
 }
 
 func NewSIWESignerClient() *SIWESignerClient {
@@ -95,6 +111,8 @@ type SIWEClientAuth struct {
 	SessionTokens []auth.AuthToken
 	SessionCount  int
 	Signer        *SigningConfig
+	ProviderID    *big.Int
+	nftSelector   NFTSelector
 	err           error
 	quitCh        chan struct{}
 	client        *http.Client
@@ -119,6 +137,15 @@ func NewSIWEClient(url string, sessionCount int, signer *SigningConfig) *SIWECli
 		ProviderURL:  url,
 		Signer:       signer,
 		SessionCount: sessionCount,
+		nftSelector:  func(tokens []*nftoptions.NFTMetadata) *nftoptions.NFTMetadata {
+			// Naive selection strategy - Take the first unexpired option
+			for _, token := range tokens {
+				if token.Expiration > uint64(time.Now().Unix()) {
+					return token
+				}
+			}
+			return nil
+		},
 		client:       client,
 	}
 }
@@ -140,6 +167,14 @@ func (c *SIWEClientAuth) Start(logger *zap.Logger) error {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		}}
+	}
+	if c.Signer.NFTManager != nil {
+		if err := c.Signer.NFTManager.Start(logger); err != nil {
+			c.logger.Warn("Error starting nft manager", zap.String("error", err.Error()))
+			return err
+		}
+	} else {
+		c.logger.Debug("No nft manager configured")
 	}
 	url, err := url.Parse(c.ProviderURL)
 	if err != nil {
@@ -177,7 +212,7 @@ func (c *SIWEClientAuth) Renew(i int, d time.Duration) {
 			c.logger.Debug("Attempting renewal", zap.Int("i", i))
 			c.SessionTokens[i], err = c.GetToken(nil)
 			if err != nil {
-				c.logger.Warn("Error getting token, will try again in 1 minute\n", zap.Int("i", i))
+				c.logger.Warn("Error getting token, will try again in 1 minute\n", zap.Int("i", i), zap.String("error", err.Error()))
 				c.Renew(i, time.Minute) // Attempt renewal in 1 minute
 				return
 			}
@@ -220,6 +255,18 @@ func (c *SIWEClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error
 	err := siweSignerClient.GenPrivKey(c.Signer)
 	if err != nil {
 		return auth.AuthToken{}, err
+	}
+
+	if c.Signer.NFTManager != nil {
+		nftMetadata := c.Signer.NFTManager.GetNFTForProvider(c.ProviderID, c.nftSelector)
+		if nftMetadata != nil {
+			options["statement"] = "DIN NFT Authentication"
+			options["resources"] = []url.URL{nftMetadata.URL()}
+		} else {
+			c.logger.Debug("No nft available for this provider / owner", zap.Any("provider", c.ProviderID))
+		}
+	} else {
+		c.logger.Debug("NFTManager is not configured. We'll hope for whitelist")
 	}
 
 	msg, err := siwe.InitMessage(c.domain, c.Signer.Address, c.ProviderURL, siwe.GenerateNonce(), options)

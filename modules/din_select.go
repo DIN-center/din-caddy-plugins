@@ -59,12 +59,10 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		providers = v.(map[string]*provider)
 	}
-
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
 	for _, provider := range providers {
-
 		// If the upstream is found in the providers, set the path and headers for the request
 		if selectedUpstream == provider.upstream {
 			r.URL.RawPath = provider.path
@@ -85,7 +83,11 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
-	// d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	if selectedUpstream != nil {
+		d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	} else {
+		d.logger.Debug("No upstreams available")
+	}
 
 	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {

@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/ethereum/go-ethereum v1.14.7
+	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/golang/mock v1.6.0
 	github.com/pkg/errors v0.9.1
@@ -15,6 +16,11 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/zeebo/assert v1.1.0
 	go.uber.org/zap v1.27.0
+)
+
+require (
+	github.com/btcsuite/btcd/btcutil v1.1.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 )
 
 require (
@@ -30,10 +36,9 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.32.2
 	github.com/aws/smithy-go v1.22.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd v0.22.1 // indirect
+	github.com/btcsuite/btcd v0.23.3 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
-	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // indirect
 	github.com/caddyserver/certmagic v0.20.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -109,7 +114,7 @@ require (
 	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/tailscale/tscert v0.0.0-20230806124524-28a91b69a046 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/umbracle/ethgo v0.1.3 // indirect
+	github.com/umbracle/ethgo v0.0.0-20241101102023-92266b0b0212
 	github.com/umbracle/fastrlp v0.0.0-20220527094140-59d5dd30e722 // indirect
 	github.com/urfave/cli v1.22.14 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
