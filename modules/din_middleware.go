@@ -3,7 +3,6 @@ package modules
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -315,6 +314,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	reqStartTime := time.Now()
 
 	// Retry the request if it fails up to the max attempt request count
+	// Retries occur when:
+	// 1. HTTP errors (non-200 status codes or upstream errors)
+	// 2. Retryable JSON-RPC errors (server errors, timeouts, rate limits, etc.)
+	// Non-retryable JSON-RPC errors (method not found, invalid params) will not trigger retries
 	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		rww = NewResponseWriterWrapper(rw)
 
@@ -333,23 +336,53 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		}
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
-		if err == nil && rww.statusCode == http.StatusOK {
-			// If the request was successful, break out of the loop
-			break
-		}
 
-		// Call the helper function as a goroutine
-		// Data extraction for logging is now handled within logFailedRetryAttemptAsync
-		go logFailedAttemptAsync(
-			d.logger, // Pass the logger client
-			networkPath,
-			attempt+1, // Attempt number is 1-indexed for logging
-			networkObj.RequestAttemptCount,
-			rww.statusCode,
-			err, // upstream error from next.ServeHTTP
-			repl,
-			requestBody, // Pass the parsed request body (can be nil)
-		)
+		// Check for success: no HTTP error and 200 status
+		if err == nil && rww.statusCode == http.StatusOK {
+			// Check for JSON-RPC errors in the response body (only once)
+			var responseBody []byte
+			if rww.body != nil {
+				responseBody = rww.body.Bytes()
+			}
+
+			jsonRPCError := checkForJSONRPCError(responseBody)
+			if jsonRPCError == nil {
+				// If the request was successful (no HTTP error and no JSON-RPC error), break out of the loop
+				break
+			}
+
+			// Check if this JSON-RPC error is retryable
+			if !isJSONRPCErrorRetryable(jsonRPCError) {
+				// Non-retryable JSON-RPC error (e.g., method not found, invalid params)
+				break
+			}
+
+			// Log the failed attempt with JSON-RPC error information
+			go logFailedAttemptAsync(
+				d.logger,
+				networkPath,
+				attempt+1,
+				networkObj.RequestAttemptCount,
+				rww.statusCode,
+				nil, // no upstream error for JSON-RPC errors
+				repl,
+				requestBody,
+				jsonRPCError, // Pass the JSON-RPC error
+			)
+		} else {
+			// Log non 200 status failed attempt with HTTP error information
+			go logFailedAttemptAsync(
+				d.logger,
+				networkPath,
+				attempt+1,
+				networkObj.RequestAttemptCount,
+				rww.statusCode,
+				err, // upstream error from next.ServeHTTP
+				repl,
+				requestBody,
+				nil, // no JSON-RPC error for HTTP errors
+			)
+		}
 	}
 	if err != nil {
 		return errors.Wrap(err, "Error serving HTTP")
@@ -368,23 +401,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		_, err = rw.Write(rww.body.Bytes())
 		if err != nil {
 			return errors.Wrap(err, "Error writing response body")
-		}
-
-		// Log failed requests (non-200 status)
-		if rww.statusCode != http.StatusOK {
-			var bodyDataForErrorLog []byte
-			var requestForErrorLog dinHttp.JSONRPCRequest
-
-			if v, ok := repl.Get(RequestBodyKey); ok {
-				bodyDataForErrorLog, _ = v.([]byte)
-			}
-
-			errUnmarshal := json.Unmarshal(bodyDataForErrorLog, &requestForErrorLog)
-			if errUnmarshal != nil {
-				d.logger.Error("Failed to unmarshal request body for error logging", zap.String("request_body_snippet", string(bodyDataForErrorLog[:min(len(bodyDataForErrorLog), 100)])), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
-			} else {
-				d.logger.Error("Request failed", zap.String("request_method", requestForErrorLog.Method), zap.Any("request_params", requestForErrorLog.Params), zap.String("network", networkPath), zap.String("provider", provider), zap.Int("status", rww.statusCode))
-			}
 		}
 	}
 

@@ -24,6 +24,7 @@ func logFailedAttemptAsync(
 	upstreamErr error, // Can be nil
 	repl *caddy.Replacer, // Added: Caddy replacer to get context data
 	parsedReqBody *din_http.JSONRPCRequest, // Added: Parsed request body
+	jsonRPCError *din_http.JSONRPCError, // Added: JSON-RPC error if present
 ) {
 	// --- Extract data within the async function ---
 	provider := "unknown"
@@ -69,6 +70,16 @@ func logFailedAttemptAsync(
 
 	if upstreamErr != nil {
 		logFields = append(logFields, zap.NamedError("upstreamError", upstreamErr))
+	}
+
+	// Add JSON-RPC error information if present
+	if jsonRPCError != nil {
+		logFields = append(logFields,
+			zap.Int("jsonrpc_error_code", jsonRPCError.Code),
+			zap.String("jsonrpc_error_message", jsonRPCError.Message))
+		if jsonRPCError.Data != nil {
+			logFields = append(logFields, zap.Any("jsonrpc_error_data", jsonRPCError.Data))
+		}
 	}
 
 	if requestMethod != "" {

@@ -17,6 +17,100 @@ import (
 	"go.uber.org/zap"
 )
 
+// checkForJSONRPCError checks if a response body contains a JSON-RPC error
+// even when the HTTP status code is 200. Returns the error if found, nil otherwise.
+func checkForJSONRPCError(responseBody []byte) *dinHttp.JSONRPCError {
+	if len(responseBody) == 0 {
+		return nil
+	}
+
+	var response dinHttp.JSONRPCResponse
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		// If we can't unmarshal as JSON-RPC, it's not a JSON-RPC error
+		return nil
+	}
+
+	// Return the error if present, nil otherwise
+	return response.Error
+}
+
+// isJSONRPCErrorRetryable determines if a JSON-RPC error should trigger a retry
+// based on the error code. Returns true if the error might be resolved by retrying
+// with a different provider, false if retrying won't help.
+func isJSONRPCErrorRetryable(jsonRPCError *dinHttp.JSONRPCError) bool {
+	if jsonRPCError == nil {
+		return false
+	}
+
+	switch jsonRPCError.Code {
+	// Standard JSON-RPC errors that are NOT retryable (client/request issues)
+	case -32700: // Parse error - malformed JSON
+		return false
+	case -32600: // Invalid Request - malformed request object
+		return false
+	case -32601: // Method not found - method doesn't exist
+		return false
+	case -32602: // Invalid params - wrong parameters
+		return false
+
+	// Standard JSON-RPC errors that ARE retryable (server issues)
+	case -32603: // Internal error - server-side issue
+		return true
+
+	// Server error range (-32000 to -32099) - these are typically retryable
+	case -32000, -32001, -32002, -32003, -32004, -32005, -32006, -32007, -32008, -32009,
+		-32010, -32011, -32012, -32013, -32014, -32015, -32016, -32017, -32018, -32019,
+		-32020, -32021, -32022, -32023, -32024, -32025, -32026, -32027, -32028, -32029,
+		-32030, -32031, -32032, -32033, -32034, -32035, -32036, -32037, -32038, -32039,
+		-32040, -32041, -32042, -32043, -32044, -32045, -32046, -32047, -32048, -32049,
+		-32050, -32051, -32052, -32053, -32054, -32055, -32056, -32057, -32058, -32059,
+		-32060, -32061, -32062, -32063, -32064, -32065, -32066, -32067, -32068, -32069,
+		-32070, -32071, -32072, -32073, -32074, -32075, -32076, -32077, -32078, -32079,
+		-32080, -32081, -32082, -32083, -32084, -32085, -32086, -32087, -32088, -32089,
+		-32090, -32091, -32092, -32093, -32094, -32095, -32096, -32097, -32098, -32099:
+		// Server error range - these are typically retryable
+		return true
+
+	// Application-specific errors - analyze by message content for common patterns
+	default:
+		// For unknown error codes, check message content for common patterns
+		message := strings.ToLower(jsonRPCError.Message)
+
+		// Non-retryable patterns (client/request issues)
+		nonRetryablePatterns := []string{
+			"method not found",
+			"invalid params",
+			"unauthorized",
+			"forbidden",
+		}
+
+		for _, pattern := range nonRetryablePatterns {
+			if strings.Contains(message, pattern) {
+				return false
+			}
+		}
+
+		// Retryable patterns (server/network issues)
+		retryablePatterns := []string{
+			"timeout",
+			"connection",
+			"network",
+			"rate limit",
+			"server error",
+		}
+
+		for _, pattern := range retryablePatterns {
+			if strings.Contains(message, pattern) {
+				return true
+			}
+		}
+
+		// For unknown error codes with no recognizable patterns, default to retryable to be safe
+		// This ensures we don't miss potentially transient issues
+		return true
+	}
+}
+
 func getRequestBody(repl *caddy.Replacer) (*dinHttp.JSONRPCRequest, error) {
 	if v, ok := repl.Get(RequestBodyKey); ok {
 		bodyBytes, ok := v.([]byte)
