@@ -228,11 +228,11 @@ func TestLogFailedAttemptAsync(t *testing.T) {
 			require.NotEmpty(t, allLogs, "expected at least one log message")
 
 			for _, loggedEntry := range allLogs {
-				if loggedEntry.Level == zapcore.ErrorLevel && loggedEntry.Message == "Request attempt failed, initiating retry" {
+				if loggedEntry.Level == zapcore.WarnLevel && loggedEntry.Message == "Request attempt failed, initiating retry" {
 					foundErrorLog = true
 					for k, expectedV := range tt.expectedErrorLogFields {
 						actualV, ok := loggedEntry.ContextMap()[k]
-						require.True(t, ok, "expected field '%s' in error log", k)
+						require.True(t, ok, "expected field '%s' in warning log", k)
 
 						if k == "upstreamError" {
 							// Expect upstreamError to be logged as its string representation
@@ -248,8 +248,8 @@ func TestLogFailedAttemptAsync(t *testing.T) {
 							require.Equal(t, expectedV, actualV, "field '%s' value mismatch", k)
 						}
 					}
-					// Check that no unexpected fields are in the error log context (optional, can be strict)
-					// require.Len(t, loggedEntry.ContextMap(), len(tt.expectedErrorLogFields), "error log has unexpected number of fields")
+					// Check that no unexpected fields are in the warning log context (optional, can be strict)
+					// require.Len(t, loggedEntry.ContextMap(), len(tt.expectedErrorLogFields), "warning log has unexpected number of fields")
 				} else if loggedEntry.Level == zapcore.DebugLevel && loggedEntry.Message == "Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string." {
 					require.True(t, tt.expectDebugLogForParamFailure, "unexpected debug log for param failure")
 					foundDebugLogForParamFailure = true
@@ -263,7 +263,7 @@ func TestLogFailedAttemptAsync(t *testing.T) {
 				}
 			}
 
-			require.True(t, foundErrorLog, "expected error log 'Request attempt failed, initiating retry' was not found")
+			require.True(t, foundErrorLog, "expected warning log 'Request attempt failed, initiating retry' was not found")
 			if tt.expectDebugLogForParamFailure {
 				require.True(t, foundDebugLogForParamFailure, "expected debug log for param failure was not found")
 			}
