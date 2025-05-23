@@ -170,13 +170,6 @@ func (n *network) LoopbackHealthCheck() {
 			zap.Int("response_status", metricData.ResponseStatus),
 			zap.Duration("duration", duration),
 		)
-	} else {
-		n.logger.Info("Self loopback health check succeeded",
-			zap.String("network", n.Name),
-			zap.Int64("block_number", selfResult.blockNumber),
-			zap.Int("response_status", metricData.ResponseStatus),
-			zap.Duration("duration", duration),
-		)
 	}
 }
 

@@ -11,6 +11,21 @@ type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 }
 
+// JSONRPCError represents the error object in a JSON-RPC response
+type JSONRPCError struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+// JSONRPCResponse represents a generic JSON-RPC response
+type JSONRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *JSONRPCError   `json:"error,omitempty"`
+}
+
 type EVMBlockResult struct {
 	Hash   string `json:"hash"`
 	Number string `json:"number"`
