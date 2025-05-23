@@ -14,7 +14,6 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
-	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 )
 
@@ -40,7 +39,6 @@ func checkForJSONRPCError(responseBody []byte) *dinHttp.JSONRPCError {
 
 	var response dinHttp.JSONRPCResponse
 	if err := json.Unmarshal(processedBody, &response); err != nil {
-		spew.Dump("checkForJSONRPCError - error unmarshalling response body", zap.Error(err))
 		// If we can't unmarshal as JSON-RPC, it's not a JSON-RPC error
 		return nil
 	}
