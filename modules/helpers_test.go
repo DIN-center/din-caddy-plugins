@@ -75,6 +75,15 @@ func TestCheckForJSONRPCError(t *testing.T) {
 			expectedError:  nil,
 			expectNilError: true,
 		},
+		{
+			name:         "Solana transaction version error (user's specific case)",
+			responseBody: []byte(`{"jsonrpc":"2.0","error":{"code":-32015,"message":"Transaction version (0) is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": 0"},"id":0}`),
+			expectedError: &dinHttp.JSONRPCError{
+				Code:    -32015,
+				Message: "Transaction version (0) is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": 0",
+			},
+			expectNilError: false,
+		},
 	}
 
 	for _, tt := range tests {

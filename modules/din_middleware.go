@@ -406,7 +406,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-
 	// Post-Request Processing is now handled by the helper function
 	handlePostRequestTasks(PostRequestTaskParams{
 		DinMiddleware: d,

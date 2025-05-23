@@ -14,6 +14,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 )
 
@@ -24,12 +25,25 @@ func checkForJSONRPCError(responseBody []byte) *dinHttp.JSONRPCError {
 		return nil
 	}
 
+	// Use the existing decompression function to handle gzipped content
+	// Note: We pass empty headers since we're detecting gzip by magic number
+	// The decompressGzipBodyIfNecessary function will handle the detection
+	processedBody := responseBody
+	if len(responseBody) >= 2 && responseBody[0] == 0x1f && responseBody[1] == 0x8b {
+		// Create headers to indicate gzip encoding
+		headers := make(http.Header)
+		headers.Set("Content-Encoding", "gzip")
+
+		// Use the existing decompression function
+		processedBody = decompressGzipBodyIfNecessary(headers, responseBody, nil, "checkForJSONRPCError")
+	}
+
 	var response dinHttp.JSONRPCResponse
-	if err := json.Unmarshal(responseBody, &response); err != nil {
+	if err := json.Unmarshal(processedBody, &response); err != nil {
+		spew.Dump("checkForJSONRPCError - error unmarshalling response body", zap.Error(err))
 		// If we can't unmarshal as JSON-RPC, it's not a JSON-RPC error
 		return nil
 	}
-
 	// Return the error if present, nil otherwise
 	return response.Error
 }
