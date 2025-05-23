@@ -20,7 +20,7 @@ type HTTPClient struct {
 func NewHTTPClient() *HTTPClient {
 	return &HTTPClient{
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second, // Set timeout to 5 seconds
+			Timeout: 5 * time.Minute, // Set timeout to 5 minutes
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
 				DialContext: (&net.Dialer{
