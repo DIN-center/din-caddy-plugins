@@ -296,6 +296,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	requestBody, err := getRequestBody(repl)
 	if err != nil {
+		d.logger.Error("Failed to get request body", zap.String("network", networkPath), zap.Error(err))
 		return fmt.Errorf("failed to get request body: %w", err)
 	}
 	repl.Set(RequestMethodKey, requestBody.Method)
@@ -385,6 +386,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		}
 	}
 	if err != nil {
+		d.logger.Error("Error serving HTTP", zap.String("network", networkPath), zap.Error(err))
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
@@ -400,6 +402,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		rww.ResponseWriter.WriteHeader(rww.statusCode)
 		_, err = rw.Write(rww.body.Bytes())
 		if err != nil {
+			d.logger.Error("Error writing response body", zap.String("network", networkPath), zap.Error(err))
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}

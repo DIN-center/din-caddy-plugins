@@ -101,7 +101,7 @@ func logFailedAttemptAsync(
 		logFields = append(logFields, zap.String("rawRequestBodySnippet", rawRequestBodySnippet))
 	}
 
-	lg.Error("Request attempt failed, initiating retry", logFields...)
+	lg.Warn("Request attempt failed, initiating retry", logFields...)
 }
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
