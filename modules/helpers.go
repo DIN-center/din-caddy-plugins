@@ -348,21 +348,125 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	// This log should only appear if Condition 2 is false.
 	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
 
+	// Create synthetic request context for consistent logging
+	// Since this is async processing of a response, we use "din" as provider identifier
+	providerHost := "din"
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(networkPath, providerHost, method)
+
+	// Ensure the replacer has the correct payload for consistent logging
+	repl.Set(RequestBodyKey, payload)
+
 	// Pass the address of respStatus to processBlockNumberResponse
 	// processBlockNumberResponse checks for respStatus >= 400
 	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
-		d.logger.Warn("Goroutine: HCMethod matched, error processing block number from response using processBlockNumberResponse", zap.Error(processingError), zap.String("network", networkPath), zap.String("response_body_snippet", string(respBody)))
+		// Check for JSON-RPC errors in the response
+		var jsonRPCError *dinHttp.JSONRPCError
+		if respBody != nil {
+			jsonRPCError = checkForJSONRPCError(respBody)
+		}
+
+		// Log the failed async processing with detailed information
+		logFailedAttempt(
+			d.logger,
+			networkPath,
+			1, // Single attempt for async processing
+			1, // Total attempts is always 1 for async processing
+			respStatus,
+			processingError,
+			repl,
+			jsonRPCReq,
+			jsonRPCError,
+		)
 		return
 	}
 
 	block, err := networkObj.getBlockByNumber(blockNumber)
 	if err != nil {
-		d.logger.Warn("Goroutine: HCMethod matched, error getting block hash for block number", zap.Error(err), zap.String("network", networkPath), zap.Int64("block_number", blockNumber))
+		// Create a new context specifically for the getBlockByNumber call that failed
+		// This ensures the logging shows the correct method and parameters for the failed call
+		getBlockMethod := networkObj.GetBlockByNumberMethod
+		if getBlockMethod == "" {
+			getBlockMethod = DefaultGetBlockByNumberMethod // Default fallback
+		}
+
+		// Create context for the getBlockByNumber call
+		getBlockRepl, getBlockJSONRPCReq, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)
+
+		// For getBlockByNumber errors, we don't have a JSON-RPC error from the original response
+		// since this is a separate internal call
+		logFailedAttempt(
+			d.logger,
+			networkPath,
+			1,   // Single attempt for async processing
+			1,   // Total attempts is always 1 for async processing
+			200, // getBlockByNumber is an internal call, assume 200 for the original response
+			err,
+			getBlockRepl,
+			getBlockJSONRPCReq,
+			nil, // No JSON-RPC error for internal getBlockByNumber calls
+		)
 		return
 	}
 
 	// save the block number to the network object's history
 	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
 	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
+}
+
+// createHealthCheckRequestContext creates synthetic request context for health checks
+// so we can reuse logFailedAttempt for consistent logging
+func createHealthCheckRequestContext(networkName, providerHost, method string) (*caddy.Replacer, *dinHttp.JSONRPCRequest, []byte) {
+	// Create a synthetic replacer with health check context
+	repl := caddy.NewReplacer()
+	repl.Set(RequestProviderKey, providerHost)
+
+	// Create synthetic request body for the health check
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1}`, method))
+	repl.Set(RequestBodyKey, payload)
+
+	// Create synthetic JSONRPCRequest
+	jsonRPCReq := &dinHttp.JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		ID:      json.RawMessage(`1`),
+		Params:  json.RawMessage(`[]`), // Health checks typically have no params
+	}
+
+	return repl, jsonRPCReq, payload
+}
+
+// createGetBlockByNumberRequestContext creates synthetic request context for getBlockByNumber calls
+// so we can reuse logFailedAttempt for consistent logging
+func createGetBlockByNumberRequestContext(networkName, providerHost, method string, blockNumber int64, networkObj *network) (*caddy.Replacer, *dinHttp.JSONRPCRequest, []byte) {
+	// Create a synthetic replacer with getBlockByNumber context
+	repl := caddy.NewReplacer()
+	repl.Set(RequestProviderKey, providerHost)
+
+	var payload []byte
+	var params json.RawMessage
+
+	// Create the correct payload format based on network type (matching getBlockByNumber logic)
+	if strings.Contains(networkName, "solana") {
+		// Solana format: [blockNumber, {"encoding": "json", "transactionDetails": "none", "rewards": false}]
+		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, method, blockNumber))
+		params = json.RawMessage(fmt.Sprintf(`[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]`, blockNumber))
+	} else {
+		// EVM format: ["0x{blockNumberHex}", false]
+		blockNumberHex := fmt.Sprintf("%#x", blockNumber)
+		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s", false]}`, method, blockNumberHex))
+		params = json.RawMessage(fmt.Sprintf(`["%s", false]`, blockNumberHex))
+	}
+
+	repl.Set(RequestBodyKey, payload)
+
+	// Create synthetic JSONRPCRequest
+	jsonRPCReq := &dinHttp.JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		ID:      json.RawMessage(`1`),
+		Params:  params,
+	}
+
+	return repl, jsonRPCReq, payload
 }

@@ -115,13 +115,14 @@ func (n *network) healthCheck() {
 
 		// Get latest block and initial health status
 		var healthStatus HealthStatus = Healthy
-		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient())
+		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient(), provider.host)
 		if err != nil {
-			n.logProviderWarning("Error getting latest block number for provider", provider,
+			n.logProviderWarning("Health check failed after all attempts for provider", provider,
 				zap.Int64("block_number", latestBlockResult.blockNumber),
 				zap.String("provider", provider.host),
 				zap.Int("response_status", latestBlockResult.responseStatus),
 				zap.String("health_status", latestBlockResult.healthStatus.String()),
+				zap.Int("total_attempts", n.RequestAttemptCount),
 				zap.Error(err))
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, latestBlockResult.healthStatus, latestBlockResult.blockNumber)
@@ -436,20 +437,35 @@ type getLatestBlockNumberResult struct {
 	responseStatus int
 }
 
-func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient) (*getLatestBlockNumberResult, error) {
+func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient, providerHost string) (*getLatestBlockNumberResult, error) {
 	var lastErr error
 	var lastHealthStatus HealthStatus = Unhealthy
 	var lastResponseStatus int = 0
 
+	// Create synthetic request context for consistent logging
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.HCMethod)
+
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
 		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = err
 			if statusCode != nil {
 				lastResponseStatus = *statusCode
 			}
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				lastResponseStatus,
+				err,
+				repl,
+				jsonRPCReq,
+				nil, // no JSON-RPC error for HTTP errors
+			)
 			continue
 		}
 
@@ -460,6 +476,25 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			if statusCode != nil {
 				lastResponseStatus = *statusCode
 			}
+
+			// Check for JSON-RPC errors in the response
+			var jsonRPCError *din_http.JSONRPCError
+			if resBytes != nil {
+				jsonRPCError = checkForJSONRPCError(resBytes)
+			}
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				lastResponseStatus,
+				err,
+				repl,
+				jsonRPCReq,
+				jsonRPCError,
+			)
 
 			continue
 		}
@@ -528,19 +563,48 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
 	var lastErr error
 
+	// Create synthetic request context for consistent logging
+	// We'll extract the provider host from the httpUrl for logging
+	providerHost := httpUrl // Use the full URL as provider identifier for chain ID checks
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.ChainIdMethod)
+
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.ChainIdMethod))
-
 		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error sending POST request")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				0, // No status code for HTTP errors
+				err,
+				repl,
+				jsonRPCReq,
+				nil, // no JSON-RPC error for HTTP errors
+			)
 			continue
 		}
 
 		if *statusCode != http.StatusOK {
 			lastErr = errors.New("Error getting chain ID from response")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				nil, // Check for JSON-RPC error below
+			)
 			continue
 		}
 
@@ -551,11 +615,43 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 		err = json.Unmarshal(resBytes, &respObject)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error unmarshalling response")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				nil, // JSON unmarshaling error, not a JSON-RPC error
+			)
 			continue
 		}
 
 		if _, ok := respObject["result"]; !ok {
 			lastErr = errors.New("Error getting chain ID from response")
+
+			// Check for JSON-RPC errors in the response
+			var jsonRPCError *din_http.JSONRPCError
+			if resBytes != nil {
+				jsonRPCError = checkForJSONRPCError(resBytes)
+			}
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				jsonRPCError,
+			)
 			continue
 		}
 
@@ -591,6 +687,25 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			chainReference, ok = respObject["result"].(string)
 			if !ok {
 				lastErr = errors.New("Error getting chain ID from response")
+
+				// Check for JSON-RPC errors in the response
+				var jsonRPCError *din_http.JSONRPCError
+				if resBytes != nil {
+					jsonRPCError = checkForJSONRPCError(resBytes)
+				}
+
+				// Log the failed attempt with detailed information
+				logFailedAttempt(
+					n.logger,
+					n.Name,
+					attempt+1,
+					n.RequestAttemptCount,
+					*statusCode,
+					lastErr,
+					repl,
+					jsonRPCReq,
+					jsonRPCError,
+				)
 				continue
 			}
 		}
@@ -607,6 +722,18 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeight string) error {
 	var lastErr error
 
+	// Create synthetic request context for consistent logging
+	// We'll extract the provider host from the httpUrl for logging
+	providerHost := httpUrl // Use the full URL as provider identifier for archive mode checks
+
+	// Determine the method based on network type
+	method := n.CallContractMethod
+	if strings.Contains(n.Name, "starknet") {
+		method = StarknetArchiveMethod
+	}
+
+	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, method)
+
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
 		var payload []byte
@@ -615,6 +742,19 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			blockNum, err := strconv.ParseInt(quarterBlockHeight, 10, 64)
 			if err != nil {
 				lastErr = errors.Wrap(err, "Failed to parse quarter block height")
+
+				// Log the failed attempt with detailed information
+				logFailedAttempt(
+					n.logger,
+					n.Name,
+					attempt+1,
+					n.RequestAttemptCount,
+					0, // No status code for parsing errors
+					lastErr,
+					repl,
+					jsonRPCReq,
+					nil, // no JSON-RPC error for parsing errors
+				)
 				continue
 			}
 
@@ -626,15 +766,44 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
 		}
 
+		// Update the request body in the replacer with the actual payload
+		repl.Set(RequestBodyKey, payload)
+
 		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, []byte(payload), ac)
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error sending POST request")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				0, // No status code for HTTP errors
+				lastErr,
+				repl,
+				jsonRPCReq,
+				nil, // no JSON-RPC error for HTTP errors
+			)
 			continue
 		}
 
 		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
 			lastErr = errors.New("Network Unavailable")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				nil, // Check for JSON-RPC error below
+			)
 			continue
 		}
 
@@ -645,12 +814,44 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 		err = json.Unmarshal(resBytes, &respObject)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error unmarshalling response")
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				nil, // JSON unmarshaling error, not a JSON-RPC error
+			)
 			continue
 		}
 
 		// if the response contains an error, return an error
 		if _, ok := respObject["error"]; ok {
 			lastErr = errors.New("network doesn't support archive mode")
+
+			// Check for JSON-RPC errors in the response
+			var jsonRPCError *din_http.JSONRPCError
+			if resBytes != nil {
+				jsonRPCError = checkForJSONRPCError(resBytes)
+			}
+
+			// Log the failed attempt with detailed information
+			logFailedAttempt(
+				n.logger,
+				n.Name,
+				attempt+1,
+				n.RequestAttemptCount,
+				*statusCode,
+				lastErr,
+				repl,
+				jsonRPCReq,
+				jsonRPCError,
+			)
 			continue
 		}
 
@@ -659,6 +860,25 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			result, ok := respObject["result"].(map[string]interface{})
 			if !ok {
 				lastErr = errors.New("Error getting archive mode check from response: missing or invalid result object")
+
+				// Check for JSON-RPC errors in the response
+				var jsonRPCError *din_http.JSONRPCError
+				if resBytes != nil {
+					jsonRPCError = checkForJSONRPCError(resBytes)
+				}
+
+				// Log the failed attempt with detailed information
+				logFailedAttempt(
+					n.logger,
+					n.Name,
+					attempt+1,
+					n.RequestAttemptCount,
+					*statusCode,
+					lastErr,
+					repl,
+					jsonRPCReq,
+					jsonRPCError,
+				)
 				continue
 			}
 
@@ -666,6 +886,25 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			blockHash, ok := result["block_hash"].(string)
 			if !ok || blockHash == "" {
 				lastErr = errors.New("Error getting archive mode check from response: missing or invalid block_hash")
+
+				// Check for JSON-RPC errors in the response
+				var jsonRPCError *din_http.JSONRPCError
+				if resBytes != nil {
+					jsonRPCError = checkForJSONRPCError(resBytes)
+				}
+
+				// Log the failed attempt with detailed information
+				logFailedAttempt(
+					n.logger,
+					n.Name,
+					attempt+1,
+					n.RequestAttemptCount,
+					*statusCode,
+					lastErr,
+					repl,
+					jsonRPCReq,
+					jsonRPCError,
+				)
 				continue
 			}
 
@@ -828,8 +1067,11 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 		return nil, errors.New("Caddy port is not set")
 	}
 	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
-	// Use the payload for getLatestBlockNumber
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1}`, n.HCMethod))
+
+	// Create synthetic request context for consistent logging
+	providerHost := fmt.Sprintf("127.0.0.1:%s", n.CaddyPort) // Use loopback address as provider identifier
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.HCMethod)
+
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
@@ -841,6 +1083,19 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	}
 
 	if err != nil {
+		// Log the failed loopback attempt with detailed information
+		logFailedAttempt(
+			n.logger,
+			n.Name,
+			1, // Single attempt for loopback
+			1, // Total attempts is always 1 for loopback
+			currentResponseStatus,
+			err,
+			repl,
+			jsonRPCReq,
+			nil, // no JSON-RPC error for HTTP errors
+		)
+
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,
 			healthStatus:   Unhealthy,
@@ -851,6 +1106,25 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
 	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
 	if err != nil {
+		// Check for JSON-RPC errors in the response
+		var jsonRPCError *din_http.JSONRPCError
+		if resBytes != nil {
+			jsonRPCError = checkForJSONRPCError(resBytes)
+		}
+
+		// Log the failed loopback attempt with detailed information
+		logFailedAttempt(
+			n.logger,
+			n.Name,
+			1, // Single attempt for loopback
+			1, // Total attempts is always 1 for loopback
+			currentResponseStatus,
+			err,
+			repl,
+			jsonRPCReq,
+			jsonRPCError,
+		)
+
 		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
 		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
 		return &getLatestBlockNumberResult{

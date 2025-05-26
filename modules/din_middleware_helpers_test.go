@@ -32,7 +32,7 @@ const (
 	testRequestBodyKey     = "request_body"
 )
 
-func TestLogFailedAttemptAsync(t *testing.T) {
+func TestLogFailedAttempt(t *testing.T) {
 	tests := []struct {
 		name                          string
 		networkPath                   string
@@ -209,7 +209,7 @@ func TestLogFailedAttemptAsync(t *testing.T) {
 				tt.setupReplacer(repl)
 			}
 
-			logFailedAttemptAsync(
+			logFailedAttempt(
 				loggerClient,
 				tt.networkPath,
 				tt.failedAttemptNumber,

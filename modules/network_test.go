@@ -561,6 +561,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			n.HttpClient = mockHTTPClient
 			n.CallContractMethod = "eth_call"
 			n.RequestAttemptCount = tt.requestAttemptCount
+			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			err := n.archiveModeCheck("http://test.com", nil, nil, tt.quarterBlockHeight)
 
@@ -742,6 +743,7 @@ func TestGetChainID(t *testing.T) {
 			n.HttpClient = mockHTTPClient
 			n.ChainIdMethod = "eth_chainId"
 			n.RequestAttemptCount = tt.requestAttemptCount
+			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			chainID, err := n.getChainID("http://test.com", nil, nil)
 
@@ -1195,7 +1197,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 					return resp.resBytes, &statusCode, resp.err
 				}).Times(len(tt.mockPostResponses))
 
-			result, err := network.getLatestBlockNumber("http://dummyurl.com", nil, nil)
+			result, err := network.getLatestBlockNumber("http://dummyurl.com", nil, nil, "test-provider")
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected an error but got none")
@@ -1523,7 +1525,8 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			n := NewNetwork(tt.networkName, utils.Environment("test"), "8000")
 			n.HCMethod = tt.hcMethod
 			n.HttpClient = mockHTTPClient
-			// n.logger and n.PrometheusClient can be nil for this specific function test if not used directly by it
+			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			// n.PrometheusClient can be nil for this specific function test if not used directly by it
 			// or mock them if they are strictly necessary for some side effects not being tested here.
 
 			result, err := n.checkSelfLoopbackHealth()

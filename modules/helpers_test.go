@@ -3,17 +3,23 @@ package modules
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 func TestCheckForJSONRPCError(t *testing.T) {
 	tests := []struct {
 		name           string
 		responseBody   []byte
-		expectedError  *dinHttp.JSONRPCError
+		expectedError  *din_http.JSONRPCError
 		expectNilError bool
 	}{
 		{
@@ -43,7 +49,7 @@ func TestCheckForJSONRPCError(t *testing.T) {
 		{
 			name:         "JSON-RPC error response",
 			responseBody: []byte(`{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":1}`),
-			expectedError: &dinHttp.JSONRPCError{
+			expectedError: &din_http.JSONRPCError{
 				Code:    -32601,
 				Message: "Method not found",
 			},
@@ -52,7 +58,7 @@ func TestCheckForJSONRPCError(t *testing.T) {
 		{
 			name:         "JSON-RPC error with data field",
 			responseBody: []byte(`{"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid params","data":"Additional error info"},"id":1}`),
-			expectedError: &dinHttp.JSONRPCError{
+			expectedError: &din_http.JSONRPCError{
 				Code:    -32602,
 				Message: "Invalid params",
 				Data:    "Additional error info",
@@ -62,7 +68,7 @@ func TestCheckForJSONRPCError(t *testing.T) {
 		{
 			name:         "JSON-RPC error response with complex data",
 			responseBody: []byte(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":{"details":"Server overloaded","retry_after":30}},"id":1}`),
-			expectedError: &dinHttp.JSONRPCError{
+			expectedError: &din_http.JSONRPCError{
 				Code:    -32603,
 				Message: "Internal error",
 				Data:    map[string]interface{}{"details": "Server overloaded", "retry_after": float64(30)},
@@ -78,7 +84,7 @@ func TestCheckForJSONRPCError(t *testing.T) {
 		{
 			name:         "Solana transaction version error (user's specific case)",
 			responseBody: []byte(`{"jsonrpc":"2.0","error":{"code":-32015,"message":"Transaction version (0) is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": 0"},"id":0}`),
-			expectedError: &dinHttp.JSONRPCError{
+			expectedError: &din_http.JSONRPCError{
 				Code:    -32015,
 				Message: "Transaction version (0) is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": 0",
 			},
@@ -106,18 +112,18 @@ func TestGetRequestBody(t *testing.T) {
 	tests := []struct {
 		name          string
 		setupReplacer func(repl *caddy.Replacer)
-		wantRequest   *dinHttp.JSONRPCRequest
+		wantRequest   *din_http.JSONRPCRequest
 		wantErr       bool
 		expectErrStr  string
 	}{
 		{
 			name: "Successful retrieval and unmarshal",
 			setupReplacer: func(repl *caddy.Replacer) {
-				req := dinHttp.JSONRPCRequest{Method: "test_method", JSONRPC: "2.0"}
+				req := din_http.JSONRPCRequest{Method: "test_method", JSONRPC: "2.0"}
 				bodyBytes, _ := json.Marshal(req)
 				repl.Set(RequestBodyKey, bodyBytes)
 			},
-			wantRequest: &dinHttp.JSONRPCRequest{
+			wantRequest: &din_http.JSONRPCRequest{
 				Method:  "test_method",
 				Params:  json.RawMessage("null"),
 				ID:      json.RawMessage("null"),
@@ -233,7 +239,7 @@ func TestGetRequestMethod(t *testing.T) {
 func TestIsJSONRPCErrorRetryable(t *testing.T) {
 	tests := []struct {
 		name           string
-		jsonRPCError   *dinHttp.JSONRPCError
+		jsonRPCError   *din_http.JSONRPCError
 		expectedResult bool
 	}{
 		{
@@ -243,7 +249,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Parse error (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32700,
 				Message: "Parse error",
 			},
@@ -251,7 +257,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Invalid request (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32600,
 				Message: "Invalid Request",
 			},
@@ -259,7 +265,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Method not found (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32601,
 				Message: "Method not found",
 			},
@@ -267,7 +273,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Invalid params (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32602,
 				Message: "Invalid params",
 			},
@@ -275,7 +281,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Internal error (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32603,
 				Message: "Internal error",
 			},
@@ -283,7 +289,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Server error -32000 (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32000,
 				Message: "Server error",
 			},
@@ -291,7 +297,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Rate limit error -32005 (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32005,
 				Message: "Limit exceeded",
 			},
@@ -299,7 +305,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Server error -32050 (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32050,
 				Message: "Server overloaded",
 			},
@@ -307,7 +313,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Server error -32099 (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -32099,
 				Message: "Server error",
 			},
@@ -315,7 +321,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with timeout message (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40000,
 				Message: "Request timeout occurred",
 			},
@@ -323,7 +329,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with connection message (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40001,
 				Message: "Connection failed",
 			},
@@ -331,7 +337,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with network message (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40002,
 				Message: "Network unavailable",
 			},
@@ -339,7 +345,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with rate limit message (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40003,
 				Message: "Too many requests",
 			},
@@ -347,7 +353,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with server error message (retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40004,
 				Message: "Internal server error",
 			},
@@ -355,7 +361,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with method not found message (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40005,
 				Message: "Method not found",
 			},
@@ -363,7 +369,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with invalid params message (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40006,
 				Message: "Invalid params provided",
 			},
@@ -371,7 +377,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with unauthorized message (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40007,
 				Message: "Unauthorized access",
 			},
@@ -379,7 +385,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Custom error with forbidden message (not retryable)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -40008,
 				Message: "Forbidden request",
 			},
@@ -387,7 +393,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Unknown error code with no message (retryable by default)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -50000,
 				Message: "",
 			},
@@ -395,7 +401,7 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		},
 		{
 			name: "Unknown error code with generic message (retryable by default)",
-			jsonRPCError: &dinHttp.JSONRPCError{
+			jsonRPCError: &din_http.JSONRPCError{
 				Code:    -50001,
 				Message: "Something went wrong",
 			},
@@ -407,6 +413,128 @@ func TestIsJSONRPCErrorRetryable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isJSONRPCErrorRetryable(tt.jsonRPCError)
 			assert.Equal(t, tt.expectedResult, result, "Expected %v but got %v for error: %+v", tt.expectedResult, result, tt.jsonRPCError)
+		})
+	}
+}
+
+func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
+	tests := []struct {
+		name           string
+		respBody       []byte
+		respStatus     int
+		method         string
+		expectLogCall  bool
+		expectLogLevel zapcore.Level
+		expectLogMsg   string
+	}{
+		{
+			name:           "JSON parsing error should trigger robust logging",
+			respBody:       []byte(`{"invalid": json}`),
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "Non-200 status should trigger robust logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:     500,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "JSON-RPC error should trigger robust logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Server error"}}`),
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "Method mismatch should not trigger failure logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:     200,
+			method:         "eth_getBalance",
+			expectLogCall:  false,
+			expectLogLevel: zapcore.DebugLevel,
+			expectLogMsg:   "",
+		},
+		{
+			name:           "Empty response body should not trigger failure logging",
+			respBody:       []byte{},
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  false,
+			expectLogLevel: zapcore.DebugLevel,
+			expectLogMsg:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create observed logger
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+			observedLogger := zap.New(observedZapCore)
+			loggerClient := &logger.LoggerClient{Logger: observedLogger}
+
+			// Create test network with CaddyPort to avoid getBlockByNumber errors
+			network := &network{
+				Name:      "test/eth",
+				HCMethod:  "eth_blockNumber",
+				logger:    loggerClient,
+				CaddyPort: "8080", // Set CaddyPort to avoid errors in successful case
+			}
+
+			// Create test middleware
+			middleware := &DinMiddleware{
+				logger: loggerClient,
+			}
+
+			// Run the function
+			middleware.processHCMethodResponseAsync(network, "test/eth", tt.respBody, tt.respStatus, tt.method)
+
+			// Give the goroutine time to complete
+			time.Sleep(200 * time.Millisecond)
+
+			// Check logs
+			logs := observedLogs.All()
+
+			if tt.expectLogCall {
+				// Should have at least one log entry with the expected message
+				found := false
+				for _, log := range logs {
+					if log.Level == tt.expectLogLevel && log.Message == tt.expectLogMsg {
+						found = true
+
+						// Verify log contains expected fields
+						fields := log.ContextMap()
+						assert.Contains(t, fields, "network")
+						assert.Contains(t, fields, "provider")
+						assert.Contains(t, fields, "requestMethod")
+						assert.Equal(t, "test/eth", fields["network"])
+						assert.Equal(t, "din", fields["provider"])
+						assert.Equal(t, tt.method, fields["requestMethod"])
+
+						// Check for error-specific fields based on the test case
+						if tt.respStatus != 200 {
+							assert.Contains(t, fields, "statusCodeOfFailure")
+							assert.Equal(t, int64(tt.respStatus), fields["statusCodeOfFailure"])
+						}
+
+						break
+					}
+				}
+				assert.True(t, found, "Expected log message '%s' with level %s not found in logs", tt.expectLogMsg, tt.expectLogLevel)
+			} else {
+				// Should not have any failure logs with the expected message
+				for _, log := range logs {
+					assert.NotEqual(t, "Request attempt failed, initiating retry", log.Message, "Unexpected failure log found")
+				}
+			}
 		})
 	}
 }
