@@ -228,7 +228,6 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 	if provider.host == "" {
 		provider.host = url.Host
 	}
-	provider.httpClient = httpClient
 	if provider.Auth != nil {
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
