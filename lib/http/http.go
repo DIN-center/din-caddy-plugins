@@ -17,10 +17,10 @@ type HTTPClient struct {
 	httpClient *http.Client
 }
 
-func NewHTTPClient() *HTTPClient {
+func NewHTTPClient(timeout time.Duration) *HTTPClient {
 	return &HTTPClient{
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second, // Set timeout to 5 seconds
+			Timeout: timeout,
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
 				DialContext: (&net.Dialer{

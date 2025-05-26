@@ -151,9 +151,9 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
 
-	// Initialize the HTTP client for each network and provider
-	httpClient := dinHttp.NewHTTPClient()
 	for networkName, network := range d.Networks {
+		// Initialize the HTTP client for each network and provider
+		httpClient := dinHttp.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
 		d.logger.Debug("Registered network", zap.String("name", networkName))
 		network.HttpClient = httpClient
 		network.logger = loggerClient
@@ -639,6 +639,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
 						if err != nil {
 							return fmt.Errorf("invalid healthcheck threshold: %v", err)
+						}
+					case "healthcheck_timeout":
+						dispenser.Next()
+						d.Networks[networkName].HCTimeout, err = strconv.Atoi(dispenser.Val())
+						if err != nil {
+							return fmt.Errorf("invalid healthcheck timeout: %v", err)
 						}
 					case "healthcheck_interval":
 						dispenser.Next()
