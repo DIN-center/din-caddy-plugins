@@ -359,7 +359,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			}
 
 			// Log the failed attempt with JSON-RPC error information
-			logFailedAttemptAsync(
+			logFailedAttempt(
 				d.logger,
 				networkPath,
 				attempt+1,
@@ -372,7 +372,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			)
 		} else {
 			// Log non 200 status failed attempt with HTTP error information
-			logFailedAttemptAsync(
+			logFailedAttempt(
 				d.logger,
 				networkPath,
 				attempt+1,
@@ -406,7 +406,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-
 	// Post-Request Processing is now handled by the helper function
 	handlePostRequestTasks(PostRequestTaskParams{
 		DinMiddleware: d,

@@ -32,14 +32,14 @@ type EVMBlockResult struct {
 }
 
 type JSONRPCEVMBlockResponse struct {
-	Jsonrpc string         `json:"jsonrpc"`
-	ID      int            `json:"id"`
-	Result  EVMBlockResult `json:"result"`
+	Jsonrpc string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  EVMBlockResult  `json:"result"`
 }
 
 type JSONRPCSolanaBlockResponse struct {
 	Jsonrpc string            `json:"jsonrpc"`
-	ID      int               `json:"id"`
+	ID      json.RawMessage   `json:"id"`
 	Result  SolanaBlockResult `json:"result"`
 }
 

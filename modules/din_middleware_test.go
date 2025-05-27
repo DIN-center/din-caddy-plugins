@@ -502,7 +502,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 						status := http.StatusOK
 						blockResp := din_http.JSONRPCEVMBlockResponse{
 							Jsonrpc: "2.0",
-							ID:      1,
+							ID:      json.RawMessage(`1`),
 							Result: din_http.EVMBlockResult{ //
 								Hash:   "0x123abc",
 								Number: "0x64",
