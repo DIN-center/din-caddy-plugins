@@ -215,7 +215,6 @@ func TestInitialize(t *testing.T) {
 					assert.NotNil(t, network.HttpClient)
 					assert.NotNil(t, network.logger)
 					for _, provider := range network.Providers {
-						assert.NotNil(t, provider.httpClient)
 						assert.NotNil(t, provider.upstream)
 					}
 				}

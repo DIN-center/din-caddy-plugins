@@ -3,6 +3,7 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -193,7 +194,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 		return err
 	}
 
-	httpClient := din_http.NewHTTPClient()
+	httpClient := din_http.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
 	network.HttpClient = httpClient
 	network.logger = d.logger
 	network.PrometheusClient = d.PrometheusClient
@@ -410,7 +411,7 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
 func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
-	httpClient := din_http.NewHTTPClient()
+	httpClient := din_http.NewHTTPClient(time.Duration(DefaultHCTimeout) * time.Second)
 
 	// Set the provider auth config based on the auth type
 	if authConfig != nil {

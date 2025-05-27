@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/golang/mock/gomock"
@@ -12,7 +13,7 @@ import (
 
 func TestHTTPClientPost(t *testing.T) {
 	// Create a new HTTP client
-	client := NewHTTPClient()
+	client := NewHTTPClient(time.Duration(30 * time.Second))
 
 	// Create a mock auth client
 	mockCtrl := gomock.NewController(t)

@@ -31,6 +31,7 @@ type network struct {
 	Environment      utils.Environment
 	// internal health check values
 	HCThreshold              int
+	HCTimeout                int
 	ProviderBlockHistorySize int
 	NetworkBlockHistorySize  int
 	blockHistory             *list.List
@@ -68,6 +69,7 @@ func NewNetwork(name string, environment utils.Environment, caddyPort string) *n
 		CallContractMethod:       DefaultCallContractMethod,
 		GetBlockByNumberMethod:   DefaultGetBlockByNumberMethod,
 		HCThreshold:              DefaultHCThreshold,
+		HCTimeout:                DefaultHCTimeout,
 		HCInterval:               DefaultHCInterval,
 		BlockLagLimit:            DefaultBlockLagLimit,
 		BlockJumpLimit:           DefaultBlockJumpLimit,
