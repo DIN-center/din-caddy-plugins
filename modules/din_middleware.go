@@ -319,6 +319,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// 2. Retryable JSON-RPC errors (server errors, timeouts, rate limits, etc.)
 	// Non-retryable JSON-RPC errors (method not found, invalid params) will not trigger retries
 	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
+		if err := checkRequestContext(d.logger.Logger, r, networkPath, attempt); err != nil {
+			handleContextCancellation(d.logger.Logger, rw, r, networkPath, attempt, err, reqStartTime)
+			return nil
+		}
 		rww = NewResponseWriterWrapper(rw)
 
 		// If the request fails, reset the request body and custom header if its present to the original request state
