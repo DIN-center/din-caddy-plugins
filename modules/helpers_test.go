@@ -597,16 +597,13 @@ func TestCheckRequestContext(t *testing.T) {
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
 			// Create test middleware
-			middleware := &DinMiddleware{
-				logger: loggerClient,
-			}
 
 			// Create request with test context
 			req := httptest.NewRequest("POST", "/"+tt.networkPath, nil)
 			req = req.WithContext(tt.setupCtx())
 
 			// Call the function
-			err := middleware.checkRequestContext(req, tt.networkPath, tt.attempt)
+			err := checkRequestContext(loggerClient.Logger, req, tt.networkPath, tt.attempt)
 
 			// Verify results
 			if tt.expectError {
@@ -729,11 +726,6 @@ func TestHandleContextCancellation(t *testing.T) {
 			observedLogger := zap.New(observedZapCore)
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
-			// Create test middleware
-			middleware := &DinMiddleware{
-				logger: loggerClient,
-			}
-
 			// Create request with replacer context
 			req := httptest.NewRequest("POST", "/"+tt.networkPath, bytes.NewReader([]byte("test")))
 			repl := caddy.NewReplacer()
@@ -749,7 +741,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			reqStartTime := time.Now().Add(-5 * time.Second) // Simulate 5 second duration
 
 			// Call the function
-			middleware.handleContextCancellation(rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
+			handleContextCancellation(loggerClient.Logger, rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
 
 			// Verify HTTP response
 			assert.Equal(t, tt.expectedStatusCode, rw.Code)

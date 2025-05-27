@@ -474,22 +474,22 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 
 // checkRequestContext checks if the request context has been cancelled or exceeded deadline
 // Returns an error if the context is done, nil if the context is still active
-func (d *DinMiddleware) checkRequestContext(r *http.Request, networkPath string, attempt int) error {
+func checkRequestContext(l *zap.Logger, r *http.Request, networkPath string, attempt int) error {
 	select {
 	case <-r.Context().Done():
 		switch r.Context().Err() {
 		case context.Canceled:
-			d.logger.Debug("Request cancelled by client",
+			l.Debug("Request cancelled by client",
 				zap.String("network", networkPath),
 				zap.Int("attempt", attempt+1))
 			return fmt.Errorf("request cancelled by client")
 		case context.DeadlineExceeded:
-			d.logger.Debug("Request deadline exceeded",
+			l.Debug("Request deadline exceeded",
 				zap.String("network", networkPath),
 				zap.Int("attempt", attempt+1))
 			return fmt.Errorf("request deadline exceeded")
 		default:
-			d.logger.Debug("Request context error",
+			l.Debug("Request context error",
 				zap.String("network", networkPath),
 				zap.Int("attempt", attempt+1),
 				zap.Error(r.Context().Err()))
@@ -503,7 +503,7 @@ func (d *DinMiddleware) checkRequestContext(r *http.Request, networkPath string,
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
 // and logging comprehensive information about the cancellation
-func (d *DinMiddleware) handleContextCancellation(rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
+func handleContextCancellation(l *zap.Logger, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
 	duration := time.Since(reqStartTime)
 
 	// Determine the appropriate HTTP status code and response based on the error type
@@ -566,11 +566,11 @@ func (d *DinMiddleware) handleContextCancellation(rw http.ResponseWriter, r *htt
 	// Log at appropriate level based on error type
 	switch logLevel {
 	case "info":
-		d.logger.Info("Request cancelled by client", logFields...)
+		l.Info("Request cancelled by client", logFields...)
 	case "warn":
-		d.logger.Warn("Request context timeout", logFields...)
+		l.Warn("Request context timeout", logFields...)
 	case "error":
-		d.logger.Error("Request context error", logFields...)
+		l.Error("Request context error", logFields...)
 	}
 
 	// Set appropriate headers and write response
