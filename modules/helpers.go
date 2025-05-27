@@ -3,6 +3,7 @@ package modules
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -469,4 +470,111 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	}
 
 	return repl, jsonRPCReq, payload
+}
+
+// checkRequestContext checks if the request context has been cancelled or exceeded deadline
+// Returns an error if the context is done, nil if the context is still active
+func (d *DinMiddleware) checkRequestContext(r *http.Request, networkPath string, attempt int) error {
+	select {
+	case <-r.Context().Done():
+		switch r.Context().Err() {
+		case context.Canceled:
+			d.logger.Debug("Request cancelled by client",
+				zap.String("network", networkPath),
+				zap.Int("attempt", attempt+1))
+			return fmt.Errorf("request cancelled by client")
+		case context.DeadlineExceeded:
+			d.logger.Debug("Request deadline exceeded",
+				zap.String("network", networkPath),
+				zap.Int("attempt", attempt+1))
+			return fmt.Errorf("request deadline exceeded")
+		default:
+			d.logger.Debug("Request context error",
+				zap.String("network", networkPath),
+				zap.Int("attempt", attempt+1),
+				zap.Error(r.Context().Err()))
+			return fmt.Errorf("request context error: %w", r.Context().Err())
+		}
+	default:
+		// Context is still active, continue
+		return nil
+	}
+}
+
+// handleContextCancellation handles context cancellation by returning appropriate HTTP responses
+// and logging comprehensive information about the cancellation
+func (d *DinMiddleware) handleContextCancellation(rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
+	duration := time.Since(reqStartTime)
+
+	// Determine the appropriate HTTP status code and response based on the error type
+	var statusCode int
+	var responseBody string
+	var logLevel string = "warn"
+
+	switch {
+	case strings.Contains(err.Error(), "cancelled by client"):
+		statusCode = http.StatusRequestTimeout // 408
+		responseBody = `{"error": "Request cancelled by client", "code": 408}`
+		logLevel = "warn"
+	case strings.Contains(err.Error(), "deadline exceeded"):
+		statusCode = http.StatusGatewayTimeout // 504
+		responseBody = `{"error": "Request timeout exceeded", "code": 504}`
+		logLevel = "warn"
+	default:
+		statusCode = http.StatusServiceUnavailable // 503
+		responseBody = `{"error": "Service unavailable", "code": 503}`
+		logLevel = "error"
+	}
+
+	// Get request body from context for logging
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	var requestBodyStr string
+	if v, ok := repl.Get(RequestBodyKey); ok {
+		requestBody := v.([]byte)
+		// Truncate request body if it's too long for logging
+		if len(requestBody) > 1000 {
+			requestBodyStr = string(requestBody[:1000]) + "... (truncated)"
+		} else {
+			requestBodyStr = string(requestBody)
+		}
+	}
+
+	// Get provider information if available
+	var providerInfo string
+	if v, ok := repl.Get(RequestProviderKey); ok {
+		providerInfo = v.(string)
+	} else {
+		providerInfo = "No provider selected before cancellation"
+	}
+
+	// Log the context cancellation with comprehensive details
+	logFields := []zap.Field{
+		zap.String("network", networkPath),
+		zap.Int("attempt", attempt+1),
+		zap.Int("status_code", statusCode),
+		zap.Duration("duration", duration),
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("user_agent", r.Header.Get("User-Agent")),
+		zap.String("remote_addr", r.RemoteAddr),
+		zap.String("provider", providerInfo),
+		zap.String("request_body", requestBodyStr),
+		zap.String("response_body", responseBody), // Use the responseBody from switch statement
+		zap.Error(err),
+	}
+
+	// Log at appropriate level based on error type
+	switch logLevel {
+	case "info":
+		d.logger.Info("Request cancelled by client", logFields...)
+	case "warn":
+		d.logger.Warn("Request context timeout", logFields...)
+	case "error":
+		d.logger.Error("Request context error", logFields...)
+	}
+
+	// Set appropriate headers and write response
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(statusCode)
+	rw.Write([]byte(responseBody))
 }

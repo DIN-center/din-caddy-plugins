@@ -1,7 +1,12 @@
 package modules
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -535,6 +540,264 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 					assert.NotEqual(t, "Request attempt failed, initiating retry", log.Message, "Unexpected failure log found")
 				}
 			}
+		})
+	}
+}
+
+func TestCheckRequestContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupCtx    func() context.Context
+		networkPath string
+		attempt     int
+		expectError bool
+		expectMsg   string
+	}{
+		{
+			name: "Active context should return nil",
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			networkPath: "ethereum-mainnet",
+			attempt:     0,
+			expectError: false,
+			expectMsg:   "",
+		},
+		{
+			name: "Cancelled context should return client cancellation error",
+			setupCtx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel() // Cancel immediately
+				return ctx
+			},
+			networkPath: "ethereum-mainnet",
+			attempt:     1,
+			expectError: true,
+			expectMsg:   "request cancelled by client",
+		},
+		{
+			name: "Deadline exceeded context should return timeout error",
+			setupCtx: func() context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+				defer cancel()
+				return ctx
+			},
+			networkPath: "polygon-mainnet",
+			attempt:     2,
+			expectError: true,
+			expectMsg:   "request deadline exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create observed logger
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+			observedLogger := zap.New(observedZapCore)
+			loggerClient := &logger.LoggerClient{Logger: observedLogger}
+
+			// Create test middleware
+			middleware := &DinMiddleware{
+				logger: loggerClient,
+			}
+
+			// Create request with test context
+			req := httptest.NewRequest("POST", "/"+tt.networkPath, nil)
+			req = req.WithContext(tt.setupCtx())
+
+			// Call the function
+			err := middleware.checkRequestContext(req, tt.networkPath, tt.attempt)
+
+			// Verify results
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectMsg)
+
+				// Verify debug log was created
+				logs := observedLogs.All()
+				assert.NotEmpty(t, logs)
+
+				// Find the relevant log entry
+				found := false
+				for _, log := range logs {
+					if log.Level == zapcore.DebugLevel {
+						fields := log.ContextMap()
+						if fields["network"] == tt.networkPath && fields["attempt"] == int64(tt.attempt+1) {
+							found = true
+							break
+						}
+					}
+				}
+				assert.True(t, found, "Expected debug log not found")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHandleContextCancellation(t *testing.T) {
+	tests := []struct {
+		name               string
+		errorMsg           string
+		networkPath        string
+		attempt            int
+		setupReplacer      func(repl *caddy.Replacer)
+		expectedStatusCode int
+		expectedLogLevel   zapcore.Level
+		expectedLogMsg     string
+		expectedResponse   string
+	}{
+		{
+			name:        "Client cancellation should return 408",
+			errorMsg:    "request cancelled by client",
+			networkPath: "ethereum-mainnet",
+			attempt:     1,
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set(RequestBodyKey, []byte(`{"jsonrpc":"2.0","method":"eth_getBalance","id":1}`))
+				repl.Set(RequestProviderKey, "https://eth-mainnet.g.alchemy.com/v2/test")
+			},
+			expectedStatusCode: http.StatusRequestTimeout,
+			expectedLogLevel:   zapcore.WarnLevel,
+			expectedLogMsg:     "Request context timeout",
+			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+		},
+		{
+			name:        "Deadline exceeded should return 504",
+			errorMsg:    "request deadline exceeded",
+			networkPath: "polygon-mainnet",
+			attempt:     2,
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set(RequestBodyKey, []byte(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":2}`))
+				repl.Set(RequestProviderKey, "https://polygon-rpc.com")
+			},
+			expectedStatusCode: http.StatusGatewayTimeout,
+			expectedLogLevel:   zapcore.WarnLevel,
+			expectedLogMsg:     "Request context timeout",
+			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
+		},
+		{
+			name:        "Other context error should return 503",
+			errorMsg:    "context error: some other error",
+			networkPath: "arbitrum-mainnet",
+			attempt:     0,
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set(RequestBodyKey, []byte(`{"jsonrpc":"2.0","method":"eth_call","id":3}`))
+				// No provider set to test "No provider selected" case
+			},
+			expectedStatusCode: http.StatusServiceUnavailable,
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request context error",
+			expectedResponse:   `{"error": "Service unavailable", "code": 503}`,
+		},
+		{
+			name:        "Long request body should be truncated in logs",
+			errorMsg:    "request cancelled by client",
+			networkPath: "ethereum-mainnet",
+			attempt:     0,
+			setupReplacer: func(repl *caddy.Replacer) {
+				// Create a request body longer than 1000 characters
+				longBody := `{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x` +
+					string(make([]byte, 1000)) + `","data":"0x123"}],"id":1}`
+				repl.Set(RequestBodyKey, []byte(longBody))
+				repl.Set(RequestProviderKey, "https://eth-mainnet.infura.io/v3/test")
+			},
+			expectedStatusCode: http.StatusRequestTimeout,
+			expectedLogLevel:   zapcore.WarnLevel,
+			expectedLogMsg:     "Request context timeout",
+			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+		},
+		{
+			name:        "Missing request body and provider should handle gracefully",
+			errorMsg:    "request deadline exceeded",
+			networkPath: "optimism-mainnet",
+			attempt:     3,
+			setupReplacer: func(repl *caddy.Replacer) {
+				// Don't set any keys to test empty cases
+			},
+			expectedStatusCode: http.StatusGatewayTimeout,
+			expectedLogLevel:   zapcore.WarnLevel,
+			expectedLogMsg:     "Request context timeout",
+			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create observed logger
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+			observedLogger := zap.New(observedZapCore)
+			loggerClient := &logger.LoggerClient{Logger: observedLogger}
+
+			// Create test middleware
+			middleware := &DinMiddleware{
+				logger: loggerClient,
+			}
+
+			// Create request with replacer context
+			req := httptest.NewRequest("POST", "/"+tt.networkPath, bytes.NewReader([]byte("test")))
+			repl := caddy.NewReplacer()
+			tt.setupReplacer(repl)
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+
+			// Create response recorder
+			rw := httptest.NewRecorder()
+
+			// Create error and start time
+			err := fmt.Errorf(tt.errorMsg)
+			reqStartTime := time.Now().Add(-5 * time.Second) // Simulate 5 second duration
+
+			// Call the function
+			middleware.handleContextCancellation(rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
+
+			// Verify HTTP response
+			assert.Equal(t, tt.expectedStatusCode, rw.Code)
+			assert.Equal(t, "application/json", rw.Header().Get("Content-Type"))
+			assert.JSONEq(t, tt.expectedResponse, rw.Body.String())
+
+			// Verify logs
+			logs := observedLogs.All()
+			assert.NotEmpty(t, logs)
+
+			// Find the relevant log entry
+			found := false
+			for _, log := range logs {
+				if log.Level == tt.expectedLogLevel && log.Message == tt.expectedLogMsg {
+					found = true
+					fields := log.ContextMap()
+
+					// Verify required fields
+					assert.Equal(t, tt.networkPath, fields["network"])
+					assert.Equal(t, int64(tt.attempt+1), fields["attempt"])
+					assert.Equal(t, int64(tt.expectedStatusCode), fields["status_code"])
+					assert.Contains(t, fields, "duration")
+					assert.Equal(t, "POST", fields["method"])
+					assert.Equal(t, "/"+tt.networkPath, fields["path"])
+					assert.Contains(t, fields, "remote_addr")
+					assert.Contains(t, fields, "request_body")
+					assert.Equal(t, tt.expectedResponse, fields["response_body"])
+					assert.Contains(t, fields, "error")
+
+					// Verify provider field
+					if _, ok := repl.Get(RequestProviderKey); ok {
+						assert.Contains(t, fields, "provider")
+						assert.NotEqual(t, "No provider selected before cancellation", fields["provider"])
+					} else {
+						assert.Equal(t, "No provider selected before cancellation", fields["provider"])
+					}
+
+					// Verify request body truncation for long body test
+					if tt.name == "Long request body should be truncated in logs" {
+						requestBody := fields["request_body"].(string)
+						assert.Contains(t, requestBody, "... (truncated)")
+						assert.LessOrEqual(t, len(requestBody), 1015) // 1000 + "... (truncated)"
+					}
+
+					break
+				}
+			}
+			assert.True(t, found, "Expected log message '%s' with level %s not found", tt.expectedLogMsg, tt.expectedLogLevel)
 		})
 	}
 }
