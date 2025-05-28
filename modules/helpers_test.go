@@ -603,7 +603,7 @@ func TestCheckRequestContext(t *testing.T) {
 			req = req.WithContext(tt.setupCtx())
 
 			// Call the function
-			err := checkRequestContext(loggerClient.Logger, req, tt.networkPath, tt.attempt)
+			err := checkRequestContext(loggerClient, req, tt.networkPath, tt.attempt)
 
 			// Verify results
 			if tt.expectError {
@@ -741,7 +741,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			reqStartTime := time.Now().Add(-5 * time.Second) // Simulate 5 second duration
 
 			// Call the function
-			handleContextCancellation(loggerClient.Logger, rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
+			handleContextCancellation(loggerClient, rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
 
 			// Verify HTTP response
 			assert.Equal(t, tt.expectedStatusCode, rw.Code)
