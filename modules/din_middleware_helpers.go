@@ -3,6 +3,7 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
@@ -14,22 +15,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// LogFailedAttemptParams holds all the configuration data needed for logging failed attempts
+type LogFailedAttemptParams struct {
+	Reason              string
+	Logger              *logger.LoggerClient
+	NetworkPath         string
+	FailedAttemptNumber int // 1-indexed
+	MaxAttempts         int
+	StatusCodeOfFailure int
+	err                 error                    // Can be nil
+	Replacer            *caddy.Replacer          // Caddy replacer to get context data
+	ParsedReqBody       *din_http.JSONRPCRequest // Parsed request body
+	RawResponseBody     []byte                   // Raw response body to parse internally
+}
+
 // Helper function to log a failed request attempt that will be retried.
 // This function is intended to be run as a goroutine.
-func logFailedAttempt(
-	lg *logger.LoggerClient,
-	networkPath string,
-	failedAttemptNumber int, // 1-indexed
-	maxAttempts int,
-	statusCodeOfFailure int,
-	upstreamErr error, // Can be nil
-	repl *caddy.Replacer, // Added: Caddy replacer to get context data
-	parsedReqBody *din_http.JSONRPCRequest, // Added: Parsed request body
-	jsonRPCError *din_http.JSONRPCError, // Added: JSON-RPC error if present
-) {
+func logFailedAttempt(params *LogFailedAttemptParams) {
 	// --- Extract data within the async function ---
 	provider := "unknown"
-	if provVal, provOk := repl.Get(RequestProviderKey); provOk {
+	if provVal, provOk := params.Replacer.Get(RequestProviderKey); provOk {
 		if pStr, strOk := provVal.(string); strOk {
 			provider = pStr
 		}
@@ -39,38 +44,86 @@ func logFailedAttempt(
 	var requestParams json.RawMessage
 	rawRequestBodySnippet := ""
 
-	if parsedReqBody != nil {
-		requestMethod = parsedReqBody.Method
-		if len(parsedReqBody.Params) > 0 {
-			requestParams = parsedReqBody.Params
+	// Always extract raw request body for logging
+	if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
+		if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
+			// Use a helper for min if not available; assuming min is defined elsewhere or use direct comparison
+			length := 500 // Increased from 100 to 500 for more context
+			if len(bodyBytes) < length {
+				length = len(bodyBytes)
+			}
+			rawRequestBodySnippet = string(bodyBytes[:length])
 		}
-	} else {
-		// Fallback if parsedReqBody was nil (e.g. initial parsing failed)
-		if v, okGet := repl.Get(RequestBodyKey); okGet {
-			if bodyBytes, okCast := v.([]byte); okCast {
-				if len(bodyBytes) > 0 {
-					// Use a helper for min if not available; assuming min is defined elsewhere or use direct comparison
-					length := 100
-					if len(bodyBytes) < length {
-						length = len(bodyBytes)
+	}
+
+	if params.ParsedReqBody != nil {
+		requestMethod = params.ParsedReqBody.Method
+		if len(params.ParsedReqBody.Params) > 0 {
+			requestParams = params.ParsedReqBody.Params
+		}
+	} else if rawRequestBodySnippet != "" {
+		// Try to extract method from raw request body if parsing failed
+		var tempReq struct {
+			Method string `json:"method"`
+		}
+		if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
+			if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
+				if err := json.Unmarshal(bodyBytes, &tempReq); err == nil && tempReq.Method != "" {
+					requestMethod = tempReq.Method
+				} else {
+					// If JSON parsing fails, try to extract method using regex as fallback
+					methodRegex := regexp.MustCompile(`"method"\s*:\s*"([^"]+)"`)
+					if matches := methodRegex.FindSubmatch(bodyBytes); len(matches) > 1 {
+						requestMethod = string(matches[1])
 					}
-					rawRequestBodySnippet = string(bodyBytes[:length])
 				}
+			}
+		}
+	}
+
+	// Parse response body to extract error information
+	var jsonRPCError *din_http.JSONRPCError
+	var rawResponseSnippet string
+	var parsedResponseType string
+
+	if len(params.RawResponseBody) > 0 {
+		// Create a snippet of the raw response for logging
+		length := 500
+		if len(params.RawResponseBody) < length {
+			length = len(params.RawResponseBody)
+		}
+		rawResponseSnippet = string(params.RawResponseBody[:length])
+
+		// Try to parse as JSON-RPC response first
+		var jsonRPCResponse din_http.JSONRPCResponse
+		if err := json.Unmarshal(params.RawResponseBody, &jsonRPCResponse); err == nil {
+			parsedResponseType = "jsonrpc"
+			if jsonRPCResponse.Error != nil {
+				jsonRPCError = jsonRPCResponse.Error
+			}
+		} else {
+			// Try to parse as generic JSON to see if it's valid JSON
+			var genericJSON interface{}
+			if err := json.Unmarshal(params.RawResponseBody, &genericJSON); err == nil {
+				parsedResponseType = "json"
+			} else {
+				parsedResponseType = "raw"
 			}
 		}
 	}
 	// --- End data extraction ---
 
 	logFields := []zap.Field{
-		zap.String("network", networkPath),
+		zap.String("network", params.NetworkPath),
 		zap.String("provider", provider),
-		zap.Int("failedAttemptNumber", failedAttemptNumber),
-		zap.Int("maxAttempts", maxAttempts),
-		zap.Int("statusCodeOfFailure", statusCodeOfFailure),
+		zap.Int("failed_attempt_number", params.FailedAttemptNumber),
+		zap.Int("max_attempts", params.MaxAttempts),
+		zap.Int("status_code", params.StatusCodeOfFailure),
+		zap.String("reason", params.Reason),
 	}
 
-	if upstreamErr != nil {
-		logFields = append(logFields, zap.NamedError("upstreamError", upstreamErr))
+	if params.Error != nil {
+		logFields = append(logFields, zap.NamedError("error", params.Error))
 	}
 
 	// Add JSON-RPC error information if present
@@ -84,25 +137,34 @@ func logFailedAttempt(
 	}
 
 	if requestMethod != "" {
-		logFields = append(logFields, zap.String("requestMethod", requestMethod))
+		logFields = append(logFields, zap.String("request_method", requestMethod))
 	}
 
 	if len(requestParams) > 0 && string(requestParams) != "null" {
 		var decodedParams interface{}
 		if errUnmarshal := json.Unmarshal(requestParams, &decodedParams); errUnmarshal == nil {
-			logFields = append(logFields, zap.Any("requestParams", decodedParams))
+			logFields = append(logFields, zap.Any("request_params", decodedParams))
 		} else {
-			logFields = append(logFields, zap.String("rawRequestParams", string(requestParams)))
-			lg.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
+			logFields = append(logFields, zap.String("raw_request_params", string(requestParams)))
+			params.Logger.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
 				zap.Error(errUnmarshal),
-				zap.String("rawParamsAttempted", string(requestParams)))
+				zap.String("raw_params_attempted", string(requestParams)))
 		}
-	} else if requestMethod == "" && rawRequestBodySnippet != "" {
-		// Only log rawRequestBodySnippet if we didn't even have a requestMethod
-		logFields = append(logFields, zap.String("rawRequestBodySnippet", rawRequestBodySnippet))
 	}
 
-	lg.Warn("Request attempt failed, initiating retry", logFields...)
+	// Always log raw request body snippet if available
+	if rawRequestBodySnippet != "" {
+		logFields = append(logFields, zap.String("raw_request_body", rawRequestBodySnippet))
+	}
+
+	// Log response information
+	if rawResponseSnippet != "" {
+		logFields = append(logFields,
+			zap.String("raw_response_body", rawResponseSnippet),
+			zap.String("response_type", parsedResponseType))
+	}
+
+	params.Logger.Warn("Request attempt failed, initiating retry", logFields...)
 }
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch

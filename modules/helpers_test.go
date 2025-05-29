@@ -519,15 +519,15 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 						fields := log.ContextMap()
 						assert.Contains(t, fields, "network")
 						assert.Contains(t, fields, "provider")
-						assert.Contains(t, fields, "requestMethod")
+						assert.Contains(t, fields, "request_method")
 						assert.Equal(t, "test/eth", fields["network"])
 						assert.Equal(t, "din", fields["provider"])
-						assert.Equal(t, tt.method, fields["requestMethod"])
+						assert.Equal(t, tt.method, fields["request_method"])
 
 						// Check for error-specific fields based on the test case
 						if tt.respStatus != 200 {
-							assert.Contains(t, fields, "statusCodeOfFailure")
-							assert.Equal(t, int64(tt.respStatus), fields["statusCodeOfFailure"])
+							assert.Contains(t, fields, "status_code")
+							assert.Equal(t, int64(tt.respStatus), fields["status_code"])
 						}
 
 						break
@@ -656,7 +656,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request context timeout",
+			expectedLogMsg:     "Request attempt failed, initiating retry",
 			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
 		},
 		{
@@ -670,7 +670,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusGatewayTimeout,
 			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request context timeout",
+			expectedLogMsg:     "Request attempt failed, initiating retry",
 			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
 		},
 		{
@@ -683,8 +683,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				// No provider set to test "No provider selected" case
 			},
 			expectedStatusCode: http.StatusServiceUnavailable,
-			expectedLogLevel:   zapcore.ErrorLevel,
-			expectedLogMsg:     "Request context error",
+			expectedLogLevel:   zapcore.WarnLevel,
+			expectedLogMsg:     "Request attempt failed, initiating retry",
 			expectedResponse:   `{"error": "Service unavailable", "code": 503}`,
 		},
 		{
@@ -701,7 +701,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request context timeout",
+			expectedLogMsg:     "Request attempt failed, initiating retry",
 			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
 		},
 		{
@@ -714,7 +714,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusGatewayTimeout,
 			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request context timeout",
+			expectedLogMsg:     "Request attempt failed, initiating retry",
 			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
 		},
 	}
@@ -740,8 +740,13 @@ func TestHandleContextCancellation(t *testing.T) {
 			err := fmt.Errorf(tt.errorMsg)
 			reqStartTime := time.Now().Add(-5 * time.Second) // Simulate 5 second duration
 
+			// Create a test network object
+			testNetwork := &network{
+				RequestAttemptCount: 3, // Default for testing
+			}
+
 			// Call the function
-			handleContextCancellation(loggerClient, rw, req, tt.networkPath, tt.attempt, err, reqStartTime)
+			handleContextCancellation(loggerClient, nil, rw, req, tt.networkPath, tt.attempt, err, reqStartTime, testNetwork)
 
 			// Verify HTTP response
 			assert.Equal(t, tt.expectedStatusCode, rw.Code)
@@ -759,31 +764,27 @@ func TestHandleContextCancellation(t *testing.T) {
 					found = true
 					fields := log.ContextMap()
 
-					// Verify required fields
+					// Verify required fields from logFailedAttempt
 					assert.Equal(t, tt.networkPath, fields["network"])
-					assert.Equal(t, int64(tt.attempt+1), fields["attempt"])
+					assert.Equal(t, int64(tt.attempt+1), fields["failed_attempt_number"])
+					assert.Equal(t, int64(3), fields["max_attempts"]) // testNetwork.RequestAttemptCount
 					assert.Equal(t, int64(tt.expectedStatusCode), fields["status_code"])
-					assert.Contains(t, fields, "duration")
-					assert.Equal(t, "POST", fields["method"])
-					assert.Equal(t, "/"+tt.networkPath, fields["path"])
-					assert.Contains(t, fields, "remote_addr")
-					assert.Contains(t, fields, "request_body")
-					assert.Equal(t, tt.expectedResponse, fields["response_body"])
-					assert.Contains(t, fields, "error")
+					assert.Equal(t, "Context cancellation", fields["reason"])
+					assert.Contains(t, fields, "upstream_error")
 
-					// Verify provider field
+					// Check for provider field
 					if _, ok := repl.Get(RequestProviderKey); ok {
 						assert.Contains(t, fields, "provider")
-						assert.NotEqual(t, "No provider selected before cancellation", fields["provider"])
+						assert.NotEqual(t, "unknown", fields["provider"])
 					} else {
-						assert.Equal(t, "No provider selected before cancellation", fields["provider"])
+						// When no provider is set, it defaults to "unknown"
+						assert.Equal(t, "unknown", fields["provider"])
 					}
 
-					// Verify request body truncation for long body test
-					if tt.name == "Long request body should be truncated in logs" {
-						requestBody := fields["request_body"].(string)
-						assert.Contains(t, requestBody, "... (truncated)")
-						assert.LessOrEqual(t, len(requestBody), 1015) // 1000 + "... (truncated)"
+					// Check for request method if request body was parsed
+					if parsedReqBody, ok := repl.Get(RequestBodyKey); ok && len(parsedReqBody.([]byte)) > 0 {
+						assert.Contains(t, fields, "request_method")
+						assert.Contains(t, fields, "raw_request_body")
 					}
 
 					break

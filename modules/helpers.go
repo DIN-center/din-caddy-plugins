@@ -361,24 +361,19 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	// processBlockNumberResponse checks for respStatus >= 400
 	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
-		// Check for JSON-RPC errors in the response
-		var jsonRPCError *dinHttp.JSONRPCError
-		if respBody != nil {
-			jsonRPCError = checkForJSONRPCError(respBody)
-		}
-
 		// Log the failed async processing with detailed information
-		logFailedAttempt(
-			d.logger,
-			networkPath,
-			1, // Single attempt for async processing
-			1, // Total attempts is always 1 for async processing
-			respStatus,
-			processingError,
-			repl,
-			jsonRPCReq,
-			jsonRPCError,
-		)
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Async health check processing failed",
+			Logger:              d.logger,
+			NetworkPath:         networkPath,
+			FailedAttemptNumber: 1, // Single attempt for async processing
+			MaxAttempts:         1, // Total attempts is always 1 for async processing
+			StatusCodeOfFailure: respStatus,
+			Error:               processingError,
+			Replacer:            repl,
+			ParsedReqBody:       jsonRPCReq,
+			RawResponseBody:     respBody,
+		})
 		return
 	}
 
@@ -396,17 +391,18 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 
 		// For getBlockByNumber errors, we don't have a JSON-RPC error from the original response
 		// since this is a separate internal call
-		logFailedAttempt(
-			d.logger,
-			networkPath,
-			1,   // Single attempt for async processing
-			1,   // Total attempts is always 1 for async processing
-			200, // getBlockByNumber is an internal call, assume 200 for the original response
-			err,
-			getBlockRepl,
-			getBlockJSONRPCReq,
-			nil, // No JSON-RPC error for internal getBlockByNumber calls
-		)
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Get block by number failed",
+			Logger:              d.logger,
+			NetworkPath:         networkPath,
+			FailedAttemptNumber: 1,   // Single attempt for async processing
+			MaxAttempts:         1,   // Total attempts is always 1 for async processing
+			StatusCodeOfFailure: 200, // getBlockByNumber is an internal call, assume 200 for the original response
+			Error:               err,
+			Replacer:            getBlockRepl,
+			ParsedReqBody:       getBlockJSONRPCReq,
+			RawResponseBody:     nil, // No response body for internal getBlockByNumber calls
+		})
 		return
 	}
 
@@ -502,79 +498,93 @@ func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath st
 }
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
-// and logging comprehensive information about the cancellation
-func handleContextCancellation(l *logger.LoggerClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
+// and logging using the standard logFailedAttempt format for consistency
+func handleContextCancellation(l *logger.LoggerClient, promClient *prom.PrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
+	// Calculate duration
 	duration := time.Since(reqStartTime)
-
 	// Determine the appropriate HTTP status code and response based on the error type
 	var statusCode int
 	var responseBody string
-	var logLevel string = "warn"
 
 	switch {
 	case strings.Contains(err.Error(), "cancelled by client"):
 		statusCode = http.StatusRequestTimeout // 408
 		responseBody = `{"error": "Request cancelled by client", "code": 408}`
-		logLevel = "warn"
 	case strings.Contains(err.Error(), "deadline exceeded"):
 		statusCode = http.StatusGatewayTimeout // 504
 		responseBody = `{"error": "Request timeout exceeded", "code": 504}`
-		logLevel = "warn"
 	default:
 		statusCode = http.StatusServiceUnavailable // 503
 		responseBody = `{"error": "Service unavailable", "code": 503}`
-		logLevel = "error"
 	}
 
-	// Get request body from context for logging
+	// Get request context data
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var requestBodyStr string
+
+	// Parse request body for consistent logging and metrics
+	var parsedReqBody *dinHttp.JSONRPCRequest
 	if v, ok := repl.Get(RequestBodyKey); ok {
-		requestBody := v.([]byte)
-		// Truncate request body if it's too long for logging
-		if len(requestBody) > 1000 {
-			requestBodyStr = string(requestBody[:1000]) + "... (truncated)"
-		} else {
-			requestBodyStr = string(requestBody)
+		if bodyBytes, ok := v.([]byte); ok && len(bodyBytes) > 0 {
+			var jsonRPCReq dinHttp.JSONRPCRequest
+			if err := json.Unmarshal(bodyBytes, &jsonRPCReq); err == nil {
+				parsedReqBody = &jsonRPCReq
+			}
 		}
 	}
 
-	// Get provider information if available
-	var providerInfo string
-	if v, ok := repl.Get(RequestProviderKey); ok {
-		providerInfo = v.(string)
-	} else {
-		providerInfo = "No provider selected before cancellation"
+	// Use the actual max attempts from the network configuration
+	maxAttempts := 1 // Default fallback
+	if networkObj != nil {
+		maxAttempts = networkObj.RequestAttemptCount
 	}
 
-	// Log the context cancellation with comprehensive details
-	logFields := []zap.Field{
-		zap.String("network", networkPath),
-		zap.Int("attempt", attempt+1),
-		zap.Int("status_code", statusCode),
-		zap.Duration("duration", duration),
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("user_agent", r.Header.Get("User-Agent")),
-		zap.String("remote_addr", r.RemoteAddr),
-		zap.String("provider", providerInfo),
-		zap.String("request_body", requestBodyStr),
-		zap.String("response_body", responseBody), // Use the responseBody from switch statement
-		zap.Error(err),
-	}
-
-	// Log at appropriate level based on error type
-	switch logLevel {
-	case "info":
-		l.Info("Request cancelled by client", logFields...)
-	case "warn":
-		l.Warn("Request context timeout", logFields...)
-	case "error":
-		l.Error("Request context error", logFields...)
-	}
+	// Use logFailedAttempt for consistent logging format
+	logFailedAttempt(&LogFailedAttemptParams{
+		Reason:              "Context cancellation",
+		Logger:              l,
+		NetworkPath:         networkPath,
+		FailedAttemptNumber: attempt + 1,   // Current attempt number (1-indexed)
+		MaxAttempts:         maxAttempts,   // Use actual max attempts from network config
+		StatusCodeOfFailure: statusCode,    // Status code we're about to return
+		Error:               err,           // The context cancellation error
+		Replacer:            repl,          // Caddy replacer for context data
+		ParsedReqBody:       parsedReqBody, // Parsed request body
+		RawResponseBody:     nil,           // No response body for context cancellation
+	})
 
 	// Set appropriate headers and write response
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(statusCode)
 	rw.Write([]byte(responseBody))
+
+	// Collect Prometheus metrics for context cancellation
+	if promClient != nil {
+		// Get provider from replacer for metrics
+		var provider string
+		if v, ok := repl.Get(RequestProviderKey); ok {
+			if pStr, ok := v.(string); ok {
+				provider = pStr
+			}
+		}
+		if provider == "" {
+			provider = "unknown"
+		}
+
+		// Get method name, fallback to "unknown" if parsedReqBody is nil
+		methodName := "unknown"
+		if parsedReqBody != nil {
+			methodName = parsedReqBody.Method
+		}
+
+		// Record metrics for the context cancellation
+		promClient.HandleRequestMetrics(&prom.PromRequestMetricData{
+			Method:         methodName,
+			Network:        networkPath,
+			Provider:       provider,
+			HostName:       r.Host,
+			ResponseStatus: statusCode,
+			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
+			Environment:    "unknown",   // We don't have access to environment here
+		}, duration, parsedReqBody)
+	}
 }

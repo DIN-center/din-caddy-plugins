@@ -320,7 +320,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Non-retryable JSON-RPC errors (method not found, invalid params) will not trigger retries
 	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		if err := checkRequestContext(d.logger, r, networkPath, attempt); err != nil {
-			handleContextCancellation(d.logger, rw, r, networkPath, attempt, err, reqStartTime)
+			handleContextCancellation(d.logger, d.PrometheusClient, rw, r, networkPath, attempt, err, reqStartTime, networkObj)
 			return nil
 		}
 		rww = NewResponseWriterWrapper(rw)
@@ -358,38 +358,91 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			// Check if this JSON-RPC error is retryable
 			if !isJSONRPCErrorRetryable(jsonRPCError) {
 				// Non-retryable JSON-RPC error (e.g., method not found, invalid params)
+				// Log this for debugging purposes since we won't retry
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Non-retryable JSON-RPC error",
+					Logger:              d.logger,
+					NetworkPath:         networkPath,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         networkObj.RequestAttemptCount,
+					StatusCodeOfFailure: rww.statusCode,
+					Error:               nil, // no upstream error for JSON-RPC errors
+					Replacer:            repl,
+					ParsedReqBody:       requestBody,
+					RawResponseBody:     responseBody,
+				})
 				break
 			}
 
 			// Log the failed attempt with JSON-RPC error information
-			logFailedAttempt(
-				d.logger,
-				networkPath,
-				attempt+1,
-				networkObj.RequestAttemptCount,
-				rww.statusCode,
-				nil, // no upstream error for JSON-RPC errors
-				repl,
-				requestBody,
-				jsonRPCError, // Pass the JSON-RPC error
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "JSON-RPC error",
+				Logger:              d.logger,
+				NetworkPath:         networkPath,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         networkObj.RequestAttemptCount,
+				StatusCodeOfFailure: rww.statusCode,
+				Error:               nil, // no upstream error for JSON-RPC errors
+				Replacer:            repl,
+				ParsedReqBody:       requestBody,
+				RawResponseBody:     responseBody,
+			})
 		} else {
 			// Log non 200 status failed attempt with HTTP error information
-			logFailedAttempt(
-				d.logger,
-				networkPath,
-				attempt+1,
-				networkObj.RequestAttemptCount,
-				rww.statusCode,
-				err, // upstream error from next.ServeHTTP
-				repl,
-				requestBody,
-				nil, // no JSON-RPC error for HTTP errors
-			)
+			var responseBody []byte
+			if rww.body != nil {
+				responseBody = rww.body.Bytes()
+			}
+
+			// Determine if this is the final attempt or not
+			reason := "HTTP attempt failed error"
+			if attempt == networkObj.RequestAttemptCount-1 {
+				reason = "HTTP attempt failed error (final attempt)"
+			}
+
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              reason,
+				Logger:              d.logger,
+				NetworkPath:         networkPath,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         networkObj.RequestAttemptCount,
+				StatusCodeOfFailure: rww.statusCode,
+				Error:               err, // upstream error from next.ServeHTTP
+				Replacer:            repl,
+				ParsedReqBody:       requestBody,
+				RawResponseBody:     responseBody,
+			})
 		}
 	}
 	if err != nil {
-		d.logger.Error("Error serving HTTP", zap.String("network", networkPath), zap.Error(err))
+		// Collect metrics for failed requests before returning error
+		var provider string
+		if v, ok := repl.Get(RequestProviderKey); ok {
+			provider = v.(string)
+		}
+
+		duration := time.Since(reqStartTime)
+
+		// Determine appropriate status code for the failure
+		statusCode := http.StatusInternalServerError // Default for HTTP errors
+		if rww != nil && rww.statusCode > 0 {
+			statusCode = rww.statusCode
+		}
+
+		// Skip Prometheus metrics reporting if in test mode
+		if !d.testMode && d.PrometheusClient != nil {
+			// Record metrics for the failed request
+			d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
+				Method:         requestBody.Method,
+				Network:        networkPath,
+				Provider:       provider,
+				HostName:       r.Host,
+				ResponseStatus: statusCode,
+				HealthStatus:   "unhealthy", // All providers failed
+				Environment:    string(d.Env),
+			}, duration, requestBody)
+		}
+
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 

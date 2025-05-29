@@ -457,17 +457,18 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			}
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				lastResponseStatus,
-				err,
-				repl,
-				jsonRPCReq,
-				nil, // no JSON-RPC error for HTTP errors
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check HTTP request failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: lastResponseStatus,
+				Error:               err,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     nil, // no response body for HTTP errors
+			})
 			continue
 		}
 
@@ -479,24 +480,19 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 				lastResponseStatus = *statusCode
 			}
 
-			// Check for JSON-RPC errors in the response
-			var jsonRPCError *din_http.JSONRPCError
-			if resBytes != nil {
-				jsonRPCError = checkForJSONRPCError(resBytes)
-			}
-
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				lastResponseStatus,
-				err,
-				repl,
-				jsonRPCReq,
-				jsonRPCError,
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: lastResponseStatus,
+				Error:               err,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
 
 			continue
 		}
@@ -578,17 +574,18 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			lastErr = errors.Wrap(err, "Error sending POST request")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				0, // No status code for HTTP errors
-				err,
-				repl,
-				jsonRPCReq,
-				nil, // no JSON-RPC error for HTTP errors
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check HTTP request failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: 0, // No status code for HTTP errors
+				Error:               err,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     nil, // no response body for HTTP errors
+			})
 			continue
 		}
 
@@ -596,17 +593,18 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			lastErr = errors.New("Error getting chain ID from response")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				nil, // Check for JSON-RPC error below
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check HTTP request failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     nil, // Check for JSON-RPC error below
+			})
 			continue
 		}
 
@@ -619,41 +617,37 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			lastErr = errors.Wrap(err, "Error unmarshalling response")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				nil, // JSON unmarshaling error, not a JSON-RPC error
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
 			continue
 		}
 
 		if _, ok := respObject["result"]; !ok {
 			lastErr = errors.New("Error getting chain ID from response")
 
-			// Check for JSON-RPC errors in the response
-			var jsonRPCError *din_http.JSONRPCError
-			if resBytes != nil {
-				jsonRPCError = checkForJSONRPCError(resBytes)
-			}
-
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				jsonRPCError,
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
 			continue
 		}
 
@@ -690,24 +684,19 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			if !ok {
 				lastErr = errors.New("Error getting chain ID from response")
 
-				// Check for JSON-RPC errors in the response
-				var jsonRPCError *din_http.JSONRPCError
-				if resBytes != nil {
-					jsonRPCError = checkForJSONRPCError(resBytes)
-				}
-
 				// Log the failed attempt with detailed information
-				logFailedAttempt(
-					n.logger,
-					n.Name,
-					attempt+1,
-					n.RequestAttemptCount,
-					*statusCode,
-					lastErr,
-					repl,
-					jsonRPCReq,
-					jsonRPCError,
-				)
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Health check response processing failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: *statusCode,
+					Error:               lastErr,
+					Replacer:            repl,
+					ParsedReqBody:       jsonRPCReq,
+					RawResponseBody:     resBytes,
+				})
 				continue
 			}
 		}
@@ -746,17 +735,18 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 				lastErr = errors.Wrap(err, "Failed to parse quarter block height")
 
 				// Log the failed attempt with detailed information
-				logFailedAttempt(
-					n.logger,
-					n.Name,
-					attempt+1,
-					n.RequestAttemptCount,
-					0, // No status code for parsing errors
-					lastErr,
-					repl,
-					jsonRPCReq,
-					nil, // no JSON-RPC error for parsing errors
-				)
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Health check response processing failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: 0, // No status code for parsing errors
+					Error:               lastErr,
+					Replacer:            repl,
+					ParsedReqBody:       jsonRPCReq,
+					RawResponseBody:     nil, // no response body for parsing errors
+				})
 				continue
 			}
 
@@ -777,17 +767,18 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			lastErr = errors.Wrap(err, "Error sending POST request")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				0, // No status code for HTTP errors
-				lastErr,
-				repl,
-				jsonRPCReq,
-				nil, // no JSON-RPC error for HTTP errors
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check HTTP request failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: 0, // No status code for HTTP errors
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     nil, // no response body for HTTP errors
+			})
 			continue
 		}
 
@@ -795,17 +786,18 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			lastErr = errors.New("Network Unavailable")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				nil, // Check for JSON-RPC error below
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check HTTP request failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     nil, // Check for JSON-RPC error below
+			})
 			continue
 		}
 
@@ -818,17 +810,18 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			lastErr = errors.Wrap(err, "Error unmarshalling response")
 
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				nil, // JSON unmarshaling error, not a JSON-RPC error
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
 			continue
 		}
 
@@ -836,24 +829,19 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 		if _, ok := respObject["error"]; ok {
 			lastErr = errors.New("network doesn't support archive mode")
 
-			// Check for JSON-RPC errors in the response
-			var jsonRPCError *din_http.JSONRPCError
-			if resBytes != nil {
-				jsonRPCError = checkForJSONRPCError(resBytes)
-			}
-
 			// Log the failed attempt with detailed information
-			logFailedAttempt(
-				n.logger,
-				n.Name,
-				attempt+1,
-				n.RequestAttemptCount,
-				*statusCode,
-				lastErr,
-				repl,
-				jsonRPCReq,
-				jsonRPCError,
-			)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
 			continue
 		}
 
@@ -863,24 +851,19 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			if !ok {
 				lastErr = errors.New("Error getting archive mode check from response: missing or invalid result object")
 
-				// Check for JSON-RPC errors in the response
-				var jsonRPCError *din_http.JSONRPCError
-				if resBytes != nil {
-					jsonRPCError = checkForJSONRPCError(resBytes)
-				}
-
 				// Log the failed attempt with detailed information
-				logFailedAttempt(
-					n.logger,
-					n.Name,
-					attempt+1,
-					n.RequestAttemptCount,
-					*statusCode,
-					lastErr,
-					repl,
-					jsonRPCReq,
-					jsonRPCError,
-				)
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Health check response processing failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: *statusCode,
+					Error:               lastErr,
+					Replacer:            repl,
+					ParsedReqBody:       jsonRPCReq,
+					RawResponseBody:     resBytes,
+				})
 				continue
 			}
 
@@ -889,24 +872,19 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			if !ok || blockHash == "" {
 				lastErr = errors.New("Error getting archive mode check from response: missing or invalid block_hash")
 
-				// Check for JSON-RPC errors in the response
-				var jsonRPCError *din_http.JSONRPCError
-				if resBytes != nil {
-					jsonRPCError = checkForJSONRPCError(resBytes)
-				}
-
 				// Log the failed attempt with detailed information
-				logFailedAttempt(
-					n.logger,
-					n.Name,
-					attempt+1,
-					n.RequestAttemptCount,
-					*statusCode,
-					lastErr,
-					repl,
-					jsonRPCReq,
-					jsonRPCError,
-				)
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Health check response processing failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: *statusCode,
+					Error:               lastErr,
+					Replacer:            repl,
+					ParsedReqBody:       jsonRPCReq,
+					RawResponseBody:     resBytes,
+				})
 				continue
 			}
 
@@ -1086,17 +1064,18 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 
 	if err != nil {
 		// Log the failed loopback attempt with detailed information
-		logFailedAttempt(
-			n.logger,
-			n.Name,
-			1, // Single attempt for loopback
-			1, // Total attempts is always 1 for loopback
-			currentResponseStatus,
-			err,
-			repl,
-			jsonRPCReq,
-			nil, // no JSON-RPC error for HTTP errors
-		)
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Health check HTTP request failed",
+			Logger:              n.logger,
+			NetworkPath:         n.Name,
+			FailedAttemptNumber: 1, // Single attempt for loopback
+			MaxAttempts:         1, // Total attempts is always 1 for loopback
+			StatusCodeOfFailure: currentResponseStatus,
+			Error:               err,
+			Replacer:            repl,
+			ParsedReqBody:       jsonRPCReq,
+			RawResponseBody:     nil, // no response body for HTTP errors
+		})
 
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,
@@ -1108,24 +1087,19 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
 	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
 	if err != nil {
-		// Check for JSON-RPC errors in the response
-		var jsonRPCError *din_http.JSONRPCError
-		if resBytes != nil {
-			jsonRPCError = checkForJSONRPCError(resBytes)
-		}
-
 		// Log the failed loopback attempt with detailed information
-		logFailedAttempt(
-			n.logger,
-			n.Name,
-			1, // Single attempt for loopback
-			1, // Total attempts is always 1 for loopback
-			currentResponseStatus,
-			err,
-			repl,
-			jsonRPCReq,
-			jsonRPCError,
-		)
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Health check response processing failed",
+			Logger:              n.logger,
+			NetworkPath:         n.Name,
+			FailedAttemptNumber: 1, // Single attempt for loopback
+			MaxAttempts:         1, // Total attempts is always 1 for loopback
+			StatusCodeOfFailure: currentResponseStatus,
+			Error:               err,
+			Replacer:            repl,
+			ParsedReqBody:       jsonRPCReq,
+			RawResponseBody:     resBytes,
+		})
 
 		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
 		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
