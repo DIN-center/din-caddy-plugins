@@ -474,7 +474,7 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 
 // checkRequestContext checks if the request context has been cancelled or exceeded deadline
 // Returns an error if the context is done, nil if the context is still active
-func checkRequestContext(l *zap.Logger, r *http.Request, networkPath string, attempt int) error {
+func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath string, attempt int) error {
 	select {
 	case <-r.Context().Done():
 		switch r.Context().Err() {
@@ -503,7 +503,7 @@ func checkRequestContext(l *zap.Logger, r *http.Request, networkPath string, att
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
 // and logging comprehensive information about the cancellation
-func handleContextCancellation(l *zap.Logger, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
+func handleContextCancellation(l *logger.LoggerClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
 	duration := time.Since(reqStartTime)
 
 	// Determine the appropriate HTTP status code and response based on the error type
