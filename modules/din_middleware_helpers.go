@@ -23,7 +23,7 @@ type LogFailedAttemptParams struct {
 	FailedAttemptNumber int // 1-indexed
 	MaxAttempts         int
 	StatusCodeOfFailure int
-	err                 error                    // Can be nil
+	Error               error                    // Can be nil
 	Replacer            *caddy.Replacer          // Caddy replacer to get context data
 	ParsedReqBody       *din_http.JSONRPCRequest // Parsed request body
 	RawResponseBody     []byte                   // Raw response body to parse internally
