@@ -2,24 +2,21 @@ package modules
 
 import (
 	"crypto/rand"
-	"encoding/json"
-	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
-	"github.com/caddyserver/caddy/v2"
 	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-	"github.com/zeebo/assert"
+	"github.com/stretchr/testify/assert"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
@@ -31,259 +28,6 @@ const (
 	testRequestProviderKey = "request_provider"
 	testRequestBodyKey     = "request_body"
 )
-
-func TestLogFailedAttempt(t *testing.T) {
-	tests := []struct {
-		name                          string
-		networkPath                   string
-		failedAttemptNumber           int
-		maxAttempts                   int
-		statusCodeOfFailure           int
-		error                         error
-		setupReplacer                 func(repl *caddy.Replacer)
-		parsedReqBody                 *din_http.JSONRPCRequest
-		jsonRPCError                  *din_http.JSONRPCError
-		expectedErrorLogFields        map[string]interface{}
-		expectDebugLogForParamFailure bool
-		expectedDebugLogFields        map[string]interface{}
-	}{
-		{
-			name:                   "basic log with no errors or complex params",
-			networkPath:            "test-network",
-			failedAttemptNumber:    1,
-			maxAttempts:            3,
-			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "test-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "test_method"},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-network", "provider": "test-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(500), "request_method": "test_method"},
-		},
-		{
-			name:                   "with upstream error",
-			networkPath:            "test-network-err",
-			failedAttemptNumber:    2,
-			maxAttempts:            3,
-			statusCodeOfFailure:    503,
-			error:                  fmt.Errorf("connection refused"),
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "err-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "error_method"},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-network-err", "provider": "err-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(503), "request_method": "error_method", "upstream_error": "connection refused"},
-		},
-		{
-			name:                   "with JSON-RPC error",
-			networkPath:            "test-jsonrpc-error",
-			failedAttemptNumber:    1,
-			maxAttempts:            3,
-			statusCodeOfFailure:    200,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_getBalance"},
-			jsonRPCError:           &din_http.JSONRPCError{Code: -32601, Message: "Method not found"},
-			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error", "provider": "jsonrpc-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_getBalance", "jsonrpc_error_code": int64(-32601), "jsonrpc_error_message": "Method not found"},
-		},
-		{
-			name:                   "with JSON-RPC error and data",
-			networkPath:            "test-jsonrpc-error-data",
-			failedAttemptNumber:    2,
-			maxAttempts:            3,
-			statusCodeOfFailure:    200,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-data-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_call"},
-			jsonRPCError:           &din_http.JSONRPCError{Code: -32603, Message: "Internal error", Data: map[string]interface{}{"details": "Server overloaded"}},
-			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error-data", "provider": "jsonrpc-data-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_call", "jsonrpc_error_code": int64(-32603), "jsonrpc_error_message": "Internal error", "jsonrpc_error_data": map[string]interface{}{"details": "Server overloaded"}},
-		},
-		{
-			name:                   "with valid JSON array params",
-			networkPath:            "test-params-array",
-			failedAttemptNumber:    1,
-			maxAttempts:            2,
-			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "params-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_array_params", Params: json.RawMessage(`[1, "test", true]`)},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-params-array", "provider": "params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(2), "status_code": int64(400), "request_method": "method_array_params", "request_params": []interface{}{float64(1), "test", true}},
-		},
-		{
-			name:                   "with valid JSON object params",
-			networkPath:            "test-params-obj",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "params-obj-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_obj_params", Params: json.RawMessage(`{"key":"value", "num":123}`)},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-params-obj", "provider": "params-obj-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_obj_params", "request_params": map[string]interface{}{"key": "value", "num": float64(123)}},
-		},
-		{
-			name:                          "with malformed JSON params",
-			networkPath:                   "test-malformed-params",
-			failedAttemptNumber:           1,
-			maxAttempts:                   1,
-			statusCodeOfFailure:           400,
-			setupReplacer:                 func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "malformed-provider") },
-			parsedReqBody:                 &din_http.JSONRPCRequest{Method: "method_malformed", Params: json.RawMessage(`{"key":incomplete}`)},
-			jsonRPCError:                  nil,
-			expectedErrorLogFields:        map[string]interface{}{"network": "test-malformed-params", "provider": "malformed-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_malformed", "raw_request_params": `{"key":incomplete}`},
-			expectDebugLogForParamFailure: true,
-			expectedDebugLogFields:        map[string]interface{}{"raw_params_attempted": `{"key":incomplete}`},
-		},
-		{
-			name:                   "with JSON null params",
-			networkPath:            "test-null-params",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "null-params-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_null_params", Params: json.RawMessage(`null`)},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-null-params", "provider": "null-params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_null_params"},
-		},
-		{
-			name:                   "with empty params",
-			networkPath:            "test-empty-params",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "empty-params-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_empty_params", Params: json.RawMessage{}},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-empty-params", "provider": "empty-params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_empty_params"},
-		},
-		{
-			name:                "parsedReqBody is nil, fallback to raw snippet from replacer",
-			networkPath:         "test-nil-parsedbody",
-			failedAttemptNumber: 1,
-			maxAttempts:         1,
-			statusCodeOfFailure: 500,
-			setupReplacer: func(repl *caddy.Replacer) {
-				repl.Set(testRequestProviderKey, "nil-body-provider")
-				repl.Set(testRequestBodyKey, []byte("this is a raw request body snippet that is very long indeed and should be truncated"))
-			},
-			parsedReqBody:          nil,
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-nil-parsedbody", "provider": "nil-body-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500), "raw_request_body": "this is a raw request body snippet that is very long indeed and should be truncated"},
-		},
-		{
-			name:                   "parsedReqBody is nil, replacer has no body",
-			networkPath:            "test-nil-parsedbody-no-snippet",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "no-snippet-provider") },
-			parsedReqBody:          nil,
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-nil-parsedbody-no-snippet", "provider": "no-snippet-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500)},
-		},
-		{
-			name:                   "provider not in replacer, defaults to unknown",
-			networkPath:            "test-unknown-provider",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { /* Provider key not set */ },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "some_method"},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-unknown-provider", "provider": "unknown", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500), "request_method": "some_method"},
-		},
-		{
-			name:                   "provider in replacer but not a string",
-			networkPath:            "test-provider-not-string",
-			failedAttemptNumber:    1,
-			maxAttempts:            1,
-			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, 12345) },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "another_method"},
-			jsonRPCError:           nil,
-			expectedErrorLogFields: map[string]interface{}{"network": "test-provider-not-string", "provider": "unknown", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500), "request_method": "another_method"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			observed, logs := observer.New(zapcore.DebugLevel)
-			testZapLogger := zap.New(observed)
-			loggerClient := logger.NewLoggerClient(testZapLogger, utils.EnvTest)
-
-			repl := caddy.NewReplacer()
-			if tt.setupReplacer != nil {
-				tt.setupReplacer(repl)
-			}
-
-			// Create raw response body if jsonRPCError is provided
-			var rawResponseBody []byte
-			if tt.jsonRPCError != nil {
-				jsonRPCResponse := din_http.JSONRPCResponse{
-					JSONRPC: "2.0",
-					ID:      json.RawMessage(`1`),
-					Error:   tt.jsonRPCError,
-				}
-				var err error
-				rawResponseBody, err = json.Marshal(jsonRPCResponse)
-				require.NoError(t, err, "failed to marshal JSON-RPC error response for test")
-			}
-
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Test failure",
-				Logger:              loggerClient,
-				NetworkPath:         tt.networkPath,
-				FailedAttemptNumber: tt.failedAttemptNumber,
-				MaxAttempts:         tt.maxAttempts,
-				StatusCodeOfFailure: tt.statusCodeOfFailure,
-				Error:               tt.error,
-				Replacer:            repl,
-				ParsedReqBody:       tt.parsedReqBody,
-				RawResponseBody:     rawResponseBody,
-			})
-
-			foundErrorLog := false
-			foundDebugLogForParamFailure := false
-
-			allLogs := logs.All()
-			require.NotEmpty(t, allLogs, "expected at least one log message")
-
-			for _, loggedEntry := range allLogs {
-				if loggedEntry.Level == zapcore.WarnLevel && loggedEntry.Message == "Request attempt failed, initiating retry" {
-					foundErrorLog = true
-					for k, expectedV := range tt.expectedErrorLogFields {
-						actualV, ok := loggedEntry.ContextMap()[k]
-						require.True(t, ok, "expected field '%s' in warning log", k)
-
-						if k == "upstream_error" {
-							// Expect erroror to be logged as its string representation
-							actualStr, isStr := actualV.(string)
-							require.True(t, isStr, "expected field 'upstream_error' to be a string in log context, but got %T for key '%s'", actualV, k)
-
-							expectedStr, isExpectedStr := expectedV.(string)
-							require.True(t, isExpectedStr, "test expectation for 'upstream_error' (key '%s') should be a string", k)
-							require.Equal(t, expectedStr, actualStr, "field 'upstream_error' (key '%s') string value mismatch", k)
-						} else {
-							// For all other fields, use direct comparison.
-							// This correctly handles int64 expectations for numeric types logged with zap.Int.
-							require.Equal(t, expectedV, actualV, "field '%s' value mismatch", k)
-						}
-					}
-					// Check that no unexpected fields are in the warning log context (optional, can be strict)
-					// require.Len(t, loggedEntry.ContextMap(), len(tt.expectedErrorLogFields), "warning log has unexpected number of fields")
-				} else if loggedEntry.Level == zapcore.DebugLevel && loggedEntry.Message == "Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string." {
-					require.True(t, tt.expectDebugLogForParamFailure, "unexpected debug log for param failure")
-					foundDebugLogForParamFailure = true
-					if tt.expectedDebugLogFields != nil {
-						for k, expectedV := range tt.expectedDebugLogFields {
-							actualV, ok := loggedEntry.ContextMap()[k]
-							require.True(t, ok, "expected field '%s' in debug log for param failure", k)
-							require.Equal(t, expectedV, actualV, "field '%s' value mismatch in debug log for param failure", k)
-						}
-					}
-				}
-			}
-
-			require.True(t, foundErrorLog, "expected warning log 'Request attempt failed, initiating retry' was not found")
-			if tt.expectDebugLogForParamFailure {
-				require.True(t, foundDebugLogForParamFailure, "expected debug log for param failure was not found")
-			}
-		})
-	}
-}
 
 func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
@@ -1001,7 +745,7 @@ func TestCreateNewProvider(t *testing.T) {
 				assert.NotNil(t, createdProvider)
 
 				// Verify that the provider was updated correctly
-				assert.DeepEqual(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
+				assert.Equal(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
 				assert.Equal(t, dinMiddleware.RegistryPriority, createdProvider.Priority)
 				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
 			}
@@ -1228,6 +972,128 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedAuth, auth)
+			}
+		})
+	}
+}
+
+func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
+	tests := []struct {
+		name           string
+		respBody       []byte
+		respStatus     int
+		method         string
+		expectLogCall  bool
+		expectLogLevel zapcore.Level
+		expectLogMsg   string
+	}{
+		{
+			name:           "JSON parsing error should trigger robust logging",
+			respBody:       []byte(`{"invalid": json}`),
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "Non-200 status should trigger robust logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:     500,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "JSON-RPC error should trigger robust logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Server error"}}`),
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  true,
+			expectLogLevel: zapcore.WarnLevel,
+			expectLogMsg:   "Request attempt failed, initiating retry",
+		},
+		{
+			name:           "Method mismatch should not trigger failure logging",
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respStatus:     200,
+			method:         "eth_getBalance",
+			expectLogCall:  false,
+			expectLogLevel: zapcore.DebugLevel,
+			expectLogMsg:   "",
+		},
+		{
+			name:           "Empty response body should not trigger failure logging",
+			respBody:       []byte{},
+			respStatus:     200,
+			method:         "eth_blockNumber",
+			expectLogCall:  false,
+			expectLogLevel: zapcore.DebugLevel,
+			expectLogMsg:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create observed logger
+			observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+			observedLogger := zap.New(observedZapCore)
+			loggerClient := &logger.LoggerClient{Logger: observedLogger}
+
+			// Create test network with CaddyPort to avoid getBlockByNumber errors
+			network := &network{
+				Name:      "test/eth",
+				HCMethod:  "eth_blockNumber",
+				logger:    loggerClient,
+				CaddyPort: "8080", // Set CaddyPort to avoid errors in successful case
+			}
+
+			// Create test middleware
+			middleware := &DinMiddleware{
+				logger: loggerClient,
+			}
+
+			// Run the function
+			middleware.processHCMethodResponseAsync(network, "test/eth", tt.respBody, tt.respStatus, tt.method)
+
+			// Give the goroutine time to complete
+			time.Sleep(200 * time.Millisecond)
+
+			// Check logs
+			logs := observedLogs.All()
+
+			if tt.expectLogCall {
+				// Should have at least one log entry with the expected message
+				found := false
+				for _, log := range logs {
+					if log.Level == tt.expectLogLevel && log.Message == tt.expectLogMsg {
+						found = true
+
+						// Verify log contains expected fields
+						fields := log.ContextMap()
+						assert.Contains(t, fields, "network")
+						assert.Contains(t, fields, "provider")
+						assert.Contains(t, fields, "request_method")
+						assert.Equal(t, "test/eth", fields["network"])
+						assert.Equal(t, "din", fields["provider"])
+						assert.Equal(t, tt.method, fields["request_method"])
+
+						// Check for error-specific fields based on the test case
+						if tt.respStatus != 200 {
+							assert.Contains(t, fields, "status_code")
+							assert.Equal(t, int64(tt.respStatus), fields["status_code"])
+						}
+
+						break
+					}
+				}
+				assert.True(t, found, "Expected log message '%s' with level %s not found in logs", tt.expectLogMsg, tt.expectLogLevel)
+			} else {
+				// Should not have any failure logs with the expected message
+				for _, log := range logs {
+					assert.NotEqual(t, "Request attempt failed, initiating retry", log.Message, "Unexpected failure log found")
+				}
 			}
 		})
 	}

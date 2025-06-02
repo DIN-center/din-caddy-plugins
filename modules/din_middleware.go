@@ -374,6 +374,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				break
 			}
 
+			fmt.Println("jsonRPCError is retryable")
+
 			// Log the failed attempt with JSON-RPC error information
 			logFailedAttempt(&LogFailedAttemptParams{
 				Reason:              "JSON-RPC error",
