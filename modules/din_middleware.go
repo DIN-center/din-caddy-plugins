@@ -313,6 +313,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	reqStartTime := time.Now()
 
+	// Track if we should log metrics at the end (only for final outcomes)
+	var shouldLogMetrics bool
+
 	// Retry the request if it fails up to the max attempt request count
 	// Retries occur when:
 	// 1. HTTP errors (non-200 status codes or upstream errors)
@@ -352,6 +355,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			jsonRPCError := checkForJSONRPCError(responseBody)
 			if jsonRPCError == nil {
 				// If the request was successful (no HTTP error and no JSON-RPC error), break out of the loop
+				shouldLogMetrics = true
 				break
 			}
 
@@ -371,12 +375,13 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 					ParsedReqBody:       requestBody,
 					RawResponseBody:     responseBody,
 				})
+
+				// This is a final outcome - we should log metrics
+				shouldLogMetrics = true
 				break
 			}
 
-			fmt.Println("jsonRPCError is retryable")
-
-			// Log the failed attempt with JSON-RPC error information
+			// Log the failed attempt with JSON-RPC error information (only for retryable errors)
 			logFailedAttempt(&LogFailedAttemptParams{
 				Reason:              "JSON-RPC error",
 				Logger:              d.logger,
@@ -400,6 +405,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			reason := "HTTP attempt failed error"
 			if attempt == networkObj.RequestAttemptCount-1 {
 				reason = "HTTP attempt failed error (final attempt)"
+				// This is the final attempt - we should log metrics
+				shouldLogMetrics = true
 			}
 
 			logFailedAttempt(&LogFailedAttemptParams{
@@ -416,8 +423,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			})
 		}
 	}
+
+	// Handle final error case (all retries exhausted)
 	if err != nil {
-		// Collect metrics for failed requests before returning error
+		// Get provider for metrics
 		var provider string
 		if v, ok := repl.Get(RequestProviderKey); ok {
 			provider = v.(string)
@@ -431,8 +440,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			statusCode = rww.statusCode
 		}
 
-		// Skip Prometheus metrics reporting if in test mode
-		if !d.testMode && d.PrometheusClient != nil {
+		// Log metrics for final failure (only if we haven't already marked it for logging)
+		if !shouldLogMetrics && !d.testMode && d.PrometheusClient != nil {
 			// Record metrics for the failed request
 			d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 				Method:         requestBody.Method,
@@ -464,18 +473,22 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-	// Post-Request Processing is now handled by the helper function
-	handlePostRequestTasks(PostRequestTaskParams{
-		DinMiddleware: d,
-		RWWrapper:     rww,
-		NetworkObj:    networkObj,
-		NetworkPath:   networkPath,
-		Provider:      provider,
-		Replacer:      repl,
-		Duration:      duration,
-		OriginalReq:   r,
-		ParsedReqBody: requestBody,
-	})
+
+	// Only log metrics if this is a final outcome (success or final failure)
+	if shouldLogMetrics {
+		// Post-Request Processing is now handled by the helper function
+		handlePostRequestTasks(PostRequestTaskParams{
+			DinMiddleware: d,
+			RWWrapper:     rww,
+			NetworkObj:    networkObj,
+			NetworkPath:   networkPath,
+			Provider:      provider,
+			Replacer:      repl,
+			Duration:      duration,
+			OriginalReq:   r,
+			ParsedReqBody: requestBody,
+		})
+	}
 
 	return nil
 }
