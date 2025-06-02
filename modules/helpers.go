@@ -199,9 +199,17 @@ type LogFailedAttemptParams struct {
 }
 
 // Helper function to log a failed request attempt that will be retried.
-// This function is intended to be run as a goroutine.
+// This function is intended to be run as a goroutine to avoid blocking the main request flow.
+// It extracts comprehensive context from the request/response data and logs it in a structured format
+// for debugging and monitoring purposes. The function handles both successful JSON parsing and fallback
+// scenarios where parsing fails, ensuring robust logging in all cases.
 func logFailedAttempt(params *LogFailedAttemptParams) {
 	// --- Extract data within the async function ---
+	// All data extraction happens within this goroutine to avoid race conditions
+	// and ensure we have a complete snapshot of the request state at failure time.
+
+	// Extract provider information from the Caddy replacer context
+	// Default to "unknown" if provider information is not available or malformed
 	provider := "unknown"
 	if provVal, provOk := params.Replacer.Get(RequestProviderKey); provOk {
 		if pStr, strOk := provVal.(string); strOk {
@@ -209,14 +217,18 @@ func logFailedAttempt(params *LogFailedAttemptParams) {
 		}
 	}
 
+	// Initialize variables for request method and parameters extraction
 	var requestMethod string
 	var requestParams json.RawMessage
 	rawRequestBodySnippet := ""
 
-	// Always extract raw request body for logging
+	// Extract raw request body for logging purposes
+	// We always try to get the raw body first as it's useful for debugging
+	// even if JSON parsing fails later
 	if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
 		if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
-			// Use a helper for min if not available; assuming min is defined elsewhere or use direct comparison
+			// Limit the snippet length to 500 characters to avoid overwhelming logs
+			// while still providing sufficient context for debugging
 			length := 500 // Increased from 100 to 500 for more context
 			if len(bodyBytes) < length {
 				length = len(bodyBytes)
@@ -225,22 +237,27 @@ func logFailedAttempt(params *LogFailedAttemptParams) {
 		}
 	}
 
+	// Attempt to extract structured request data from the parsed request body
+	// This provides the cleanest data when available
 	if params.ParsedReqBody != nil {
 		requestMethod = params.ParsedReqBody.Method
 		if len(params.ParsedReqBody.Params) > 0 {
 			requestParams = params.ParsedReqBody.Params
 		}
 	} else if rawRequestBodySnippet != "" {
-		// Try to extract method from raw request body if parsing failed
+		// Fallback: Try to extract method from raw request body if parsing failed
+		// This ensures we can still get method information even when the main parsing fails
 		var tempReq struct {
 			Method string `json:"method"`
 		}
 		if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
 			if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
+				// First attempt: Try to unmarshal just the method field
 				if err := json.Unmarshal(bodyBytes, &tempReq); err == nil && tempReq.Method != "" {
 					requestMethod = tempReq.Method
 				} else {
-					// If JSON parsing fails, try to extract method using regex as fallback
+					// Last resort: Use regex to extract method if JSON parsing completely fails
+					// This handles cases where the request body might be malformed JSON
 					methodRegex := regexp.MustCompile(`"method"\s*:\s*"([^"]+)"`)
 					if matches := methodRegex.FindSubmatch(bodyBytes); len(matches) > 1 {
 						requestMethod = string(matches[1])
@@ -250,13 +267,15 @@ func logFailedAttempt(params *LogFailedAttemptParams) {
 		}
 	}
 
-	// Parse response body to extract error information
+	// Parse response body to extract error information and determine response type
+	// This helps identify the nature of the failure (JSON-RPC error vs HTTP error vs malformed response)
 	var jsonRPCError *dinHttp.JSONRPCError
 	var rawResponseSnippet string
 	var parsedResponseType string
 
 	if len(params.RawResponseBody) > 0 {
-		// Decompress gzipped response body if necessary
+		// Handle gzip-compressed response bodies
+		// Check for gzip magic number (0x1f, 0x8b) to detect compressed content
 		processedResponseBody := params.RawResponseBody
 		if len(params.RawResponseBody) >= 2 && params.RawResponseBody[0] == 0x1f && params.RawResponseBody[1] == 0x8b {
 			// Create headers to indicate gzip encoding for the decompression function
@@ -266,64 +285,82 @@ func logFailedAttempt(params *LogFailedAttemptParams) {
 		}
 
 		// Create a snippet of the processed response for logging
+		// Limited to 500 characters to balance detail with log readability
 		length := 500
 		if len(processedResponseBody) < length {
 			length = len(processedResponseBody)
 		}
 		rawResponseSnippet = string(processedResponseBody[:length])
 
-		// Try to parse as JSON-RPC response first using the processed (potentially decompressed) body
+		// Attempt to parse as JSON-RPC response first using the processed (potentially decompressed) body
+		// JSON-RPC responses have a specific structure that we want to extract error information from
 		var jsonRPCResponse dinHttp.JSONRPCResponse
 		if err := json.Unmarshal(processedResponseBody, &jsonRPCResponse); err == nil {
 			parsedResponseType = "jsonrpc"
+			// Extract JSON-RPC error information if present
+			// This is crucial for understanding the specific nature of RPC failures
 			if jsonRPCResponse.Error != nil {
 				jsonRPCError = jsonRPCResponse.Error
 			}
 		} else {
-			// Try to parse as generic JSON to see if it's valid JSON
+			// Fallback: Try to parse as generic JSON to categorize the response type
 			var genericJSON interface{}
 			if err := json.Unmarshal(processedResponseBody, &genericJSON); err == nil {
 				parsedResponseType = "json"
 			} else {
+				// If it's not valid JSON at all, mark it as raw content
 				parsedResponseType = "raw"
 			}
 		}
 	}
 	// --- End data extraction ---
 
+	// Build the base log fields that are always present
+	// These provide the core context for understanding the failure
 	logFields := []zap.Field{
-		zap.String("network", params.NetworkPath),
-		zap.String("provider", provider),
-		zap.Int("failed_attempt_number", params.FailedAttemptNumber),
-		zap.Int("max_attempts", params.MaxAttempts),
-		zap.Int("status_code", params.StatusCodeOfFailure),
-		zap.String("reason", params.Reason),
+		zap.String("network", params.NetworkPath),                    // Which network/blockchain
+		zap.String("provider", provider),                             // Which RPC provider failed
+		zap.Int("failed_attempt_number", params.FailedAttemptNumber), // Current retry attempt
+		zap.Int("max_attempts", params.MaxAttempts),                  // Total retry attempts configured
+		zap.Int("status_code", params.StatusCodeOfFailure),           // HTTP status code of the failure
+		zap.String("reason", params.Reason),                          // High-level reason for the failure
 	}
 
+	// Add error information if an error object was provided
+	// This captures Go errors that occurred during request processing
 	if params.Error != nil {
 		logFields = append(logFields, zap.NamedError("error", params.Error))
 	}
 
-	// Add JSON-RPC error information if present
+	// Add JSON-RPC specific error information if present
+	// JSON-RPC errors provide structured error codes and messages that are valuable for debugging
 	if jsonRPCError != nil {
 		logFields = append(logFields,
-			zap.Int("jsonrpc_error_code", jsonRPCError.Code),
-			zap.String("jsonrpc_error_message", jsonRPCError.Message))
+			zap.Int("jsonrpc_error_code", jsonRPCError.Code),          // Standard JSON-RPC error code
+			zap.String("jsonrpc_error_message", jsonRPCError.Message)) // Human-readable error message
+		// Include additional error data if provided by the RPC server
 		if jsonRPCError.Data != nil {
 			logFields = append(logFields, zap.Any("jsonrpc_error_data", jsonRPCError.Data))
 		}
 	}
 
+	// Add request method information if available
+	// The RPC method helps identify which specific operation failed
 	if requestMethod != "" {
 		logFields = append(logFields, zap.String("request_method", requestMethod))
 	}
 
+	// Add structured request parameters if available
+	// Parameters help understand the specific request that failed
 	if len(requestParams) > 0 && string(requestParams) != "null" {
 		var decodedParams interface{}
+		// Attempt to unmarshal parameters for structured logging
 		if errUnmarshal := json.Unmarshal(requestParams, &decodedParams); errUnmarshal == nil {
 			logFields = append(logFields, zap.Any("request_params", decodedParams))
 		} else {
+			// Fallback to raw string if structured parsing fails
 			logFields = append(logFields, zap.String("raw_request_params", string(requestParams)))
+			// Log the parsing failure separately for debugging
 			params.Logger.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
 				zap.Error(errUnmarshal),
 				zap.String("raw_params_attempted", string(requestParams)))
@@ -331,33 +368,38 @@ func logFailedAttempt(params *LogFailedAttemptParams) {
 	}
 
 	// Always log raw request body snippet if available
+	// This provides the complete request context even when structured parsing fails
 	if rawRequestBodySnippet != "" {
-		// Try to parse as JSON for structured logging
+		// Try to parse as JSON for structured logging first
 		var requestBodyJSON interface{}
 		if err := json.Unmarshal([]byte(rawRequestBodySnippet), &requestBodyJSON); err == nil {
 			logFields = append(logFields, zap.Any("raw_request_body", requestBodyJSON))
 		} else {
-			// If not valid JSON, log as string
+			// If not valid JSON, log as string to preserve the exact content
 			logFields = append(logFields, zap.String("raw_request_body", rawRequestBodySnippet))
 		}
 	}
 
-	// Log response information
+	// Log response information to understand what the server returned
+	// This is crucial for diagnosing whether the issue is with the request or the server's response
 	if rawResponseSnippet != "" {
 		// Try to parse as JSON for structured logging
 		var responseBodyJSON interface{}
 		if err := json.Unmarshal([]byte(rawResponseSnippet), &responseBodyJSON); err == nil {
 			logFields = append(logFields,
-				zap.Any("raw_response_body", responseBodyJSON),
-				zap.String("response_type", parsedResponseType))
+				zap.Any("raw_response_body", responseBodyJSON),  // Structured response data
+				zap.String("response_type", parsedResponseType)) // Type classification
 		} else {
-			// If not valid JSON, log as string
+			// If not valid JSON, log as string along with type classification
 			logFields = append(logFields,
 				zap.String("raw_response_body", rawResponseSnippet),
 				zap.String("response_type", parsedResponseType))
 		}
 	}
 
+	// Emit the final warning log with all collected context
+	// This creates a comprehensive log entry that contains all available information
+	// about the failed request attempt, making it easier to debug issues
 	params.Logger.Warn("Request attempt failed, initiating retry", logFields...)
 }
 
