@@ -64,9 +64,13 @@ func RegisterMetrics() {
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    DinRequestDurationMetricName,
-			Help:    "Metric for measuring the duration of requests to the din http server",
-			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
+			Name: DinRequestDurationMetricName,
+			Help: "Metric for measuring the duration of requests to the din http server",
+			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
+				15, 20, 25, 30, 40, 50, 75, 100, 200,
+				300, 500, 750, 1000, 2000, 3000, 5000,
+				7000, 10000, 20000, 30000, 40000, 50000,
+				60000, 70000, 80000, 90000, 100000}, //
 		},
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
 	)
@@ -110,9 +114,13 @@ func RegisterMetrics() {
 
 	DinNetworkRequestHealthCheckDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    DinNetworkRequestHealthCheckDurationMetricName,
-			Help:    "Metric for measuring the duration of network-level health checks",
-			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
+			Name: DinNetworkRequestHealthCheckDurationMetricName,
+			Help: "Metric for measuring the duration of network-level health checks",
+			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
+				15, 20, 25, 30, 40, 50, 75, 100, 200,
+				300, 500, 750, 1000, 2000, 3000, 5000,
+				7000, 10000, 20000, 30000, 40000, 50000,
+				60000, 70000, 80000, 90000, 100000}, //
 		},
 		[]string{"service", "response_status", "machine_id", "environment"},
 	)
