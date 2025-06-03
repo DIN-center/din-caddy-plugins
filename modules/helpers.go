@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -158,28 +159,6 @@ func getRequestMethod(repl *caddy.Replacer) (string, error) {
 	return methodStr, nil
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
-// by appending a counter if necessary. Returns the unique host value.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
-	// Get existing hosts with the same base name
-	baseHosts := []string{}
-
-	for existingHost := range d.Networks[networkName].Providers {
-		// We need to match exact host or host-N pattern
-		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
-			baseHosts = append(baseHosts, existingHost)
-		}
-	}
-
-	// If no hosts with this base exist yet, use base host without suffix
-	if len(baseHosts) == 0 {
-		return host
-	}
-
-	// For subsequent hosts, use host-1, host-2, etc.
-	return fmt.Sprintf("%s-%d", host, len(baseHosts))
-}
-
 // decompressGzipBodyIfNecessary checks if the body is gzipped based on headers
 // and attempts to decompress it. It returns the processed body (decompressed or original).
 func decompressGzipBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
@@ -203,6 +182,225 @@ func decompressGzipBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *lo
 		}
 	}
 	return bodyBytes
+}
+
+// LogFailedAttemptParams holds all the configuration data needed for logging failed attempts
+type LogFailedAttemptParams struct {
+	Reason              string
+	Logger              *logger.LoggerClient
+	NetworkPath         string
+	FailedAttemptNumber int // 1-indexed
+	MaxAttempts         int
+	StatusCodeOfFailure int
+	Error               error                   // Can be nil
+	Replacer            *caddy.Replacer         // Caddy replacer to get context data
+	ParsedReqBody       *dinHttp.JSONRPCRequest // Parsed request body
+	RawResponseBody     []byte                  // Raw response body to parse internally
+}
+
+// Helper function to log a failed request attempt that will be retried.
+// This function is intended to be run as a goroutine to avoid blocking the main request flow.
+// It extracts comprehensive context from the request/response data and logs it in a structured format
+// for debugging and monitoring purposes. The function handles both successful JSON parsing and fallback
+// scenarios where parsing fails, ensuring robust logging in all cases.
+func logFailedAttempt(params *LogFailedAttemptParams) {
+	// --- Extract data within the async function ---
+	// All data extraction happens within this goroutine to avoid race conditions
+	// and ensure we have a complete snapshot of the request state at failure time.
+
+	// Extract provider information from the Caddy replacer context
+	// Default to "unknown" if provider information is not available or malformed
+	provider := "unknown"
+	if provVal, provOk := params.Replacer.Get(RequestProviderKey); provOk {
+		if pStr, strOk := provVal.(string); strOk {
+			provider = pStr
+		}
+	}
+
+	// Initialize variables for request method and parameters extraction
+	var requestMethod string
+	var requestParams json.RawMessage
+	rawRequestBodySnippet := ""
+
+	// Extract raw request body for logging purposes
+	// We always try to get the raw body first as it's useful for debugging
+	// even if JSON parsing fails later
+	if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
+		if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
+			// Limit the snippet length to 500 characters to avoid overwhelming logs
+			// while still providing sufficient context for debugging
+			length := 500 // Increased from 100 to 500 for more context
+			if len(bodyBytes) < length {
+				length = len(bodyBytes)
+			}
+			rawRequestBodySnippet = string(bodyBytes[:length])
+		}
+	}
+
+	// Attempt to extract structured request data from the parsed request body
+	// This provides the cleanest data when available
+	if params.ParsedReqBody != nil {
+		requestMethod = params.ParsedReqBody.Method
+		if len(params.ParsedReqBody.Params) > 0 {
+			requestParams = params.ParsedReqBody.Params
+		}
+	} else if rawRequestBodySnippet != "" {
+		// Fallback: Try to extract method from raw request body if parsing failed
+		// This ensures we can still get method information even when the main parsing fails
+		var tempReq struct {
+			Method string `json:"method"`
+		}
+		if v, okGet := params.Replacer.Get(RequestBodyKey); okGet {
+			if bodyBytes, okCast := v.([]byte); okCast && len(bodyBytes) > 0 {
+				// First attempt: Try to unmarshal just the method field
+				if err := json.Unmarshal(bodyBytes, &tempReq); err == nil && tempReq.Method != "" {
+					requestMethod = tempReq.Method
+				} else {
+					// Last resort: Use regex to extract method if JSON parsing completely fails
+					// This handles cases where the request body might be malformed JSON
+					methodRegex := regexp.MustCompile(`"method"\s*:\s*"([^"]+)"`)
+					if matches := methodRegex.FindSubmatch(bodyBytes); len(matches) > 1 {
+						requestMethod = string(matches[1])
+					}
+				}
+			}
+		}
+	}
+
+	// Parse response body to extract error information and determine response type
+	// This helps identify the nature of the failure (JSON-RPC error vs HTTP error vs malformed response)
+	var jsonRPCError *dinHttp.JSONRPCError
+	var rawResponseSnippet string
+	var parsedResponseType string
+
+	if len(params.RawResponseBody) > 0 {
+		// Handle gzip-compressed response bodies
+		// Check for gzip magic number (0x1f, 0x8b) to detect compressed content
+		processedResponseBody := params.RawResponseBody
+		if len(params.RawResponseBody) >= 2 && params.RawResponseBody[0] == 0x1f && params.RawResponseBody[1] == 0x8b {
+			// Create headers to indicate gzip encoding for the decompression function
+			headers := make(http.Header)
+			headers.Set("Content-Encoding", "gzip")
+			processedResponseBody = decompressGzipBodyIfNecessary(headers, params.RawResponseBody, params.Logger, params.NetworkPath)
+		}
+
+		// Create a snippet of the processed response for logging
+		// Limited to 500 characters to balance detail with log readability
+		length := 500
+		if len(processedResponseBody) < length {
+			length = len(processedResponseBody)
+		}
+		rawResponseSnippet = string(processedResponseBody[:length])
+
+		// Attempt to parse as JSON-RPC response first using the processed (potentially decompressed) body
+		// JSON-RPC responses have a specific structure that we want to extract error information from
+		var jsonRPCResponse dinHttp.JSONRPCResponse
+		if err := json.Unmarshal(processedResponseBody, &jsonRPCResponse); err == nil {
+			parsedResponseType = "jsonrpc"
+			// Extract JSON-RPC error information if present
+			// This is crucial for understanding the specific nature of RPC failures
+			if jsonRPCResponse.Error != nil {
+				jsonRPCError = jsonRPCResponse.Error
+			}
+		} else {
+			// Fallback: Try to parse as generic JSON to categorize the response type
+			var genericJSON interface{}
+			if err := json.Unmarshal(processedResponseBody, &genericJSON); err == nil {
+				parsedResponseType = "json"
+			} else {
+				// If it's not valid JSON at all, mark it as raw content
+				parsedResponseType = "raw"
+			}
+		}
+	}
+	// --- End data extraction ---
+
+	// Build the base log fields that are always present
+	// These provide the core context for understanding the failure
+	logFields := []zap.Field{
+		zap.String("network", params.NetworkPath),                    // Which network/blockchain
+		zap.String("provider", provider),                             // Which RPC provider failed
+		zap.Int("failed_attempt_number", params.FailedAttemptNumber), // Current retry attempt
+		zap.Int("max_attempts", params.MaxAttempts),                  // Total retry attempts configured
+		zap.Int("status_code", params.StatusCodeOfFailure),           // HTTP status code of the failure
+		zap.String("reason", params.Reason),                          // High-level reason for the failure
+	}
+
+	// Add error information if an error object was provided
+	// This captures Go errors that occurred during request processing
+	if params.Error != nil {
+		logFields = append(logFields, zap.NamedError("error", params.Error))
+	}
+
+	// Add JSON-RPC specific error information if present
+	// JSON-RPC errors provide structured error codes and messages that are valuable for debugging
+	if jsonRPCError != nil {
+		logFields = append(logFields,
+			zap.Int("jsonrpc_error_code", jsonRPCError.Code),          // Standard JSON-RPC error code
+			zap.String("jsonrpc_error_message", jsonRPCError.Message)) // Human-readable error message
+		// Include additional error data if provided by the RPC server
+		if jsonRPCError.Data != nil {
+			logFields = append(logFields, zap.Any("jsonrpc_error_data", jsonRPCError.Data))
+		}
+	}
+
+	// Add request method information if available
+	// The RPC method helps identify which specific operation failed
+	if requestMethod != "" {
+		logFields = append(logFields, zap.String("request_method", requestMethod))
+	}
+
+	// Add structured request parameters if available
+	// Parameters help understand the specific request that failed
+	if len(requestParams) > 0 && string(requestParams) != "null" {
+		var decodedParams interface{}
+		// Attempt to unmarshal parameters for structured logging
+		if errUnmarshal := json.Unmarshal(requestParams, &decodedParams); errUnmarshal == nil {
+			logFields = append(logFields, zap.Any("request_params", decodedParams))
+		} else {
+			// Fallback to raw string if structured parsing fails
+			logFields = append(logFields, zap.String("raw_request_params", string(requestParams)))
+			// Log the parsing failure separately for debugging
+			params.Logger.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
+				zap.Error(errUnmarshal),
+				zap.String("raw_params_attempted", string(requestParams)))
+		}
+	}
+
+	// Always log raw request body snippet if available
+	// This provides the complete request context even when structured parsing fails
+	if rawRequestBodySnippet != "" {
+		// Try to parse as JSON for structured logging first
+		var requestBodyJSON interface{}
+		if err := json.Unmarshal([]byte(rawRequestBodySnippet), &requestBodyJSON); err == nil {
+			logFields = append(logFields, zap.Any("raw_request_body", requestBodyJSON))
+		} else {
+			// If not valid JSON, log as string to preserve the exact content
+			logFields = append(logFields, zap.String("raw_request_body", rawRequestBodySnippet))
+		}
+	}
+
+	// Log response information to understand what the server returned
+	// This is crucial for diagnosing whether the issue is with the request or the server's response
+	if rawResponseSnippet != "" {
+		// Try to parse as JSON for structured logging
+		var responseBodyJSON interface{}
+		if err := json.Unmarshal([]byte(rawResponseSnippet), &responseBodyJSON); err == nil {
+			logFields = append(logFields,
+				zap.Any("raw_response_body", responseBodyJSON),  // Structured response data
+				zap.String("response_type", parsedResponseType)) // Type classification
+		} else {
+			// If not valid JSON, log as string along with type classification
+			logFields = append(logFields,
+				zap.String("raw_response_body", rawResponseSnippet),
+				zap.String("response_type", parsedResponseType))
+		}
+	}
+
+	// Emit the final warning log with all collected context
+	// This creates a comprehensive log entry that contains all available information
+	// about the failed request attempt, making it easier to debug issues
+	params.Logger.Warn("Request attempt failed, initiating retry", logFields...)
 }
 
 // PostRequestTaskParams holds all parameters for handlePostRequestTasks.
@@ -329,92 +527,6 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 	}, params.Duration, params.ParsedReqBody)
 }
 
-// processHCMethodResponseAsync asynchronously processes responses for health check method requests.
-// It extracts the request method from the replacer, verifies if it matches the network's health check
-// method (HCMethod), and if so, processes the block number from the response body.
-// This function is designed to run in a separate goroutine to avoid blocking the main request handling flow.
-// When a valid block number is extracted, it also retrieves the corresponding block hash and adds both
-// to the network's block history. This information is crucial for tracking the network's current state
-// and ensuring proper synchronization across providers.
-func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
-	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
-		return
-	}
-
-	// If method is "other_method" and networkObj.HCMethod is "eth_blockNumber", this should be true.
-	if method != networkObj.HCMethod {
-		return
-	}
-
-	// This log should only appear if Condition 2 is false.
-	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
-
-	// Create synthetic request context for consistent logging
-	// Since this is async processing of a response, we use "din" as provider identifier
-	providerHost := "din"
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(networkPath, providerHost, method)
-
-	// Ensure the replacer has the correct payload for consistent logging
-	repl.Set(RequestBodyKey, payload)
-
-	// Pass the address of respStatus to processBlockNumberResponse
-	// processBlockNumberResponse checks for respStatus >= 400
-	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
-	if processingError != nil {
-		// Check for JSON-RPC errors in the response
-		var jsonRPCError *dinHttp.JSONRPCError
-		if respBody != nil {
-			jsonRPCError = checkForJSONRPCError(respBody)
-		}
-
-		// Log the failed async processing with detailed information
-		logFailedAttempt(
-			d.logger,
-			networkPath,
-			1, // Single attempt for async processing
-			1, // Total attempts is always 1 for async processing
-			respStatus,
-			processingError,
-			repl,
-			jsonRPCReq,
-			jsonRPCError,
-		)
-		return
-	}
-
-	block, err := networkObj.getBlockByNumber(blockNumber)
-	if err != nil {
-		// Create a new context specifically for the getBlockByNumber call that failed
-		// This ensures the logging shows the correct method and parameters for the failed call
-		getBlockMethod := networkObj.GetBlockByNumberMethod
-		if getBlockMethod == "" {
-			getBlockMethod = DefaultGetBlockByNumberMethod // Default fallback
-		}
-
-		// Create context for the getBlockByNumber call
-		getBlockRepl, getBlockJSONRPCReq, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)
-
-		// For getBlockByNumber errors, we don't have a JSON-RPC error from the original response
-		// since this is a separate internal call
-		logFailedAttempt(
-			d.logger,
-			networkPath,
-			1,   // Single attempt for async processing
-			1,   // Total attempts is always 1 for async processing
-			200, // getBlockByNumber is an internal call, assume 200 for the original response
-			err,
-			getBlockRepl,
-			getBlockJSONRPCReq,
-			nil, // No JSON-RPC error for internal getBlockByNumber calls
-		)
-		return
-	}
-
-	// save the block number to the network object's history
-	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
-	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
-}
-
 // createHealthCheckRequestContext creates synthetic request context for health checks
 // so we can reuse logFailedAttempt for consistent logging
 func createHealthCheckRequestContext(networkName, providerHost, method string) (*caddy.Replacer, *dinHttp.JSONRPCRequest, []byte) {
@@ -502,79 +614,93 @@ func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath st
 }
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
-// and logging comprehensive information about the cancellation
-func handleContextCancellation(l *logger.LoggerClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time) {
+// and logging using the standard logFailedAttempt format for consistency
+func handleContextCancellation(l *logger.LoggerClient, promClient *prom.PrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
+	// Calculate duration
 	duration := time.Since(reqStartTime)
-
 	// Determine the appropriate HTTP status code and response based on the error type
 	var statusCode int
 	var responseBody string
-	var logLevel string = "warn"
 
 	switch {
 	case strings.Contains(err.Error(), "cancelled by client"):
 		statusCode = http.StatusRequestTimeout // 408
 		responseBody = `{"error": "Request cancelled by client", "code": 408}`
-		logLevel = "warn"
 	case strings.Contains(err.Error(), "deadline exceeded"):
 		statusCode = http.StatusGatewayTimeout // 504
 		responseBody = `{"error": "Request timeout exceeded", "code": 504}`
-		logLevel = "warn"
 	default:
 		statusCode = http.StatusServiceUnavailable // 503
 		responseBody = `{"error": "Service unavailable", "code": 503}`
-		logLevel = "error"
 	}
 
-	// Get request body from context for logging
+	// Get request context data
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var requestBodyStr string
+
+	// Parse request body for consistent logging and metrics
+	var parsedReqBody *dinHttp.JSONRPCRequest
 	if v, ok := repl.Get(RequestBodyKey); ok {
-		requestBody := v.([]byte)
-		// Truncate request body if it's too long for logging
-		if len(requestBody) > 1000 {
-			requestBodyStr = string(requestBody[:1000]) + "... (truncated)"
-		} else {
-			requestBodyStr = string(requestBody)
+		if bodyBytes, ok := v.([]byte); ok && len(bodyBytes) > 0 {
+			var jsonRPCReq dinHttp.JSONRPCRequest
+			if err := json.Unmarshal(bodyBytes, &jsonRPCReq); err == nil {
+				parsedReqBody = &jsonRPCReq
+			}
 		}
 	}
 
-	// Get provider information if available
-	var providerInfo string
-	if v, ok := repl.Get(RequestProviderKey); ok {
-		providerInfo = v.(string)
-	} else {
-		providerInfo = "No provider selected before cancellation"
+	// Use the actual max attempts from the network configuration
+	maxAttempts := 1 // Default fallback
+	if networkObj != nil {
+		maxAttempts = networkObj.RequestAttemptCount
 	}
 
-	// Log the context cancellation with comprehensive details
-	logFields := []zap.Field{
-		zap.String("network", networkPath),
-		zap.Int("attempt", attempt+1),
-		zap.Int("status_code", statusCode),
-		zap.Duration("duration", duration),
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("user_agent", r.Header.Get("User-Agent")),
-		zap.String("remote_addr", r.RemoteAddr),
-		zap.String("provider", providerInfo),
-		zap.String("request_body", requestBodyStr),
-		zap.String("response_body", responseBody), // Use the responseBody from switch statement
-		zap.Error(err),
-	}
-
-	// Log at appropriate level based on error type
-	switch logLevel {
-	case "info":
-		l.Info("Request cancelled by client", logFields...)
-	case "warn":
-		l.Warn("Request context timeout", logFields...)
-	case "error":
-		l.Error("Request context error", logFields...)
-	}
+	// Use logFailedAttempt for consistent logging format
+	logFailedAttempt(&LogFailedAttemptParams{
+		Reason:              "Context cancellation",
+		Logger:              l,
+		NetworkPath:         networkPath,
+		FailedAttemptNumber: attempt + 1,   // Current attempt number (1-indexed)
+		MaxAttempts:         maxAttempts,   // Use actual max attempts from network config
+		StatusCodeOfFailure: statusCode,    // Status code we're about to return
+		Error:               err,           // The context cancellation error
+		Replacer:            repl,          // Caddy replacer for context data
+		ParsedReqBody:       parsedReqBody, // Parsed request body
+		RawResponseBody:     nil,           // No response body for context cancellation
+	})
 
 	// Set appropriate headers and write response
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(statusCode)
 	rw.Write([]byte(responseBody))
+
+	// Collect Prometheus metrics for context cancellation
+	if promClient != nil {
+		// Get provider from replacer for metrics
+		var provider string
+		if v, ok := repl.Get(RequestProviderKey); ok {
+			if pStr, ok := v.(string); ok {
+				provider = pStr
+			}
+		}
+		if provider == "" {
+			provider = "unknown"
+		}
+
+		// Get method name, fallback to "unknown" if parsedReqBody is nil
+		methodName := "unknown"
+		if parsedReqBody != nil {
+			methodName = parsedReqBody.Method
+		}
+
+		// Record metrics for the context cancellation
+		promClient.HandleRequestMetrics(&prom.PromRequestMetricData{
+			Method:         methodName,
+			Network:        networkPath,
+			Provider:       provider,
+			HostName:       r.Host,
+			ResponseStatus: statusCode,
+			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
+			Environment:    "unknown",   // We don't have access to environment here
+		}, duration, parsedReqBody)
+	}
 }

@@ -313,6 +313,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	reqStartTime := time.Now()
 
+	// Track if we should log metrics at the end (only for final outcomes)
+	var shouldLogMetrics bool
+
 	// Retry the request if it fails up to the max attempt request count
 	// Retries occur when:
 	// 1. HTTP errors (non-200 status codes or upstream errors)
@@ -320,7 +323,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Non-retryable JSON-RPC errors (method not found, invalid params) will not trigger retries
 	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		if err := checkRequestContext(d.logger, r, networkPath, attempt); err != nil {
-			handleContextCancellation(d.logger, rw, r, networkPath, attempt, err, reqStartTime)
+			handleContextCancellation(d.logger, d.PrometheusClient, rw, r, networkPath, attempt, err, reqStartTime, networkObj)
 			return nil
 		}
 		rww = NewResponseWriterWrapper(rw)
@@ -352,44 +355,105 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			jsonRPCError := checkForJSONRPCError(responseBody)
 			if jsonRPCError == nil {
 				// If the request was successful (no HTTP error and no JSON-RPC error), break out of the loop
+				shouldLogMetrics = true
 				break
 			}
 
 			// Check if this JSON-RPC error is retryable
 			if !isJSONRPCErrorRetryable(jsonRPCError) {
 				// Non-retryable JSON-RPC error (e.g., method not found, invalid params)
+				// Log this for debugging purposes since we won't retry
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Non-retryable JSON-RPC error",
+					Logger:              d.logger,
+					NetworkPath:         networkPath,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         networkObj.RequestAttemptCount,
+					StatusCodeOfFailure: rww.statusCode,
+					Error:               nil, // no upstream error for JSON-RPC errors
+					Replacer:            repl,
+					ParsedReqBody:       requestBody,
+					RawResponseBody:     responseBody,
+				})
+
+				// This is a final outcome - we should log metrics
+				shouldLogMetrics = true
 				break
 			}
 
-			// Log the failed attempt with JSON-RPC error information
-			logFailedAttempt(
-				d.logger,
-				networkPath,
-				attempt+1,
-				networkObj.RequestAttemptCount,
-				rww.statusCode,
-				nil, // no upstream error for JSON-RPC errors
-				repl,
-				requestBody,
-				jsonRPCError, // Pass the JSON-RPC error
-			)
+			// Log the failed attempt with JSON-RPC error information (only for retryable errors)
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "JSON-RPC error",
+				Logger:              d.logger,
+				NetworkPath:         networkPath,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         networkObj.RequestAttemptCount,
+				StatusCodeOfFailure: rww.statusCode,
+				Error:               nil, // no upstream error for JSON-RPC errors
+				Replacer:            repl,
+				ParsedReqBody:       requestBody,
+				RawResponseBody:     responseBody,
+			})
 		} else {
 			// Log non 200 status failed attempt with HTTP error information
-			logFailedAttempt(
-				d.logger,
-				networkPath,
-				attempt+1,
-				networkObj.RequestAttemptCount,
-				rww.statusCode,
-				err, // upstream error from next.ServeHTTP
-				repl,
-				requestBody,
-				nil, // no JSON-RPC error for HTTP errors
-			)
+			var responseBody []byte
+			if rww.body != nil {
+				responseBody = rww.body.Bytes()
+			}
+
+			// Determine if this is the final attempt or not
+			reason := "HTTP attempt failed error"
+			if attempt == networkObj.RequestAttemptCount-1 {
+				reason = "HTTP attempt failed error (final attempt)"
+				// This is the final attempt - we should log metrics
+				shouldLogMetrics = true
+			}
+
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              reason,
+				Logger:              d.logger,
+				NetworkPath:         networkPath,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         networkObj.RequestAttemptCount,
+				StatusCodeOfFailure: rww.statusCode,
+				Error:               err, // upstream error from next.ServeHTTP
+				Replacer:            repl,
+				ParsedReqBody:       requestBody,
+				RawResponseBody:     responseBody,
+			})
 		}
 	}
+
+	// Handle final error case (all retries exhausted)
 	if err != nil {
-		d.logger.Error("Error serving HTTP", zap.String("network", networkPath), zap.Error(err))
+		// Get provider for metrics
+		var provider string
+		if v, ok := repl.Get(RequestProviderKey); ok {
+			provider = v.(string)
+		}
+
+		duration := time.Since(reqStartTime)
+
+		// Determine appropriate status code for the failure
+		statusCode := http.StatusInternalServerError // Default for HTTP errors
+		if rww != nil && rww.statusCode > 0 {
+			statusCode = rww.statusCode
+		}
+
+		// Log metrics for final failure (only if we haven't already marked it for logging)
+		if !shouldLogMetrics && !d.testMode && d.PrometheusClient != nil {
+			// Record metrics for the failed request
+			d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
+				Method:         requestBody.Method,
+				Network:        networkPath,
+				Provider:       provider,
+				HostName:       r.Host,
+				ResponseStatus: statusCode,
+				HealthStatus:   "unhealthy", // All providers failed
+				Environment:    string(d.Env),
+			}, duration, requestBody)
+		}
+
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
@@ -409,18 +473,22 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			return errors.Wrap(err, "Error writing response body")
 		}
 	}
-	// Post-Request Processing is now handled by the helper function
-	handlePostRequestTasks(PostRequestTaskParams{
-		DinMiddleware: d,
-		RWWrapper:     rww,
-		NetworkObj:    networkObj,
-		NetworkPath:   networkPath,
-		Provider:      provider,
-		Replacer:      repl,
-		Duration:      duration,
-		OriginalReq:   r,
-		ParsedReqBody: requestBody,
-	})
+
+	// Only log metrics if this is a final outcome (success or final failure)
+	if shouldLogMetrics {
+		// Post-Request Processing is now handled by the helper function
+		handlePostRequestTasks(PostRequestTaskParams{
+			DinMiddleware: d,
+			RWWrapper:     rww,
+			NetworkObj:    networkObj,
+			NetworkPath:   networkPath,
+			Provider:      provider,
+			Replacer:      repl,
+			Duration:      duration,
+			OriginalReq:   r,
+			ParsedReqBody: requestBody,
+		})
+	}
 
 	return nil
 }

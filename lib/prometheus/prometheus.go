@@ -12,6 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	DinRequestCountMetricName                      = "din_http_request_count"
+	DinRequestDurationMetricName                   = "din_http_request_duration_milliseconds"
+	DinRequestBodyBytesMetricName                  = "din_http_request_body_bytes"
+	DinHealthCheckCountMetricName                  = "din_health_check_count"
+	DinHealthCheckBlockNumberMetricName            = "din_health_check_block_number"
+	DinNetworkHealthCheckCountMetricName           = "din_network_health_check_count"
+	DinNetworkRequestHealthCheckDurationMetricName = "din_network_request_health_check_duration_milliseconds"
+)
+
 // PrometheusClient is a struct that holds the prometheus client
 type PrometheusClient struct {
 	logger    *logger.LoggerClient
@@ -47,23 +57,27 @@ func RegisterMetrics() {
 	// Register request count metric for inbound din http requests
 	DinRequestCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "din_http_request_count",
+			Name: DinRequestCountMetricName,
 			Help: "Metric for counting the number of requests to the din http server",
 		},
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "din_http_request_duration_milliseconds",
-			Help:    "Metric for measuring the duration of requests to the din http server",
-			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
+			Name: DinRequestDurationMetricName,
+			Help: "Metric for measuring the duration of requests to the din http server",
+			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
+				15, 20, 25, 30, 40, 50, 75, 100, 200,
+				300, 500, 750, 1000, 2000, 3000, 5000,
+				7000, 10000, 20000, 30000, 40000, 50000,
+				60000, 70000, 80000, 90000, 100000}, //
 		},
 		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
 	)
 
 	DinRequestBodyBytes = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "din_http_request_body_bytes",
+			Name:    DinRequestBodyBytesMetricName,
 			Help:    "Metric for measuring the size of the request body in bytes",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -73,7 +87,7 @@ func RegisterMetrics() {
 	// Register health check count metric for din health checks
 	DinProviderHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "din_health_check_count",
+			Name: DinHealthCheckCountMetricName,
 			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
 		[]string{"service", "provider", "response_status", "health_status", "machine_id", "environment"},
@@ -81,7 +95,7 @@ func RegisterMetrics() {
 
 	DinProviderHealthCheckBlockNumber = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "din_health_check_block_number",
+			Name: DinHealthCheckBlockNumberMetricName,
 			Help: "Metric for storing the block number of the latest health check",
 		},
 		[]string{"service", "provider", "machine_id", "environment"},
@@ -92,7 +106,7 @@ func RegisterMetrics() {
 	// Register network level health check metrics
 	DinNetworkHealthCheckCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "din_network_health_check_count",
+			Name: DinNetworkHealthCheckCountMetricName,
 			Help: "Metric for counting network-level health checks",
 		},
 		[]string{"service", "response_status", "machine_id", "environment"},
@@ -100,9 +114,13 @@ func RegisterMetrics() {
 
 	DinNetworkRequestHealthCheckDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "din_network_request_health_check_duration_milliseconds",
-			Help:    "Metric for measuring the duration of network-level health checks",
-			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}, // 1ms to 60s (1 minute)
+			Name: DinNetworkRequestHealthCheckDurationMetricName,
+			Help: "Metric for measuring the duration of network-level health checks",
+			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
+				15, 20, 25, 30, 40, 50, 75, 100, 200,
+				300, 500, 750, 1000, 2000, 3000, 5000,
+				7000, 10000, 20000, 30000, 40000, 50000,
+				60000, 70000, 80000, 90000, 100000}, //
 		},
 		[]string{"service", "response_status", "machine_id", "environment"},
 	)

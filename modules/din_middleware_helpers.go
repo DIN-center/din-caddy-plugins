@@ -1,109 +1,16 @@
 package modules
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
-	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 )
-
-// Helper function to log a failed request attempt that will be retried.
-// This function is intended to be run as a goroutine.
-func logFailedAttempt(
-	lg *logger.LoggerClient,
-	networkPath string,
-	failedAttemptNumber int, // 1-indexed
-	maxAttempts int,
-	statusCodeOfFailure int,
-	upstreamErr error, // Can be nil
-	repl *caddy.Replacer, // Added: Caddy replacer to get context data
-	parsedReqBody *din_http.JSONRPCRequest, // Added: Parsed request body
-	jsonRPCError *din_http.JSONRPCError, // Added: JSON-RPC error if present
-) {
-	// --- Extract data within the async function ---
-	provider := "unknown"
-	if provVal, provOk := repl.Get(RequestProviderKey); provOk {
-		if pStr, strOk := provVal.(string); strOk {
-			provider = pStr
-		}
-	}
-
-	var requestMethod string
-	var requestParams json.RawMessage
-	rawRequestBodySnippet := ""
-
-	if parsedReqBody != nil {
-		requestMethod = parsedReqBody.Method
-		if len(parsedReqBody.Params) > 0 {
-			requestParams = parsedReqBody.Params
-		}
-	} else {
-		// Fallback if parsedReqBody was nil (e.g. initial parsing failed)
-		if v, okGet := repl.Get(RequestBodyKey); okGet {
-			if bodyBytes, okCast := v.([]byte); okCast {
-				if len(bodyBytes) > 0 {
-					// Use a helper for min if not available; assuming min is defined elsewhere or use direct comparison
-					length := 100
-					if len(bodyBytes) < length {
-						length = len(bodyBytes)
-					}
-					rawRequestBodySnippet = string(bodyBytes[:length])
-				}
-			}
-		}
-	}
-	// --- End data extraction ---
-
-	logFields := []zap.Field{
-		zap.String("network", networkPath),
-		zap.String("provider", provider),
-		zap.Int("failedAttemptNumber", failedAttemptNumber),
-		zap.Int("maxAttempts", maxAttempts),
-		zap.Int("statusCodeOfFailure", statusCodeOfFailure),
-	}
-
-	if upstreamErr != nil {
-		logFields = append(logFields, zap.NamedError("upstreamError", upstreamErr))
-	}
-
-	// Add JSON-RPC error information if present
-	if jsonRPCError != nil {
-		logFields = append(logFields,
-			zap.Int("jsonrpc_error_code", jsonRPCError.Code),
-			zap.String("jsonrpc_error_message", jsonRPCError.Message))
-		if jsonRPCError.Data != nil {
-			logFields = append(logFields, zap.Any("jsonrpc_error_data", jsonRPCError.Data))
-		}
-	}
-
-	if requestMethod != "" {
-		logFields = append(logFields, zap.String("requestMethod", requestMethod))
-	}
-
-	if len(requestParams) > 0 && string(requestParams) != "null" {
-		var decodedParams interface{}
-		if errUnmarshal := json.Unmarshal(requestParams, &decodedParams); errUnmarshal == nil {
-			logFields = append(logFields, zap.Any("requestParams", decodedParams))
-		} else {
-			logFields = append(logFields, zap.String("rawRequestParams", string(requestParams)))
-			lg.Debug("Async retry error log: Failed to unmarshal requestParams for structured logging, logging as raw string.",
-				zap.Error(errUnmarshal),
-				zap.String("rawParamsAttempted", string(requestParams)))
-		}
-	} else if requestMethod == "" && rawRequestBodySnippet != "" {
-		// Only log rawRequestBodySnippet if we didn't even have a requestMethod
-		logFields = append(logFields, zap.String("rawRequestBodySnippet", rawRequestBodySnippet))
-	}
-
-	lg.Warn("Request attempt failed, initiating retry", logFields...)
-}
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
@@ -478,4 +385,108 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	for _, p := range network.Providers {
 		d.Networks[network.Name].Providers[p.host] = p
 	}
+}
+
+// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
+// by appending a counter if necessary. Returns the unique host value.
+func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
+	// Get existing hosts with the same base name
+	baseHosts := []string{}
+
+	for existingHost := range d.Networks[networkName].Providers {
+		// We need to match exact host or host-N pattern
+		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
+			baseHosts = append(baseHosts, existingHost)
+		}
+	}
+
+	// If no hosts with this base exist yet, use base host without suffix
+	if len(baseHosts) == 0 {
+		return host
+	}
+
+	// For subsequent hosts, use host-1, host-2, etc.
+	return fmt.Sprintf("%s-%d", host, len(baseHosts))
+}
+
+// processHCMethodResponseAsync asynchronously processes responses for health check method requests.
+// It extracts the request method from the replacer, verifies if it matches the network's health check
+// method (HCMethod), and if so, processes the block number from the response body.
+// This function is designed to run in a separate goroutine to avoid blocking the main request handling flow.
+// When a valid block number is extracted, it also retrieves the corresponding block hash and adds both
+// to the network's block history. This information is crucial for tracking the network's current state
+// and ensuring proper synchronization across providers.
+func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
+	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
+		return
+	}
+
+	// If method is "other_method" and networkObj.HCMethod is "eth_blockNumber", this should be true.
+	if method != networkObj.HCMethod {
+		return
+	}
+
+	// This log should only appear if Condition 2 is false.
+	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
+
+	// Create synthetic request context for consistent logging
+	// Since this is async processing of a response, we use "din" as provider identifier
+	providerHost := "din"
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(networkPath, providerHost, method)
+
+	// Ensure the replacer has the correct payload for consistent logging
+	repl.Set(RequestBodyKey, payload)
+
+	// Pass the address of respStatus to processBlockNumberResponse
+	// processBlockNumberResponse checks for respStatus >= 400
+	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
+	if processingError != nil {
+		// Log the failed async processing with detailed information
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Async health check processing failed",
+			Logger:              d.logger,
+			NetworkPath:         networkPath,
+			FailedAttemptNumber: 1, // Single attempt for async processing
+			MaxAttempts:         1, // Total attempts is always 1 for async processing
+			StatusCodeOfFailure: respStatus,
+			Error:               processingError,
+			Replacer:            repl,
+			ParsedReqBody:       jsonRPCReq,
+			RawResponseBody:     respBody,
+		})
+		return
+	}
+
+	block, err := networkObj.getBlockByNumber(blockNumber)
+	if err != nil {
+		// Create a new context specifically for the getBlockByNumber call that failed
+		// This ensures the logging shows the correct method and parameters for the failed call
+		getBlockMethod := networkObj.GetBlockByNumberMethod
+		if getBlockMethod == "" {
+			getBlockMethod = DefaultGetBlockByNumberMethod // Default fallback
+		}
+
+		// Create context for the getBlockByNumber call
+		getBlockRepl, getBlockJSONRPCReq, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)
+
+		// For getBlockByNumber errors, we don't have a JSON-RPC error from the original response
+		// since this is a separate internal call
+		logFailedAttempt(&LogFailedAttemptParams{
+			Reason:              "Get block by number failed",
+			Logger:              d.logger,
+			NetworkPath:         networkPath,
+			FailedAttemptNumber: 1,   // Single attempt for async processing
+			MaxAttempts:         1,   // Total attempts is always 1 for async processing
+			StatusCodeOfFailure: 200, // getBlockByNumber is an internal call, assume 200 for the original response
+			Error:               err,
+			Replacer:            getBlockRepl,
+			ParsedReqBody:       getBlockJSONRPCReq,
+			RawResponseBody:     nil, // No response body for internal getBlockByNumber calls
+		})
+		return
+	}
+
+	// save the block number to the network object's history
+	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
+	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
 }
