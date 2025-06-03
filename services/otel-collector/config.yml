@@ -5,7 +5,7 @@ receivers:
     config:
       scrape_configs:
         - job_name: 'din-caddy-metrics-collector'
-          scrape_interval: 60s #default 60s
+          scrape_interval: 60s
           static_configs:
             - targets: ['din-caddy:2019']
           relabel_configs:
@@ -15,7 +15,6 @@ receivers:
             - target_label: environment
               replacement: '${ENV}'
   otlp:
-    # https://github.com/open-telemetry/opentelemetry-collector/tree/main/receiver/otlpreceiver
     protocols:
       grpc:
       http:
@@ -25,18 +24,30 @@ receivers:
             - "https://*"
   filelog:
     include: [/srv/caddy.log]
-    start_at: beginning # This ensures that the collector starts reading from the beginning of the log file
+    start_at: beginning
     operators:
       - type: json_parser
+        parse_to: attributes
         id: caddy_log_parser
+    attributes:
+      job: din-caddy
+      container: din-caddy
+
 
 processors:
   batch:
-    # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+    send_batch_size: 8192
+    timeout: 1s
+    send_batch_max_size: 0
   memory_limiter:
     check_interval: 1s
     limit_mib: 400
     spike_limit_mib: 100
+  resource:
+    attributes:
+      - action: insert
+        key: service.name
+        value: "din-caddy"
 
 exporters:
   otlp:
@@ -46,20 +57,37 @@ exporters:
       insecure: false
     headers:
       "signoz-access-token": ""
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: ""
+    const_labels:
+      exported_by: "otel-collector"
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    default_labels_enabled:
+      exporter: true
+      job: true
+      container: true
+      instance: true
+      level: true
   logging:
     verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
 
 service:
   pipelines:
     metrics:
-      receivers: [prometheus]
-      processors: [batch]
-      exporters: [otlp]
+      receivers: [prometheus, otlp]
+      processors: [batch, resource]
+      exporters: [otlp, prometheus]
     logs:
-      receivers: [filelog]
-      processors: [memory_limiter, batch]
-      exporters: [otlp]
+      receivers: [filelog, otlp]
+      processors: [resource, memory_limiter, batch]
+      exporters: [otlp, loki, logging]
   telemetry:
+    logs:
+      level: debug
     metrics:
       level: detailed
       address: ':8888'

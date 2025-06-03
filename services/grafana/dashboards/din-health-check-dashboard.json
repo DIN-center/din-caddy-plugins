@@ -1,0 +1,888 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": false
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "labels"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tsNs"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceID"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": true,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "count (sum)"
+          }
+        ]
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{job=\"din-caddy\"} | json | attributes_environment=\"$env\" and attributes_network=\"$network\" | attributes_level!=\"info\" and attributes_level!=\"debug\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Health Check Logs",
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "delimiter": ",",
+            "format": "json",
+            "jsonPaths": [
+              {
+                "alias": "level",
+                "path": "attributes.level"
+              }
+            ],
+            "source": "Line"
+          }
+        },
+        {
+          "id": "extractFields",
+          "options": {
+            "delimiter": ",",
+            "format": "json",
+            "jsonPaths": [
+              {
+                "alias": "network",
+                "path": "attributes.network"
+              }
+            ],
+            "keepTime": false,
+            "replace": false,
+            "source": "Line"
+          }
+        },
+        {
+          "id": "extractFields",
+          "options": {
+            "delimiter": ",",
+            "format": "json",
+            "jsonPaths": [
+              {
+                "alias": "provider",
+                "path": "attributes.provider"
+              }
+            ],
+            "source": "Line"
+          }
+        },
+        {
+          "id": "extractFields",
+          "options": {
+            "delimiter": ",",
+            "format": "json",
+            "jsonPaths": [
+              {
+                "alias": "message",
+                "path": "attributes.msg"
+              }
+            ],
+            "source": "Line"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "count",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byType",
+                  "options": "number"
+                }
+              },
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "level"
+                }
+              }
+            },
+            "mode": "reduceRow",
+            "reduce": {
+              "include": [
+                "id"
+              ],
+              "reducer": "count"
+            }
+          }
+        },
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "count": {
+                "aggregations": [
+                  "sum"
+                ],
+                "operation": "aggregate"
+              },
+              "level": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "message": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "network": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "provider": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "row_count": {
+                "aggregations": [
+                  "sum"
+                ],
+                "operation": "aggregate"
+              }
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "labels"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tsNs"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceID"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id"
+            },
+            "properties": []
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "sum by(attributes_network) (count_over_time({job=\"din-caddy\"} | json [5m]))",
+          "legendFormat": "{{attributes_network}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Health Check Logs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "sum by(attributes_network, attributes_provider) (count_over_time({job=\"din-caddy\"} | json [5m]))",
+          "legendFormat": "{{attributes_network}} {{attributes_provider}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Health Check Logs by provider",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "sum by(provider, network) (din_http_request_count_total{environment=\"$env\", service=~\"$network\", response_status!=\"200\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Health Check Logs by provider",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "description": "to debug: set WHERE service = {network_name}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service, provider, health_status) (increase(din_http_request_count_total{service=~\"$network\", environment=~\"$env\"}[5m]))",
+          "interval": "",
+          "legendFormat": "{{service}} {{provider}} {{health_status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Health Status by customer request metric",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "description": "to debug: set WHERE service = {network_name}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service, provider, health_status) (increase(din_health_check_count_total{service=~\"$network\", environment=~\"$env\"}[5m]))",
+          "interval": "",
+          "legendFormat": "{{service}} {{provider}} {{health_status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Health Status by health check metric",
+      "type": "timeseries"
+    }
+  ],
+  "preload": false,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": [
+    "din",
+    "health",
+    "monitoring"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "test",
+          "value": "test"
+        },
+        "description": "Select the environment to show data in",
+        "includeAll": false,
+        "name": "env",
+        "options": [
+          {
+            "selected": true,
+            "text": "test",
+            "value": "test"
+          },
+          {
+            "selected": false,
+            "text": "beta",
+            "value": "beta"
+          },
+          {
+            "selected": false,
+            "text": "dev",
+            "value": "dev"
+          },
+          {
+            "selected": false,
+            "text": "prod",
+            "value": "prod"
+          }
+        ],
+        "query": "test,beta,dev,prod",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": [
+            "bsc-mainnet"
+          ],
+          "value": [
+            "bsc-mainnet"
+          ]
+        },
+        "definition": "label_values(service)",
+        "includeAll": true,
+        "multi": true,
+        "name": "network",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(service)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "DIN Health Check Dashboard",
+  "uid": "din-health-check",
+  "version": 7
+}

@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # otel-collector's own metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    metrics_path: /metrics
+    
+  # otel-collector's prometheus exporter endpoint
+  - job_name: 'otel-collector-prometheus'
+    static_configs:
+      - targets: ['otel-collector:8889'] 

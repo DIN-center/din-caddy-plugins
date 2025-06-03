@@ -3,6 +3,7 @@ caddy.log
 .vscode/
 data/
 caddy
+caddy.log
 din-plugins/
 coverage.out.DS_Store
 .tool-versions
