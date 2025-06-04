@@ -275,27 +275,52 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 	isStalled := n.isStalled(provider)
 
-	if isLagged {
+	// Handle all combinations of lagged and stalled states systematically
+	switch {
+	case isLagged && isStalled:
+		// Most serious issue: provider is both lagged and stalled
+		n.logProviderWarning("Provider is stalled and lagged", provider,
+			zap.Int64("block_lag_limit", n.BlockLagLimit),
+			zap.Int64("block_lag", blockLag),
+			zap.Int64("provider_block", currentBlock),
+			zap.Int64("network_block", latestNetworkBlock),
+			zap.String("health_status", Unhealthy.String()))
+		return Unhealthy
+
+	case isLagged && !isStalled:
+		// Provider is lagged but still progressing - warning level
 		if Warning > worstStatus {
 			worstStatus = Warning
 		}
 
-		if isStalled {
-			// Provider is both stalled and lagged - more serious issue
-			n.logProviderWarning("Provider is stalled and lagged", provider,
-				zap.Int64("block_lag_limit", n.BlockLagLimit),
-				zap.Int64("block_lag", blockLag),
+	case !isLagged && isStalled:
+		// Provider is stalled but not lagged - check if it's network-wide
+		if n.allProvidersStalled() {
+			// Log a critical network-wide warning to alert backend users that all providers are stalled
+			// This indicates a potential network-wide issue (e.g., blockchain network outage, consensus issues)
+			// Traffic will continue to be served, but responses may be stale or delayed
+			// Backend users should investigate the underlying blockchain network status
+			n.logProviderWarning("CRITICAL: Network-wide provider stall detected", provider,
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
+				zap.Int("total_providers", len(n.Providers)),
+				zap.String("network_status", "all_providers_stalled"),
+				zap.String("impact", "serving_potentially_stale_data"),
+				zap.String("action_required", "investigate_blockchain_network_status"),
 				zap.String("health_status", Unhealthy.String()))
-			return Unhealthy
+		} else {
+			// Only this provider is stalled while others are progressing - warning level
+			n.logProviderWarning("Provider is stalled while others are progressing", provider,
+				zap.Int64("provider_block", currentBlock),
+				zap.Int64("network_block", latestNetworkBlock),
+				zap.String("health_status", Warning.String()))
+			// Update worst status but continue with other health checks
+			if Warning > worstStatus {
+				worstStatus = Warning
+			}
 		}
-	} else if isStalled && !n.allProvidersStalled() {
-		n.logProviderWarning("Provider is stalled while others are progressing", provider,
-			zap.Int64("provider_block", currentBlock),
-			zap.Int64("network_block", latestNetworkBlock),
-			zap.String("health_status", Warning.String()))
-		return Warning
+	default:
+		// Provider is healthy regarding lag and stall - continue with other health checks
 	}
 
 	// chainId check health check
