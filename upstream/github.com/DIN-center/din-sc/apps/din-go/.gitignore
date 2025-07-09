@@ -2,3 +2,6 @@
 .vscode/
 coverage.out
 coverage.out.tmp
+
+# Mock files
+interface_mock.go

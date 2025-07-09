@@ -18,7 +18,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -30,6 +30,7 @@ import (
 	"container/list"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 )
 
 var (
@@ -64,7 +65,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The dingo client object
-	DingoClient din.IDingoClient
+	DingoClient din.IDinClient
 
 	logger *logger.LoggerClient
 
@@ -875,7 +876,7 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock()
+				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
 			}
 		}
 	}()
