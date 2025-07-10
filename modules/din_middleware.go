@@ -146,12 +146,6 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		d.CaddyPort = DefaultPort
 	}
 
-	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(loggerClient.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
-	if err != nil {
-		return fmt.Errorf("error initializing din client: %v", err)
-	}
-
 	for networkName, network := range d.Networks {
 		// Initialize the HTTP client for each network and provider
 		httpClient := dinHttp.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
@@ -181,6 +175,15 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 					d.logger.Warn("Method marked as routed, but not offered by any providers", zap.String("network", networkName), zap.String("method", method))
 				}
 			}
+		}
+	}
+
+	if d.RegistryEnabled {
+		// DinClient is only initialized if the registry is enabled
+		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry", zap.String("registry_endpoint_url", d.RegistryEndpointUrl), zap.String("registry_contract_address", d.RegistryContractAddress))
+		d.DingoClient, err = din.NewDinClient(loggerClient.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+		if err != nil {
+			return fmt.Errorf("error initializing DIN client: %v", err)
 		}
 	}
 

@@ -120,65 +120,11 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 	tests := []struct {
 		name                     string
 		regNetwork               *din.Network
-		syncNetworkConfigErr     error
-		createNewProviderErr     error
-		expectedError            error
 		expectedNetworkProviders int
 		networkServiceCreated    bool
 	}{
-		// {
-		// 	name: "Successful add network with providers",
-		// 	regNetwork: &din.Network{
-		// 		ProxyName: "test-network",
-		// 		Providers: map[string]*din.Provider{
-		// 			"Provider1": {
-		// 				NetworkServices: map[string]*din.NetworkService{
-		// 					"http://new-provider.com": {
-		// 						Url:     "http://new-provider.com",
-		// 						Address: "0x1234567890abcdef",
-		// 						Status:  din.NetworkServiceStatusActive,
-		// 					},
-		// 				},
-		// 			},
-		// 		},
-		// 		NetworkConfig: &din.NetworkOperationsConfig{
-		// 			HealthcheckMethod: "eth_blockNumber",
-		// 		},
-		// 	},
-		// 	syncNetworkConfigErr:     nil,
-		// 	createNewProviderErr:     nil,
-		// 	expectedError:            nil,
-		// 	expectedNetworkProviders: 1,
-		// 	networkServiceCreated:    true,
-		// },
-		// {
-		// 	name: "Error, missing active status",
-		// 	regNetwork: &din.Network{
-		// 		ProxyName: "test-network",
-		// 		Providers: map[string]*din.Provider{
-		// 			"Provider1": {
-		// 				NetworkServices: map[string]*din.NetworkService{
-		// 					"http://new-provider.com": {
-		// 						Url:     "http://new-provider.com",
-		// 						Address: "0x1234567890abcdef",
-		// 						Status:  din.NetworkServiceStatusOnboarding,
-		// 					},
-		// 				},
-		// 			},
-		// 		},
-		// 		NetworkConfig: &din.NetworkOperationsConfig{
-		// 			HealthcheckMethod: "eth_blockNumber",
-		// 		},
-		// 		Status: din.NetworkStatusOnboarding,
-		// 	},
-		// 	syncNetworkConfigErr:     nil,
-		// 	createNewProviderErr:     nil,
-		// 	expectedError:            nil,
-		// 	expectedNetworkProviders: 0,
-		// 	networkServiceCreated:    false,
-		// },
 		{
-			name: "Error syncing network config",
+			name: "Successful add network with providers",
 			regNetwork: &din.Network{
 				ProxyName: "test-network",
 				Providers: map[string]*din.Provider{
@@ -196,11 +142,60 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					HealthcheckMethod: "eth_blockNumber",
 				},
 			},
-			syncNetworkConfigErr:     nil,
-			createNewProviderErr:     nil,
-			expectedError:            errors.New(""),
 			expectedNetworkProviders: 1,
+			networkServiceCreated:    true,
+		},
+		{
+			name: "Missing active status, no providers added",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  din.NetworkServiceStatusOnboarding,
+							},
+						},
+					},
+				},
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
+				},
+				Status: din.NetworkStatusOnboarding,
+			},
+			expectedNetworkProviders: 0,
 			networkServiceCreated:    false,
+		},
+		{
+			name: "Only active status are added",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:     "http://new-provider.com",
+								Address: "0x1234567890abcdef",
+								Status:  din.NetworkServiceStatusActive,
+							},
+						},
+					},
+					"Provider2": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider2.com": {
+								Url:     "http://new-provider2.com",
+								Address: "0x99999999999",
+								Status:  din.NetworkServiceStatusRetired,
+							},
+						},
+					},
+				},
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			expectedNetworkProviders: 1,
+			networkServiceCreated:    true,
 		},
 	}
 
@@ -224,22 +219,15 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			err := dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
+			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
 
-			// Assert expected error
-			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-			} else {
-				assert.NoError(t, err)
+			// Verify the network is added
+			network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
+			assert.Equal(t, tt.networkServiceCreated, ok)
 
-				// Verify the network is added
-				network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
-				assert.Equal(t, tt.networkServiceCreated, ok)
-
-				if network != nil {
-					// Verify the number of providers added to the network
-					assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
-				}
+			if network != nil {
+				// Verify the number of providers added to the network
+				assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
 			}
 		})
 	}
@@ -359,14 +347,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			err := dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
-
-			// Assert expected error
-			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-			} else {
-				assert.NoError(t, err)
-			}
+			dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
 
 			// Assert the number of providers after the update
 			assert.Equal(t, tt.expectedProviderCount, len(tt.newNetwork.Providers))
@@ -379,21 +360,11 @@ func TestSyncNetworkConfig(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	tests := []struct {
-		name                     string
-		regNetworkConfig         *din.NetworkOperationsConfig
-		existingNetwork          *network
-		hcMethodName             string
-		chainIDMethodName        string
-		callContractMethodName   string
-		archiveEnabled           bool
-		getHCMethodErr           error
-		callsHealthcheckMethod   bool
-		getChainIDMethodErr      error
-		callsChainIDMethod       bool
-		getCallContractMethodErr error
-		callsCallContractMethod  bool
-		expectedError            error
-		expectedNetwork          *network
+		name             string
+		regNetworkConfig *din.NetworkOperationsConfig
+		existingNetwork  *network
+		archiveEnabled   bool
+		expectedNetwork  *network
 	}{
 		{
 			name: "successful sync with all new values",
@@ -422,12 +393,6 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			hcMethodName:            "eth_blockNumber",
-			callsHealthcheckMethod:  true,
-			chainIDMethodName:       "eth_chainId",
-			callsChainIDMethod:      true,
-			callContractMethodName:  "eth_call",
-			callsCallContractMethod: true,
 			expectedNetwork: &network{
 				Name:                    "test-network",
 				HCMethod:                "eth_blockNumber",
@@ -441,43 +406,6 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     5,
 				ArchiveEnabled:          true,
 			},
-		},
-		{
-			name: "error getting healthcheck method",
-			regNetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod: "eth_blockNumber",
-			},
-			existingNetwork: &network{
-				Name: "test-network",
-			},
-			getHCMethodErr:         errors.New("failed to get healthcheck method"),
-			callsHealthcheckMethod: true,
-			expectedError:          errors.New("failed to get network healthcheck method"),
-		},
-		{
-			name: "error getting chain ID method",
-			regNetworkConfig: &din.NetworkOperationsConfig{
-				ChainIdMethod: "eth_chainId",
-			},
-			existingNetwork:        &network{Name: "test-network"},
-			callsHealthcheckMethod: true,
-			getChainIDMethodErr:    errors.New("failed to get chain ID method"),
-			callsChainIDMethod:     true,
-			expectedError:          errors.New("failed to get network chain ID method"),
-		},
-		{
-			name: "error getting call contract method",
-			regNetworkConfig: &din.NetworkOperationsConfig{
-				CallContractMethod: "eth_call",
-			},
-			existingNetwork: &network{
-				Name: "test-network",
-			},
-			callsHealthcheckMethod:   true,
-			getCallContractMethodErr: errors.New("failed to get call contract method"),
-			callsChainIDMethod:       true,
-			callsCallContractMethod:  true,
-			expectedError:            errors.New("failed to get network call contract method"),
 		},
 		{
 			name: "no updates needed when registry values are zero",
@@ -505,12 +433,6 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			callsHealthcheckMethod:  true,
-			callsChainIDMethod:      true,
-			callsCallContractMethod: true,
-			hcMethodName:            "eth_blockNumber",
-			chainIDMethodName:       "eth_chainId",
-			callContractMethodName:  "eth_call",
 			expectedNetwork: &network{
 				Name:                    "test-network",
 				HCMethod:                "eth_blockNumber",
@@ -539,13 +461,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				logger:      logger,
 			}
 
-			result, err := dinMiddleware.syncNetworkConfig(tt.regNetworkConfig, tt.existingNetwork)
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				return
-			}
+			result := dinMiddleware.syncNetworkConfig(tt.regNetworkConfig, tt.existingNetwork)
 
-			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedNetwork.HCMethod, result.HCMethod)
 			assert.Equal(t, tt.expectedNetwork.ChainIdMethod, result.ChainIdMethod)
 			assert.Equal(t, tt.expectedNetwork.ChainId, result.ChainId)
@@ -575,7 +492,6 @@ func TestCreateNewProvider(t *testing.T) {
 		authConfig            *din.ProviderAuthConfig
 		networkService        *din.NetworkService
 		initializeProviderErr error
-		getMethodsErr         error
 		expectedError         error
 		expectedMethods       []*string
 		expectedAuth          *siwe.SIWEClientAuth
@@ -591,10 +507,12 @@ func TestCreateNewProvider(t *testing.T) {
 				Url:  "http://example6.com",
 			},
 			networkService: &din.NetworkService{
-				Address: "0x1234567890abcdef",
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
 			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth: &siwe.SIWEClientAuth{
@@ -609,32 +527,18 @@ func TestCreateNewProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example7.com",
 			},
-			authConfig:            &din.ProviderAuthConfig{Type: din.ProviderAuthTypeNone},
-			networkService:        &din.NetworkService{Address: "0x1234567890abcdef"},
+			authConfig: &din.ProviderAuthConfig{Type: din.ProviderAuthTypeNone},
+			networkService: &din.NetworkService{
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
+			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth:          nil,
 			expectAuthCreation:    false,
-		},
-		{
-			name: "Error fetching network service methods",
-			provider: &provider{
-				HttpUrl: "http://example8.com",
-			},
-			authConfig:            &din.ProviderAuthConfig{Type: din.ProviderAuthTypeSIWE, Url: "http://example9.com"},
-			networkService:        &din.NetworkService{Address: "0x1234567890abcdef"},
-			initializeProviderErr: nil,
-			getMethodsErr:         errors.New("failed to fetch methods"),
-			expectedError:         errors.New("failed to get network service methods: failed to fetch methods"),
-			expectedMethods:       nil,
-			expectedAuth: &siwe.SIWEClientAuth{
-				ProviderURL:  "http://example9.com",
-				SessionCount: 16,
-				Signer:       nil,
-			},
-			expectAuthCreation: true,
 		},
 		{
 			name: "AUTH type is unknown ",
@@ -645,9 +549,13 @@ func TestCreateNewProvider(t *testing.T) {
 				Type: "unknown",
 				Url:  "http://example13.com",
 			},
-			networkService:        &din.NetworkService{Address: "0x1234567890abcdef"},
+			networkService: &din.NetworkService{
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
+			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth:          nil,
@@ -659,7 +567,6 @@ func TestCreateNewProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mocks
 			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
 
 			privateKeyData := make([]byte, 32)
 			_, err := rand.Read(privateKeyData)

@@ -279,6 +279,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		name            string
 		networks        map[string]*network
 		registryEnabled bool
+		registryUrl     string
 		initializeErr   error
 		expectedError   error
 	}{
@@ -292,6 +293,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		{
 			name:            "network not found but registry is enabled",
 			registryEnabled: true,
+			registryUrl:     "http://example1.com",
 			networks:        map[string]*network{},
 			expectedError:   nil,
 		},
@@ -306,12 +308,11 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
-				testMode: true, // Ensure test mode is enabled
-				logger:   logger,
-				Networks: tt.networks,
-			}
-			if tt.registryEnabled {
-				dinMiddleware.RegistryEnabled = tt.registryEnabled
+				testMode:            true, // Ensure test mode is enabled
+				logger:              logger,
+				Networks:            tt.networks,
+				RegistryEndpointUrl: tt.registryUrl,
+				RegistryEnabled:     tt.registryEnabled,
 			}
 
 			// Call the Provision method
