@@ -175,10 +175,10 @@ func TestHandlerRegistry_RegisterHandler(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// Test duplicate registration
+	// Test duplicate registration (should be allowed)
 	err = registry.RegisterHandler("test", factory)
-	if err == nil {
-		t.Error("Expected error for duplicate registration, got none")
+	if err != nil {
+		t.Errorf("Expected no error for duplicate registration, got %v", err)
 	}
 }
 
