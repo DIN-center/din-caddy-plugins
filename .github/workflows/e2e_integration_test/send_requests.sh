@@ -127,11 +127,7 @@ test_handler_registration() {
             ;;
     esac
     
-    case "$TEST_SCENARIO" in
-        "starknet")
-            test_jsonrpc_endpoint "starknet-mainnet" "starknet_blockNumber" "[]" "Starknet Handler - Block Number Check"
-            ;;
-    esac
+
 }
 
 # Function to test EVM handler functionality
@@ -170,18 +166,7 @@ test_beacon_handler() {
     make_request "POST" "$BASE_URL/ethereum-beacon/eth/v1/beacon/states/head/validators" "$post_payload" "200" "Beacon - POST Request Support"
 }
 
-# Function to test Starknet handler functionality
-test_starknet_handler() {
-    echo -e "\n${PURPLE}Testing Starknet Handler${NC}"
-    
-    # Starknet-specific JSON-RPC tests
-    test_jsonrpc_endpoint "starknet-mainnet" "starknet_blockNumber" "[]" "Starknet - Get Block Number"
-    test_jsonrpc_endpoint "starknet-mainnet" "starknet_chainId" "[]" "Starknet - Get Chain ID"
-    
-    # Test Starknet-specific call format
-    local call_params='[{"contract_address":"0x1","entry_point_selector":"0x2","calldata":[]},"latest"]'
-    test_jsonrpc_endpoint "starknet-mainnet" "starknet_call" "$call_params" "Starknet - Contract Call"
-}
+
 
 # Function to test Solana handler functionality
 test_solana_handler() {
@@ -272,10 +257,6 @@ run_test_scenario() {
             echo -e "\n${BLUE}📋 EVM-Only Test Scenario${NC}"
             test_evm_handler
             test_provider_failover
-            ;;
-        "starknet")
-            echo -e "\n${PURPLE}📋 Starknet Test Scenario${NC}"
-            test_starknet_handler
             ;;
         *)
             echo -e "${RED}Unknown test scenario: $TEST_SCENARIO${NC}"

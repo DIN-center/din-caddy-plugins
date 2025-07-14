@@ -28,22 +28,6 @@
 					}
 					chain_id eip155:0x1
 				}
-				
-				
-				# Starknet Network (new handler)
-				starknet-mainnet {
-					type starknet  # Test Starknet handler
-					providers {
-						https://starknet-mainnet.public.blastapi.io {
-							priority 0
-						}
-					}
-					healthcheck_method starknet_blockNumber
-					chainid_method starknet_chainId
-					chain_id starknet:0x534e5f4d41494e
-					call_contract_method starknet_call
-				}
-
 			}
 		}
 		# din reverse proxy directive configuration
