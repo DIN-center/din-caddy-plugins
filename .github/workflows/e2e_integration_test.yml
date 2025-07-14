@@ -104,27 +104,13 @@ jobs:
       - name: Run Network Handler Tests
         run: |
           echo "🧪 Running network handler unit tests..."
-          go test -v -count=1 ./lib/network/... -cover -coverprofile=network-coverage.out
+          go test -v -count=1 ./lib/network/...
           
       - name: Run Module Tests  
         run: |
           echo "🧪 Running module unit tests..."
-          go test -v -count=1 ./modules/... -cover -coverprofile=modules-coverage.out
-          
-      - name: Generate Coverage Report
-        run: |
-          go tool cover -html=network-coverage.out -o network-coverage.html
-          go tool cover -html=modules-coverage.out -o modules-coverage.html
-          echo "Coverage reports generated"
-          
-      - name: Upload Coverage Reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-reports
-          path: |
-            network-coverage.html
-            modules-coverage.html
-          retention-days: 7
+          go test -v -count=1 ./modules/...
+
 
   # Third job: E2E Integration Test
   e2e-integration:
