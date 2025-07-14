@@ -1,8 +1,22 @@
-# Network Handler Development Guide
+# Adding New Network Types to DIN Gateway
 
 ## Overview
 
-This guide provides step-by-step instructions for adding new network type handlers to the DIN Caddy middleware. The handler registry system allows you to add support for any blockchain network or API type without modifying the core middleware logic.
+This comprehensive guide provides step-by-step instructions for adding new blockchain network support to the DIN Gateway. The modular handler registry system allows you to add support for any blockchain network or API type (JSON-RPC, REST, GraphQL) without modifying the core middleware logic.
+
+**Prerequisites**: Basic understanding of Go programming, HTTP protocols, and the target blockchain network's API.
+
+## 🚀 Quick Start for Impatient Developers
+
+**Want to add a new network in 10 minutes?** Follow these essential steps:
+
+1. **Create handler**: `lib/network/{your_network}_handler.go` implementing `NetworkHandler` interface
+2. **Register handler**: Add to `RegisterBuiltinHandlers()` in `lib/network/handlers.go` 
+3. **Add tests**: Create `lib/network/{your_network}_handler_test.go`
+4. **Configure network**: Add Caddyfile configuration with your network type
+5. **Test integration**: Run `go test ./...` and verify e2e functionality
+
+📖 **Read the full guide below for detailed implementation instructions.**
 
 ## Table of Contents
 
