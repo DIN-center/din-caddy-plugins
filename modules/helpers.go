@@ -470,8 +470,8 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		// Asynchronously process the response if it's for a configured health check method.
 		// This involves extracting block numbers and updating network/provider health status.
 		// It's run in a goroutine to avoid blocking the main request-response flow.
-		// Ensure NetworkObj is not nil before accessing HCMethod to prevent panics.
-		if params.NetworkObj != nil && requestMethod == params.NetworkObj.HCMethod {
+		// Ensure NetworkObj is not nil before checking health check method to prevent panics.
+		if params.NetworkObj != nil && requestMethod == params.NetworkObj.getHealthCheckMethod() {
 			go params.DinMiddleware.processHCMethodResponseAsync(params.NetworkObj, params.NetworkPath, processedResponseBody, effectiveStatusCode, requestMethod)
 		}
 	}
@@ -534,19 +534,40 @@ func createHealthCheckRequestContext(networkName, providerHost, method string) (
 	repl := caddy.NewReplacer()
 	repl.Set(RequestProviderKey, providerHost)
 
-	// Create synthetic request body for the health check
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1}`, method))
+	// Create payload using handler-aware logic
+	payload := createHealthCheckPayload(method)
 	repl.Set(RequestBodyKey, payload)
+
+	// Extract params from payload for accurate JSONRPCRequest
+	var params json.RawMessage
+	var tempReq struct {
+		Params json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(payload, &tempReq); err == nil && len(tempReq.Params) > 0 {
+		params = tempReq.Params
+	} else {
+		// Default to empty array for health checks
+		params = json.RawMessage(`[]`)
+	}
 
 	// Create synthetic JSONRPCRequest
 	jsonRPCReq := &dinHttp.JSONRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,
 		ID:      json.RawMessage(`1`),
-		Params:  json.RawMessage(`[]`), // Health checks typically have no params
+		Params:  params,
 	}
 
 	return repl, jsonRPCReq, payload
+}
+
+// createHealthCheckPayload creates health check payload with handler support
+// This is a helper function that can be used independently of network objects
+func createHealthCheckPayload(method string) []byte {
+	// For now, use standard JSON-RPC format since we don't have network context
+	// This maintains backward compatibility while allowing future handler integration
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1}`, method)
+	return []byte(payload)
 }
 
 // createGetBlockByNumberRequestContext creates synthetic request context for getBlockByNumber calls
@@ -559,16 +580,36 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	var payload []byte
 	var params json.RawMessage
 
-	// Create the correct payload format based on network type (matching getBlockByNumber logic)
-	if strings.Contains(networkName, "solana") {
-		// Solana format: [blockNumber, {"encoding": "json", "transactionDetails": "none", "rewards": false}]
-		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, method, blockNumber))
-		params = json.RawMessage(fmt.Sprintf(`[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]`, blockNumber))
+	// PRIMARY: Use handler method for network-specific block request creation
+	if networkObj != nil && networkObj.handler != nil {
+		var err error
+		payload, err = networkObj.handler.CreateBlockRequest(method, blockNumber, false)
+		if err != nil {
+			// Log handler failure and fall back to legacy logic
+			if networkObj.logger != nil {
+				networkObj.logger.Warn("Handler failed to create block request, falling back to legacy logic",
+					zap.String("network", networkName),
+					zap.String("method", method),
+					zap.Int64("block_number", blockNumber),
+					zap.Error(err))
+			}
+			// Fallback to legacy logic
+			payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
+		} else {
+			// Extract params from handler-created payload
+			var tempReq struct {
+				Params json.RawMessage `json:"params"`
+			}
+			if err := json.Unmarshal(payload, &tempReq); err == nil && len(tempReq.Params) > 0 {
+				params = tempReq.Params
+			} else {
+				// If params extraction fails, fall back to legacy params
+				_, params = createLegacyBlockRequest(networkName, method, blockNumber)
+			}
+		}
 	} else {
-		// EVM format: ["0x{blockNumberHex}", false]
-		blockNumberHex := fmt.Sprintf("%#x", blockNumber)
-		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s", false]}`, method, blockNumberHex))
-		params = json.RawMessage(fmt.Sprintf(`["%s", false]`, blockNumberHex))
+		// FALLBACK: Use legacy logic when no handler available
+		payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
 	}
 
 	repl.Set(RequestBodyKey, payload)
@@ -582,6 +623,27 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	}
 
 	return repl, jsonRPCReq, payload
+}
+
+// createLegacyBlockRequest creates block request using legacy string-based logic
+// This maintains backward compatibility for networks without handlers
+func createLegacyBlockRequest(networkName, method string, blockNumber int64) ([]byte, json.RawMessage) {
+	var payload []byte
+	var params json.RawMessage
+
+	// Use network name patterns to determine format (legacy approach)
+	if strings.Contains(networkName, "solana") {
+		// Solana format: [blockNumber, {"encoding": "json", "transactionDetails": "none", "rewards": false}]
+		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, method, blockNumber))
+		params = json.RawMessage(fmt.Sprintf(`[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]`, blockNumber))
+	} else {
+		// EVM format (default): ["0x{blockNumberHex}", false]
+		blockNumberHex := fmt.Sprintf("%#x", blockNumber)
+		payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s", false]}`, method, blockNumberHex))
+		params = json.RawMessage(fmt.Sprintf(`["%s", false]`, blockNumberHex))
+	}
+
+	return payload, params
 }
 
 // checkRequestContext checks if the request context has been cancelled or exceeded deadline

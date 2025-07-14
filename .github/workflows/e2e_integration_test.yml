@@ -58,11 +58,11 @@ jobs:
           echo "Building Caddy with DIN plugins..."
           if xcaddy build --with github.com/DIN-center/din-caddy-plugins=. --output ./caddy-din; then
             echo "success=true" >> $GITHUB_OUTPUT
-            echo "✅ Build successful"
+            echo "Build successful"
             ./caddy-din version
           else
             echo "success=false" >> $GITHUB_OUTPUT
-            echo "❌ Build failed"
+            echo "Build failed"
             exit 1
           fi
           
@@ -115,7 +115,7 @@ jobs:
         run: |
           go tool cover -html=network-coverage.out -o network-coverage.html
           go tool cover -html=modules-coverage.out -o modules-coverage.html
-          echo "📊 Coverage reports generated"
+          echo "Coverage reports generated"
           
       - name: Upload Coverage Reports
         uses: actions/upload-artifact@v4
@@ -156,7 +156,7 @@ jobs:
           
       - name: Setup Test Environment
         run: |
-          echo "🔧 Setting up test environment for scenario: ${{ matrix.test-scenario }}"
+          echo "Setting up test environment for scenario: ${{ matrix.test-scenario }}"
           # Ensure test scripts are executable
           chmod +x ./.github/workflows/e2e_integration_test/send_requests.sh
           
@@ -165,7 +165,7 @@ jobs:
           
       - name: Start Caddy Server
         run: |
-          echo "🚀 Starting Caddy server..."
+          echo "Starting Caddy server..."
           ./caddy-din start --config ./.github/workflows/e2e_integration_test/Caddyfile &
           CADDY_PID=$!
           echo $CADDY_PID > caddy.pid
@@ -174,11 +174,11 @@ jobs:
           echo "⏳ Waiting for Caddy to start..."
           for i in {1..30}; do
             if curl -f http://localhost:8000/health > /dev/null 2>&1; then
-              echo "✅ Caddy server is ready"
+              echo "Caddy server is ready"
               break
             fi
             if [ $i -eq 30 ]; then
-              echo "❌ Caddy failed to start within 30 seconds"
+              echo "Caddy failed to start within 30 seconds"
               exit 1
             fi
             sleep 1
@@ -186,13 +186,13 @@ jobs:
           
       - name: Verify Handler Registry
         run: |
-          echo "🔍 Verifying handler registry is working..."
+          echo "Verifying handler registry is working..."
           
           # Test basic connectivity
           if curl -f http://localhost:8000/health; then
-            echo "✅ Health endpoint responding"
+            echo "Health endpoint responding"
           else
-            echo "❌ Health endpoint not responding"
+            echo "Health endpoint not responding"
             exit 1
           fi
           
@@ -205,7 +205,7 @@ jobs:
           
           # Verify script exists and is executable
           if [ ! -x ./.github/workflows/e2e_integration_test/send_requests.sh ]; then
-            echo "❌ Test script not found or not executable"
+            echo "Test script not found or not executable"
             exit 1
           fi
           
@@ -213,13 +213,13 @@ jobs:
           export TEST_SCENARIO
           
           # Run the enhanced test script
-          echo "🚀 Executing test script: ./.github/workflows/e2e_integration_test/send_requests.sh"
+          echo "Executing test script: ./.github/workflows/e2e_integration_test/send_requests.sh"
           if timeout ${{ env.TEST_TIMEOUT }} ./.github/workflows/e2e_integration_test/send_requests.sh; then
             echo "test-result=success" >> $GITHUB_OUTPUT
-            echo "✅ E2E tests passed for scenario: $TEST_SCENARIO"
+            echo "E2E tests passed for scenario: $TEST_SCENARIO"
           else
             echo "test-result=failure" >> $GITHUB_OUTPUT
-            echo "❌ E2E tests failed for scenario: $TEST_SCENARIO"
+            echo "E2E tests failed for scenario: $TEST_SCENARIO"
             exit 1
           fi
           
@@ -246,13 +246,13 @@ jobs:
             CADDY_PID=$(cat caddy.pid)
             if kill -0 $CADDY_PID 2>/dev/null; then
               ./caddy-din stop || kill $CADDY_PID
-              echo "✅ Caddy server stopped"
+              echo "Caddy server stopped"
             else
-              echo "ℹ️ Caddy process not running"
+              echo "Caddy process not running"
             fi
             rm -f caddy.pid
           else
-            echo "ℹ️ No Caddy PID file found"
+            echo "No Caddy PID file found"
           fi
           
       - name: Upload Test Results
@@ -283,49 +283,49 @@ jobs:
           echo "## Build Status" >> test-summary.md
           
           if [ "${{ needs.build-validation.outputs.build-success }}" == "true" ]; then
-            echo "✅ Build: SUCCESS" >> test-summary.md
+            echo "Build: SUCCESS" >> test-summary.md
           else
-            echo "❌ Build: FAILED" >> test-summary.md
+            echo "Build: FAILED" >> test-summary.md
           fi
           
           echo "" >> test-summary.md
           echo "## Unit Tests" >> test-summary.md
           
           if [ "${{ needs.unit-tests.result }}" == "success" ]; then
-            echo "✅ Unit Tests: PASSED" >> test-summary.md
+            echo "Unit Tests: PASSED" >> test-summary.md
           else
-            echo "❌ Unit Tests: FAILED" >> test-summary.md
+            echo "Unit Tests: FAILED" >> test-summary.md
           fi
           
           echo "" >> test-summary.md
           echo "## E2E Integration Tests" >> test-summary.md
           
           if [ "${{ needs.e2e-integration.result }}" == "success" ]; then
-            echo "✅ E2E Tests: ALL SCENARIOS PASSED" >> test-summary.md
+            echo "E2E Tests: ALL SCENARIOS PASSED" >> test-summary.md
             echo "" >> test-summary.md
             echo "### Test Scenarios Completed:" >> test-summary.md
-            echo "- ✅ EVM Only" >> test-summary.md
-            echo "- ✅ Beacon Chain" >> test-summary.md
-            echo "- ✅ Starknet" >> test-summary.md
-            echo "- ✅ Mixed Networks" >> test-summary.md
-            echo "- ✅ All Handlers" >> test-summary.md
+            echo "- EVM Only" >> test-summary.md
+            echo "- Beacon Chain" >> test-summary.md
+            echo "- Starknet" >> test-summary.md
+            echo "- Mixed Networks" >> test-summary.md
+            echo "- All Handlers" >> test-summary.md
           else
-            echo "❌ E2E Tests: SOME SCENARIOS FAILED" >> test-summary.md
+            echo "E2E Tests: SOME SCENARIOS FAILED" >> test-summary.md
           fi
           
           echo "" >> test-summary.md
           echo "## Handler Registry Validation" >> test-summary.md
-          echo "- ✅ EVM Handler Registration" >> test-summary.md
-          echo "- ✅ Beacon Chain Handler Registration" >> test-summary.md
-          echo "- ✅ Starknet Handler Registration" >> test-summary.md
-          echo "- ✅ Solana Handler Registration" >> test-summary.md
-          echo "- ✅ Handler Factory Pattern" >> test-summary.md
-          echo "- ✅ Request Type Detection" >> test-summary.md
-          echo "- ✅ Path Translation" >> test-summary.md
-          echo "- ✅ Backward Compatibility" >> test-summary.md
+          echo "- EVM Handler Registration" >> test-summary.md
+          echo "- Beacon Chain Handler Registration" >> test-summary.md
+          echo "- Starknet Handler Registration" >> test-summary.md
+          echo "- Solana Handler Registration" >> test-summary.md
+          echo "- Handler Factory Pattern" >> test-summary.md
+          echo "- Request Type Detection" >> test-summary.md
+          echo "- Path Translation" >> test-summary.md
+          echo "- Backward Compatibility" >> test-summary.md
           
           echo "" >> test-summary.md
-          echo "## 📊 Test Artifacts" >> test-summary.md
+          echo "## Test Artifacts" >> test-summary.md
           echo "- Coverage reports available in artifacts" >> test-summary.md
           echo "- Test logs available for each scenario" >> test-summary.md
           echo "- Caddy build binary available for download" >> test-summary.md
@@ -390,7 +390,7 @@ jobs:
           echo "⚡ Running performance benchmarks for handler registry..."
           go test -bench=. -benchmem ./lib/network/... > benchmark-results.txt
           
-          echo "📊 Benchmark Results:"
+          echo "Benchmark Results:"
           cat benchmark-results.txt
           
       - name: Upload Benchmark Results

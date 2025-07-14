@@ -415,10 +415,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				},
 			},
 			existingNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "old-method",
-				ChainIdMethod:           "old-chain-method",
-				CallContractMethod:      "old-call-method",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x0",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -434,10 +432,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			callContractMethodName:  "eth_call",
 			callsCallContractMethod: true,
 			expectedNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              20,
 				BlockLagLimit:           10,
@@ -515,10 +511,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				},
 			},
 			existingNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -527,17 +521,14 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			callsHealthcheckMethod:  true,
-			callsChainIDMethod:      true,
-			callsCallContractMethod: false, // Don't expect call when bit is 0
-			hcMethodName:            "eth_blockNumber",
-			chainIDMethodName:       "eth_chainId",
-			callContractMethodName:  "",
+			callsHealthcheckMethod: true,
+			callsChainIDMethod:     true,
+			hcMethodName:           "eth_blockNumber",
+			chainIDMethodName:      "eth_chainId",
+			callContractMethodName: "",
 			expectedNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -589,10 +580,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedNetwork.HCMethod, result.HCMethod)
-			assert.Equal(t, tt.expectedNetwork.ChainIdMethod, result.ChainIdMethod)
+			// REMOVED: Method field assertions (now provided by handlers)
 			assert.Equal(t, tt.expectedNetwork.ChainId, result.ChainId)
-			assert.Equal(t, tt.expectedNetwork.CallContractMethod, result.CallContractMethod)
 			assert.Equal(t, tt.expectedNetwork.HCInterval, result.HCInterval)
 			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, result.BlockLagLimit)
 			assert.Equal(t, tt.expectedNetwork.BlockJumpLimit, result.BlockJumpLimit)
@@ -769,7 +758,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			name: "Successful update of network data",
 			initialNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "initial-method",
 				HCInterval:              10,
 				BlockLagLimit:           5,
 				MaxRequestPayloadSizeKB: 1024,
@@ -782,7 +770,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			updatedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -795,7 +782,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			expectedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -814,7 +800,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			name: "Update with empty providers",
 			initialNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "initial-method",
 				HCInterval:              10,
 				BlockLagLimit:           5,
 				MaxRequestPayloadSizeKB: 1024,
@@ -827,7 +812,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			updatedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -836,7 +820,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			expectedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -870,7 +853,6 @@ func TestUpdateNetworkData(t *testing.T) {
 
 			// Assert that the network data was updated correctly
 			updatedNetwork := dinMiddleware.Networks[tt.initialNetwork.Name]
-			assert.Equal(t, tt.expectedNetwork.HCMethod, updatedNetwork.HCMethod)
 			assert.Equal(t, tt.expectedNetwork.HCInterval, updatedNetwork.HCInterval)
 			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, updatedNetwork.BlockLagLimit)
 			assert.Equal(t, tt.expectedNetwork.MaxRequestPayloadSizeKB, updatedNetwork.MaxRequestPayloadSizeKB)
@@ -1049,7 +1031,6 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			// Create test network with CaddyPort to avoid getBlockByNumber errors
 			network := &network{
 				Name:      "test/eth",
-				HCMethod:  "eth_blockNumber",
 				logger:    loggerClient,
 				CaddyPort: "8080", // Set CaddyPort to avoid errors in successful case
 			}

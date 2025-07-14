@@ -136,8 +136,15 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	network := NewNetwork(regNetwork.ProxyName, d.Env, d.CaddyPort)
-	network, err := d.syncNetworkConfig(regNetwork, network)
+	// Step 2: Create a new network
+	// Detect network type from network name for backward compatibility
+	networkType := d.detectNetworkType(regNetwork.ProxyName)
+
+	network, err := NewNetwork(regNetwork.ProxyName, networkType, d.Env, d.CaddyPort)
+	if err != nil {
+		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
+	}
+	network, err = d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
 		d.logger.Error("Failed to sync network config", zap.Error(err))
 		return err
@@ -285,28 +292,22 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		network.ChainId = chainId
 	}
 
-	// Update Healthcheck Method if changed
-	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
-		d.logger.Debug("Setting network healthcheck method",
+	// Network-specific methods are now provided by handlers based on network type
+	// Log the registry methods for informational purposes only
+	if registryHCMethod != "" {
+		d.logger.Debug("Registry specifies healthcheck method (network handler will provide actual method)",
 			zap.String("network", network.Name),
-			zap.String("healthcheck_method", registryHCMethod))
-		network.HCMethod = registryHCMethod
+			zap.String("registry_healthcheck_method", registryHCMethod))
 	}
-
-	// Update Chain ID Method if changed
-	if registryChainIdMethod != "" && registryChainIdMethod != network.ChainIdMethod {
-		d.logger.Debug("Setting network chain ID method",
+	if registryChainIdMethod != "" {
+		d.logger.Debug("Registry specifies chain ID method (network handler will provide actual method)",
 			zap.String("network", network.Name),
-			zap.String("chain_id_method", registryChainIdMethod))
-		network.ChainIdMethod = registryChainIdMethod
+			zap.String("registry_chain_id_method", registryChainIdMethod))
 	}
-
-	// Update Call Contract Method if changed
-	if registryCallContractMethod != "" && registryCallContractMethod != network.CallContractMethod {
-		d.logger.Debug("Setting network call contract method",
+	if registryCallContractMethod != "" {
+		d.logger.Debug("Registry specifies call contract method (network handler will provide actual method)",
 			zap.String("network", network.Name),
-			zap.String("call_contract_method", registryCallContractMethod))
-		network.CallContractMethod = registryCallContractMethod
+			zap.String("registry_call_contract_method", registryCallContractMethod))
 	}
 
 	// Update Healthcheck Interval if changed
@@ -421,7 +422,7 @@ func (d *DinMiddleware) createProviderSIWEAuth(authConfig *dinreg.NetworkService
 // updateNetwork updates the network object in the middleware object with the provided registry network data
 func (d *DinMiddleware) updateNetworkData(network *network) {
 	// update the network object with the registry network config data
-	d.Networks[network.Name].HCMethod = network.HCMethod
+	// REMOVED: HCMethod is now provided by handlers
 	d.Networks[network.Name].HCInterval = network.HCInterval
 	d.Networks[network.Name].BlockLagLimit = network.BlockLagLimit
 	d.Networks[network.Name].BlockJumpLimit = network.BlockJumpLimit
@@ -465,12 +466,13 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string
 // to the network's block history. This information is crucial for tracking the network's current state
 // and ensuring proper synchronization across providers.
 func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
-	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
+	if len(respBody) == 0 || networkObj == nil {
 		return
 	}
 
-	// If method is "other_method" and networkObj.HCMethod is "eth_blockNumber", this should be true.
-	if method != networkObj.HCMethod {
+	// Check if this is the health check method using handler
+	hcMethod := networkObj.getHealthCheckMethod()
+	if hcMethod == "" || method != hcMethod {
 		return
 	}
 
@@ -509,10 +511,7 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	if err != nil {
 		// Create a new context specifically for the getBlockByNumber call that failed
 		// This ensures the logging shows the correct method and parameters for the failed call
-		getBlockMethod := networkObj.GetBlockByNumberMethod
-		if getBlockMethod == "" {
-			getBlockMethod = DefaultGetBlockByNumberMethod // Default fallback
-		}
+		getBlockMethod := networkObj.getBlockByNumberMethod()
 
 		// Create context for the getBlockByNumber call
 		getBlockRepl, getBlockJSONRPCReq, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)

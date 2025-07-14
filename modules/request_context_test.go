@@ -32,7 +32,6 @@ func TestDetectRequestType(t *testing.T) {
 				Name:     "ethereum",
 				Type:     "evm",
 				ChainId:  "eip155:0x1",
-				HCMethod: "eth_blockNumber",
 			},
 			request: httptest.NewRequest("POST", "/ethereum",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}`)),
@@ -54,7 +53,6 @@ func TestDetectRequestType(t *testing.T) {
 			network: &network{
 				Name:     "ethereum-auto",
 				ChainId:  "eip155:0x1",
-				HCMethod: "eth_blockNumber",
 			},
 			request: func() *http.Request {
 				req := httptest.NewRequest("POST", "/ethereum-auto",
@@ -79,7 +77,6 @@ func TestDetectRequestType(t *testing.T) {
 				Name:     "starknet-mainnet",
 				Type:     "starknet",
 				ChainId:  "starknet:0x534e5f4d41494e",
-				HCMethod: "starknet_blockNumber",
 			},
 			request: httptest.NewRequest("POST", "/starknet-mainnet",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"starknet_blockNumber","id":1}`)),
@@ -91,7 +88,6 @@ func TestDetectRequestType(t *testing.T) {
 				Name:     "solana-mainnet",
 				Type:     "solana",
 				ChainId:  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-				HCMethod: "getSlot",
 			},
 			request: httptest.NewRequest("POST", "/solana-mainnet",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"getSlot","id":1}`)),
@@ -132,7 +128,6 @@ func TestRequestContext_IsRetryableError(t *testing.T) {
 		Name:     "test-network",
 		Type:     "evm",
 		ChainId:  "eip155:0x1",
-		HCMethod: "eth_blockNumber",
 	}
 
 	req := httptest.NewRequest("POST", "/test-network",
@@ -288,7 +283,6 @@ func TestRequestContextIntegration(t *testing.T) {
 				Name:     "ethereum",
 				Type:     "evm",
 				ChainId:  "eip155:0x1",
-				HCMethod: "eth_blockNumber",
 			},
 			"ethereum-beacon": {
 				Name:       "ethereum-beacon",

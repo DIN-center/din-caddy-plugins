@@ -61,7 +61,7 @@ func DetectRequestType(req *http.Request, networkObj *network, registry *network
 			if method, err := extractRPCMethod(req); err == nil {
 				ctx.Method = method
 				// Check if this is a health check method
-				if method == networkObj.HCMethod {
+				if method == networkObj.getHealthCheckMethod() {
 					ctx.IsHealthCheck = true
 				}
 			}
@@ -98,7 +98,7 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 			// Extract RPC method
 			if method, err := extractRPCMethod(req); err == nil {
 				ctx.Method = method
-				if method == networkObj.HCMethod {
+				if method == networkObj.getHealthCheckMethod() {
 					ctx.IsHealthCheck = true
 				}
 			}
@@ -147,7 +147,7 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 	// Try to extract RPC method
 	if method, err := extractRPCMethod(req); err == nil {
 		ctx.Method = method
-		if method == networkObj.HCMethod {
+		if method == networkObj.getHealthCheckMethod() {
 			ctx.IsHealthCheck = true
 		}
 	}

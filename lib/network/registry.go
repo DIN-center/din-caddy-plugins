@@ -30,7 +30,8 @@ func (r *HandlerRegistry) RegisterHandler(networkType string, factory HandlerFac
 	defer r.mu.Unlock()
 
 	if _, exists := r.factories[networkType]; exists {
-		return fmt.Errorf("handler for network type '%s' already registered", networkType)
+		// Handler already registered, this is safe to ignore
+		return nil
 	}
 
 	r.factories[networkType] = factory

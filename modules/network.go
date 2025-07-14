@@ -14,6 +14,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/pkg/errors"
@@ -30,6 +31,10 @@ type network struct {
 	logger           *logger.LoggerClient
 	machineID        string
 	Environment      utils.Environment
+
+	// NEW: Handler reference for network-specific operations
+	handler networklib.NetworkHandler
+
 	// internal health check values
 	HCThreshold              int
 	HCTimeout                int
@@ -44,32 +49,28 @@ type network struct {
 	MethodFilter *methodFilter
 
 	// Registry configuration values
-	Providers               map[string]*provider `json:"providers"`
-	Methods                 []*string            `json:"methods"`
-	HCMethod                string               `json:"healthcheck_method"`
-	ChainIdMethod           string               `json:"chainid_method"`
-	ChainId                 string               `json:"chain_id"`
-	CallContractMethod      string               `json:"call_contract_method"`
-	GetBlockByNumberMethod  string               `json:"get_block_by_number_method"`
-	HCInterval              int                  `json:"healthcheck_interval_seconds"`
-	BlockLagLimit           int64                `json:"healthcheck_blocklag_limit"`
-	BlockJumpLimit          int64                `json:"healthcheck_blockjump_limit"`
-	MaxRequestPayloadSizeKB int64                `json:"max_request_payload_size_kb"`
-	RequestAttemptCount     int                  `json:"request_attempt_count"`
-	ArchiveEnabled          bool                 `json:"archive_enabled"`
+	Providers map[string]*provider `json:"providers"`
+	Methods   []*string            `json:"methods"`
+	ChainId   string               `json:"chain_id"`
+
+	// Network-specific method fields are now provided by handlers based on the Type field
+	HCInterval              int   `json:"healthcheck_interval_seconds"`
+	BlockLagLimit           int64 `json:"healthcheck_blocklag_limit"`
+	BlockJumpLimit          int64 `json:"healthcheck_blockjump_limit"`
+	MaxRequestPayloadSizeKB int64 `json:"max_request_payload_size_kb"`
+	RequestAttemptCount     int   `json:"request_attempt_count"`
+	ArchiveEnabled          bool  `json:"archive_enabled"`
 }
 
-// NewNetwork creates a new network with the given name
+// NewNetwork creates a new network with the given name and network type
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, environment utils.Environment, caddyPort string) *network {
-	return &network{
+func NewNetwork(name string, networkType string, environment utils.Environment, caddyPort string) (*network, error) {
+	n := &network{
 		Name: name,
+		Type: networkType, // Used for handler selection
 		// Default health check values, to be overridden if specified in the Caddyfile
-		HCMethod:                 DefaultHCMethod,
-		ChainIdMethod:            DefaultChainIdMethod,
-		CallContractMethod:       DefaultCallContractMethod,
-		GetBlockByNumberMethod:   DefaultGetBlockByNumberMethod,
+		// Removed network-specific method fields - now provided by handlers
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
 		HCInterval:               DefaultHCInterval,
@@ -85,6 +86,28 @@ func NewNetwork(name string, environment utils.Environment, caddyPort string) *n
 		Providers:                make(map[string]*provider),
 		CaddyPort:                caddyPort,
 	}
+
+	// Initialize handler based on network type
+	if networkType != "" {
+		config := &networklib.NetworkConfig{
+			Name:           name,
+			Type:           networkType,
+			ChainID:        "", // Will be set later from configuration
+			HealthEndpoint: "", // Will be set later from configuration
+			MaxPayloadSize: DefaultMaxRequestPayloadSizeKB * 1024,
+			RequestTimeout: time.Duration(DefaultHCTimeout) * time.Second,
+			Custom:         make(map[string]interface{}),
+		}
+
+		handler, err := networklib.DefaultRegistry.GetHandler(networkType, config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get handler for network type '%s': %w", networkType, err)
+		}
+
+		n.handler = handler
+	}
+
+	return n, nil
 }
 
 func (n *network) startHealthcheck() {
@@ -318,29 +341,19 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		return Unhealthy
 	}
 
-	// Archive Health Check
-	// if the provider name doesn't contains "bitcoin or solana and archive is enabled, return unhealthy
-	// then check if the provider can return back block data from half of its block height
-	if n.ArchiveEnabled && !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana") && len(provider.BlockHistory()) > 1 {
-
-		// get a quarter of the block height
+	// Archive Health Check - Use handler method instead of string checks
+	if n.ArchiveEnabled && n.supportsArchiveMode() && len(provider.BlockHistory()) > 1 {
 		quarterBlockHeight := currentBlock / 4
 
-		var quarterBlockHeightString string
-		if strings.Contains(n.Name, "starknet") {
-			// Starknet uses decimal for block height, no need to convert to hex
-			quarterBlockHeightString = strconv.FormatInt(quarterBlockHeight, 10)
-		} else {
-			// convert quarterBlockHeight to hex string
-			quarterBlockHeightString = fmt.Sprintf("%#x", quarterBlockHeight)
-		}
+		// Use handler method to format block height
+		quarterBlockHeightString := n.formatBlockHeight(quarterBlockHeight)
 
-		// call the network method
+		// Use handler method to create archive payload
 		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightString)
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider,
 				zap.Int64("quarter_block_height", quarterBlockHeight),
-				zap.String("quarter_block_height_hex", quarterBlockHeightString),
+				zap.String("quarter_block_height_formatted", quarterBlockHeightString),
 				zap.Error(err),
 				zap.String("health_status", Warning.String()))
 			return Warning
@@ -446,12 +459,26 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	var lastHealthStatus HealthStatus = Unhealthy
 	var lastResponseStatus int = 0
 
+	// Use handler method instead of hardcoded HCMethod
+	healthCheckMethod := n.getHealthCheckMethod()
+
 	// Create synthetic request context for consistent logging
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.HCMethod)
+	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, healthCheckMethod)
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
+		// Use handler-created payload instead of hardcoded format
+		healthPayload, err := n.createHealthCheckPayload(healthCheckMethod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create health check payload: %w", err)
+		}
+
+		// Update the replacer with actual payload
+		if healthPayload != nil {
+			repl.Set(RequestBodyKey, healthPayload)
+		}
+
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, healthPayload, ac)
 		if err != nil {
 			lastErr = err
 			if statusCode != nil {
@@ -469,12 +496,13 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 				Error:               err,
 				Replacer:            repl,
 				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // no response body for HTTP errors
+				RawResponseBody:     nil,
 			})
 			continue
 		}
 
-		blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
+		// Use handler method to parse response instead of hardcoded parsing
+		blockInfo, health, err := n.processHealthCheckResponse(resBytes, statusCode)
 		if err != nil {
 			lastErr = err
 			lastHealthStatus = health
@@ -482,7 +510,6 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 				lastResponseStatus = *statusCode
 			}
 
-			// Log the failed attempt with detailed information
 			logFailedAttempt(&LogFailedAttemptParams{
 				Reason:              "Health check response processing failed",
 				Logger:              n.logger,
@@ -505,7 +532,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		}
 
 		return &getLatestBlockNumberResult{
-			blockNumber:    blockNumber,
+			blockNumber:    blockInfo,
 			healthStatus:   health,
 			responseStatus: lastResponseStatus,
 		}, nil
@@ -560,18 +587,122 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 	return blockNumber, Healthy, nil
 }
 
+// getHealthCheckMethod returns the health check method using handler or fallback to legacy field
+func (n *network) getHealthCheckMethod() string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.GetHealthCheckMethod()
+	}
+
+	// DEFAULT: EVM default (no legacy field fallback needed)
+	return DefaultHCMethod
+}
+
+// getArchiveMethod returns the archive method using handler or fallback
+func (n *network) getArchiveMethod() string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.GetArchiveMethod()
+	}
+
+	// FALLBACK: Use network-specific logic for backward compatibility
+	if strings.Contains(n.Name, "starknet") {
+		return StarknetArchiveMethod
+	}
+
+	// DEFAULT: EVM default
+	return DefaultCallContractMethod
+}
+
+// createHealthCheckPayload creates health check payload using handler or fallback
+func (n *network) createHealthCheckPayload(method string) ([]byte, error) {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.CreateHealthCheckPayload(method)
+	}
+
+	// FALLBACK: Default JSON-RPC format
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1}`, method)
+	return []byte(payload), nil
+}
+
+// processHealthCheckResponse processes health check response using handler or fallback
+func (n *network) processHealthCheckResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
+	// Evaluate health status based on status code
+	if statusCode == nil {
+		return 0, Unhealthy, errors.New("received nil statusCode in processHealthCheckResponse")
+	}
+
+	if *statusCode >= 400 {
+		// If status code is 429, set health status to Warning, otherwise return as unhealthy
+		if *statusCode == 429 {
+			return 0, Warning, fmt.Errorf("rate limit error (status code: %d)", *statusCode)
+		}
+		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
+	}
+
+	// Use handler method if available
+	if n.handler != nil {
+		blockInfo, err := n.handler.ParseHealthCheckResponse(resBytes)
+		if err != nil {
+			return 0, Unhealthy, errors.Wrap(err, "Handler failed to parse health check response")
+		}
+		return blockInfo.Number, Healthy, nil
+	}
+
+	// FALLBACK: Use legacy parsing logic
+	var respObject map[string]interface{}
+	err := json.Unmarshal(resBytes, &respObject)
+	if err != nil {
+		return 0, Unhealthy, errors.Wrap(err, "Error unmarshalling response")
+	}
+
+	var blockNumber int64
+
+	switch result := respObject["result"].(type) {
+	case string:
+		if result == "" || result[:2] != "0x" {
+			return 0, Unhealthy, errors.New("Invalid block number")
+		}
+
+		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
+		if err != nil {
+			return 0, Unhealthy, errors.Wrap(err, "Error converting block number")
+		}
+	case float64:
+		blockNumber = int64(result)
+	default:
+		return 0, Unhealthy, errors.New("unsupported block number type")
+	}
+
+	return blockNumber, Healthy, nil
+}
+
 func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
 	var lastErr error
 
-	// Create synthetic request context for consistent logging
 	// We'll extract the provider host from the httpUrl for logging
 	providerHost := httpUrl // Use the full URL as provider identifier for chain ID checks
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.ChainIdMethod)
+
+	// Use handler method instead of hardcoded ChainIdMethod
+	chainIDMethod := n.getChainIDMethod()
+	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, chainIDMethod)
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
+		// Use handler-created payload
+		chainIDPayload, err := n.createHealthCheckPayload(chainIDMethod)
+		if err != nil {
+			return "", fmt.Errorf("failed to create chain ID payload: %w", err)
+		}
+
+		// Update the replacer with actual payload
+		if chainIDPayload != nil {
+			repl.Set(RequestBodyKey, chainIDPayload)
+		}
+
 		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
+		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, chainIDPayload, ac)
 		if err != nil {
 			lastErr = errors.Wrap(err, "Error sending POST request")
 
@@ -653,77 +784,46 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			continue
 		}
 
-		var chainReference string
-		var ok bool
-		namespace := EVMNamespace
+		// Use handler method to extract and format chain ID
+		chainReference, err := n.extractChainReference(respObject["result"])
+		if err != nil {
+			lastErr = err
 
-		// Map network names to their namespaces
-		namespaceMap := map[string]string{
-			"bitcoin":  BitcoinNamespace,
-			"solana":   SolanaNamespace,
-			"starknet": StarknetNamespace,
+			logFailedAttempt(&LogFailedAttemptParams{
+				Reason:              "Health check response processing failed",
+				Logger:              n.logger,
+				NetworkPath:         n.Name,
+				FailedAttemptNumber: attempt + 1,
+				MaxAttempts:         n.RequestAttemptCount,
+				StatusCodeOfFailure: *statusCode,
+				Error:               lastErr,
+				Replacer:            repl,
+				ParsedReqBody:       jsonRPCReq,
+				RawResponseBody:     resBytes,
+			})
+			continue
 		}
 
-		// Check if network name contains any of the special cases
-		for key, ns := range namespaceMap {
-			if strings.Contains(n.Name, key) {
-				namespace = ns
-				break
-			}
-		}
-
-		// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
-		// For all other networks, the chain ID is directly in the result field as a string
-		if strings.Contains(n.Name, "bitcoin") {
-			result, ok := respObject["result"].(map[string]interface{})
-			if !ok || result["chain"] == nil {
-				lastErr = errors.New("Error getting chain ID from response")
-				continue
-			}
-			chainReference = result["chain"].(string)
-		} else {
-			chainReference, ok = respObject["result"].(string)
-			if !ok {
-				lastErr = errors.New("Error getting chain ID from response")
-
-				// Log the failed attempt with detailed information
-				logFailedAttempt(&LogFailedAttemptParams{
-					Reason:              "Health check response processing failed",
-					Logger:              n.logger,
-					NetworkPath:         n.Name,
-					FailedAttemptNumber: attempt + 1,
-					MaxAttempts:         n.RequestAttemptCount,
-					StatusCodeOfFailure: *statusCode,
-					Error:               lastErr,
-					Replacer:            repl,
-					ParsedReqBody:       jsonRPCReq,
-					RawResponseBody:     resBytes,
-				})
-				continue
-			}
-		}
-
-		fullChainId := namespace + ":" + chainReference
-
-		// Success case - return the chain ID
+		// Use handler method to format full chain ID
+		fullChainId := n.formatChainID(chainReference)
 		return fullChainId, nil
 	}
 
 	return "", errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
+// archiveModeCheck will be updated in the next step of the migration
 func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeight string) error {
+	// PLACEHOLDER: This method will be migrated in the archive mode migration step
+	// For now, keep existing functionality to avoid breaking changes
 	var lastErr error
 
 	// Create synthetic request context for consistent logging
 	// We'll extract the provider host from the httpUrl for logging
 	providerHost := httpUrl // Use the full URL as provider identifier for archive mode checks
 
-	// Determine the method based on network type
-	method := n.CallContractMethod
-	if strings.Contains(n.Name, "starknet") {
-		method = StarknetArchiveMethod
-	}
+	// Use handler method instead of hardcoded CallContractMethod
+	method := n.getArchiveMethod()
 
 	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, method)
 
@@ -755,9 +855,9 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 			// Starknet uses a different method for archive mode check
 			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"block_number":%d}]}`, StarknetArchiveMethod, blockNum))
 		} else if strings.Contains(n.Name, "zksync") {
-			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3", "to": "0x0000000000000000000000000000000000000000"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3", "to": "0x0000000000000000000000000000000000000000"},"%s"]}`, method, quarterBlockHeight))
 		} else {
-			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, n.CallContractMethod, quarterBlockHeight))
+			payload = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`, method, quarterBlockHeight))
 		}
 
 		// Update the request body in the replacer with the actual payload
@@ -899,6 +999,102 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 	}
 
 	return errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+}
+
+// getChainIDMethod returns the chain ID method using handler or fallback to legacy field
+func (n *network) getChainIDMethod() string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.GetChainIDMethod()
+	}
+
+	// DEFAULT: EVM default (no legacy field fallback needed)
+	return DefaultChainIdMethod
+}
+
+// extractChainReference extracts chain reference using handler or fallback logic
+func (n *network) extractChainReference(result interface{}) (string, error) {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.ExtractChainReference(result)
+	}
+
+	// FALLBACK: Use legacy logic for backward compatibility
+	// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
+	// For all other networks, the chain ID is directly in the result field as a string
+	if strings.Contains(n.Name, "bitcoin") {
+		resultMap, ok := result.(map[string]interface{})
+		if !ok || resultMap["chain"] == nil {
+			return "", errors.New("Error getting chain ID from response")
+		}
+		chainRef, ok := resultMap["chain"].(string)
+		if !ok {
+			return "", errors.New("Error getting chain ID from response")
+		}
+		return chainRef, nil
+	} else {
+		chainReference, ok := result.(string)
+		if !ok {
+			return "", errors.New("Error getting chain ID from response")
+		}
+		return chainReference, nil
+	}
+}
+
+// formatChainID formats the full chain ID using handler or fallback logic
+func (n *network) formatChainID(chainReference string) string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.FormatChainID(chainReference)
+	}
+
+	// FALLBACK: Use legacy namespace mapping for backward compatibility
+	namespace := EVMNamespace
+
+	// Map network names to their namespaces
+	namespaceMap := map[string]string{
+		"bitcoin":  BitcoinNamespace,
+		"solana":   SolanaNamespace,
+		"starknet": StarknetNamespace,
+	}
+
+	// Check if network name contains any of the special cases
+	for key, ns := range namespaceMap {
+		if strings.Contains(n.Name, key) {
+			namespace = ns
+			break
+		}
+	}
+
+	return namespace + ":" + chainReference
+}
+
+// supportsArchiveMode checks if the network supports archive mode using handler or fallback logic
+func (n *network) supportsArchiveMode() bool {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.SupportsArchiveMode()
+	}
+
+	// FALLBACK: Use legacy string checks for backward compatibility
+	return !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana")
+}
+
+// formatBlockHeight formats block height using handler or fallback logic
+func (n *network) formatBlockHeight(blockNum int64) string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.FormatBlockHeight(blockNum)
+	}
+
+	// FALLBACK: Use legacy formatting logic for backward compatibility
+	if strings.Contains(n.Name, "starknet") {
+		// Starknet uses decimal for block height, no need to convert to hex
+		return strconv.FormatInt(blockNum, 10)
+	} else {
+		// convert blockNum to hex string
+		return fmt.Sprintf("%#x", blockNum)
+	}
 }
 
 func (n *network) close() {
@@ -1052,7 +1248,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 
 	// Create synthetic request context for consistent logging
 	providerHost := fmt.Sprintf("127.0.0.1:%s", n.CaddyPort) // Use loopback address as provider identifier
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.HCMethod)
+	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.getHealthCheckMethod())
 
 	headers := map[string]string{
 		"Content-Type": "application/json",
@@ -1132,62 +1328,126 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		"Content-Type": "application/json",
 	}
 
-	if strings.Contains(n.Name, "bitcoin") || strings.Contains(n.Name, "starknet") {
-		n.logger.Debug("Network is bitcoin or starknet, skipping getBlockByNumber", zap.String("networkName", n.Name))
+	// Use handler method instead of string checks
+	if !n.supportsGetBlockByNumber() {
+		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
 		return nil, nil
-	} else if strings.Contains(n.Name, "solana") {
-		payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, n.GetBlockByNumberMethod, blockNumber)) // Solana uses decimal block number in params
-		n.logger.Debug("Sending Solana getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
-		resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
-		if err != nil {
-			return nil, errors.Wrap(err, "Error sending POST request")
-		}
-		n.logger.Debug("Received Solana getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
-
-		if *statusCode != http.StatusOK {
-			n.logger.Warn("Error getting block hash from Solana response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
-			return nil, errors.New("Error getting block hash from response")
-		}
-		// Parse the response for the block hash
-		var respObject din_http.JSONRPCSolanaBlockResponse
-		err = json.Unmarshal(resBytes, &respObject)
-		if err != nil {
-			return nil, errors.Wrap(err, "Error unmarshalling response")
-		}
-		n.logger.Debug("Successfully unmarshalled Solana block response", zap.Any("respObject.Result.Blockhash", respObject.Result.Blockhash), zap.String("networkName", n.Name))
-
-		return respObject, nil
 	}
 
-	// default to EVM getBlockByNumber processing
-	// EVM typically expects the block number as a hex string, and a boolean for full transaction objects.
-	// We request non-full transaction objects by passing 'false'.
+	// Use handler method to create block request
+	supportedMethods := n.getSupportedMethods()
+	if len(supportedMethods) == 0 {
+		return nil, errors.New("no supported block methods available")
+	}
 
-	// convert blockNumber to hex
-	blockNumberHex := fmt.Sprintf("%#x", blockNumber)
-	n.logger.Debug("Converted block number to hex", zap.Int64("originalBlockNumber", blockNumber), zap.String("hexBlockNumber", blockNumberHex))
+	getBlockMethod := n.getBlockByNumberMethod()
+	payload, err := n.createBlockRequest(getBlockMethod, blockNumber, false)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create block request")
+	}
 
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method": "%s","id":1,"params":["%s", false]}`, n.GetBlockByNumberMethod, blockNumberHex))
-	n.logger.Debug("Sending EVM getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
+	n.logger.Debug("Sending getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
 
 	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error sending POST request")
 	}
-	n.logger.Debug("Received EVM getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
+
+	n.logger.Debug("Received getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
 
 	if *statusCode != http.StatusOK {
-		n.logger.Warn("Error getting block hash from EVM response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
-		return nil, errors.New("Error getting block hash from response")
+		n.logger.Warn("Error getting block from response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
+		return nil, errors.New("Error getting block from response")
 	}
-	// Parse the response for the block hash
-	var respObject din_http.JSONRPCEVMBlockResponse
-	err = json.Unmarshal(resBytes, &respObject)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error unmarshalling response")
-	}
-	n.logger.Debug("Successfully unmarshalled EVM block response", zap.String("respObject.Result.Hash", respObject.Result.Hash), zap.String("networkName", n.Name))
 
-	// EVM default to return the block
-	return respObject, nil
+	// Use handler method to parse block response
+	blockData, err := n.parseBlockResponse(resBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error parsing block response")
+	}
+
+	n.logger.Debug("Successfully parsed block response", zap.String("networkName", n.Name))
+	return blockData, nil
+}
+
+// supportsGetBlockByNumber checks if the network supports getBlockByNumber using handler or fallback logic
+func (n *network) supportsGetBlockByNumber() bool {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.SupportsGetBlockByNumber()
+	}
+
+	// FALLBACK: Use legacy string checks for backward compatibility
+	return !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "starknet")
+}
+
+// getSupportedMethods gets supported methods using handler or fallback logic
+func (n *network) getSupportedMethods() []string {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.GetSupportedMethods()
+	}
+
+	// FALLBACK: Return default methods for backward compatibility
+	return []string{"getBlockByNumber"}
+}
+
+// getBlockByNumberMethod gets the block by number method using handler or fallback logic
+func (n *network) getBlockByNumberMethod() string {
+	// Use handler method if available
+	if n.handler != nil {
+		supportedMethods := n.handler.GetSupportedMethods()
+		for _, method := range supportedMethods {
+			if strings.Contains(strings.ToLower(method), "block") {
+				return method
+			}
+		}
+	}
+
+	// DEFAULT: EVM default (no legacy field fallback needed)
+	return DefaultGetBlockByNumberMethod
+}
+
+// createBlockRequest creates block request using handler or fallback logic
+func (n *network) createBlockRequest(method string, blockNumber int64, includeTransactions bool) ([]byte, error) {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.CreateBlockRequest(method, blockNumber, includeTransactions)
+	}
+
+	// FALLBACK: Use legacy formatting logic for backward compatibility
+	if strings.Contains(n.Name, "solana") {
+		// Solana format
+		return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, method, blockNumber)), nil
+	} else {
+		// EVM format (hex)
+		blockNumberHex := fmt.Sprintf("%#x", blockNumber)
+		return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s", %t]}`, method, blockNumberHex, includeTransactions)), nil
+	}
+}
+
+// parseBlockResponse parses block response using handler or fallback logic
+func (n *network) parseBlockResponse(resBytes []byte) (interface{}, error) {
+	// Use handler method if available
+	if n.handler != nil {
+		return n.handler.ParseBlockResponse(resBytes)
+	}
+
+	// FALLBACK: Use legacy parsing logic for backward compatibility
+	if strings.Contains(n.Name, "solana") {
+		var respObject din_http.JSONRPCSolanaBlockResponse
+		err := json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error unmarshalling Solana response")
+		}
+		return respObject, nil
+	} else {
+		// EVM default
+		var respObject din_http.JSONRPCEVMBlockResponse
+		err := json.Unmarshal(resBytes, &respObject)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error unmarshalling EVM response")
+		}
+		return respObject, nil
+	}
 }

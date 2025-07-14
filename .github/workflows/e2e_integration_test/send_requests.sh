@@ -35,11 +35,11 @@ print_test_result() {
     
     if [ "$status" = "PASS" ]; then
         PASSED_TESTS=$((PASSED_TESTS + 1))
-        echo -e "${GREEN}✅ PASS${NC}: $test_name"
+        echo -e "${GREEN}PASS${NC}: $test_name"
         [ -n "$details" ] && echo -e "   ${BLUE}→${NC} $details"
     else
         FAILED_TESTS=$((FAILED_TESTS + 1))
-        echo -e "${RED}❌ FAIL${NC}: $test_name"
+        echo -e "${RED}FAIL${NC}: $test_name"
         [ -n "$details" ] && echo -e "   ${RED}→${NC} $details"
     fi
 }
@@ -76,15 +76,15 @@ make_request() {
                 echo "$response_body"
                 return 0
             else
-                echo -e "${YELLOW}⚠️  Attempt $attempt failed${NC}: Expected $expected_status, got $status_code"
+                echo -e "${YELLOW}Attempt $attempt failed${NC}: Expected $expected_status, got $status_code"
             fi
         else
-            echo -e "${YELLOW}⚠️  Attempt $attempt failed${NC}: Network error"
+            echo -e "${YELLOW}Attempt $attempt failed${NC}: Network error"
         fi
         
         attempt=$((attempt + 1))
         if [ $attempt -le $max_attempts ]; then
-            echo -e "${CYAN}🔄 Retrying in 2 seconds...${NC}"
+            echo -e "${CYAN}Retrying in 2 seconds...${NC}"
             sleep 2
         fi
     done
@@ -115,7 +115,7 @@ test_rest_endpoint() {
 
 # Function to test network handler registration
 test_handler_registration() {
-    echo -e "\n${PURPLE}🔧 Testing Handler Registry System${NC}"
+    echo -e "\n${PURPLE}Testing Handler Registry System${NC}"
     
     # Test health endpoint (should always work)
     make_request "GET" "$BASE_URL/health" "" "200" "Health Endpoint Availability"
@@ -172,7 +172,7 @@ test_beacon_handler() {
 
 # Function to test Starknet handler functionality
 test_starknet_handler() {
-    echo -e "\n${PURPLE}🌟 Testing Starknet Handler${NC}"
+    echo -e "\n${PURPLE}Testing Starknet Handler${NC}"
     
     # Starknet-specific JSON-RPC tests
     test_jsonrpc_endpoint "starknet-mainnet" "starknet_blockNumber" "[]" "Starknet - Get Block Number"
@@ -185,7 +185,7 @@ test_starknet_handler() {
 
 # Function to test Solana handler functionality
 test_solana_handler() {
-    echo -e "\n${YELLOW}☀️ Testing Solana Handler${NC}"
+    echo -e "\n${YELLOW}Testing Solana Handler${NC}"
     
     # Solana-specific JSON-RPC tests
     test_jsonrpc_endpoint "solana-mainnet" "getBlockHeight" "[]" "Solana - Get Block Height"
@@ -198,7 +198,7 @@ test_solana_handler() {
 
 # Function to test path translation capabilities
 test_path_translation() {
-    echo -e "\n${GREEN}🔄 Testing Path Translation${NC}"
+    echo -e "\n${GREEN}Testing Path Translation${NC}"
     
     # Path translation tests only apply to beacon chain scenarios
     # Since beacon chain scenarios are removed, this function is now empty
@@ -206,7 +206,7 @@ test_path_translation() {
 
 # Function to test error handling
 test_error_handling() {
-    echo -e "\n${RED}⚠️ Testing Error Handling${NC}"
+    echo -e "\n${RED}Testing Error Handling${NC}"
     
     # Test 404 for non-existent networks
     make_request "GET" "$BASE_URL/non-existent-network" "" "404" "Non-existent Network - 404 Response"
@@ -241,7 +241,7 @@ test_provider_failover() {
 
 # Function to test performance and concurrency
 test_performance() {
-    echo -e "\n${PURPLE}🚀 Testing Performance${NC}"
+    echo -e "\n${PURPLE}Testing Performance${NC}"
     
     # Concurrent request test
     echo -e "${CYAN}Testing concurrent requests...${NC}"
@@ -278,7 +278,7 @@ run_test_scenario() {
             test_starknet_handler
             ;;
         *)
-            echo -e "${RED}❌ Unknown test scenario: $TEST_SCENARIO${NC}"
+            echo -e "${RED}Unknown test scenario: $TEST_SCENARIO${NC}"
             exit 1
             ;;
     esac
@@ -290,7 +290,7 @@ run_test_scenario() {
 # Function to print final summary
 print_final_summary() {
     echo -e "\n${PURPLE}================================================${NC}"
-    echo -e "${PURPLE}📊 Test Summary for Scenario: ${YELLOW}$TEST_SCENARIO${NC}"
+    echo -e "${PURPLE}Test Summary for Scenario: ${YELLOW}$TEST_SCENARIO${NC}"
     echo -e "${PURPLE}================================================${NC}"
     
     echo -e "${BLUE}Total Tests: ${NC}$TOTAL_TESTS"
@@ -298,26 +298,26 @@ print_final_summary() {
     echo -e "${RED}Failed: ${NC}$FAILED_TESTS"
     
     if [ $FAILED_TESTS -eq 0 ]; then
-        echo -e "\n${GREEN}🎉 All tests passed! Handler registry is working correctly.${NC}"
-        echo -e "${GREEN}✅ Handler Registry System: OPERATIONAL${NC}"
-        echo -e "${GREEN}✅ Network Type Detection: WORKING${NC}"
-        echo -e "${GREEN}✅ Path Translation: FUNCTIONAL${NC}"
-        echo -e "${GREEN}✅ Provider Failover: TESTED${NC}"
-        echo -e "${GREEN}✅ Error Handling: VALIDATED${NC}"
+        echo -e "\n${GREEN}All tests passed! Handler registry is working correctly.${NC}"
+        echo -e "${GREEN}Handler Registry System: OPERATIONAL${NC}"
+        echo -e "${GREEN}Network Type Detection: WORKING${NC}"
+        echo -e "${GREEN}Path Translation: FUNCTIONAL${NC}"
+        echo -e "${GREEN}Provider Failover: TESTED${NC}"
+        echo -e "${GREEN}Error Handling: VALIDATED${NC}"
         exit 0
     else
         echo -e "\n${RED}💥 Some tests failed. Please check the logs above.${NC}"
-        echo -e "${RED}❌ Test Scenario '$TEST_SCENARIO' has failures${NC}"
+        echo -e "${RED}Test Scenario '$TEST_SCENARIO' has failures${NC}"
         
         # Calculate success rate
         local success_rate=$((PASSED_TESTS * 100 / TOTAL_TESTS))
-        echo -e "${YELLOW}📈 Success Rate: ${NC}$success_rate%"
+        echo -e "${YELLOW}Success Rate: ${NC}$success_rate%"
         
         if [ $success_rate -ge 80 ]; then
-            echo -e "${YELLOW}⚠️  Warning: Some tests failed but success rate is acceptable${NC}"
+            echo -e "${YELLOW}Warning: Some tests failed but success rate is acceptable${NC}"
             exit 1
         else
-            echo -e "${RED}🚨 Critical: Success rate too low${NC}"
+            echo -e "${RED}Critical: Success rate too low${NC}"
             exit 2
         fi
     fi
@@ -325,16 +325,16 @@ print_final_summary() {
 
 # Function to validate environment
 validate_environment() {
-    echo -e "${CYAN}🔍 Validating test environment...${NC}"
+    echo -e "${CYAN}Validating test environment...${NC}"
     
     # Check if base URL is reachable
     if ! curl -s -f "$BASE_URL/health" > /dev/null 2>&1; then
-        echo -e "${RED}❌ Cannot reach $BASE_URL/health${NC}"
+        echo -e "${RED}Cannot reach $BASE_URL/health${NC}"
         echo -e "${RED}Please ensure Caddy server is running${NC}"
         exit 1
     fi
     
-    echo -e "${GREEN}✅ Environment validation passed${NC}"
+    echo -e "${GREEN}Environment validation passed${NC}"
     echo -e "${BLUE}Base URL: ${NC}$BASE_URL"
     echo -e "${BLUE}Test Scenario: ${NC}$TEST_SCENARIO"
     echo -e "${BLUE}Timeout: ${NC}${TIMEOUT}s"
@@ -343,7 +343,7 @@ validate_environment() {
 
 # Main execution
 main() {
-    echo -e "${CYAN}🚀 Starting Handler Registry E2E Tests${NC}"
+    echo -e "${CYAN}Starting Handler Registry E2E Tests${NC}"
     echo -e "${CYAN}Timestamp: $(date)${NC}"
     
     validate_environment
