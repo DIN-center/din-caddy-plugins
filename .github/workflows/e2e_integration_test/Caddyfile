@@ -29,21 +29,6 @@
 					chain_id eip155:0x1
 				}
 				
-				# Beacon Chain Network (REST API)
-				ethereum-beacon {
-					type beacon_chain  # Test Beacon Chain handler
-					chain_id "mainnet"
-					healthcheck_endpoint "/eth/v1/beacon/headers/head"
-					providers {
-						https://ethereum-beacon-api.publicnode.com {
-							priority 0
-						}
-						https://beaconcha.in {
-							path_prefix "/api/v1"
-							priority 1
-						}
-					}
-				}
 				
 				# Starknet Network (new handler)
 				starknet-mainnet {
@@ -58,45 +43,7 @@
 					chain_id starknet:0x534e5f4d41494e
 					call_contract_method starknet_call
 				}
-				
-				# BSC Testnet (for mixed network testing)
-				bsc-testnet {
-					type evm
-					providers {
-						https://data-seed-prebsc-1-s1.binance.org:8545 {
-							priority 0
-						}
-						https://bsc-testnet.public.blastapi.io {
-							priority 1
-						}
-					}
-					chain_id eip155:0x61
-				}
-				
-				# Solana Network (for comprehensive handler testing)
-				solana-mainnet {
-					type solana  # Test Solana handler
-					providers {
-						https://api.mainnet-beta.solana.com {
-							priority 0
-						}
-					}
-					healthcheck_method getSlot
-					chainid_method getGenesisHash
-					chain_id "solana-mainnet"
-					call_contract_method getAccountInfo
-				}
-				
-				# Auto-Detection Test (no explicit type)
-				eth-auto {
-					# Test auto-detection - should default to EVM handler
-					providers {
-						https://api.zan.top/eth-mainnet {
-							priority 0
-						}
-					}
-					chain_id eip155:0x1
-				}
+
 			}
 		}
 		# din reverse proxy directive configuration

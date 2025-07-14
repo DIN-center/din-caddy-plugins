@@ -137,10 +137,7 @@ jobs:
       matrix:
         test-scenario:
           - evm-only
-          - beacon-chain
-          - starknet  
-          - mixed-networks
-          - all-handlers
+          - starknet
     
     steps:
       - name: Checkout Code

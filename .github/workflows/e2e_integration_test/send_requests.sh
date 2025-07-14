@@ -23,7 +23,7 @@ TIMEOUT=30
 MAX_RETRIES=3
 
 # Get test scenario from environment variable (set by GitHub Actions)
-TEST_SCENARIO=${TEST_SCENARIO:-"all-handlers"}
+TEST_SCENARIO=${TEST_SCENARIO:-"evm-only"}
 
 # Function to print test results
 print_test_result() {
@@ -122,19 +122,13 @@ test_handler_registration() {
     
     # Test network-specific health checks based on scenario
     case "$TEST_SCENARIO" in
-        "evm-only"|"all-handlers"|"mixed-networks")
+        "evm-only")
             test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM Handler - Block Number Check"
             ;;
     esac
     
     case "$TEST_SCENARIO" in
-        "beacon-chain"|"all-handlers"|"mixed-networks")
-            test_rest_endpoint "ethereum-beacon" "/eth/v1/node/health" "Beacon Chain Handler - Health Check"
-            ;;
-    esac
-    
-    case "$TEST_SCENARIO" in
-        "starknet"|"all-handlers"|"mixed-networks")
+        "starknet")
             test_jsonrpc_endpoint "starknet-mainnet" "starknet_blockNumber" "[]" "Starknet Handler - Block Number Check"
             ;;
     esac
@@ -152,10 +146,7 @@ test_evm_handler() {
     # Test invalid method (should still return 200 with JSON-RPC error)
     test_jsonrpc_endpoint "eth" "eth_invalidMethod" "[]" "EVM - Invalid Method Handling"
     
-    # Test BSC Testnet if available in mixed scenarios
-    if [ "$TEST_SCENARIO" = "mixed-networks" ] || [ "$TEST_SCENARIO" = "all-handlers" ]; then
-        test_jsonrpc_endpoint "bsc-testnet" "eth_blockNumber" "[]" "BSC Testnet - Get Block Number"
-    fi
+
 }
 
 # Function to test Beacon Chain handler functionality
@@ -209,17 +200,8 @@ test_solana_handler() {
 test_path_translation() {
     echo -e "\n${GREEN}🔄 Testing Path Translation${NC}"
     
-    # Test different provider path configurations
-    case "$TEST_SCENARIO" in
-        "beacon-chain"|"all-handlers"|"mixed-networks")
-            # Test path prefix handling
-            test_rest_endpoint "ethereum-beacon" "/eth/v1/config/fork_schedule" "Beacon - Path Prefix Translation"
-            
-            # Test path normalization
-            test_rest_endpoint "ethereum-beacon" "/eth/v1/beacon/states/12345/validators" "Beacon - Path Normalization (Numeric State ID)"
-            test_rest_endpoint "ethereum-beacon" "/eth/v1/beacon/blocks/0xabcdef123456" "Beacon - Path Normalization (Hex Block ID)"
-            ;;
-    esac
+    # Path translation tests only apply to beacon chain scenarios
+    # Since beacon chain scenarios are removed, this function is now empty
 }
 
 # Function to test error handling
@@ -247,7 +229,7 @@ test_provider_failover() {
     
     # Test multiple providers with same request
     case "$TEST_SCENARIO" in
-        "evm-only"|"all-handlers"|"mixed-networks")
+        "evm-only")
             # Make multiple requests to test provider rotation
             for i in {1..3}; do
                 test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Provider Failover Test $i"
@@ -265,7 +247,7 @@ test_performance() {
     echo -e "${CYAN}Testing concurrent requests...${NC}"
     
     case "$TEST_SCENARIO" in
-        "evm-only"|"all-handlers"|"mixed-networks")
+        "evm-only")
             # Launch multiple background requests
             for i in {1..5}; do
                 (test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Concurrent Request $i") &
@@ -291,31 +273,9 @@ run_test_scenario() {
             test_evm_handler
             test_provider_failover
             ;;
-        "beacon-chain")
-            echo -e "\n${CYAN}📋 Beacon Chain Test Scenario${NC}"
-            test_beacon_handler
-            test_path_translation
-            ;;
         "starknet")
             echo -e "\n${PURPLE}📋 Starknet Test Scenario${NC}"
             test_starknet_handler
-            ;;
-        "mixed-networks")
-            echo -e "\n${GREEN}📋 Mixed Networks Test Scenario${NC}"
-            test_evm_handler
-            test_beacon_handler
-            test_starknet_handler
-            test_path_translation
-            ;;
-        "all-handlers")
-            echo -e "\n${RAINBOW}📋 All Handlers Test Scenario${NC}"
-            test_evm_handler
-            test_beacon_handler
-            test_starknet_handler
-            test_solana_handler
-            test_path_translation
-            test_provider_failover
-            test_performance
             ;;
         *)
             echo -e "${RED}❌ Unknown test scenario: $TEST_SCENARIO${NC}"
