@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -11,6 +12,47 @@ import (
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"go.uber.org/zap"
 )
+
+// Helper functions for backward compatibility with different NetworkConfig struct versions
+
+// getNetworkConfigUint8Field safely gets a uint8 field from NetworkConfig using reflection
+func getNetworkConfigUint8Field(config *dinreg.NetworkConfig, fieldName string) uint8 {
+	if config == nil {
+		return 0
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.Uint8 {
+		return 0
+	}
+	return uint8(field.Uint())
+}
+
+// getNetworkConfigStringField safely gets a string field from NetworkConfig using reflection
+func getNetworkConfigStringField(config *dinreg.NetworkConfig, fieldName string) string {
+	if config == nil {
+		return ""
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return field.String()
+}
+
+// getNetworkConfigBoolField safely gets a bool field from NetworkConfig using reflection
+func getNetworkConfigBoolField(config *dinreg.NetworkConfig, fieldName string) bool {
+	if config == nil {
+		return false
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.Bool {
+		return false
+	}
+	return field.Bool()
+}
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
@@ -206,33 +248,39 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 
 // syncNetworkConfig updates the network object with the registry network config data
 func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
+	// Backward compatibility: Handle both old and new NetworkConfig struct versions
+	var registryHCMethod, registryChainIdMethod, registryCallContractMethod string
+	var err error
+
 	// Get the healthcheck method name from the registry, usually eth_blockNumber or similar
-	registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
+	registryHCMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
 	if err != nil {
 		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
 		return nil, err
 	}
 
-	// Get the chain ID method name from the registry, usually eth_chainId or similar
-	registryChainIdMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.ChainIdMethodBit)
-	if err != nil {
-		d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
-		return nil, err
+	// Try to get chain ID method name - use reflection to check if field exists
+	if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
+		registryChainIdMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, chainIdBit)
+		if err != nil {
+			d.logger.Debug("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		}
 	}
 
-	// Get the call contract method name from the registry, usually eth_call or similar
-	registryCallContractMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.CallContractMethodBit)
-	if err != nil {
-		d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
-		return nil, err
+	// Try to get call contract method name - use reflection to check if field exists
+	if callContractBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "CallContractMethodBit"); callContractBit > 0 {
+		registryCallContractMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, callContractBit)
+		if err != nil {
+			d.logger.Debug("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		}
 	}
 
-	// Update Chain ID if changed
-	if regNetwork.NetworkConfig.ChainId != "" && regNetwork.NetworkConfig.ChainId != network.ChainId {
+	// Update Chain ID if available and changed
+	if chainId := getNetworkConfigStringField(regNetwork.NetworkConfig, "ChainId"); chainId != "" && chainId != network.ChainId {
 		d.logger.Debug("Setting network chain Id",
 			zap.String("network", network.Name),
-			zap.String("chain_id", regNetwork.NetworkConfig.ChainId))
-		network.ChainId = regNetwork.NetworkConfig.ChainId
+			zap.String("chain_id", chainId))
+		network.ChainId = chainId
 	}
 
 	// Update Healthcheck Method if changed
@@ -277,9 +325,8 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		network.BlockLagLimit = blockLagLimit
 	}
 
-	// Update Block Jump Limit if changed
-	blockJumpLimit := int64(regNetwork.NetworkConfig.BlockJumpLimit)
-	if blockJumpLimit != 0 && blockJumpLimit != network.BlockJumpLimit {
+	// Update Block Jump Limit if available and changed
+	if blockJumpLimit := int64(getNetworkConfigUint8Field(regNetwork.NetworkConfig, "BlockJumpLimit")); blockJumpLimit != 0 && blockJumpLimit != network.BlockJumpLimit {
 		d.logger.Debug("Setting network block jump limit",
 			zap.String("network", network.Name),
 			zap.Int64("block_jump_limit", blockJumpLimit))
@@ -304,9 +351,8 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		network.RequestAttemptCount = requestAttempts
 	}
 
-	// Update Archive Enabled if changed
-	archiveEnabled := regNetwork.NetworkConfig.ArchiveEnabled
-	if archiveEnabled != network.ArchiveEnabled {
+	// Update Archive Enabled if available and changed
+	if archiveEnabled := getNetworkConfigBoolField(regNetwork.NetworkConfig, "ArchiveEnabled"); archiveEnabled != network.ArchiveEnabled {
 		d.logger.Debug("Setting network archive enabled",
 			zap.String("network", network.Name),
 			zap.Bool("archive_enabled", archiveEnabled))
