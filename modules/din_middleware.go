@@ -155,10 +155,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
 
-	// Initialize the handler registry
-	d.handlerRegistry = networklib.NewHandlerRegistry()
-
-	// Register built-in handlers
+	// Initialize the handler registry with built-in handlers
+	d.handlerRegistry = networklib.DefaultRegistry
 	networklib.RegisterBuiltinHandlers()
 
 	for networkName, network := range d.Networks {
