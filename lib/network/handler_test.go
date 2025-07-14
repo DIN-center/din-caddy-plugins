@@ -4,6 +4,7 @@ package network
 import (
 	"net/http"
 	"testing"
+	"time"
 )
 
 // Mock provider for testing
@@ -67,6 +68,94 @@ func (m *MockHandler) ParseResponse(body []byte, statusCode int) error {
 
 func (m *MockHandler) IsRetryableError(err error, statusCode int) bool {
 	return false
+}
+
+// === NEW: Network-Specific Methods (Mock implementations) ===
+
+// Chain ID and Namespace
+func (m *MockHandler) GetNamespace() string {
+	return "mock"
+}
+
+func (m *MockHandler) ValidateChainID(chainID string) error {
+	return nil
+}
+
+func (m *MockHandler) FormatChainID(networkReference string) string {
+	return "mock:" + networkReference
+}
+
+func (m *MockHandler) ExtractChainReference(result interface{}) (string, error) {
+	return "mockchain", nil
+}
+
+// Block Operations
+func (m *MockHandler) FormatBlockHeight(blockNum int64) string {
+	return "12345"
+}
+
+func (m *MockHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
+	return []byte(`{"jsonrpc":"2.0","method":"mock_method","id":1}`), nil
+}
+
+func (m *MockHandler) ParseBlockResponse(body []byte) (interface{}, error) {
+	return map[string]interface{}{"mock": "response"}, nil
+}
+
+// Archive Mode
+func (m *MockHandler) SupportsArchiveMode() bool {
+	return true
+}
+
+func (m *MockHandler) GetArchiveMethod() string {
+	return "mock_archive"
+}
+
+func (m *MockHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
+	return []byte(`{"jsonrpc":"2.0","method":"mock_archive","id":1}`), nil
+}
+
+func (m *MockHandler) ParseArchiveResponse(body []byte) error {
+	return nil
+}
+
+// Network Capabilities
+func (m *MockHandler) SupportsGetBlockByNumber() bool {
+	return true
+}
+
+func (m *MockHandler) GetSupportedMethods() []string {
+	return []string{"mock_method"}
+}
+
+// Data Format Conversions
+func (m *MockHandler) ExtractBlockHash(blockData interface{}) string {
+	return "0xmockhash"
+}
+
+func (m *MockHandler) ExtractBlockNumber(response []byte) (int64, error) {
+	return 12345, nil
+}
+
+// Health Check Specifics
+func (m *MockHandler) GetHealthCheckMethod() string {
+	return "mock_health"
+}
+
+func (m *MockHandler) GetChainIDMethod() string {
+	return "mock_chainid"
+}
+
+func (m *MockHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
+	return []byte(`{"jsonrpc":"2.0","method":"mock_health","id":1}`), nil
+}
+
+func (m *MockHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
+	return &BlockInfo{
+		Number:    12345,
+		Hash:      "0xmockhash",
+		Timestamp: time.Now(),
+	}, nil
 }
 
 func TestHandlerRegistry_RegisterHandler(t *testing.T) {

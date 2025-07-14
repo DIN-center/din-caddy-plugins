@@ -69,6 +69,8 @@ func (h *BeaconChainHandler) Shutdown() error {
 	return nil
 }
 
+// === EXISTING METHODS ===
+
 // Request processing methods
 func (h *BeaconChainHandler) ProcessRequest(req *http.Request, provider Provider) error {
 	// Validate the request
@@ -235,6 +237,168 @@ func (h *BeaconChainHandler) IsRetryableError(err error, statusCode int) bool {
 
 	return false
 }
+
+// === NEW NETWORK-SPECIFIC METHODS ===
+
+// Chain ID and Namespace methods
+func (h *BeaconChainHandler) GetNamespace() string {
+	return "eip155" // Beacon chain uses same namespace as Ethereum mainnet
+}
+
+func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
+	// Beacon chain uses the same chain ID format as Ethereum mainnet
+	if !strings.HasPrefix(chainID, "eip155:") {
+		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, expected format: eip155:{chainId}", chainID)
+	}
+
+	// Extract chain ID number and validate it's numeric
+	parts := strings.Split(chainID, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid Beacon Chain chain ID format: %s", chainID)
+	}
+
+	chainIDNum := parts[1]
+	if chainIDNum == "" {
+		return fmt.Errorf("empty chain ID number in: %s", chainID)
+	}
+
+	// Convert to ensure it's a valid number
+	if _, err := strconv.ParseInt(chainIDNum, 10, 64); err != nil {
+		return fmt.Errorf("invalid chain ID number in %s: %w", chainID, err)
+	}
+
+	return nil
+}
+
+func (h *BeaconChainHandler) FormatChainID(networkReference string) string {
+	return "eip155:" + networkReference
+}
+
+func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
+	// Beacon chain doesn't really have a chain ID method like JSON-RPC
+	// This would be used for validator registration or fork choice
+	chainRef, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid chain reference type: %T", result)
+	}
+	return chainRef, nil
+}
+
+// Block Operations methods
+func (h *BeaconChainHandler) FormatBlockHeight(blockNum int64) string {
+	return strconv.FormatInt(blockNum, 10) // Decimal format for REST API
+}
+
+func (h *BeaconChainHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
+	// Beacon chain uses REST API, not JSON-RPC
+	return nil, fmt.Errorf("Beacon Chain uses REST API, not JSON-RPC block requests")
+}
+
+func (h *BeaconChainHandler) ParseBlockResponse(body []byte) (interface{}, error) {
+	// Parse beacon chain block response
+	var response BeaconHeadResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Beacon Chain block response: %w", err)
+	}
+	return response, nil
+}
+
+// Archive Mode methods
+func (h *BeaconChainHandler) SupportsArchiveMode() bool {
+	return false // Beacon chain doesn't use archive mode concept
+}
+
+func (h *BeaconChainHandler) GetArchiveMethod() string {
+	return ""
+}
+
+func (h *BeaconChainHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
+	return nil, fmt.Errorf("Beacon Chain does not support archive mode")
+}
+
+func (h *BeaconChainHandler) ParseArchiveResponse(body []byte) error {
+	return fmt.Errorf("Beacon Chain does not support archive mode")
+}
+
+// Network Capabilities methods
+func (h *BeaconChainHandler) SupportsGetBlockByNumber() bool {
+	return false // Beacon chain doesn't support getBlockByNumber
+}
+
+func (h *BeaconChainHandler) GetSupportedMethods() []string {
+	// These are REST endpoints, not JSON-RPC methods
+	return []string{
+		"/eth/v1/beacon/headers/head",
+		"/eth/v1/beacon/blocks/head",
+		"/eth/v1/beacon/states/head/validators",
+		"/eth/v1/beacon/genesis",
+		"/eth/v1/node/version",
+		"/eth/v1/node/health",
+		"/eth/v1/config/fork_schedule",
+	}
+}
+
+// Data Format Conversions methods
+func (h *BeaconChainHandler) ExtractBlockHash(blockData interface{}) string {
+	if beaconResponse, ok := blockData.(BeaconHeadResponse); ok {
+		return beaconResponse.Data.Root
+	}
+	return ""
+}
+
+func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) {
+	// Beacon chain uses slots instead of block numbers
+	var beaconResponse BeaconHeadResponse
+	if err := json.Unmarshal(response, &beaconResponse); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal beacon response: %w", err)
+	}
+
+	slot, err := h.parseSlot(beaconResponse.Data.Header.Message.Slot)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse slot as block number: %w", err)
+	}
+
+	return slot, nil
+}
+
+// Health Check Specifics methods
+func (h *BeaconChainHandler) GetHealthCheckMethod() string {
+	return "/eth/v1/beacon/headers/head" // REST endpoint, not JSON-RPC method
+}
+
+func (h *BeaconChainHandler) GetChainIDMethod() string {
+	return "/eth/v1/beacon/genesis" // REST endpoint for genesis info
+}
+
+func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
+	// Beacon chain uses REST API, no payload needed for GET requests
+	return nil, nil
+}
+
+func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
+	var beaconResponse BeaconHeadResponse
+	if err := json.Unmarshal(body, &beaconResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse Beacon Chain health check response: %w", err)
+	}
+
+	slot, err := h.parseSlot(beaconResponse.Data.Header.Message.Slot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse slot: %w", err)
+	}
+
+	// Calculate epoch from slot (32 slots per epoch)
+	epoch := slot / 32
+
+	return &BlockInfo{
+		Number:    slot, // Use slot as "block number"
+		Hash:      beaconResponse.Data.Root,
+		Timestamp: time.Now(),
+		Slot:      slot,
+		Epoch:     epoch,
+	}, nil
+}
+
+// === EXISTING HELPER METHODS ===
 
 // Helper function to parse beacon chain responses
 func (h *BeaconChainHandler) parseBeaconResponse(body []byte) (*BeaconHeadResponse, error) {

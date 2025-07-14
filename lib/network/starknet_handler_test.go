@@ -34,52 +34,55 @@ func TestStarknetHandler_ValidateChainID(t *testing.T) {
 	handler := NewStarknetHandler(&NetworkConfig{})
 
 	tests := []struct {
-		name     string
-		chainID  string
-		expected bool
+		name      string
+		chainID   string
+		shouldErr bool
 	}{
 		{
-			name:     "valid mainnet chain ID",
-			chainID:  "starknet:0x534e5f4d41494e",
-			expected: true,
+			name:      "valid mainnet chain ID",
+			chainID:   "starknet:0x534e5f4d41494e",
+			shouldErr: false,
 		},
 		{
-			name:     "valid sepolia chain ID",
-			chainID:  "starknet:0x534e5f5345504f4c4941",
-			expected: true,
+			name:      "valid sepolia chain ID",
+			chainID:   "starknet:0x534e5f5345504f4c4941",
+			shouldErr: false,
 		},
 		{
-			name:     "invalid prefix",
-			chainID:  "ethereum:0x1",
-			expected: false,
+			name:      "invalid prefix",
+			chainID:   "ethereum:0x1",
+			shouldErr: true,
 		},
 		{
-			name:     "missing 0x prefix",
-			chainID:  "starknet:534e5f4d41494e",
-			expected: false,
+			name:      "missing 0x prefix",
+			chainID:   "starknet:534e5f4d41494e",
+			shouldErr: true,
 		},
 		{
-			name:     "empty hex part",
-			chainID:  "starknet:0x",
-			expected: false,
+			name:      "empty hex part",
+			chainID:   "starknet:0x",
+			shouldErr: true,
 		},
 		{
-			name:     "invalid hex characters",
-			chainID:  "starknet:0xghi",
-			expected: false,
+			name:      "invalid hex characters",
+			chainID:   "starknet:0xghi",
+			shouldErr: true,
 		},
 		{
-			name:     "uppercase hex",
-			chainID:  "starknet:0x534E5F4D41494E",
-			expected: true,
+			name:      "uppercase hex",
+			chainID:   "starknet:0x534E5F4D41494E",
+			shouldErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := handler.ValidateChainID(tt.chainID)
-			if result != tt.expected {
-				t.Errorf("ValidateChainID(%s) = %v, expected %v", tt.chainID, result, tt.expected)
+			err := handler.ValidateChainID(tt.chainID)
+			if tt.shouldErr && err == nil {
+				t.Errorf("ValidateChainID(%s) expected error but got none", tt.chainID)
+			}
+			if !tt.shouldErr && err != nil {
+				t.Errorf("ValidateChainID(%s) expected no error but got: %v", tt.chainID, err)
 			}
 		})
 	}
@@ -101,6 +104,7 @@ func TestStarknetHandler_GetDefaultMethods(t *testing.T) {
 		"starknet_getBalance",
 		"starknet_syncing",
 		"starknet_sendTransaction",
+		"starknet_getBlockWithTxs",
 	}
 
 	if len(methods) != len(expectedMethods) {
