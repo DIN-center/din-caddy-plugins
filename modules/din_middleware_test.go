@@ -344,10 +344,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 	dinMiddleware := new(DinMiddleware)
 	dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
-	// Initialize handler registry for validation
-	dinMiddleware.handlerRegistry = networklib.DefaultRegistry
-	networklib.RegisterBuiltinHandlers()
-
 	tests := []struct {
 		name      string
 		caddyfile string
@@ -357,7 +353,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			name: "Valid Caddyfile",
 			caddyfile: `networks {
 				eth {
-					type evm
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
 						http://test-website-1.com/eth {
@@ -374,6 +369,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 						}
 					}
 					chain_id eip155:0x1
+					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -386,7 +382,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			name: "Invalid Caddyfile - No chain_id",
 			caddyfile: `networks {
 				eth {
-					type evm
 					methods eth_blockNumber eth_getBlockByNumber
 					providers {
 						http://test-website-1.com/eth {
@@ -402,6 +397,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 2
 						}
 					}
+					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -414,8 +410,8 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			name: "Invalid Caddyfile - Missing provider",
 			caddyfile: `networks {
 				eth {
-					type evm
 					methods methods eth_blockNumber eth_getBlockByNumber
+					healthcheck_method eth_blockNumber
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -428,7 +424,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			name: "Invalid Caddyfile - Invalid 'methods' argument",
 			caddyfile: `networks {
 				eth {
-					type evm
 					methods
 					providers {
 						localhost:8000 {
@@ -438,6 +433,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 1
 						}
 					}
+					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -457,27 +453,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 1
 						}
 					}
-				}
-			}`,
-			hasErr: true,
-		},
-		{
-			name: "Invalid Caddyfile - Unsupported network type",
-			caddyfile: `networks {
-				eth {
-					type unsupported_type
-					methods eth_blockNumber eth_getBlockByNumber
-					providers {
-						http://test-website-1.com/eth {
-							headers {
-								Content-Type application/json
-							}
-							priority 1
-						}
-					}
-					chain_id eip155:0x1
-					healthcheck_threshold 2
-					healthcheck_interval 5
 				}
 			}`,
 			hasErr: true,

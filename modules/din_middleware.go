@@ -560,12 +560,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	}
 	d.Env = utils.GetEnv()
 	siweSignerClient := siwe.NewSIWESignerClient()
-
-	// Initialize handler registry early for validation during parsing
-	if d.handlerRegistry == nil {
-		d.handlerRegistry = networklib.DefaultRegistry
-		networklib.RegisterBuiltinHandlers()
-	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "port":
@@ -618,7 +612,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				}
 				// Create a new network if it doesn't exist
 				if _, exists := d.Networks[networkName]; !exists {
-					// Detect network type from network name for backward compatibility
+					// ✅ Detect network type from network name for backward compatibility
 					networkType := d.detectNetworkType(networkName)
 
 					newNetwork, err := NewNetwork(networkName, networkType, d.Env, caddyPort)
@@ -639,28 +633,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "type":
 						dispenser.Next()
-						networkType := dispenser.Val()
-
-						// Validate that handler is available for this network type
-						if networkType != "" {
-							// Create a temporary config to test handler availability
-							tempConfig := &networklib.NetworkConfig{
-								Name:           networkName,
-								Type:           networkType,
-								ChainID:        "",
-								HealthEndpoint: "",
-								MaxPayloadSize: DefaultMaxRequestPayloadSizeKB * 1024,
-								RequestTimeout: time.Duration(DefaultHCTimeout) * time.Second,
-								Custom:         make(map[string]interface{}),
-							}
-
-							_, err := d.handlerRegistry.GetHandler(networkType, tempConfig)
-							if err != nil {
-								return fmt.Errorf("unsupported network type '%s' for network '%s': %v", networkType, networkName, err)
-							}
-						}
-
-						d.Networks[networkName].Type = networkType
+						d.Networks[networkName].Type = dispenser.Val()
 					case "routed_methods":
 						methods := make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
@@ -785,21 +758,15 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "healthcheck_method":
 						dispenser.Next()
-						// DEPRECATED: healthcheck_method is now provided by network handlers
-						d.logger.Warn("Configuration field 'healthcheck_method' is deprecated and will be ignored. Health check methods are now provided by network handlers based on the 'type' field.",
-							zap.String("network", networkName),
-							zap.String("deprecated_value", dispenser.Val()),
-							zap.String("migration_note", "Remove this field from your Caddyfile. Ensure your network has a 'type' field set."))
+						// ⚠️ DEPRECATED: healthcheck_method is now provided by network handlers
+						d.logger.Warn("healthcheck_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "healthcheck_endpoint":
 						dispenser.Next()
 						d.Networks[networkName].HCEndpoint = dispenser.Val()
 					case "chainid_method":
 						dispenser.Next()
-						// DEPRECATED: chainid_method is now provided by network handlers
-						d.logger.Warn("Configuration field 'chainid_method' is deprecated and will be ignored. Chain ID methods are now provided by network handlers based on the 'type' field.",
-							zap.String("network", networkName),
-							zap.String("deprecated_value", dispenser.Val()),
-							zap.String("migration_note", "Remove this field from your Caddyfile. Ensure your network has a 'type' field set."))
+						// ⚠️ DEPRECATED: chainid_method is now provided by network handlers
+						d.logger.Warn("chainid_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "chain_id":
 						dispenser.Next()
 						chainId := dispenser.Val()
@@ -809,18 +776,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						d.Networks[networkName].ChainId = chainId
 					case "call_contract_method":
 						dispenser.Next()
-						// DEPRECATED: call_contract_method is now provided by network handlers
-						d.logger.Warn("Configuration field 'call_contract_method' is deprecated and will be ignored. Call contract methods are now provided by network handlers based on the 'type' field.",
-							zap.String("network", networkName),
-							zap.String("deprecated_value", dispenser.Val()),
-							zap.String("migration_note", "Remove this field from your Caddyfile. Ensure your network has a 'type' field set."))
+						// ⚠️ DEPRECATED: call_contract_method is now provided by network handlers
+						d.logger.Warn("call_contract_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "get_block_by_number_method":
 						dispenser.Next()
-						// DEPRECATED: get_block_by_number_method is now provided by network handlers
-						d.logger.Warn("Configuration field 'get_block_by_number_method' is deprecated and will be ignored. Block retrieval methods are now provided by network handlers based on the 'type' field.",
-							zap.String("network", networkName),
-							zap.String("deprecated_value", dispenser.Val()),
-							zap.String("migration_note", "Remove this field from your Caddyfile. Ensure your network has a 'type' field set."))
+						// ⚠️ DEPRECATED: get_block_by_number_method is now provided by network handlers
+						d.logger.Warn("get_block_by_number_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -894,13 +855,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				}
 				if d.Networks[networkName].ChainId == "" {
 					return fmt.Errorf("chain ID is not set for network %s", networkName)
-				}
-
-				// Validate that network has a type field for proper handler selection
-				if d.Networks[networkName].Type == "" {
-					d.logger.Warn("Network configuration missing 'type' field. Auto-detection will be used but explicit type declaration is recommended for better performance and reliability.",
-						zap.String("network", networkName),
-						zap.String("migration_note", "Add 'type evm' (or appropriate type) to your network configuration."))
 				}
 			}
 		case "din_registry":

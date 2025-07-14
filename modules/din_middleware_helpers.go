@@ -292,22 +292,22 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 		network.ChainId = chainId
 	}
 
-	// Network-specific methods are now provided by handlers based on network type
-	// Log the registry methods for informational purposes only
+	// REMOVED: Network-specific method fields are now provided by handlers
+	// Log the registry methods for informational purposes
 	if registryHCMethod != "" {
-		d.logger.Debug("Registry specifies healthcheck method (network handler will provide actual method)",
+		d.logger.Debug("Registry healthcheck method available (provided by handler)",
 			zap.String("network", network.Name),
-			zap.String("registry_healthcheck_method", registryHCMethod))
+			zap.String("healthcheck_method", registryHCMethod))
 	}
 	if registryChainIdMethod != "" {
-		d.logger.Debug("Registry specifies chain ID method (network handler will provide actual method)",
+		d.logger.Debug("Registry chain ID method available (provided by handler)",
 			zap.String("network", network.Name),
-			zap.String("registry_chain_id_method", registryChainIdMethod))
+			zap.String("chain_id_method", registryChainIdMethod))
 	}
 	if registryCallContractMethod != "" {
-		d.logger.Debug("Registry specifies call contract method (network handler will provide actual method)",
+		d.logger.Debug("Registry call contract method available (provided by handler)",
 			zap.String("network", network.Name),
-			zap.String("registry_call_contract_method", registryCallContractMethod))
+			zap.String("call_contract_method", registryCallContractMethod))
 	}
 
 	// Update Healthcheck Interval if changed

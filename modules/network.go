@@ -32,7 +32,7 @@ type network struct {
 	machineID        string
 	Environment      utils.Environment
 
-	// NEW: Handler reference for network-specific operations
+	// ✅ NEW: Handler reference for network-specific operations
 	handler networklib.NetworkHandler
 
 	// internal health check values
@@ -53,7 +53,11 @@ type network struct {
 	Methods   []*string            `json:"methods"`
 	ChainId   string               `json:"chain_id"`
 
-	// Network-specific method fields are now provided by handlers based on the Type field
+	// ❌ REMOVED: Network-specific method fields (now provided by handlers)
+	// HCMethod                string               `json:"healthcheck_method"`
+	// ChainIdMethod           string               `json:"chainid_method"`
+	// CallContractMethod      string               `json:"call_contract_method"`
+	// GetBlockByNumberMethod  string               `json:"get_block_by_number_method"`
 	HCInterval              int   `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64 `json:"healthcheck_blocklag_limit"`
 	BlockJumpLimit          int64 `json:"healthcheck_blockjump_limit"`
@@ -70,7 +74,7 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 		Name: name,
 		Type: networkType, // Used for handler selection
 		// Default health check values, to be overridden if specified in the Caddyfile
-		// Removed network-specific method fields - now provided by handlers
+		// ✅ Removed network-specific method fields - now provided by handlers
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
 		HCInterval:               DefaultHCInterval,
@@ -87,7 +91,7 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 		CaddyPort:                caddyPort,
 	}
 
-	// Initialize handler based on network type
+	// ✅ Initialize handler based on network type
 	if networkType != "" {
 		config := &networklib.NetworkConfig{
 			Name:           name,
@@ -341,14 +345,14 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		return Unhealthy
 	}
 
-	// Archive Health Check - Use handler method instead of string checks
+	// ✅ Archive Health Check - Use handler method instead of string checks
 	if n.ArchiveEnabled && n.supportsArchiveMode() && len(provider.BlockHistory()) > 1 {
 		quarterBlockHeight := currentBlock / 4
 
-		// Use handler method to format block height
+		// ✅ Use handler method to format block height
 		quarterBlockHeightString := n.formatBlockHeight(quarterBlockHeight)
 
-		// Use handler method to create archive payload
+		// ✅ Use handler method to create archive payload
 		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightString)
 		if err != nil {
 			n.logProviderWarning("Error testing archive mode", provider,
@@ -459,7 +463,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	var lastHealthStatus HealthStatus = Unhealthy
 	var lastResponseStatus int = 0
 
-	// Use handler method instead of hardcoded HCMethod
+	// ✅ Use handler method instead of hardcoded HCMethod
 	healthCheckMethod := n.getHealthCheckMethod()
 
 	// Create synthetic request context for consistent logging
@@ -467,7 +471,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Use handler-created payload instead of hardcoded format
+		// ✅ Use handler-created payload instead of hardcoded format
 		healthPayload, err := n.createHealthCheckPayload(healthCheckMethod)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create health check payload: %w", err)
@@ -501,7 +505,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			continue
 		}
 
-		// Use handler method to parse response instead of hardcoded parsing
+		// ✅ Use handler method to parse response instead of hardcoded parsing
 		blockInfo, health, err := n.processHealthCheckResponse(resBytes, statusCode)
 		if err != nil {
 			lastErr = err
@@ -594,7 +598,7 @@ func (n *network) getHealthCheckMethod() string {
 		return n.handler.GetHealthCheckMethod()
 	}
 
-	// DEFAULT: EVM default (no legacy field fallback needed)
+	// ✅ DEFAULT: EVM default (no legacy field fallback needed)
 	return DefaultHCMethod
 }
 
@@ -605,12 +609,12 @@ func (n *network) getArchiveMethod() string {
 		return n.handler.GetArchiveMethod()
 	}
 
-	// FALLBACK: Use network-specific logic for backward compatibility
+	// ✅ FALLBACK: Use network-specific logic for backward compatibility
 	if strings.Contains(n.Name, "starknet") {
 		return StarknetArchiveMethod
 	}
 
-	// DEFAULT: EVM default
+	// ✅ DEFAULT: EVM default
 	return DefaultCallContractMethod
 }
 
@@ -621,7 +625,7 @@ func (n *network) createHealthCheckPayload(method string) ([]byte, error) {
 		return n.handler.CreateHealthCheckPayload(method)
 	}
 
-	// FALLBACK: Default JSON-RPC format
+	// ✅ FALLBACK: Default JSON-RPC format
 	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1}`, method)
 	return []byte(payload), nil
 }
@@ -641,7 +645,7 @@ func (n *network) processHealthCheckResponse(resBytes []byte, statusCode *int) (
 		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
 	}
 
-	// Use handler method if available
+	// ✅ Use handler method if available
 	if n.handler != nil {
 		blockInfo, err := n.handler.ParseHealthCheckResponse(resBytes)
 		if err != nil {
@@ -650,7 +654,7 @@ func (n *network) processHealthCheckResponse(resBytes []byte, statusCode *int) (
 		return blockInfo.Number, Healthy, nil
 	}
 
-	// FALLBACK: Use legacy parsing logic
+	// ✅ FALLBACK: Use legacy parsing logic
 	var respObject map[string]interface{}
 	err := json.Unmarshal(resBytes, &respObject)
 	if err != nil {
@@ -684,13 +688,13 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 	// We'll extract the provider host from the httpUrl for logging
 	providerHost := httpUrl // Use the full URL as provider identifier for chain ID checks
 
-	// Use handler method instead of hardcoded ChainIdMethod
+	// ✅ Use handler method instead of hardcoded ChainIdMethod
 	chainIDMethod := n.getChainIDMethod()
 	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, chainIDMethod)
 
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Use handler-created payload
+		// ✅ Use handler-created payload
 		chainIDPayload, err := n.createHealthCheckPayload(chainIDMethod)
 		if err != nil {
 			return "", fmt.Errorf("failed to create chain ID payload: %w", err)
@@ -784,7 +788,7 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			continue
 		}
 
-		// Use handler method to extract and format chain ID
+		// ✅ Use handler method to extract and format chain ID
 		chainReference, err := n.extractChainReference(respObject["result"])
 		if err != nil {
 			lastErr = err
@@ -804,7 +808,7 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 			continue
 		}
 
-		// Use handler method to format full chain ID
+		// ✅ Use handler method to format full chain ID
 		fullChainId := n.formatChainID(chainReference)
 		return fullChainId, nil
 	}
@@ -814,7 +818,7 @@ func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.
 
 // archiveModeCheck will be updated in the next step of the migration
 func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeight string) error {
-	// PLACEHOLDER: This method will be migrated in the archive mode migration step
+	// ✅ PLACEHOLDER: This method will be migrated in the archive mode migration step
 	// For now, keep existing functionality to avoid breaking changes
 	var lastErr error
 
@@ -822,7 +826,7 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 	// We'll extract the provider host from the httpUrl for logging
 	providerHost := httpUrl // Use the full URL as provider identifier for archive mode checks
 
-	// Use handler method instead of hardcoded CallContractMethod
+	// ✅ Use handler method instead of hardcoded CallContractMethod
 	method := n.getArchiveMethod()
 
 	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, method)
@@ -1008,7 +1012,7 @@ func (n *network) getChainIDMethod() string {
 		return n.handler.GetChainIDMethod()
 	}
 
-	// DEFAULT: EVM default (no legacy field fallback needed)
+	// ✅ DEFAULT: EVM default (no legacy field fallback needed)
 	return DefaultChainIdMethod
 }
 
@@ -1019,7 +1023,7 @@ func (n *network) extractChainReference(result interface{}) (string, error) {
 		return n.handler.ExtractChainReference(result)
 	}
 
-	// FALLBACK: Use legacy logic for backward compatibility
+	// ✅ FALLBACK: Use legacy logic for backward compatibility
 	// For Bitcoin networks, the chain ID is in a nested "chain" field in the result object
 	// For all other networks, the chain ID is directly in the result field as a string
 	if strings.Contains(n.Name, "bitcoin") {
@@ -1048,7 +1052,7 @@ func (n *network) formatChainID(chainReference string) string {
 		return n.handler.FormatChainID(chainReference)
 	}
 
-	// FALLBACK: Use legacy namespace mapping for backward compatibility
+	// ✅ FALLBACK: Use legacy namespace mapping for backward compatibility
 	namespace := EVMNamespace
 
 	// Map network names to their namespaces
@@ -1076,7 +1080,7 @@ func (n *network) supportsArchiveMode() bool {
 		return n.handler.SupportsArchiveMode()
 	}
 
-	// FALLBACK: Use legacy string checks for backward compatibility
+	// ✅ FALLBACK: Use legacy string checks for backward compatibility
 	return !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "solana")
 }
 
@@ -1087,7 +1091,7 @@ func (n *network) formatBlockHeight(blockNum int64) string {
 		return n.handler.FormatBlockHeight(blockNum)
 	}
 
-	// FALLBACK: Use legacy formatting logic for backward compatibility
+	// ✅ FALLBACK: Use legacy formatting logic for backward compatibility
 	if strings.Contains(n.Name, "starknet") {
 		// Starknet uses decimal for block height, no need to convert to hex
 		return strconv.FormatInt(blockNum, 10)
@@ -1328,13 +1332,13 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		"Content-Type": "application/json",
 	}
 
-	// Use handler method instead of string checks
+	// ✅ Use handler method instead of string checks
 	if !n.supportsGetBlockByNumber() {
 		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
 		return nil, nil
 	}
 
-	// Use handler method to create block request
+	// ✅ Use handler method to create block request
 	supportedMethods := n.getSupportedMethods()
 	if len(supportedMethods) == 0 {
 		return nil, errors.New("no supported block methods available")
@@ -1360,7 +1364,7 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.New("Error getting block from response")
 	}
 
-	// Use handler method to parse block response
+	// ✅ Use handler method to parse block response
 	blockData, err := n.parseBlockResponse(resBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error parsing block response")
@@ -1377,7 +1381,7 @@ func (n *network) supportsGetBlockByNumber() bool {
 		return n.handler.SupportsGetBlockByNumber()
 	}
 
-	// FALLBACK: Use legacy string checks for backward compatibility
+	// ✅ FALLBACK: Use legacy string checks for backward compatibility
 	return !strings.Contains(n.Name, "bitcoin") && !strings.Contains(n.Name, "starknet")
 }
 
@@ -1388,7 +1392,7 @@ func (n *network) getSupportedMethods() []string {
 		return n.handler.GetSupportedMethods()
 	}
 
-	// FALLBACK: Return default methods for backward compatibility
+	// ✅ FALLBACK: Return default methods for backward compatibility
 	return []string{"getBlockByNumber"}
 }
 
@@ -1404,7 +1408,7 @@ func (n *network) getBlockByNumberMethod() string {
 		}
 	}
 
-	// DEFAULT: EVM default (no legacy field fallback needed)
+	// ✅ DEFAULT: EVM default (no legacy field fallback needed)
 	return DefaultGetBlockByNumberMethod
 }
 
@@ -1415,7 +1419,7 @@ func (n *network) createBlockRequest(method string, blockNumber int64, includeTr
 		return n.handler.CreateBlockRequest(method, blockNumber, includeTransactions)
 	}
 
-	// FALLBACK: Use legacy formatting logic for backward compatibility
+	// ✅ FALLBACK: Use legacy formatting logic for backward compatibility
 	if strings.Contains(n.Name, "solana") {
 		// Solana format
 		return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[%d, {"encoding": "json", "transactionDetails": "none", "rewards": false}]}`, method, blockNumber)), nil
@@ -1433,7 +1437,7 @@ func (n *network) parseBlockResponse(resBytes []byte) (interface{}, error) {
 		return n.handler.ParseBlockResponse(resBytes)
 	}
 
-	// FALLBACK: Use legacy parsing logic for backward compatibility
+	// ✅ FALLBACK: Use legacy parsing logic for backward compatibility
 	if strings.Contains(n.Name, "solana") {
 		var respObject din_http.JSONRPCSolanaBlockResponse
 		err := json.Unmarshal(resBytes, &respObject)
