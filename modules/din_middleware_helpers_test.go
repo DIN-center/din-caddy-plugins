@@ -380,9 +380,6 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 }
 
 func TestSyncNetworkConfig(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	tests := []struct {
 		name                     string
 		regNetwork               *din.Network
@@ -484,6 +481,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit:  1,
+					ChainIdMethodBit:      1,
 					CallContractMethodBit: 1,
 				},
 			},
@@ -491,8 +490,10 @@ func TestSyncNetworkConfig(t *testing.T) {
 				Name: "test-network",
 			},
 			callsHealthcheckMethod:   true,
+			hcMethodName:             "eth_blockNumber",
 			getCallContractMethodErr: errors.New("failed to get call contract method"),
 			callsChainIDMethod:       true,
+			chainIDMethodName:        "eth_chainId",
 			callsCallContractMethod:  true,
 			expectedError:            errors.New("failed to get network call contract method"),
 		},
@@ -504,6 +505,7 @@ func TestSyncNetworkConfig(t *testing.T) {
 					HealthcheckMethodBit:    1,
 					ChainIdMethodBit:        1,
 					ChainId:                 "0x1",
+					CallContractMethodBit:   0, // Explicitly set to 0 to show this is intentional
 					HealthcheckIntervalSec:  0,
 					BlockLagLimit:           0,
 					BlockJumpLimit:          0,
@@ -527,10 +529,10 @@ func TestSyncNetworkConfig(t *testing.T) {
 			},
 			callsHealthcheckMethod:  true,
 			callsChainIDMethod:      true,
-			callsCallContractMethod: true,
+			callsCallContractMethod: false, // Don't expect call when bit is 0
 			hcMethodName:            "eth_blockNumber",
 			chainIDMethodName:       "eth_chainId",
-			callContractMethodName:  "eth_call",
+			callContractMethodName:  "",
 			expectedNetwork: &network{
 				Name:                    "test-network",
 				HCMethod:                "eth_blockNumber",
@@ -549,6 +551,9 @@ func TestSyncNetworkConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 
 			// Create logger

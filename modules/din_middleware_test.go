@@ -18,6 +18,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -63,6 +64,9 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 	dinMiddleware.testMode = true
 	dinMiddleware.logger = logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest)
 
+	// Initialize the handler registry for testing
+	dinMiddleware.handlerRegistry = networklib.DefaultRegistry
+
 	// Large payload to test max request payload size. This is greater than 1KB.
 	largePayload := `{";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -82,8 +86,12 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		hasErr   bool
 	}{
 		{
-			name:     "successful request",
-			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`)),
+			name: "successful request",
+			request: func() *http.Request {
+				req := httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`))
+				req.Header.Set("Content-Type", "application/json")
+				return req
+			}(),
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
@@ -103,8 +111,12 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			hasErr: false,
 		},
 		{
-			name:     "unsuccesful request, payload too large",
-			request:  httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload)),
+			name: "unsuccesful request, payload too large",
+			request: func() *http.Request {
+				req := httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload))
+				req.Header.Set("Content-Type", "application/json")
+				return req
+			}(),
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {

@@ -52,9 +52,6 @@
 						https://starknet-mainnet.public.blastapi.io {
 							priority 0
 						}
-						https://free-rpc.nethermind.io/mainnet-juno {
-							priority 1
-						}
 					}
 					healthcheck_method starknet_blockNumber
 					chainid_method starknet_chainId
@@ -82,9 +79,6 @@
 					providers {
 						https://api.mainnet-beta.solana.com {
 							priority 0
-						}
-						https://solana-api.projectserum.com {
-							priority 1
 						}
 					}
 					healthcheck_method getSlot

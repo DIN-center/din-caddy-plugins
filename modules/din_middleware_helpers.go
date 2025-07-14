@@ -263,7 +263,8 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 	if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
 		registryChainIdMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, chainIdBit)
 		if err != nil {
-			d.logger.Debug("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			return nil, fmt.Errorf("failed to get network chain ID method: %w", err)
 		}
 	}
 
@@ -271,7 +272,8 @@ func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *netw
 	if callContractBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "CallContractMethodBit"); callContractBit > 0 {
 		registryCallContractMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, callContractBit)
 		if err != nil {
-			d.logger.Debug("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			return nil, fmt.Errorf("failed to get network call contract method: %w", err)
 		}
 	}
 

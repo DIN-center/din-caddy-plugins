@@ -206,10 +206,17 @@ jobs:
         run: |
           echo "🧪 Running E2E tests for scenario: $TEST_SCENARIO"
           
+          # Verify script exists and is executable
+          if [ ! -x ./.github/workflows/e2e_integration_test/send_requests.sh ]; then
+            echo "❌ Test script not found or not executable"
+            exit 1
+          fi
+          
           # Set test scenario environment variable for the test script
           export TEST_SCENARIO
           
           # Run the enhanced test script
+          echo "🚀 Executing test script: ./.github/workflows/e2e_integration_test/send_requests.sh"
           if timeout ${{ env.TEST_TIMEOUT }} ./.github/workflows/e2e_integration_test/send_requests.sh; then
             echo "test-result=success" >> $GITHUB_OUTPUT
             echo "✅ E2E tests passed for scenario: $TEST_SCENARIO"
