@@ -560,6 +560,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 	}
 	d.Env = utils.GetEnv()
 	siweSignerClient := siwe.NewSIWESignerClient()
+
+	// Initialize handler registry early for validation during parsing
+	if d.handlerRegistry == nil {
+		d.handlerRegistry = networklib.DefaultRegistry
+		networklib.RegisterBuiltinHandlers()
+	}
 	for dispenser.Next() { // Skip the directive name
 		switch dispenser.Val() {
 		case "port":
