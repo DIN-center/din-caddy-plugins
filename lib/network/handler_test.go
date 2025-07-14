@@ -1,0 +1,350 @@
+// lib/network/handler_test.go
+package network
+
+import (
+	"net/http"
+	"testing"
+)
+
+// Mock provider for testing
+type MockProvider struct {
+	url      string
+	headers  map[string]string
+	path     string
+	host     string
+	priority int
+}
+
+func (m *MockProvider) GetURL() string                { return m.url }
+func (m *MockProvider) GetHeaders() map[string]string { return m.headers }
+func (m *MockProvider) GetPath() string               { return m.path }
+func (m *MockProvider) GetHost() string               { return m.host }
+func (m *MockProvider) GetPriority() int              { return m.priority }
+
+// Mock handler for testing
+type MockHandler struct {
+	handlerType string
+	name        string
+	version     string
+	requestType RequestType
+	initialized bool
+}
+
+func (m *MockHandler) GetType() string                        { return m.handlerType }
+func (m *MockHandler) GetName() string                        { return m.name }
+func (m *MockHandler) GetVersion() string                     { return m.version }
+func (m *MockHandler) GetRequestType() RequestType            { return m.requestType }
+func (m *MockHandler) Initialize(config *NetworkConfig) error { m.initialized = true; return nil }
+func (m *MockHandler) Shutdown() error                        { return nil }
+
+func (m *MockHandler) ProcessRequest(req *http.Request, provider Provider) error {
+	return nil
+}
+
+func (m *MockHandler) ValidateRequest(req *http.Request) error {
+	return nil
+}
+
+func (m *MockHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
+	return gatewayPath, nil
+}
+
+func (m *MockHandler) NormalizeEndpoint(path string) string {
+	return path
+}
+
+func (m *MockHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
+	return &BlockInfo{Number: 12345}, nil
+}
+
+func (m *MockHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
+	return &HealthStatus{Healthy: true}, nil
+}
+
+func (m *MockHandler) ParseResponse(body []byte, statusCode int) error {
+	return nil
+}
+
+func (m *MockHandler) IsRetryableError(err error, statusCode int) bool {
+	return false
+}
+
+func TestHandlerRegistry_RegisterHandler(t *testing.T) {
+	registry := NewHandlerRegistry()
+
+	// Test successful registration
+	factory := func(config *NetworkConfig) (NetworkHandler, error) {
+		return &MockHandler{
+			handlerType: "test",
+			name:        "Test Handler",
+			version:     "1.0.0",
+		}, nil
+	}
+
+	err := registry.RegisterHandler("test", factory)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Test duplicate registration
+	err = registry.RegisterHandler("test", factory)
+	if err == nil {
+		t.Error("Expected error for duplicate registration, got none")
+	}
+}
+
+func TestHandlerRegistry_GetHandler(t *testing.T) {
+	registry := NewHandlerRegistry()
+
+	// Register a test handler
+	factory := func(config *NetworkConfig) (NetworkHandler, error) {
+		return &MockHandler{
+			handlerType: "test",
+			name:        "Test Handler",
+			version:     "1.0.0",
+		}, nil
+	}
+
+	err := registry.RegisterHandler("test", factory)
+	if err != nil {
+		t.Fatalf("Failed to register handler: %v", err)
+	}
+
+	// Test getting handler
+	config := &NetworkConfig{
+		Name: "test-network",
+		Type: "test",
+	}
+
+	handler, err := registry.GetHandler("test", config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if handler.GetType() != "test" {
+		t.Errorf("Expected handler type 'test', got %s", handler.GetType())
+	}
+
+	// Test getting the same handler again (should return cached)
+	handler2, err := registry.GetHandler("test", config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if handler != handler2 {
+		t.Error("Expected cached handler to be returned")
+	}
+
+	// Test getting non-existent handler
+	nonExistentConfig := &NetworkConfig{
+		Name: "nonexistent-network",
+		Type: "nonexistent",
+	}
+	_, err = registry.GetHandler("nonexistent", nonExistentConfig)
+	if err == nil {
+		t.Error("Expected error for non-existent handler, got none")
+	}
+}
+
+func TestHandlerRegistry_ListHandlers(t *testing.T) {
+	registry := NewHandlerRegistry()
+
+	// Register multiple handlers
+	handlers := []string{"test1", "test2", "test3"}
+	for _, handlerType := range handlers {
+		factory := func(config *NetworkConfig) (NetworkHandler, error) {
+			return &MockHandler{handlerType: handlerType}, nil
+		}
+		err := registry.RegisterHandler(handlerType, factory)
+		if err != nil {
+			t.Fatalf("Failed to register handler %s: %v", handlerType, err)
+		}
+	}
+
+	// Test listing handlers
+	listed := registry.ListHandlers()
+	if len(listed) != len(handlers) {
+		t.Errorf("Expected %d handlers, got %d", len(handlers), len(listed))
+	}
+
+	// Check that all handlers are listed
+	for _, expected := range handlers {
+		found := false
+		for _, actual := range listed {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected handler %s not found in list", expected)
+		}
+	}
+}
+
+func TestHandlerRegistry_GetHandlerInfo(t *testing.T) {
+	registry := NewHandlerRegistry()
+
+	// Register a test handler
+	factory := func(config *NetworkConfig) (NetworkHandler, error) {
+		return &MockHandler{
+			handlerType: "test",
+			name:        "Test Handler",
+			version:     "1.0.0",
+		}, nil
+	}
+
+	err := registry.RegisterHandler("test", factory)
+	if err != nil {
+		t.Fatalf("Failed to register handler: %v", err)
+	}
+
+	// Test getting handler info
+	info, err := registry.GetHandlerInfo("test")
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if info.Type != "test" {
+		t.Errorf("Expected type 'test', got %s", info.Type)
+	}
+
+	if info.Name != "Test Handler" {
+		t.Errorf("Expected name 'Test Handler', got %s", info.Name)
+	}
+
+	if info.Version != "1.0.0" {
+		t.Errorf("Expected version '1.0.0', got %s", info.Version)
+	}
+}
+
+func TestHandlerRegistry_ShutdownAll(t *testing.T) {
+	registry := NewHandlerRegistry()
+
+	// Register and create handlers
+	factory := func(config *NetworkConfig) (NetworkHandler, error) {
+		return &MockHandler{handlerType: "test"}, nil
+	}
+
+	err := registry.RegisterHandler("test", factory)
+	if err != nil {
+		t.Fatalf("Failed to register handler: %v", err)
+	}
+
+	// Create some handlers
+	config1 := &NetworkConfig{Name: "test1", Type: "test"}
+	config2 := &NetworkConfig{Name: "test2", Type: "test"}
+
+	_, err = registry.GetHandler("test", config1)
+	if err != nil {
+		t.Fatalf("Failed to get handler: %v", err)
+	}
+
+	_, err = registry.GetHandler("test", config2)
+	if err != nil {
+		t.Fatalf("Failed to get handler: %v", err)
+	}
+
+	// Shutdown all handlers
+	err = registry.ShutdownAll()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Verify handlers are cleared
+	if len(registry.handlers) != 0 {
+		t.Errorf("Expected no handlers after shutdown, got %d", len(registry.handlers))
+	}
+}
+
+func TestEVMHandler_Basic(t *testing.T) {
+	config := &NetworkConfig{
+		Name: "test-evm",
+		Type: "evm",
+	}
+
+	handler := NewEVMHandler(config)
+
+	// Test metadata
+	if handler.GetType() != "evm" {
+		t.Errorf("Expected type 'evm', got %s", handler.GetType())
+	}
+
+	if handler.GetName() != "EVM JSON-RPC Handler" {
+		t.Errorf("Expected name 'EVM JSON-RPC Handler', got %s", handler.GetName())
+	}
+
+	if handler.GetRequestType() != RequestTypeRPC {
+		t.Errorf("Expected request type RPC, got %d", handler.GetRequestType())
+	}
+
+	// Test initialization
+	err := handler.Initialize(config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Test shutdown
+	err = handler.Shutdown()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+}
+
+func TestBeaconChainHandler_Basic(t *testing.T) {
+	config := &NetworkConfig{
+		Name: "test-beacon",
+		Type: "beacon_chain",
+	}
+
+	handler := NewBeaconChainHandler(config)
+
+	// Test metadata
+	if handler.GetType() != "beacon_chain" {
+		t.Errorf("Expected type 'beacon_chain', got %s", handler.GetType())
+	}
+
+	if handler.GetName() != "Ethereum Beacon Chain Handler" {
+		t.Errorf("Expected name 'Ethereum Beacon Chain Handler', got %s", handler.GetName())
+	}
+
+	if handler.GetRequestType() != RequestTypeREST {
+		t.Errorf("Expected request type REST, got %d", handler.GetRequestType())
+	}
+
+	// Test initialization
+	err := handler.Initialize(config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Test shutdown
+	err = handler.Shutdown()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+}
+
+func TestDefaultRegistry_Initialization(t *testing.T) {
+	// Test that default registry is initialized with built-in handlers
+	handlers := DefaultRegistry.ListHandlers()
+
+	expectedHandlers := []string{"evm", "beacon_chain", "starknet", "solana", "bitcoin"}
+
+	if len(handlers) != len(expectedHandlers) {
+		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))
+	}
+
+	for _, expected := range expectedHandlers {
+		found := false
+		for _, actual := range handlers {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected handler %s not found in default registry", expected)
+		}
+	}
+}

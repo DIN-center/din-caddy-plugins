@@ -16,6 +16,7 @@ import (
 
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -73,6 +74,9 @@ type DinMiddleware struct {
 
 	// Test mode flag, should only be used for unit/integration testing purposes.
 	testMode bool
+
+	// Handler registry for different network types
+	handlerRegistry *networklib.HandlerRegistry
 
 	// DIN Registry configuration
 	// The flag to enable or disable the din registry
@@ -150,6 +154,12 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
+
+	// Initialize the handler registry
+	d.handlerRegistry = networklib.NewHandlerRegistry()
+
+	// Register built-in handlers
+	networklib.RegisterBuiltinHandlers()
 
 	for networkName, network := range d.Networks {
 		// Initialize the HTTP client for each network and provider
@@ -265,6 +275,34 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		rw.WriteHeader(404)
 		rw.Write([]byte("Not Found\n"))
 		return fmt.Errorf("network undefined")
+	}
+
+	// Detect request type and get appropriate handler
+	reqContext, err := DetectRequestType(r, networkObj, d.handlerRegistry)
+	if err != nil {
+		d.logger.Error("Failed to detect request type", zap.String("network", networkPath), zap.Error(err))
+		rw.WriteHeader(http.StatusInternalServerError)
+		rw.Write([]byte("Internal Server Error\n"))
+		return fmt.Errorf("failed to detect request type: %w", err)
+	}
+
+	// Store request context in replacer for later use
+	repl.Set(RequestContextKey, reqContext)
+
+	// Log request type for debugging
+	d.logger.Debug("Request type detected",
+		zap.String("network", networkPath),
+		zap.String("request_type", reqContext.GetRequestTypeString()),
+		zap.String("network_type", reqContext.NetworkType),
+		zap.String("method", reqContext.Method),
+		zap.Bool("is_health_check", reqContext.IsHealthCheck))
+
+	// Process the request using the handler
+	if err := reqContext.Handler.ProcessRequest(r, nil); err != nil {
+		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Bad Request\n"))
+		return fmt.Errorf("handler failed to process request: %w", err)
 	}
 
 	// Read request body and save in context
@@ -563,6 +601,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if !dispenser.Args(d.Networks[networkName].Methods...) {
 							return dispenser.Errf("invalid 'methods' argument for network %s", networkName)
 						}
+					case "type":
+						dispenser.Next()
+						d.Networks[networkName].Type = dispenser.Val()
 					case "routed_methods":
 						methods := make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
@@ -688,6 +729,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 					case "healthcheck_method":
 						dispenser.Next()
 						d.Networks[networkName].HCMethod = dispenser.Val()
+					case "healthcheck_endpoint":
+						dispenser.Next()
+						d.Networks[networkName].HCEndpoint = dispenser.Val()
 					case "chainid_method":
 						dispenser.Next()
 						d.Networks[networkName].ChainIdMethod = dispenser.Val()

@@ -22,6 +22,7 @@ import (
 
 type network struct {
 	Name             string
+	Type             string `json:"type,omitempty"` // Network type for handler registry (evm, beacon_chain, starknet, solana)
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
@@ -32,6 +33,7 @@ type network struct {
 	// internal health check values
 	HCThreshold              int
 	HCTimeout                int
+	HCEndpoint               string `json:"healthcheck_endpoint,omitempty"` // REST endpoint for health checks
 	ProviderBlockHistorySize int
 	NetworkBlockHistorySize  int
 	blockHistory             *list.List
