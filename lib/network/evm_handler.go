@@ -4,9 +4,12 @@ package network
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
@@ -81,6 +84,37 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 	// Check method
 	if req.Method != "POST" {
 		return fmt.Errorf("JSON-RPC requires POST method, got %s", req.Method)
+	}
+
+	// Parse and validate JSON-RPC payload structure
+	if req.Body != nil {
+		// Read the body
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read request body: %w", err)
+		}
+
+		// Reset the body so downstream handlers can read it again
+		req.Body = io.NopCloser(strings.NewReader(string(body)))
+
+		// Parse JSON-RPC request
+		var jsonRPCReq dinHttp.JSONRPCRequest
+		if err := json.Unmarshal(body, &jsonRPCReq); err != nil {
+			return fmt.Errorf("invalid JSON payload: %w", err)
+		}
+
+		// Validate required JSON-RPC fields
+		if jsonRPCReq.JSONRPC == "" {
+			return fmt.Errorf("missing required field: jsonrpc")
+		}
+		if jsonRPCReq.JSONRPC != "2.0" {
+			return fmt.Errorf("invalid jsonrpc version, expected '2.0', got '%s'", jsonRPCReq.JSONRPC)
+		}
+		if jsonRPCReq.Method == "" {
+			return fmt.Errorf("missing required field: method")
+		}
+		// ID field is technically optional in notifications, but params should be present (can be null/empty)
+		// We don't need to validate the actual method name here as that's provider-specific
 	}
 
 	return nil
