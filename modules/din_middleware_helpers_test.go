@@ -1028,12 +1028,11 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			observedLogger := zap.New(observedZapCore)
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
-			// Create test network with CaddyPort to avoid getBlockByNumber errors
-			network := &network{
-				Name:      "test/eth",
-				logger:    loggerClient,
-				CaddyPort: "8080", // Set CaddyPort to avoid errors in successful case
-			}
+			// Create test network with proper handler initialization
+			network, err := NewNetwork("test", "evm", utils.Environment("test"), "8080")
+			assert.NoError(t, err)
+			network.logger = loggerClient
+			network.Name = "test/eth" // Update name to match test expectations
 
 			// Create test middleware
 			middleware := &DinMiddleware{

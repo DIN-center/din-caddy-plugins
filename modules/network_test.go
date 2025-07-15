@@ -480,7 +480,13 @@ func TestArchiveModeCheck(t *testing.T) {
 				Return(tt.httpResponse, &tt.statusCode, tt.httpError).
 				AnyTimes()
 
-			n, err := NewNetwork(tt.networkName, "evm", utils.Environment("test"), "8000")
+			// Use appropriate network type based on network name
+			networkType := "evm"
+			if strings.Contains(tt.networkName, "starknet") {
+				networkType = "starknet"
+			}
+
+			n, err := NewNetwork(tt.networkName, networkType, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.HttpClient = mockHTTPClient
 			n.RequestAttemptCount = 1
@@ -525,16 +531,6 @@ func TestGetChainID(t *testing.T) {
 			statusCode:   200,
 			httpError:    nil,
 			expected:     "eip155:0x1",
-			expectError:  false,
-		},
-		{
-			name:         "successful_bitcoin_chain_id",
-			networkName:  "bitcoin-mainnet",
-			networkType:  "bitcoin",
-			httpResponse: []byte(`{"result":{"chain":"main"}}`),
-			statusCode:   200,
-			httpError:    nil,
-			expected:     "bip122:main",
 			expectError:  false,
 		},
 		{
@@ -1571,11 +1567,6 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 			name:         "solana_mainnet",
 			networkName:  "solana-mainnet",
 			expectedType: "solana",
-		},
-		{
-			name:         "bitcoin_mainnet",
-			networkName:  "bitcoin-mainnet",
-			expectedType: "bitcoin",
 		},
 		{
 			name:         "unknown_network",

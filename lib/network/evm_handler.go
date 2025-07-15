@@ -140,24 +140,26 @@ func (h *EVMHandler) NormalizeEndpoint(path string) string {
 
 // Health check methods
 func (h *EVMHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	// This would integrate with existing health check logic
-	// For now, return a placeholder - this will be implemented in integration
+	// This method is used by the handler interface but the actual health check logic
+	// is handled by the existing network health check system. We return a basic implementation
+	// that indicates the method is available.
 	return &BlockInfo{
 		Number:    0,
 		Hash:      "",
 		Timestamp: time.Now(),
-	}, nil
+	}, fmt.Errorf("GetLatestBlock should use the existing network health check system")
 }
 
 func (h *EVMHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	// This would integrate with existing health check logic
-	// For now, return a placeholder - this will be implemented in integration
+	// This method is used by the handler interface but the actual health check logic
+	// is handled by the existing network health check system. We return a basic implementation
+	// that indicates the method is available.
 	return &HealthStatus{
-		Healthy:     true,
+		Healthy:     false,
 		BlockNumber: 0,
 		Latency:     0,
-		Error:       nil,
-	}, nil
+		Error:       fmt.Errorf("CheckHealth should use the existing network health check system"),
+	}, fmt.Errorf("CheckHealth should use the existing network health check system")
 }
 
 // Response handling methods

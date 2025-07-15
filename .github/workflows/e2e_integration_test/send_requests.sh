@@ -132,7 +132,7 @@ test_handler_registration() {
 
 # Function to test EVM handler functionality
 test_evm_handler() {
-    echo -e "\n${BLUE}⚡ Testing EVM Handler${NC}"
+    echo -e "\n${BLUE}* Testing EVM Handler${NC}"
     
     # Basic EVM JSON-RPC tests
     test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Get Latest Block Number"
@@ -254,7 +254,7 @@ run_test_scenario() {
     # Run scenario-specific tests
     case "$TEST_SCENARIO" in
         "evm-only")
-            echo -e "\n${BLUE}📋 EVM-Only Test Scenario${NC}"
+            echo -e "\n${BLUE}* EVM-Only Test Scenario${NC}"
             test_evm_handler
             test_provider_failover
             ;;

@@ -6,7 +6,7 @@ This comprehensive guide provides step-by-step instructions for adding new block
 
 **Prerequisites**: Basic understanding of Go programming, HTTP protocols, and the target blockchain network's API.
 
-## 🚀 Quick Start for Impatient Developers
+## Quick Start for Impatient Developers
 
 **Want to add a new network in 10 minutes?** Follow these essential steps:
 
@@ -16,7 +16,7 @@ This comprehensive guide provides step-by-step instructions for adding new block
 4. **Configure network**: Add Caddyfile configuration with your network type
 5. **Test integration**: Run `go test ./...` and verify e2e functionality
 
-📖 **Read the full guide below for detailed implementation instructions.**
+**Read the full guide below for detailed implementation instructions.**
 
 ## Table of Contents
 
@@ -33,10 +33,19 @@ This comprehensive guide provides step-by-step instructions for adding new block
 
 ## Architecture Overview
 
-The DIN Caddy middleware uses a **handler registry pattern** that allows different network types to be supported through pluggable handlers:
+The DIN Gateway uses a **handler registry pattern** that allows different network types to be supported through pluggable handlers. Each network type (EVM, Solana, Starknet, etc.) has its own handler that knows how to process requests for that specific blockchain.
 
 ```
-Request → Middleware → Handler Registry → Specific Handler → Provider
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
+│   Client    │────▶│  Middleware  │────▶│ Handler Registry│────▶│   Provider   │
+│  Request    │     │   (Caddy)    │     │                 │     │   (RPC/API)  │
+└─────────────┘     └──────────────┘     └─────────────────┘     └──────────────┘
+                            │                      │
+                            ▼                      ▼
+                    ┌──────────────┐      ┌─────────────────┐
+                    │   Network    │      │ Network Handler │
+                    │Configuration │      │   (EVM/SOL/etc) │
+                    └──────────────┘      └─────────────────┘
 ```
 
 ### Key Components
@@ -651,366 +660,73 @@ yournetwork-testnet {
 
 ## Backward Compatibility
 
-When developing handlers, you may need to support different versions of dependencies or struct definitions. This is especially important when your local development environment uses newer versions than what's available in CI/CD or remote builds.
+When developing handlers, you may need to support integration with the DIN Registry, which uses external struct definitions that may vary between versions.
 
-### Understanding Version Mismatches
+### DIN Registry Integration
 
-Version mismatches typically occur when:
-
-1. **Local Development**: Uses newer upstream dependencies with additional struct fields
-2. **CI/CD Builds**: Use pinned versions that may lack newer fields
-3. **Remote Dependencies**: May not have the latest struct definitions
-
-### Safe Field Access Pattern
-
-To handle version mismatches, use **reflection-based field access** instead of direct field access:
-
-#### The Problem: Direct Field Access
+If your handler needs to work with DIN Registry data, you'll need to handle potential version mismatches in the `NetworkConfig` struct. The middleware provides reflection-based helper functions for safe field access:
 
 ```go
-// ❌ This breaks when ChainId field doesn't exist in older versions
-if regNetwork.NetworkConfig.ChainId != "" {
-    network.ChainId = regNetwork.NetworkConfig.ChainId
-}
+// Helper functions available in din_middleware_helpers.go
+func getNetworkConfigUint8Field(config *dinreg.NetworkConfig, fieldName string) uint8
+func getNetworkConfigStringField(config *dinreg.NetworkConfig, fieldName string) string
+func getNetworkConfigBoolField(config *dinreg.NetworkConfig, fieldName string) bool
 ```
 
-#### The Solution: Reflection-Based Access
+These functions are used when syncing network configuration from the DIN Registry:
 
 ```go
-// ✅ This safely handles missing fields across versions
+// Example from syncNetworkConfig
 if chainId := getNetworkConfigStringField(regNetwork.NetworkConfig, "ChainId"); chainId != "" {
     network.ChainId = chainId
 }
-```
 
-### Helper Functions for Safe Access
-
-Add these helper functions to your handler files:
-
-```go
-import "reflect"
-
-// getNetworkConfigUint8Field safely gets a uint8 field using reflection
-func getNetworkConfigUint8Field(config *dinreg.NetworkConfig, fieldName string) uint8 {
-    if config == nil {
-        return 0
-    }
-    v := reflect.ValueOf(config).Elem()
-    field := v.FieldByName(fieldName)
-    if !field.IsValid() || field.Kind() != reflect.Uint8 {
-        return 0
-    }
-    return uint8(field.Uint())
-}
-
-// getNetworkConfigStringField safely gets a string field using reflection
-func getNetworkConfigStringField(config *dinreg.NetworkConfig, fieldName string) string {
-    if config == nil {
-        return ""
-    }
-    v := reflect.ValueOf(config).Elem()
-    field := v.FieldByName(fieldName)
-    if !field.IsValid() || field.Kind() != reflect.String {
-        return ""
-    }
-    return field.String()
-}
-
-// getNetworkConfigBoolField safely gets a bool field using reflection
-func getNetworkConfigBoolField(config *dinreg.NetworkConfig, fieldName string) bool {
-    if config == nil {
-        return false
-    }
-    v := reflect.ValueOf(config).Elem()
-    field := v.FieldByName(fieldName)
-    if !field.IsValid() || field.Kind() != reflect.Bool {
-        return false
-    }
-    return field.Bool()
-}
-
-// getNetworkConfigUint16Field safely gets a uint16 field using reflection
-func getNetworkConfigUint16Field(config *dinreg.NetworkConfig, fieldName string) uint16 {
-    if config == nil {
-        return 0
-    }
-    v := reflect.ValueOf(config).Elem()
-    field := v.FieldByName(fieldName)
-    if !field.IsValid() || field.Kind() != reflect.Uint16 {
-        return 0
-    }
-    return uint16(field.Uint())
+// Safe access to fields that may not exist in older versions
+if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
+    // Process chain ID method bit
 }
 ```
 
-### Backward Compatible Implementation Example
+### Legacy Fallback Support
 
-Here's how to safely access potentially missing fields:
+The middleware maintains a legacy fallback mechanism for networks without handlers:
 
 ```go
-func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
-    // Always available fields - direct access is safe
-    registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(
-        regNetwork.Name, 
-        regNetwork.NetworkConfig.HealthcheckMethodBit,
-    )
+// In helpers.go - createRequestWithReplacer
+if networkObj != nil && networkObj.handler != nil {
+    payload, err = networkObj.handler.CreateBlockRequest(method, blockNumber, false)
     if err != nil {
-        return nil, err
+        // Fall back to legacy string-based logic
+        payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
     }
-
-    // Potentially missing fields - use reflection-based access
-    var registryChainIdMethod, registryCallContractMethod string
-
-    // Safe access to ChainIdMethodBit (may not exist in older versions)
-    if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
-        registryChainIdMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, chainIdBit)
-        if err != nil {
-            d.logger.Debug("Failed to get chain ID method", zap.Error(err))
-        }
-    }
-
-    // Safe access to CallContractMethodBit
-    if callContractBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "CallContractMethodBit"); callContractBit > 0 {
-        registryCallContractMethod, err = d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, callContractBit)
-        if err != nil {
-            d.logger.Debug("Failed to get call contract method", zap.Error(err))
-        }
-    }
-
-    // Safe access to string fields
-    if chainId := getNetworkConfigStringField(regNetwork.NetworkConfig, "ChainId"); chainId != "" && chainId != network.ChainId {
-        d.logger.Debug("Setting network chain ID", zap.String("chain_id", chainId))
-        network.ChainId = chainId
-    }
-
-    // Safe access to numeric fields with type conversion
-    if blockJumpLimit := int64(getNetworkConfigUint8Field(regNetwork.NetworkConfig, "BlockJumpLimit")); blockJumpLimit != 0 {
-        network.BlockJumpLimit = blockJumpLimit
-    }
-
-    // Safe access to boolean fields
-    if archiveEnabled := getNetworkConfigBoolField(regNetwork.NetworkConfig, "ArchiveEnabled"); archiveEnabled != network.ArchiveEnabled {
-        network.ArchiveEnabled = archiveEnabled
-    }
-
-    return network, nil
+} else {
+    // Use legacy logic when no handler available
+    payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
 }
 ```
 
-### Best Practices for Backward Compatibility
+### Default Type Assignment
 
-#### 1. Defensive Programming
+Networks without an explicit type specification default to EVM:
 
 ```go
-// ✅ Good: Check for nil pointers and field existence
-func (h *YourHandler) processConfig(config *ExternalConfig) error {
-    if config == nil {
-        return fmt.Errorf("config cannot be nil")
-    }
-
-    // Use reflection for potentially missing fields
-    if timeout := getConfigDurationField(config, "RequestTimeout"); timeout > 0 {
-        h.requestTimeout = timeout
-    } else {
-        h.requestTimeout = 30 * time.Second // fallback default
-    }
-
-    return nil
-}
-
-// ❌ Bad: Direct access without version checks
-func (h *YourHandler) processConfig(config *ExternalConfig) error {
-    h.requestTimeout = config.RequestTimeout // May not exist!
-    return nil
+if d.Networks[networkName].Type == "" {
+    // DEFAULT to EVM for unspecified network types
+    d.logger.Info("No explicit network type specified, defaulting to EVM",
+        zap.String("network", networkName))
+    d.Networks[networkName].Type = "evm"
 }
 ```
 
-#### 2. Graceful Degradation
+### Best Practices for Handler Development
 
-```go
-// ✅ Good: Provide fallback behavior when features aren't available
-func (h *YourHandler) Initialize(config *NetworkConfig) error {
-    // Try to use advanced features if available
-    if apiVersion := getNetworkConfigStringField(config, "APIVersion"); apiVersion != "" {
-        h.apiVersion = apiVersion
-        h.logger.Info("Using advanced API version", zap.String("version", apiVersion))
-    } else {
-        h.apiVersion = "v1" // fallback to basic version
-        h.logger.Info("Using basic API version (advanced features unavailable)")
-    }
+1. **Handler Independence**: Handlers should be self-contained and not rely on external struct versions
+2. **Clear Interfaces**: Use the `NetworkHandler` interface methods without depending on registry-specific fields
+3. **Explicit Configuration**: Always specify network type explicitly in Caddyfile to avoid relying on defaults
 
-    return nil
-}
-```
+### Note on External Dependencies
 
-#### 3. Version Detection
-
-```go
-// Create a helper to detect struct version capabilities
-func (h *YourHandler) detectConfigVersion(config *NetworkConfig) string {
-    if config == nil {
-        return "unknown"
-    }
-
-    v := reflect.ValueOf(config).Elem()
-    
-    // Check for presence of newer fields
-    if v.FieldByName("ArchiveEnabled").IsValid() && 
-       v.FieldByName("ChainId").IsValid() {
-        return "v2"
-    }
-    
-    if v.FieldByName("HealthcheckMethodBit").IsValid() {
-        return "v1"
-    }
-
-    return "legacy"
-}
-
-func (h *YourHandler) Initialize(config *NetworkConfig) error {
-    version := h.detectConfigVersion(config)
-    h.logger.Info("Detected config version", zap.String("version", version))
-
-    switch version {
-    case "v2":
-        return h.initializeV2(config)
-    case "v1":
-        return h.initializeV1(config)
-    default:
-        return h.initializeLegacy(config)
-    }
-}
-```
-
-### Testing Backward Compatibility
-
-#### 1. Test Multiple Struct Versions
-
-```go
-func TestYourHandler_BackwardCompatibility(t *testing.T) {
-    tests := []struct {
-        name         string
-        createConfig func() *NetworkConfig
-        expectError  bool
-    }{
-        {
-            name: "new config with all fields",
-            createConfig: func() *NetworkConfig {
-                return &NetworkConfig{
-                    HealthcheckMethodBit: 1,
-                    // Set newer fields using reflection to simulate newer version
-                }
-            },
-            expectError: false,
-        },
-        {
-            name: "legacy config missing newer fields",
-            createConfig: func() *NetworkConfig {
-                return &NetworkConfig{
-                    HealthcheckMethodBit: 1,
-                    // Deliberately omit newer fields to simulate older version
-                }
-            },
-            expectError: false,
-        },
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            handler := NewYourHandler(tt.createConfig())
-            err := handler.Initialize(tt.createConfig())
-            
-            if tt.expectError {
-                assert.Error(t, err)
-            } else {
-                assert.NoError(t, err)
-            }
-        })
-    }
-}
-```
-
-#### 2. Test Field Access Safety
-
-```go
-func TestSafeFieldAccess(t *testing.T) {
-    tests := []struct {
-        name      string
-        config    *NetworkConfig
-        fieldName string
-        expected  string
-    }{
-        {
-            name:      "existing field",
-            config:    &NetworkConfig{/* with ChainId field */},
-            fieldName: "ChainId",
-            expected:  "test-chain",
-        },
-        {
-            name:      "missing field",
-            config:    &NetworkConfig{/* without newer fields */},
-            fieldName: "NonExistentField",
-            expected:  "",
-        },
-        {
-            name:      "nil config",
-            config:    nil,
-            fieldName: "ChainId",
-            expected:  "",
-        },
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            result := getNetworkConfigStringField(tt.config, tt.fieldName)
-            assert.Equal(t, tt.expected, result)
-        })
-    }
-}
-```
-
-### Dependency Version Management
-
-#### 1. Go Module Best Practices
-
-```go
-// go.mod - Use replace directives for local development
-module github.com/your-org/your-project
-
-go 1.21
-
-require (
-    github.com/external/dependency v1.2.3
-)
-
-// Use replace for local development
-replace github.com/external/dependency => ./upstream/external/dependency
-```
-
-#### 2. CI/CD Considerations
-
-For continuous integration, ensure your build process:
-
-1. **Tests Compatibility**: Run tests against both local and remote dependencies
-2. **Version Pinning**: Use specific commit hashes rather than version ranges
-3. **Fallback Support**: Ensure code gracefully handles missing features
-
-```yaml
-# GitHub Actions example
-- name: Test with remote dependencies
-  run: |
-    # Temporarily disable replace directive for CI builds
-    sed -i 's/^replace /# replace /' go.mod
-    go mod tidy
-    go test ./...
-    
-- name: Test with local dependencies  
-  run: |
-    # Restore replace directive for local testing
-    sed -i 's/^# replace /replace /' go.mod
-    go mod tidy
-    go test ./...
-```
+The reflection-based field access is primarily used for DIN Registry integration and should not be needed for typical handler development. Handlers receive configuration through the standardized `NetworkConfig` struct passed to their `Initialize` method.
 
 ## Real-World Examples
 
@@ -1299,12 +1015,12 @@ func TestYourHandler_GetLatestBlock(t *testing.T) {
 **Solution**: Implement backward compatibility using reflection-based field access:
 
 ```go
-// ❌ Breaks with version mismatches
+// X Breaks with version mismatches
 if regNetwork.NetworkConfig.ChainId != "" {
     network.ChainId = regNetwork.NetworkConfig.ChainId
 }
 
-// ✅ Safe with all versions
+// Safe with all versions
 if chainId := getNetworkConfigStringField(regNetwork.NetworkConfig, "ChainId"); chainId != "" {
     network.ChainId = chainId
 }

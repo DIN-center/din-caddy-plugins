@@ -36,7 +36,3 @@
             run: |
               go test -count=1 ./...
     
-          # TODO: Uncomment this block to enforce minimum coverage, not enough tests yet
-          # - name: Package Low Coverage
-          #   if: ${{ env.PER_COVER < env.MIN_COVER }}
-          #   run: exit(1)

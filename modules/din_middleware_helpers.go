@@ -136,11 +136,9 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	// Step 2: Create a new network
-	// Detect network type from network name for backward compatibility
-	networkType := d.detectNetworkType(regNetwork.ProxyName)
-
-	network, err := NewNetwork(regNetwork.ProxyName, networkType, d.Env, d.CaddyPort)
+	// Step 2: Create a new network without type - will be set via Caddyfile configuration
+	// Registry networks must have explicit 'type' configuration in Caddyfile like all other networks
+	network, err := NewNetwork(regNetwork.ProxyName, "", d.Env, d.CaddyPort)
 	if err != nil {
 		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
 	}

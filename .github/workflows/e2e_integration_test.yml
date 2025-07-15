@@ -73,49 +73,11 @@ jobs:
           path: ./caddy-din
           retention-days: 1
 
-  # Second job: Unit Tests for Network Handlers
-  unit-tests:
-    name: Network Handler Unit Tests
-    runs-on: ubuntu-latest
-    needs: build-validation
-    if: needs.build-validation.outputs.build-success == 'true'
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          
-      - name: Authenticate with GitHub
-        env:
-          TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
-          
-      - name: Clone Dependencies
-        env:
-          TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git clone https://github.com/DIN-center/din-sc.git
-          
-      - name: Run Network Handler Tests
-        run: |
-          echo "🧪 Running network handler unit tests..."
-          go test -v -count=1 ./lib/network/...
-          
-      - name: Run Module Tests  
-        run: |
-          echo "🧪 Running module unit tests..."
-          go test -v -count=1 ./modules/...
-
-  # Third job: E2E Integration Test
+  # Second job: E2E Integration Test
   e2e-integration:
     name: E2E Handler Registry Test
     runs-on: ubuntu-latest
-    needs: [build-validation, unit-tests]
+    needs: build-validation
     if: needs.build-validation.outputs.build-success == 'true'
     
     strategy:
@@ -251,7 +213,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [build-validation, unit-tests, e2e-integration]
+    needs: [build-validation, e2e-integration]
     if: always()
     
     steps:
@@ -293,7 +255,7 @@ jobs:
           
       - name: Run Performance Benchmarks
         run: |
-          echo "⚡ Running performance benchmarks for handler registry..."
+          echo "* Running performance benchmarks for handler registry..."
           go test -bench=. -benchmem ./lib/network/... > benchmark-results.txt
           
           echo "Benchmark Results:"

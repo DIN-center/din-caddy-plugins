@@ -369,7 +369,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 						}
 					}
 					chain_id eip155:0x1
-					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -397,7 +396,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 2
 						}
 					}
-					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -411,7 +409,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 			caddyfile: `networks {
 				eth {
 					methods methods eth_blockNumber eth_getBlockByNumber
-					healthcheck_method eth_blockNumber
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10
@@ -433,7 +430,6 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 1
 						}
 					}
-					healthcheck_method GET
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10

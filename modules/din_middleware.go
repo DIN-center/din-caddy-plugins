@@ -159,26 +159,58 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	d.handlerRegistry = networklib.DefaultRegistry
 	networklib.RegisterBuiltinHandlers()
 
-	for networkName, network := range d.Networks {
+	// CRITICAL FIX: Reinitialize handlers after JSON deserialization
+	// The handler field is not JSON-serialized, so we need to recreate handlers based on the Type field
+	for networkName, networkObj := range d.Networks {
+		if networkObj.Type != "" {
+
+			// Configure the handler
+			config := &networklib.NetworkConfig{
+				Name:           networkName,
+				Type:           networkObj.Type,
+				ChainID:        networkObj.ChainId,
+				HealthEndpoint: networkObj.HCEndpoint,
+				MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
+				RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
+				Custom:         make(map[string]interface{}),
+			}
+
+			handler, err := d.handlerRegistry.GetHandler(networkObj.Type, config)
+			if err != nil {
+				return fmt.Errorf("failed to get handler for network '%s' type '%s': %w", networkName, networkObj.Type, err)
+			}
+
+			// Update the network's handler
+			networkObj.UpdateHandler(handler)
+		}
+	}
+
+	for networkName := range d.Networks {
+		// CRITICAL FIX: network is already a pointer from the map, but range gives us a copy
+		// We need to access the network directly from the map to ensure persistence
+		networkObj := d.Networks[networkName]
+
 		// Initialize the HTTP client for each network and provider
-		httpClient := dinHttp.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
+		httpClient := dinHttp.NewHTTPClient(time.Duration(networkObj.HCTimeout) * time.Second)
 		d.logger.Debug("Registered network", zap.String("name", networkName))
-		network.HttpClient = httpClient
-		network.logger = loggerClient
-		network.PrometheusClient = promClient
-		network.machineID = d.machineID
+		networkObj.HttpClient = httpClient
+		networkObj.logger = loggerClient
+		networkObj.PrometheusClient = promClient
+		networkObj.machineID = d.machineID
+
+		// Add comprehensive handler logging
 
 		// Initialize the provider's upstream, path, and HTTP client
-		for _, provider := range network.Providers {
+		for _, provider := range networkObj.Providers {
 			err := d.initializeProvider(provider, httpClient, loggerClient)
 			if err != nil {
 				return fmt.Errorf("error initializing provider: %v", err)
 			}
 		}
-		if network.MethodFilter != nil {
-			for method, _ := range network.MethodFilter.FilteredMethods {
+		if networkObj.MethodFilter != nil {
+			for method, _ := range networkObj.MethodFilter.FilteredMethods {
 				match := false
-				for _, provider := range network.Providers {
+				for _, provider := range networkObj.Providers {
 					if _, ok := provider.Methods[method]; ok {
 						match = true
 						break
@@ -216,28 +248,6 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	}
 
 	return nil
-}
-
-// detectNetworkType detects the network type from the network name for backward compatibility
-func (d *DinMiddleware) detectNetworkType(networkName string) string {
-	networkNameLower := strings.ToLower(networkName)
-
-	// Check for specific network types based on naming patterns
-	if strings.Contains(networkNameLower, "starknet") {
-		return "starknet"
-	}
-	if strings.Contains(networkNameLower, "solana") {
-		return "solana"
-	}
-	if strings.Contains(networkNameLower, "bitcoin") || strings.Contains(networkNameLower, "btc") {
-		return "bitcoin"
-	}
-	if strings.Contains(networkNameLower, "beacon") || strings.Contains(networkNameLower, "consensus") {
-		return "beacon_chain"
-	}
-
-	// Default to EVM for backward compatibility
-	return "evm"
 }
 
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
@@ -623,10 +633,8 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				}
 				// Create a new network if it doesn't exist
 				if _, exists := d.Networks[networkName]; !exists {
-					// ✅ Detect network type from network name for backward compatibility
-					networkType := d.detectNetworkType(networkName)
-
-					newNetwork, err := NewNetwork(networkName, networkType, d.Env, caddyPort)
+					// Create network without type - will be set explicitly via 'type' field
+					newNetwork, err := NewNetwork(networkName, "", d.Env, caddyPort)
 					if err != nil {
 						return fmt.Errorf("failed to create network '%s': %w", networkName, err)
 					}
@@ -644,7 +652,29 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						}
 					case "type":
 						dispenser.Next()
-						d.Networks[networkName].Type = dispenser.Val()
+						explicitType := dispenser.Val()
+						d.Networks[networkName].Type = explicitType
+
+						// Reinitialize handler when type is explicitly set
+						config := &networklib.NetworkConfig{
+							Name:           networkName,
+							Type:           explicitType,
+							ChainID:        d.Networks[networkName].ChainId,
+							HealthEndpoint: d.Networks[networkName].HCEndpoint,
+							MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
+							RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
+							Custom:         make(map[string]interface{}),
+						}
+
+						handler, err := d.handlerRegistry.GetHandler(explicitType, config)
+						if err != nil {
+							fmt.Printf(" Failed to get handler for explicit network type '%s': %v\n", explicitType, err)
+							return fmt.Errorf("failed to get handler for explicit network type '%s': %w", explicitType, err)
+						}
+
+						// Update the handler reference in the network
+
+						d.Networks[networkName].UpdateHandler(handler)
 					case "routed_methods":
 						methods := make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
@@ -767,17 +797,9 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							providerObj.host = d.ensureUniqueProviderHost(networkName, parsedUrl.Host)
 							d.Networks[networkName].Providers[providerObj.host] = providerObj
 						}
-					case "healthcheck_method":
-						dispenser.Next()
-						// ⚠️ DEPRECATED: healthcheck_method is now provided by network handlers
-						d.logger.Warn("healthcheck_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "healthcheck_endpoint":
 						dispenser.Next()
 						d.Networks[networkName].HCEndpoint = dispenser.Val()
-					case "chainid_method":
-						dispenser.Next()
-						// ⚠️ DEPRECATED: chainid_method is now provided by network handlers
-						d.logger.Warn("chainid_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "chain_id":
 						dispenser.Next()
 						chainId := dispenser.Val()
@@ -785,14 +807,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
 						}
 						d.Networks[networkName].ChainId = chainId
-					case "call_contract_method":
-						dispenser.Next()
-						// ⚠️ DEPRECATED: call_contract_method is now provided by network handlers
-						d.logger.Warn("call_contract_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
-					case "get_block_by_number_method":
-						dispenser.Next()
-						// ⚠️ DEPRECATED: get_block_by_number_method is now provided by network handlers
-						d.logger.Warn("get_block_by_number_method is deprecated and will be ignored. Method is now provided by network handlers.", zap.String("network", networkName), zap.String("deprecated_value", dispenser.Val()))
 					case "healthcheck_threshold":
 						dispenser.Next()
 						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
@@ -864,8 +878,35 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
 				}
+				// Validate that required fields are set
 				if d.Networks[networkName].ChainId == "" {
 					return fmt.Errorf("chain ID is not set for network %s", networkName)
+				}
+				if d.Networks[networkName].Type == "" {
+					// DEFAULT to EVM for unspecified network types (most common blockchain type)
+					d.logger.Info("No explicit network type specified, defaulting to EVM",
+						zap.String("network", networkName))
+					d.Networks[networkName].Type = "evm"
+
+					// Initialize EVM handler for the defaulted network
+					config := &networklib.NetworkConfig{
+						Name:           networkName,
+						Type:           "evm",
+						ChainID:        d.Networks[networkName].ChainId,
+						HealthEndpoint: d.Networks[networkName].HCEndpoint,
+						MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
+						RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
+						Custom:         make(map[string]interface{}),
+					}
+
+					handler, err := d.handlerRegistry.GetHandler("evm", config)
+					if err != nil {
+						return fmt.Errorf("failed to get default EVM handler for network '%s': %w", networkName, err)
+					}
+
+					// Update the network's handler
+					d.Networks[networkName].UpdateHandler(handler)
+
 				}
 			}
 		case "din_registry":
