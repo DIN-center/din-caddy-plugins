@@ -16,6 +16,10 @@ type IDinClient interface {
 	// Returns a slice of Network pointers, or an error if the operation fails.
 	GetAllNetworks() ([]*Network, error)
 
+	// GetNetworkByAddress retrieves a specific network by its contract address.
+	// Returns a Network pointer if found, or an error if the network doesn't exist or the operation fails.
+	GetNetworkByAddress(networkAddress common.Address) (*Network, error)
+
 	// GetProviderByAddress retrieves a specific provider by its contract address.
 	// Returns a Provider pointer if found, or an error if the provider doesn't exist or the operation fails.
 	GetProviderByAddress(providerAddress common.Address) (*Provider, error)
@@ -23,6 +27,10 @@ type IDinClient interface {
 	// GetNetworkByName retrieves a specific network by its URI.
 	// Returns a Network pointer if found, or an error if the network doesn't exist or the operation fails.
 	GetNetworkByName(networkURI string) (*Network, error)
+
+	// GetNetworkServiceByAddress retrieves a specific network service by its contract address.
+	// Returns a NetworkService pointer if found, or an error if the network service doesn't exist or the operation fails.
+	GetNetworkServiceByAddress(networkServiceAddress common.Address) (*NetworkService, error)
 
 	// SetNetworkStatus updates the status of a network in the registry.
 	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
@@ -51,6 +59,14 @@ type IDinClient interface {
 	// SetNetworkConfig updates the operational configuration of a network in the registry.
 	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
 	SetNetworkConfig(authTransactor *bind.TransactOpts, networkURI string, newConfig NetworkOperationsConfig) (tx *types.Transaction, err error)
+
+	// RemoveNetworkService removes a network service from the provider's list of network services.
+	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
+	RemoveNetworkService(auth *bind.TransactOpts, providerAddr common.Address, networkServiceAddr common.Address) (tx *types.Transaction, err error)
+
+	// SetNetworkServiceStatus updates the status of a network service in the registry.
+	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
+	SetNetworkServiceStatus(auth *bind.TransactOpts, networkServiceAddr common.Address, networkServiceStatus NetworkServiceStatus) (tx *types.Transaction, err error)
 
 	// GetEthereumRpcClient returns the Ethereum RPC client.
 	GetEthereumRpcClient() *ethclient.Client

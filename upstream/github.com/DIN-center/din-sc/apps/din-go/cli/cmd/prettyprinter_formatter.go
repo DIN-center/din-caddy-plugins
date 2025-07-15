@@ -242,6 +242,7 @@ func (h *PrettyPrinterFormatter) fillListWithProviders(providers []*din.Provider
 				l.Indent()
 				l.AppendItem("URL: " + networkService.Url)
 				l.AppendItem("Status: " + networkService.Status)
+				l.AppendItem("Contract Address: " + networkService.Address)
 				locations := make([]string, len(networkService.Locations))
 				for i, location := range networkService.Locations {
 					locations[i] = location.String()

@@ -8,7 +8,7 @@ import (
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/assert"
-	gomock "go.uber.org/mock/gomock"
+	"go.uber.org/mock/gomock"
 )
 
 func TestNetworkCommand(t *testing.T) {

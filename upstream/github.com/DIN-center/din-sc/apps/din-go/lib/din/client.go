@@ -57,7 +57,7 @@ func (d *DinClient) GetRegistryData() (*DinRegistryData, error) {
 
 	for _, networkAddress := range networkAddresses {
 
-		network, err := d.getNetworkFromAddress(networkAddress)
+		network, err := d.GetNetworkByAddress(networkAddress)
 		if err != nil {
 			return nil, errors.Wrap(err, fmt.Sprintf("failed fetching network from address: %s", networkAddress.Hex()))
 		}
@@ -84,7 +84,7 @@ func (d *DinClient) GetAllNetworks() ([]*Network, error) {
 	return networks, nil
 }
 
-func (d *DinClient) getNetworkFromAddress(networkAddress common.Address) (*Network, error) {
+func (d *DinClient) GetNetworkByAddress(networkAddress common.Address) (*Network, error) {
 	networkHandler, err := scm.NewNetworkHandler(networkAddress, d.rpcConnection)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to NewNetworkHandler")
@@ -244,7 +244,7 @@ func (d *DinClient) GetProviderByAddress(providerAddress common.Address) (*Provi
 	networkServices := make(map[string]*NetworkService)
 	for _, networkServiceAddress := range networkServiceAddresses {
 
-		networkServiceData, err := d.getNetworkServiceFromAddress(networkServiceAddress)
+		networkServiceData, err := d.GetNetworkServiceByAddress(networkServiceAddress)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed fetching network service from address")
 		}
@@ -267,7 +267,7 @@ func (d *DinClient) GetProviderByAddress(providerAddress common.Address) (*Provi
 	return newProvider, nil
 }
 
-func (d *DinClient) getNetworkServiceFromAddress(networkServiceAddress common.Address) (*NetworkService, error) {
+func (d *DinClient) GetNetworkServiceByAddress(networkServiceAddress common.Address) (*NetworkService, error) {
 	networkServiceHandler, err := scm.NewNetworkServiceHandler(networkServiceAddress, d.rpcConnection)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to NewNetworkServiceHandler")
@@ -312,10 +312,30 @@ func (d *DinClient) getNetworkServiceFromAddress(networkServiceAddress common.Ad
 		return nil, errors.Wrap(err, "failed call to NewNetworkHandler")
 	}
 
+	// Retrieve the network name from the network address to enrich the network service
 	networkName, err := networkHandler.GetName(nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to GetNetworkMeta")
 	}
+
+	// Retrieve the methods for the network so we can filter the network service methods
+	methodsByName, _, err := d.getNetworkMethodsMapping(networkName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to getNetworkMethodsMapping")
+	}
+
+	// Only methods that are available for the network service (but we have only the string names)
+	serviceMethodNames, err := networkServiceHandler.GetAllMethodNames(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to GetMethods")
+	}
+
+	//Create a map of only the methods that are available for the network service
+	serviceMethods := make(map[string]*Method)
+	for _, methodName := range serviceMethodNames {
+		serviceMethods[methodName] = methodsByName[methodName]
+	}
+
 	networkServiceData := &NetworkService{
 		Address:        networkServiceAddress.String(),
 		Url:            url,
@@ -324,6 +344,7 @@ func (d *DinClient) getNetworkServiceFromAddress(networkServiceAddress common.Ad
 		Locations:      locationsName,
 		NetworkAddress: networkAddress.String(),
 		NetworkName:    networkName,
+		Methods:        serviceMethods,
 	}
 	return networkServiceData, nil
 }
@@ -334,7 +355,7 @@ func (d *DinClient) GetNetworkByName(networkName string) (*Network, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to get network from name: %s", networkName))
 	}
-	network, err := d.getNetworkFromAddress(networkAddress)
+	network, err := d.GetNetworkByAddress(networkAddress)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to getNetworkFromAddress")
 	}
@@ -504,6 +525,51 @@ func (d *DinClient) SetNetworkConfig(authTransactor *bind.TransactOpts, networkU
 	tx, err = d.handler.SetNetworkOperationsConfig(authTransactor, networkURI, newConfigSCM)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to SetNetworkOperationsConfig")
+	}
+
+	return tx, nil
+}
+
+func (d *DinClient) RemoveNetworkService(authTransactor *bind.TransactOpts, providerAddr common.Address, networkServiceAddr common.Address) (tx *types.Transaction, err error) {
+	// The removal of the network service is done by the provider, and using the network address
+	// This is a current limitation of DIN Registry model that accepts only a single service per network
+	networkServiceHandler, err := scm.NewNetworkServiceHandler(networkServiceAddr, d.rpcConnection)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("failed call to NewNetworkServiceHandler for address: %s", networkServiceAddr.String()))
+	}
+	// Retrieve the network address from the network service address
+	networkAddress, err := networkServiceHandler.Inetwork(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to GetNetworkAddress")
+	}
+
+	// Ask the provider to remove the network service by using the network address
+	providerHandler, err := scm.NewProviderHandler(providerAddr, d.rpcConnection)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("failed call to NewProviderHandler for address: %s", providerAddr.String()))
+	}
+
+	tx, err = providerHandler.RemoveNetworkService(authTransactor, networkAddress)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to RemoveNetworkService")
+	}
+	return tx, nil
+}
+
+func (d *DinClient) SetNetworkServiceStatus(authTransactor *bind.TransactOpts, networkServiceAddr common.Address, networkServiceStatus NetworkServiceStatus) (tx *types.Transaction, err error) {
+	networkServiceStatusCode, err := networkServiceStatus.ToCode()
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to convert network service status: %s to code", networkServiceStatus))
+	}
+
+	networkServiceHandler, err := scm.NewNetworkServiceHandler(networkServiceAddr, d.rpcConnection)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("failed call to NewNetworkServiceHandler for address: %s", networkServiceAddr.String()))
+	}
+
+	tx, err = networkServiceHandler.SetStatus(authTransactor, networkServiceStatusCode)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed call to SetNetworkServiceStatus")
 	}
 
 	return tx, nil

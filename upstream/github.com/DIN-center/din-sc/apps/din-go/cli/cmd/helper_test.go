@@ -7,7 +7,7 @@ import (
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/stretchr/testify/assert"
-	gomock "go.uber.org/mock/gomock"
+	"go.uber.org/mock/gomock"
 )
 
 func TestHelperFunctions(t *testing.T) {

@@ -163,6 +163,34 @@ din-cli provider remove --contract-addr 0x8E8A3c0547c9A17F051D2E5CAf7E0e21C0719E
 
 See more details in [Writing to the DIN Registry](#writing-to-the-din-registry) section on how to set the credentials required to modify the DIN Registry.
 
+### Remove Service from a Provider
+
+**Required Flags:**
+- `--contract-addr`: Provider contract address
+- `--service-contract-addr`: Network service contract address to remove
+- Either the flag `--keystore-path` or environment variable `KEYSTORE_PATH` must be set
+
+**Example:**
+```bash
+din-cli provider remove-service --contract-addr 0x8E8A3c0547c9A17F051D2E5CAf7E0e21C0719E1C --service-contract-addr 0x1234567890123456789012345678901234567890
+```
+
+See more details in [Writing to the DIN Registry](#writing-to-the-din-registry) section on how to set the credentials required to modify the DIN Registry.
+
+### Set Service Status
+
+**Required Flags:**
+- `--service-contract-addr`: Network service contract address to set status for
+- `--status`: Network service status (None, Onboarding, Active, Maintenance, Retired)
+- Either the flag `--keystore-path` or environment variable `KEYSTORE_PATH` must be set
+
+**Example:**
+```bash
+din-cli provider set-service-status --service-contract-addr 0x1234567890123456789012345678901234567890 --status Active
+```
+
+See more details in [Writing to the DIN Registry](#writing-to-the-din-registry) section on how to set the credentials required to modify the DIN Registry.
+
 ## Writing to the DIN Registry
 
 All write operations to the DIN Registry require authentication using a keystore file. The CLI will prompt for the keystore password when performing write operations.
@@ -180,6 +208,8 @@ The following commands modify the registry and require authentication:
 - `network set-config`: Update network configuration
 - `provider set-status`: Update provider status
 - `provider remove`: Remove a provider from the registry
+- `provider remove-service`: Remove a network service from a provider
+- `provider set-service-status`: Update network service status
 
 ## DevOps Support
 

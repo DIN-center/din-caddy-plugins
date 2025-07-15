@@ -104,17 +104,87 @@ var setProviderStatusCmd = &cobra.Command{
 	},
 }
 
+var removeNetworkServiceCmd = &cobra.Command{
+	Use:   "remove-service",
+	Short: "Remove a service from a provider",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Check first if provider exists
+		providerAddr := common.HexToAddress(providerAddr)
+		_, err := dinClient.GetProviderByAddress(providerAddr)
+		if err != nil {
+			log.Fatal("no provider found for this address: ", providerAddr.String())
+		}
+		// Check if network service exists
+		networkServiceAddr := common.HexToAddress(networkServiceAddr)
+		_, err = dinClient.GetNetworkServiceByAddress(networkServiceAddr)
+		if err != nil {
+			log.Fatal("no network service found for this address: ", networkServiceAddr.String())
+		}
+		// Read keystore path and password
+		keystorePath, err := readKeystorePath()
+		if err != nil {
+			log.Fatal(err)
+		}
+		password, err := readKeystorePassword()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		tx, err := doRemoveNetworkService(keystorePath, password, providerAddr, networkServiceAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Wait for transaction confirmation and display transaction details
+		err = handleTxConfirmation(tx, dinClient)
+		if err != nil {
+			log.Fatal(err)
+		}
+	},
+}
+
+var setNetworkServiceStatusCmd = &cobra.Command{
+	Use:   "set-service-status",
+	Short: "Set the status of a service",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Check if network service exists
+		networkServiceAddr := common.HexToAddress(networkServiceAddr)
+		_, err := dinClient.GetNetworkServiceByAddress(networkServiceAddr)
+		if err != nil {
+			log.Fatal("no service found for this address: ", networkServiceAddr.String())
+		}
+		// Read keystore path and password
+		keystorePath, err := readKeystorePath()
+		if err != nil {
+			log.Fatal(err)
+		}
+		password, err := readKeystorePassword()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		tx, err := doSetNetworkServiceStatus(keystorePath, password, networkServiceAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Wait for transaction confirmation and display transaction details
+		err = handleTxConfirmation(tx, dinClient)
+		if err != nil {
+			log.Fatal(err)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(providersCmd)
-	providersCmd.AddCommand(listProvidersCmd, removeProviderCmd, setProviderStatusCmd)
+	providersCmd.AddCommand(listProvidersCmd, removeProviderCmd, setProviderStatusCmd, removeNetworkServiceCmd, setNetworkServiceStatusCmd)
 	listProvidersCmd.Flags().StringVar(&networkURI, "network-uri", "", "Network URI")
 	listProvidersCmd.Flags().StringVar(&providerName, "name", "", "Provider name")
 
-	removeProviderCmd.Flags().StringVar(&providerAddr, "contract-addr", "", "Provider contract address")
+	removeProviderCmd.Flags().StringVar(&providerAddr, "contract-addr", "", "Provider contract address to remove")
 	removeProviderCmd.MarkFlagRequired("contract-addr")
 
 	// Define flags for the set provider status command
-	setProviderStatusCmd.Flags().StringVar(&providerAddr, "contract-addr", "", "Provider contract address")
+	setProviderStatusCmd.Flags().StringVar(&providerAddr, "contract-addr", "", "Provider contract address to set status for")
 	setProviderStatusCmd.MarkFlagRequired("contract-addr")
 	setProviderStatusCmd.Flags().Var(&providerStatus, "status", "Provider status ("+strings.Join(func() []string {
 		statuses := make([]string, len(din.ProviderStatusAll))
@@ -125,41 +195,55 @@ func init() {
 	}(), ", ")+")")
 	setProviderStatusCmd.MarkFlagRequired("status")
 	setProviderStatusCmd.MarkFlagRequired("contract-addr")
+
+	//Define flags for remove network service command
+	removeNetworkServiceCmd.Flags().StringVar(&providerAddr, "contract-addr", "", "Provider contract address to remove service from")
+	removeNetworkServiceCmd.Flags().StringVar(&networkServiceAddr, "service-contract-addr", "", "Service contract address to remove")
+	removeNetworkServiceCmd.MarkFlagRequired("contract-addr")
+	removeNetworkServiceCmd.MarkFlagRequired("service-contract-addr")
+
+	//Define flags for set network service status command
+	setNetworkServiceStatusCmd.Flags().StringVar(&networkServiceAddr, "service-contract-addr", "", "Service contract address to set status for")
+	setNetworkServiceStatusCmd.Flags().Var(&networkServiceStatus, "status", "Service status ("+strings.Join(func() []string {
+		statuses := make([]string, len(din.NetworkServiceStatusAll))
+		for i, status := range din.NetworkServiceStatusAll {
+			statuses[i] = status.String()
+		}
+		return statuses
+	}(), ", ")+")")
+	setNetworkServiceStatusCmd.MarkFlagRequired("status")
+	setNetworkServiceStatusCmd.MarkFlagRequired("service-contract-addr")
 }
 
 // internal functions used in command execution
 func doListProviders() error {
+	var providers []*din.Provider
+	var err error
+
+	// Get providers based on network URI or all providers
 	if networkURI != "" {
-		providers, err := dinClient.GetAllProvidersByNetwork(networkURI)
+		providers, err = dinClient.GetAllProvidersByNetwork(networkURI)
 		if err != nil {
 			return fmt.Errorf("there is no provider registered for this network")
 		}
-		if providerName != "" {
-			filteredProviders := filterProviders(providers, providerName)
-			outputFormatter.FormatProviders(filteredProviders, FormatOptions{
-				Verbose: true,
-			})
-		} else {
-			outputFormatter.FormatProviders(providers, FormatOptions{
-				Verbose: false,
-			})
-		}
 	} else {
-		providers, err := dinClient.GetAllProviders()
+		providers, err = dinClient.GetAllProviders()
 		if err != nil {
 			return err
 		}
-		if providerName != "" {
-			filteredProviders := filterProviders(providers, providerName)
-			outputFormatter.FormatProviders(filteredProviders, FormatOptions{
-				Verbose: true,
-			})
-		} else {
-			outputFormatter.FormatProviders(providers, FormatOptions{
-				Verbose: false,
-			})
-		}
 	}
+
+	// Filter by provider name if specified
+	if providerName != "" {
+		providers = filterProviders(providers, providerName)
+	}
+
+	// Format output with appropriate verbosity
+	verbose := providerName != ""
+	outputFormatter.FormatProviders(providers, FormatOptions{
+		Verbose: verbose,
+	})
+
 	return nil
 }
 
@@ -187,6 +271,32 @@ func doRemoveProvider(keystorePath string, keystorePassword string, providerAddr
 	}
 
 	tx, err := dinClient.RemoveProvider(auth, providerAddr)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+func doRemoveNetworkService(keystorePath string, keystorePassword string, providerAddr common.Address, networkServiceAddr common.Address) (*types.Transaction, error) {
+	auth, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := dinClient.RemoveNetworkService(auth, providerAddr, networkServiceAddr)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+func doSetNetworkServiceStatus(keystorePath string, keystorePassword string, networkServiceAddr common.Address) (*types.Transaction, error) {
+	auth, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := dinClient.SetNetworkServiceStatus(auth, networkServiceAddr, networkServiceStatus)
 	if err != nil {
 		return nil, err
 	}

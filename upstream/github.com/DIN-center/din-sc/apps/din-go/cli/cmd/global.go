@@ -13,6 +13,8 @@ var (
 	networkStatus             din.NetworkStatus
 	networkListFull           bool
 	networkConfigJsonAsString string
+	networkServiceAddr        string
+	networkServiceStatus      din.NetworkServiceStatus
 )
 
 // Global flags

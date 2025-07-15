@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
-	gomock "go.uber.org/mock/gomock"
+	"go.uber.org/mock/gomock"
 )
 
 func TestProviderCommand(t *testing.T) {
@@ -24,6 +24,8 @@ func TestProviderCommand(t *testing.T) {
 		assert.Contains(t, commandNames, "list")
 		assert.Contains(t, commandNames, "remove")
 		assert.Contains(t, commandNames, "set-status")
+		assert.Contains(t, commandNames, "set-service-status")
+		assert.Contains(t, commandNames, "remove-service")
 	})
 }
 
@@ -326,6 +328,175 @@ func TestRemoveProviderCommand(t *testing.T) {
 		// Validate the result
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "provider not found")
+		assert.Nil(t, tx)
+	})
+}
+
+func TestRemoveNetworkServiceCommand(t *testing.T) {
+	// Setup mock
+	mockCtrl := gomock.NewController(t)
+	mockDinClient := din.NewMockIDinClient(mockCtrl)
+
+	// set CLI states
+	dinClient = mockDinClient
+
+	// Helper function to reset global variables
+	resetRemoveServiceGlobalVariables := func() {
+		providerAddr = ""
+		networkServiceAddr = ""
+	}
+
+	t.Run("Success call, remove network service", func(t *testing.T) {
+		resetRemoveServiceGlobalVariables()
+
+		// set CLI values
+		providerAddr = "0x1234567890123456789012345678901234567890"
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+
+		// Mock transactor creation
+		mockTransactor := &bind.TransactOpts{}
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
+
+		// Mock RemoveNetworkService
+		expectedProviderAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().RemoveNetworkService(mockTransactor, expectedProviderAddr, expectedServiceAddr).Return(mockTx, nil).Times(1)
+
+		// Execute core function being tested
+		tx, err := doRemoveNetworkService("keystorePath", "test-password", expectedProviderAddr, expectedServiceAddr)
+
+		// Validate the result
+		assert.NoError(t, err)
+		assert.NotNil(t, tx)
+	})
+
+	t.Run("Failure call, transactor creation fails", func(t *testing.T) {
+		resetRemoveServiceGlobalVariables()
+
+		// set CLI values
+		providerAddr = "0x1234567890123456789012345678901234567890"
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+
+		// Mock transactor creation failure
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(nil, errors.New("keystore error")).Times(1)
+
+		// Execute core function being tested
+		expectedProviderAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		tx, err := doRemoveNetworkService("keystorePath", "test-password", expectedProviderAddr, expectedServiceAddr)
+
+		// Validate the result
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "keystore error")
+		assert.Nil(t, tx)
+	})
+
+	t.Run("Failure call, RemoveNetworkService fails", func(t *testing.T) {
+		resetRemoveServiceGlobalVariables()
+
+		// set CLI values
+		providerAddr = "0x1234567890123456789012345678901234567890"
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+
+		// Mock transactor creation
+		mockTransactor := &bind.TransactOpts{}
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
+
+		// Mock RemoveNetworkService failure
+		expectedProviderAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		mockDinClient.EXPECT().RemoveNetworkService(mockTransactor, expectedProviderAddr, expectedServiceAddr).Return(nil, errors.New("service not found")).Times(1)
+
+		// Execute core function being tested
+		tx, err := doRemoveNetworkService("keystorePath", "test-password", expectedProviderAddr, expectedServiceAddr)
+
+		// Validate the result
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "service not found")
+		assert.Nil(t, tx)
+	})
+}
+
+func TestSetNetworkServiceStatusCommand(t *testing.T) {
+	// Setup mock
+	mockCtrl := gomock.NewController(t)
+	mockDinClient := din.NewMockIDinClient(mockCtrl)
+
+	// set CLI states
+	dinClient = mockDinClient
+
+	// Helper function to reset global variables
+	resetSetServiceStatusGlobalVariables := func() {
+		networkServiceAddr = ""
+		networkServiceStatus = din.NetworkServiceStatusNone
+	}
+
+	t.Run("Success call, set network service status", func(t *testing.T) {
+		resetSetServiceStatusGlobalVariables()
+
+		// set CLI values
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+		networkServiceStatus = din.NetworkServiceStatusActive
+
+		// Mock transactor creation
+		mockTransactor := &bind.TransactOpts{}
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
+
+		// Mock SetNetworkServiceStatus
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().SetNetworkServiceStatus(mockTransactor, expectedServiceAddr, din.NetworkServiceStatusActive).Return(mockTx, nil).Times(1)
+
+		// Execute core function being tested
+		tx, err := doSetNetworkServiceStatus("keystorePath", "test-password", expectedServiceAddr)
+
+		// Validate the result
+		assert.NoError(t, err)
+		assert.NotNil(t, tx)
+	})
+
+	t.Run("Failure call, transactor creation fails", func(t *testing.T) {
+		resetSetServiceStatusGlobalVariables()
+
+		// set CLI values
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+		networkServiceStatus = din.NetworkServiceStatusActive
+
+		// Mock transactor creation failure
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(nil, errors.New("keystore error")).Times(1)
+
+		// Execute core function being tested
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		tx, err := doSetNetworkServiceStatus("keystorePath", "test-password", expectedServiceAddr)
+
+		// Validate the result
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "keystore error")
+		assert.Nil(t, tx)
+	})
+
+	t.Run("Failure call, SetNetworkServiceStatus fails", func(t *testing.T) {
+		resetSetServiceStatusGlobalVariables()
+
+		// set CLI values
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+		networkServiceStatus = din.NetworkServiceStatusActive
+
+		// Mock transactor creation
+		mockTransactor := &bind.TransactOpts{}
+		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
+
+		// Mock SetNetworkServiceStatus failure
+		expectedServiceAddr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		mockDinClient.EXPECT().SetNetworkServiceStatus(mockTransactor, expectedServiceAddr, din.NetworkServiceStatusActive).Return(nil, errors.New("status update failed")).Times(1)
+
+		// Execute core function being tested
+		tx, err := doSetNetworkServiceStatus("keystorePath", "test-password", expectedServiceAddr)
+
+		// Validate the result
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "status update failed")
 		assert.Nil(t, tx)
 	})
 }

@@ -117,6 +117,21 @@ func (mr *MockIDinClientMockRecorder) GetEthereumRpcClient() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEthereumRpcClient", reflect.TypeOf((*MockIDinClient)(nil).GetEthereumRpcClient))
 }
 
+// GetNetworkByAddress mocks base method.
+func (m *MockIDinClient) GetNetworkByAddress(networkAddress common.Address) (*Network, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNetworkByAddress", networkAddress)
+	ret0, _ := ret[0].(*Network)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNetworkByAddress indicates an expected call of GetNetworkByAddress.
+func (mr *MockIDinClientMockRecorder) GetNetworkByAddress(networkAddress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkByAddress", reflect.TypeOf((*MockIDinClient)(nil).GetNetworkByAddress), networkAddress)
+}
+
 // GetNetworkByName mocks base method.
 func (m *MockIDinClient) GetNetworkByName(networkURI string) (*Network, error) {
 	m.ctrl.T.Helper()
@@ -130,6 +145,21 @@ func (m *MockIDinClient) GetNetworkByName(networkURI string) (*Network, error) {
 func (mr *MockIDinClientMockRecorder) GetNetworkByName(networkURI any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkByName", reflect.TypeOf((*MockIDinClient)(nil).GetNetworkByName), networkURI)
+}
+
+// GetNetworkServiceByAddress mocks base method.
+func (m *MockIDinClient) GetNetworkServiceByAddress(networkServiceAddress common.Address) (*NetworkService, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNetworkServiceByAddress", networkServiceAddress)
+	ret0, _ := ret[0].(*NetworkService)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNetworkServiceByAddress indicates an expected call of GetNetworkServiceByAddress.
+func (mr *MockIDinClientMockRecorder) GetNetworkServiceByAddress(networkServiceAddress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkServiceByAddress", reflect.TypeOf((*MockIDinClient)(nil).GetNetworkServiceByAddress), networkServiceAddress)
 }
 
 // GetProviderByAddress mocks base method.
@@ -162,6 +192,21 @@ func (mr *MockIDinClientMockRecorder) GetRegistryData() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegistryData", reflect.TypeOf((*MockIDinClient)(nil).GetRegistryData))
 }
 
+// RemoveNetworkService mocks base method.
+func (m *MockIDinClient) RemoveNetworkService(auth *bind.TransactOpts, providerAddr, networkServiceAddr common.Address) (*types.Transaction, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveNetworkService", auth, providerAddr, networkServiceAddr)
+	ret0, _ := ret[0].(*types.Transaction)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RemoveNetworkService indicates an expected call of RemoveNetworkService.
+func (mr *MockIDinClientMockRecorder) RemoveNetworkService(auth, providerAddr, networkServiceAddr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveNetworkService", reflect.TypeOf((*MockIDinClient)(nil).RemoveNetworkService), auth, providerAddr, networkServiceAddr)
+}
+
 // RemoveProvider mocks base method.
 func (m *MockIDinClient) RemoveProvider(auth *bind.TransactOpts, providerAddr common.Address) (*types.Transaction, error) {
 	m.ctrl.T.Helper()
@@ -190,6 +235,21 @@ func (m *MockIDinClient) SetNetworkConfig(authTransactor *bind.TransactOpts, net
 func (mr *MockIDinClientMockRecorder) SetNetworkConfig(authTransactor, networkURI, newConfig any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNetworkConfig", reflect.TypeOf((*MockIDinClient)(nil).SetNetworkConfig), authTransactor, networkURI, newConfig)
+}
+
+// SetNetworkServiceStatus mocks base method.
+func (m *MockIDinClient) SetNetworkServiceStatus(auth *bind.TransactOpts, networkServiceAddr common.Address, networkServiceStatus NetworkServiceStatus) (*types.Transaction, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetNetworkServiceStatus", auth, networkServiceAddr, networkServiceStatus)
+	ret0, _ := ret[0].(*types.Transaction)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetNetworkServiceStatus indicates an expected call of SetNetworkServiceStatus.
+func (mr *MockIDinClientMockRecorder) SetNetworkServiceStatus(auth, networkServiceAddr, networkServiceStatus any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNetworkServiceStatus", reflect.TypeOf((*MockIDinClient)(nil).SetNetworkServiceStatus), auth, networkServiceAddr, networkServiceStatus)
 }
 
 // SetNetworkStatus mocks base method.
