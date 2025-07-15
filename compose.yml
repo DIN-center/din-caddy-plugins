@@ -111,6 +111,21 @@ services:
       prometheus:
         condition: service_started
 
+  anvil:
+    image: romangzz/anvil
+    container_name: anvil
+    restart: unless-stopped
+    environment:
+      ANVIL_IP_ADDR: 0.0.0.0
+      CHAIN_ID: 59144
+      BLOCK_TIME: 3
+      MNEMONIC: "test test test test test test test test test test test junk"
+    networks:
+      - din-network
+    ports:
+      - "8545:8545"
+  
+
 # Define named volumes for persistent storage
 volumes:
   prometheus_data:

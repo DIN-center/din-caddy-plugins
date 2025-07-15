@@ -32,6 +32,7 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) 
 
 	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
 	if latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
+		d.logger.Debug("Epoch reached, syncing from DIN Registry...", zap.Uint64("latest_linea_block_number", latestBlockNumber))
 		registryData, err := d.DingoClient.GetRegistryData()
 		if err != nil {
 			d.logger.Error("Failed to get data from registry", zap.Error(err))
@@ -76,6 +77,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				// Delete the network for now if it is not active
 				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
 				delete(d.Networks, regNetwork.ProxyName)
+				//TODO: it should also stop the healthcheck for the network
 				continue
 			}
 			// if active, update the existing network in place with the registry data
@@ -169,8 +171,8 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 				// if the provider exists in the copied network object,
 				// check if the network service is active, if not, don't update the provider data and remove the provider from the copied network object
 				if networkService.Status != din.NetworkServiceStatusActive {
+					d.logger.Debug("Removing network service because it is not active", zap.String("network_service", networkService.Url), zap.String("status", networkService.Status.String()))
 					delete(newNetwork.Providers, newProvider.host)
-					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
 				}
 				// if the provider auth url is different, then update the provider auth url on the middleware object
