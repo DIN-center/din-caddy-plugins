@@ -2,9 +2,11 @@ package http
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -15,6 +17,24 @@ import (
 
 type HTTPClient struct {
 	httpClient *http.Client
+}
+
+// decompressGzipIfNecessary decompresses gzip content if the Content-Encoding header indicates gzip
+func decompressGzipIfNecessary(resp *http.Response, body []byte) ([]byte, error) {
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		gzipReader, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return body, err // Return original body if decompression fails
+		}
+		defer gzipReader.Close()
+
+		decompressed, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return body, err // Return original body if decompression fails
+		}
+		return decompressed, nil
+	}
+	return body, nil
 }
 
 func NewHTTPClient(timeout time.Duration) *HTTPClient {
@@ -65,6 +85,12 @@ func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte,
 		return nil, nil, errors.Wrap(err, "Error reading response body")
 	}
 
+	// Decompress gzip if necessary
+	body, err = decompressGzipIfNecessary(res, body)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "Error decompressing gzip response")
+	}
+
 	return body, aws.Int(res.StatusCode), nil
 }
 
@@ -94,6 +120,12 @@ func (h *HTTPClient) Get(url string, headers map[string]string, auth auth.IAuthC
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "Error reading response body")
+	}
+
+	// Decompress gzip if necessary
+	body, err = decompressGzipIfNecessary(res, body)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "Error decompressing gzip response")
 	}
 
 	return body, aws.Int(res.StatusCode), nil

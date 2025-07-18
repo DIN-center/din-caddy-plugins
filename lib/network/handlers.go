@@ -8,6 +8,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 func init() {
@@ -35,12 +36,17 @@ type NetworkHandler interface {
 	ExtractBlockHash(blockData interface{}) string
 	SupportsGetBlockByNumber() bool
 	GetSupportedMethods() []string
+	GetBlockByNumberMethod() string
 
 	// === Health Check ===
 	GetHealthCheckMethod() string
 	GetHealthCheckHTTPMethod() string // "GET" or "POST"
 	CreateHealthCheckPayload(method string) ([]byte, error)
 	ParseHealthCheckResponse(body []byte) (*BlockInfo, error)
+
+	// GetLatestBlockNumber retrieves the latest block number from the provider
+	// This abstracts the entire process of getting latest block number per network type
+	GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error)
 
 	// === Separate Block Info Call (for REST APIs like Beacon) ===
 	// RequiresSeparateBlockInfoCall returns true if health endpoint doesn't provide block info
@@ -66,6 +72,13 @@ type NetworkHandler interface {
 	GetArchiveMethod() string
 	CreateArchivePayload(method string, blockHeight string) ([]byte, error)
 	ParseArchiveResponse(body []byte) error
+	// PerformArchiveCheck performs the complete archive mode check for JSON-RPC handlers
+	// This abstracts the entire archive check process per network type
+	PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error
+
+	// PerformGetBlockByNumber performs the complete get block by number operation
+	// This abstracts the entire get block by number process per network type
+	PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error)
 
 	// === Lifecycle ===
 	Initialize(config *NetworkConfig) error
@@ -77,8 +90,42 @@ type BlockInfo struct {
 	Hash      string    `json:"hash"`
 	Timestamp time.Time `json:"timestamp"`
 	// For beacon chain specific fields
-	Slot  int64 `json:"slot,omitempty"`
-	Epoch int64 `json:"epoch,omitempty"`
+	Slot                int64 `json:"slot,omitempty"`
+	Epoch               int64 `json:"epoch,omitempty"`
+	ExecutionOptimistic bool  `json:"execution_optimistic,omitempty"`
+	Finalized           bool  `json:"finalized,omitempty"`
+}
+
+// LatestBlockResult represents the result of getting the latest block number
+type LatestBlockResult struct {
+	BlockNumber    int64
+	HealthStatus   HealthStatus
+	ResponseStatus int
+	// Additional context that might be useful for debugging
+	Extra map[string]interface{}
+}
+
+// HealthStatus represents the health status of a provider
+type HealthStatus int
+
+const (
+	Healthy HealthStatus = iota
+	Warning
+	Unhealthy
+)
+
+// String returns the string representation of HealthStatus
+func (h HealthStatus) String() string {
+	switch h {
+	case Healthy:
+		return "healthy"
+	case Warning:
+		return "warning"
+	case Unhealthy:
+		return "unhealthy"
+	default:
+		return "unknown"
+	}
 }
 
 // HealthCheckResult represents the result of a health check operation
@@ -103,6 +150,7 @@ type NetworkConfig struct {
 	ChainID        string
 	MaxPayloadSize int64
 	RequestTimeout time.Duration
+	Logger         *logger.LoggerClient
 	Custom         map[string]interface{}
 }
 

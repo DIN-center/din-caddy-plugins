@@ -11,17 +11,20 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 type SolanaHandler struct {
 	config  *NetworkConfig
 	version string
+	logger  *logger.LoggerClient
 }
 
 func NewSolanaHandler(config *NetworkConfig) *SolanaHandler {
 	return &SolanaHandler{
 		config:  config,
 		version: "1.0.0",
+		logger:  config.Logger,
 	}
 }
 
@@ -240,16 +243,17 @@ func (h *SolanaHandler) GetSupportedMethods() []string {
 	return []string{
 		"getBlockHeight",
 		"getBlock",
-		"getGenesisHash",
-		"getTransaction",
-		"getBalance",
 		"getAccountInfo",
+		"getBalance",
 		"sendTransaction",
+		"getTransaction",
+		"getRecentBlockhash",
 		"getSlot",
-		"getHealth",
-		"getVersion",
-		"getSignaturesForAddress",
 	}
+}
+
+func (h *SolanaHandler) GetBlockByNumberMethod() string {
+	return "getBlock"
 }
 
 // Data Format Conversions methods
@@ -340,4 +344,51 @@ func (h *SolanaHandler) ParseChainIDResponse(body []byte, statusCode int) (strin
 	}
 
 	return h.FormatChainID(chainReference), nil
+}
+
+// GetLatestBlockNumber retrieves the latest block number for Solana chains
+// Uses the JSON-RPC method getBlockHeight to get the current block height
+func (h *SolanaHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	// Use the shared JSON-RPC helper with Solana-specific numeric parsing
+	return GetLatestBlockNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetHealthCheckMethod(), // "getBlockHeight"
+		ParseNumericBlockNumber,  // Solana returns numeric block heights
+	)
+}
+
+// PerformArchiveCheck performs archive mode check for Solana chains using JSON-RPC
+func (h *SolanaHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	// Use the shared JSON-RPC helper for archive checks
+	return PerformArchiveCheckViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetArchiveMethod(), // "getBlock"
+		blockHeight,
+		h.CreateArchivePayload, // Solana-specific payload creation
+		h.ParseArchiveResponse, // Solana-specific response parsing
+	)
+}
+
+// PerformGetBlockByNumber performs get block by number operation for Solana chains using JSON-RPC
+func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// Use the shared JSON-RPC helper for get block by number operations
+	return PerformGetBlockByNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		blockNumber,
+		h.GetSupportedMethods, // Solana-specific supported methods
+		h.CreateBlockRequest,  // Solana-specific block request creation
+		h.ParseBlockResponse,  // Solana-specific block response parsing
+	)
 }

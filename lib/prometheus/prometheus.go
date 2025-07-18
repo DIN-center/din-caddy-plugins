@@ -140,8 +140,8 @@ type PromRequestMetricData struct {
 
 // HandleRequestMetrics increments prometheus metric based on request data passed in
 func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *din_http.JSONRPCRequest) {
-	// First extract method data from body
-	method := requestBody.Method
+	// Use method from data struct instead of requestBody to handle both RPC and REST requests
+	method := data.Method
 	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
 

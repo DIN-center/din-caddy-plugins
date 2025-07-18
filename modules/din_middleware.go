@@ -30,6 +30,8 @@ import (
 
 	"container/list"
 
+	"encoding/json"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
@@ -178,6 +180,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				ChainID:        networkObj.ChainId,
 				MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
 				RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
+				Logger:         loggerClient,
 				Custom:         make(map[string]interface{}),
 			}
 
@@ -444,6 +447,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				responseBody = rww.body.Bytes()
 			}
 
+			// Decompress gzip if necessary before passing to handler
+			responseBody = decompressGzipBodyIfNecessary(rww.Header(), responseBody, d.logger, networkPath)
+
 			// Create response processor
 			responseProcessor := NewResponseProcessor(networkObj.handler, d.logger.Logger)
 
@@ -455,11 +461,21 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				break
 			}
 
+			// Extract method and params directly from JSONRPCRequest for logging
+			var method string = "unknown"
+			var params json.RawMessage
+			if requestBody != nil {
+				method = requestBody.Method
+				if len(requestBody.Params) > 0 {
+					params = requestBody.Params
+				}
+			}
+
 			// Check if the error is retryable using the handler
 			if !responseProcessor.IsRetryableError(appError, rww.statusCode) {
 				// Non-retryable error
 				// Log this for debugging purposes since we won't retry
-				logFailedAttempt(&LogFailedAttemptParams{
+				logFailedAttempt(LogFailedAttemptParams{
 					Reason:              "Non-retryable application error",
 					Logger:              d.logger,
 					NetworkPath:         networkPath,
@@ -468,18 +484,16 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 					StatusCodeOfFailure: rww.statusCode,
 					Error:               appError,
 					Replacer:            repl,
-					ParsedReqBody:       requestBody,
+					RequestMethod:       method,
+					RequestParams:       params,
 					RawResponseBody:     responseBody,
 				})
-
-				// This is a final outcome - we should log metrics
-				shouldLogMetrics = true
 				break
 			}
 
-			// Log the failed attempt with error information (only for retryable errors)
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Application error",
+			// Log retryable application error
+			logFailedAttempt(LogFailedAttemptParams{
+				Reason:              "Retryable application error",
 				Logger:              d.logger,
 				NetworkPath:         networkPath,
 				FailedAttemptNumber: attempt + 1,
@@ -487,34 +501,50 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				StatusCodeOfFailure: rww.statusCode,
 				Error:               appError,
 				Replacer:            repl,
-				ParsedReqBody:       requestBody,
+				RequestMethod:       method,
+				RequestParams:       params,
 				RawResponseBody:     responseBody,
 			})
-		} else {
-			// Log non 200 status failed attempt with HTTP error information
+
+			continue
+		}
+
+		// Check for HTTP/low-level errors (non-200 status codes, network issues, etc.)
+		if err != nil {
+			// Extract method and params directly from JSONRPCRequest for logging
+			var method string = "unknown"
+			var params json.RawMessage
+			if requestBody != nil {
+				method = requestBody.Method
+				if len(requestBody.Params) > 0 {
+					params = requestBody.Params
+				}
+			}
+
+			// Log HTTP/low-level error
 			var responseBody []byte
 			if rww.body != nil {
 				responseBody = rww.body.Bytes()
 			}
 
 			// Determine if this is the final attempt or not
-			reason := "HTTP attempt failed error"
+			reason := "HTTP/network error"
 			if attempt == networkObj.RequestAttemptCount-1 {
-				reason = "HTTP attempt failed error (final attempt)"
-				// This is the final attempt - we should log metrics
+				reason = "HTTP/network error (final attempt)"
 				shouldLogMetrics = true
 			}
 
-			logFailedAttempt(&LogFailedAttemptParams{
+			logFailedAttempt(LogFailedAttemptParams{
 				Reason:              reason,
 				Logger:              d.logger,
 				NetworkPath:         networkPath,
 				FailedAttemptNumber: attempt + 1,
 				MaxAttempts:         networkObj.RequestAttemptCount,
 				StatusCodeOfFailure: rww.statusCode,
-				Error:               err, // upstream error from next.ServeHTTP
+				Error:               err,
 				Replacer:            repl,
-				ParsedReqBody:       requestBody,
+				RequestMethod:       method,
+				RequestParams:       params,
 				RawResponseBody:     responseBody,
 			})
 		}

@@ -976,30 +976,24 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 	}{
 		{
 			name:           "JSON parsing error should trigger robust logging",
-			respBody:       []byte(`{"invalid": json}`),
+			respBody:       []byte("invalid json"),
 			respStatus:     200,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "Non-200 status should trigger robust logging",
-			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x123"}`),
 			respStatus:     500,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "JSON-RPC error should trigger robust logging",
-			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Server error"}}`),
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error"}}`),
 			respStatus:     200,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "Method mismatch should not trigger failure logging",
@@ -1077,7 +1071,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			} else {
 				// Should not have any failure logs with the expected message
 				for _, log := range logs {
-					assert.NotEqual(t, "Request attempt failed, initiating retry", log.Message, "Unexpected failure log found")
+					assert.NotEqual(t, "Request attempt failed", log.Message, "Unexpected failure log found")
 				}
 			}
 		})

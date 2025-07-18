@@ -10,17 +10,20 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 type StarknetHandler struct {
 	config  *NetworkConfig
 	version string
+	logger  *logger.LoggerClient
 }
 
 func NewStarknetHandler(config *NetworkConfig) *StarknetHandler {
 	return &StarknetHandler{
 		config:  config,
 		version: "1.0.0",
+		logger:  config.Logger,
 	}
 }
 
@@ -379,6 +382,52 @@ func (h *StarknetHandler) ParseChainIDResponse(body []byte, statusCode int) (str
 	return h.FormatChainID(chainReference), nil
 }
 
+// GetLatestBlockNumber retrieves the latest block number for Starknet chains
+// Uses the JSON-RPC method starknet_blockNumber to get the current block height
+func (h *StarknetHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	return GetLatestBlockNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetHealthCheckMethod(), // "starknet_blockNumber"
+		ParseNumericBlockNumber,  // Starknet returns numeric block numbers
+	)
+}
+
+// PerformArchiveCheck performs archive mode check for Starknet chains using JSON-RPC
+func (h *StarknetHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	// Use the shared JSON-RPC helper for archive checks
+	return PerformArchiveCheckViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetArchiveMethod(), // "starknet_getBlockWithTxHashes"
+		blockHeight,
+		h.CreateArchivePayload, // Starknet-specific payload creation
+		h.ParseArchiveResponse, // Starknet-specific response parsing
+	)
+}
+
+// PerformGetBlockByNumber performs get block by number operation for Starknet chains using JSON-RPC
+func (h *StarknetHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// Use the shared JSON-RPC helper for get block by number operations
+	return PerformGetBlockByNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		blockNumber,
+		h.GetSupportedMethods, // Starknet-specific supported methods
+		h.CreateBlockRequest,  // Starknet-specific block request creation
+		h.ParseBlockResponse,  // Starknet-specific block response parsing
+	)
+}
+
 // === COMPATIBILITY METHODS (keeping existing methods) ===
 
 // ValidateChainID validates Starknet-specific chain ID format (legacy method)
@@ -399,5 +448,5 @@ func (h *StarknetHandler) GetCallContractMethod() string {
 
 // GetBlockByNumberMethod returns the Starknet get block by number method (legacy method)
 func (h *StarknetHandler) GetBlockByNumberMethod() string {
-	return "starknet_getBlockByNumber"
+	return "starknet_getBlockWithTxHashes"
 }

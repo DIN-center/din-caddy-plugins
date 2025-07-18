@@ -112,7 +112,11 @@ func (m *MockHandler) SupportsGetBlockByNumber() bool {
 }
 
 func (m *MockHandler) GetSupportedMethods() []string {
-	return []string{"mock_method"}
+	return []string{"mockMethod"}
+}
+
+func (m *MockHandler) GetBlockByNumberMethod() string {
+	return "mockGetBlockByNumber"
 }
 
 // Data Format Conversions
@@ -143,6 +147,28 @@ func (m *MockHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
 
 func (m *MockHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
 	return &BlockInfo{Number: 12345}, nil
+}
+
+func (m *MockHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	return &LatestBlockResult{
+		BlockNumber:    12345,
+		HealthStatus:   Healthy,
+		ResponseStatus: 200,
+		Extra:          make(map[string]interface{}),
+	}, nil
+}
+
+func (m *MockHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	// Mock implementation for testing
+	return nil
+}
+
+func (m *MockHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// Mock implementation for testing - return a simple block object
+	return map[string]interface{}{
+		"number": blockNumber,
+		"hash":   "0x123abc",
+	}, nil
 }
 
 func (m *MockHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {

@@ -10,15 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
 type EVMHandler struct {
 	config  *NetworkConfig
 	version string
+	logger  *logger.LoggerClient
 }
 
 // NewEVMHandler creates a new EVM handler instance
@@ -26,6 +28,7 @@ func NewEVMHandler(config *NetworkConfig) *EVMHandler {
 	return &EVMHandler{
 		config:  config,
 		version: "1.0.0",
+		logger:  config.Logger,
 	}
 }
 
@@ -90,7 +93,7 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 		req.Body = io.NopCloser(strings.NewReader(string(body)))
 
 		// Parse JSON-RPC request
-		var jsonRPCReq dinHttp.JSONRPCRequest
+		var jsonRPCReq din_http.JSONRPCRequest
 		if err := json.Unmarshal(body, &jsonRPCReq); err != nil {
 			return fmt.Errorf("invalid JSON payload: %w", err)
 		}
@@ -184,7 +187,7 @@ func (h *EVMHandler) CreateBlockRequest(method string, blockNum int64, includeTr
 }
 
 func (h *EVMHandler) ParseBlockResponse(body []byte) (interface{}, error) {
-	var response dinHttp.JSONRPCEVMBlockResponse
+	var response din_http.JSONRPCEVMBlockResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal EVM block response: %w", err)
 	}
@@ -281,9 +284,13 @@ func (h *EVMHandler) GetSupportedMethods() []string {
 	}
 }
 
+func (h *EVMHandler) GetBlockByNumberMethod() string {
+	return "eth_getBlockByNumber"
+}
+
 // Data Format Conversions methods
 func (h *EVMHandler) ExtractBlockHash(blockData interface{}) string {
-	if blockResponse, ok := blockData.(dinHttp.JSONRPCEVMBlockResponse); ok {
+	if blockResponse, ok := blockData.(din_http.JSONRPCEVMBlockResponse); ok {
 		return blockResponse.Result.Hash
 	}
 	return ""
@@ -385,4 +392,51 @@ func (h *EVMHandler) ParseChainIDResponse(body []byte, statusCode int) (string, 
 	}
 
 	return h.FormatChainID(chainReference), nil
+}
+
+// GetLatestBlockNumber retrieves the latest block number for EVM chains
+// Uses the JSON-RPC method eth_blockNumber to get the current block height
+func (h *EVMHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	// Use the shared JSON-RPC helper with EVM-specific hex parsing
+	return GetLatestBlockNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetHealthCheckMethod(), // "eth_blockNumber"
+		ParseHexBlockNumber,      // EVM uses hex-encoded block numbers
+	)
+}
+
+// PerformArchiveCheck performs archive mode check for EVM chains using JSON-RPC
+func (h *EVMHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	// Use the shared JSON-RPC helper for archive checks
+	return PerformArchiveCheckViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		h.GetArchiveMethod(), // "eth_getBlockByNumber"
+		blockHeight,
+		h.CreateArchivePayload, // EVM-specific payload creation
+		h.ParseArchiveResponse, // EVM-specific response parsing
+	)
+}
+
+// PerformGetBlockByNumber performs get block by number operation for EVM chains using JSON-RPC
+func (h *EVMHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// Use the shared JSON-RPC helper for get block by number operations
+	return PerformGetBlockByNumberViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		blockNumber,
+		h.GetSupportedMethods, // EVM-specific supported methods
+		h.CreateBlockRequest,  // EVM-specific block request creation
+		h.ParseBlockResponse,  // EVM-specific block response parsing
+	)
 }

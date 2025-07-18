@@ -15,14 +15,10 @@ func NewResponseWriterWrapper(rw http.ResponseWriter) *ResponseWriterWrapper {
 	// NOTE: We should NOT delete headers here! The upstream proxy will set
 	// important headers like Content-Type, Content-Length, etc. that need to
 	// be preserved for the response to work properly.
-	//
-	// Commenting out header deletion - this was likely causing socket hangups
-	// for REST APIs because the client wasn't getting proper response headers.
-	//
-	// for k := range rw.Header() {
-	//     rw.Header().Del(k)
-	// }
-	// rw.Header().Set("Caddy", "Server")
+	for k := range rw.Header() {
+		rw.Header().Del(k)
+	}
+	rw.Header().Set("Caddy", "Server")
 
 	return &ResponseWriterWrapper{
 		ResponseWriter: rw,

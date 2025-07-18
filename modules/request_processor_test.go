@@ -43,7 +43,7 @@ func TestDetectRequestType(t *testing.T) {
 				Name:       "ethereum-beacon-mainnet",
 				Type:       "eth_beacon_chain",
 				ChainId:    "mainnet",
-				HCEndpoint: "/eth/v1/beacon/headers/head",
+				HCEndpoint: "/eth/v1/beacon/headers",
 			},
 			request:      httptest.NewRequest("GET", "/ethereum-beacon-mainnet/eth/v1/beacon/genesis", nil),
 			expectedType: networklib.RequestTypeREST,
@@ -243,13 +243,13 @@ func TestIsHealthCheckEndpoint(t *testing.T) {
 		expected       bool
 	}{
 		{
-			path:           "/ethereum-beacon/eth/v1/beacon/headers/head",
-			healthEndpoint: "/eth/v1/beacon/headers/head",
+			path:           "/ethereum-beacon/eth/v1/beacon/headers",
+			healthEndpoint: "/eth/v1/beacon/headers",
 			expected:       true,
 		},
 		{
 			path:           "/ethereum-beacon/eth/v1/beacon/genesis",
-			healthEndpoint: "/eth/v1/beacon/headers/head",
+			healthEndpoint: "/eth/v1/beacon/headers",
 			expected:       false,
 		},
 		{
@@ -288,7 +288,7 @@ func TestRequestContextIntegration(t *testing.T) {
 				Name:       "ethereum-beacon-mainnet",
 				Type:       "eth_beacon_chain",
 				ChainId:    "mainnet",
-				HCEndpoint: "/eth/v1/beacon/headers/head",
+				HCEndpoint: "/eth/v1/beacon/headers",
 			},
 		},
 		handlerRegistry: networklib.DefaultRegistry,

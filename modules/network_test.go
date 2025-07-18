@@ -455,7 +455,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
-			err = n.archiveModeCheck("http://test.com", map[string]string{}, nil, tt.quarterBlock)
+			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
 
 			if tt.expectError {
 				assert.Error(t, err)

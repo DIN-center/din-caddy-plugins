@@ -4,9 +4,7 @@ import (
 	"container/list"
 	"fmt"
 	"net/http"
-	"net/url"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -95,7 +93,8 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 			Custom:         make(map[string]interface{}),
 		}
 
-		// Add logging for handler initialization
+		// NOTE: Logger will be set later via SetLogger method after network initialization
+		// This is because the network's logger isn't available during NewNetwork
 
 		handler, err := networklib.DefaultRegistry.GetHandler(networkType, config)
 		if err != nil {
@@ -146,7 +145,7 @@ func (n *network) healthCheck() {
 	// Add handler status logging at the start of health check
 
 	// Self loopback health check (run asynchronously) - TEMPORARILY DISABLED due to circular dependency
-	// go n.LoopbackHealthCheck()
+	go n.LoopbackHealthCheck()
 
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()
@@ -358,26 +357,50 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		}
 	}
 
-	// Archive Health Check - Use handler method instead of string checks
-	if n.ArchiveEnabled && n.supportsArchiveMode() && len(provider.BlockHistory()) > 1 {
-		quarterBlockHeight := currentBlock / 4
-
-		// Use handler method to format block height
-		quarterBlockHeightString := n.formatBlockHeight(quarterBlockHeight)
-
-		// Use handler method to create archive payload
-		err := n.archiveModeCheck(provider.HttpUrl, provider.Headers, provider.AuthClient(), quarterBlockHeightString)
-		if err != nil {
-			n.logProviderWarning("Error testing archive mode", provider,
-				zap.Int64("quarter_block_height", quarterBlockHeight),
-				zap.String("quarter_block_height_formatted", quarterBlockHeightString),
-				zap.Error(err),
-				zap.String("health_status", Warning.String()))
-			return Warning
-		}
+	// Archive Health Check - Use handler method directly
+	if err := n.performArchiveCheck(provider, currentBlock); err != nil {
+		n.logProviderWarning("Archive mode check failed", provider,
+			zap.Int64("current_block", currentBlock),
+			zap.Error(err),
+			zap.String("health_status", Warning.String()))
+		return Warning
 	}
 
 	return worstStatus
+}
+
+// performArchiveCheck performs archive mode check for a provider if archive mode is enabled
+func (n *network) performArchiveCheck(provider *provider, currentBlock int64) error {
+	// Check if archive mode is enabled and supported
+	if !n.ArchiveEnabled {
+		return nil // Archive mode disabled, skip check
+	}
+
+	// Check if handler is available
+	if n.handler == nil {
+		return nil // No handler available, skip check
+	}
+
+	// Check if handler supports archive mode
+	if !n.handler.SupportsArchiveMode() {
+		return nil // Handler doesn't support archive mode, skip check
+	}
+
+	// Check if provider has enough block history
+	if len(provider.BlockHistory()) <= 1 {
+		return nil // Not enough block history, skip check
+	}
+
+	quarterBlockHeight := currentBlock / 4
+
+	// Use handler method to format block height directly
+	quarterBlockHeightString := n.handler.FormatBlockHeight(quarterBlockHeight)
+
+	return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
+}
+
+func (n *network) close() {
+	close(n.quit)
 }
 
 // isStalled checks if provider's block numbers haven't changed
@@ -467,226 +490,55 @@ type getLatestBlockNumberResult struct {
 }
 
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient, providerHost string) (*getLatestBlockNumberResult, error) {
-	var lastErr error
-	var lastHealthStatus HealthStatus = Unhealthy
-	var lastResponseStatus int = 0
-
-	// Use handler method instead of hardcoded HCMethod
-	healthCheckMethod := n.getHealthCheckMethod()
-
-	// Create synthetic request context for consistent logging
-	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, healthCheckMethod)
-
-	// Layer 1: Handle attempts
-	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Use handler-created payload instead of hardcoded format
-		healthPayload, err := n.handler.CreateHealthCheckPayload(healthCheckMethod)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create health check payload: %w", err)
-		}
-
-		// Update the replacer with actual payload
-		if healthPayload != nil {
-			repl.Set(RequestBodyKey, healthPayload)
-		}
-
-		// Use appropriate HTTP method based on handler preference
-		var resBytes []byte
-		var statusCode *int
-
-		// Debug logging
-		if n.handler != nil {
-			n.logger.Debug("Health check method selection",
-				zap.String("network", n.Name),
-				zap.String("handler_type", n.handler.GetType()),
-				zap.String("http_method", n.handler.GetHealthCheckHTTPMethod()),
-				zap.String("health_check_method", healthCheckMethod),
-				zap.String("provider_url", httpUrl))
-		}
-
-		if n.handler != nil && n.handler.GetHealthCheckHTTPMethod() == "GET" {
-			// For REST APIs like beacon chain, make GET request to the endpoint
-			parsedURL, parseErr := url.Parse(httpUrl)
-			if parseErr != nil {
-				lastErr = fmt.Errorf("failed to parse provider URL: %w", parseErr)
-				continue
-			}
-
-			// Combine the existing path with the health check method
-			parsedURL.Path = parsedURL.Path + healthCheckMethod
-			healthCheckURL := parsedURL.String()
-
-			n.logger.Debug("Making GET request for health check",
-				zap.String("url", healthCheckURL))
-			resBytes, statusCode, err = n.HttpClient.Get(healthCheckURL, headers, ac)
-		} else {
-			// For JSON-RPC APIs, make POST request with payload
-			n.logger.Debug("Making POST request for health check",
-				zap.String("url", httpUrl),
-				zap.ByteString("payload", healthPayload))
-			resBytes, statusCode, err = n.HttpClient.Post(httpUrl, headers, healthPayload, ac)
-		}
-		if err != nil {
-			lastErr = err
-			if statusCode != nil {
-				lastResponseStatus = *statusCode
-			}
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check HTTP request failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: lastResponseStatus,
-				Error:               err,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil,
-			})
-			continue
-		}
-
-		// Use handler method to parse response instead of hardcoded parsing
-		blockInfo, health, err := n.processHealthCheckResponse(resBytes, statusCode)
-		if err != nil {
-			lastErr = err
-			lastHealthStatus = health
-			if statusCode != nil {
-				lastResponseStatus = *statusCode
-			}
-
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check response processing failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: lastResponseStatus,
-				Error:               err,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     resBytes,
-			})
-
-			continue
-		}
-
-		// Debug log before checking for separate block info call
-		if n.logger != nil {
-			n.logger.Debug("Checking if separate block info call is needed",
-				zap.String("network", n.Name),
-				zap.Bool("has_handler", n.handler != nil),
-				zap.Bool("requires_separate_call", n.handler != nil && n.handler.RequiresSeparateBlockInfoCall()),
-				zap.Int64("block_info", blockInfo),
-				zap.Bool("condition_met", n.handler != nil && n.handler.RequiresSeparateBlockInfoCall() && blockInfo == -1))
-		}
-
-		// Check if we need a separate call for block info (e.g., beacon chain)
-		if n.handler != nil && n.handler.RequiresSeparateBlockInfoCall() && blockInfo == -1 {
-			// Make separate call to get block info
-			blockInfoMethod := n.handler.GetBlockInfoMethod()
-			blockInfoURL := fmt.Sprintf("%s%s", httpUrl, blockInfoMethod)
-
-			n.logger.Debug("Making separate GET request for block info",
-				zap.String("network", n.Name),
-				zap.String("url", blockInfoURL),
-				zap.String("block_info_method", blockInfoMethod))
-
-			blockInfoBytes, blockInfoStatus, blockInfoErr := n.HttpClient.Get(blockInfoURL, headers, ac)
-			if blockInfoErr != nil {
-				lastErr = blockInfoErr
-				if blockInfoStatus != nil {
-					lastResponseStatus = *blockInfoStatus
-				}
-
-				logFailedAttempt(&LogFailedAttemptParams{
-					Reason:              "Block info request failed",
-					Logger:              n.logger,
-					NetworkPath:         n.Name,
-					FailedAttemptNumber: attempt + 1,
-					MaxAttempts:         n.RequestAttemptCount,
-					StatusCodeOfFailure: lastResponseStatus,
-					Error:               blockInfoErr,
-					Replacer:            repl,
-					ParsedReqBody:       nil,
-					RawResponseBody:     nil,
-				})
-				continue
-			}
-
-			// Parse block info response
-			blockInfoResult, parseErr := n.handler.ParseHealthCheckResponse(blockInfoBytes)
-			if parseErr != nil {
-				lastErr = parseErr
-				if blockInfoStatus != nil {
-					lastResponseStatus = *blockInfoStatus
-				}
-
-				logFailedAttempt(&LogFailedAttemptParams{
-					Reason:              "Block info parsing failed",
-					Logger:              n.logger,
-					NetworkPath:         n.Name,
-					FailedAttemptNumber: attempt + 1,
-					MaxAttempts:         n.RequestAttemptCount,
-					StatusCodeOfFailure: lastResponseStatus,
-					Error:               parseErr,
-					Replacer:            repl,
-					ParsedReqBody:       nil,
-					RawResponseBody:     blockInfoBytes,
-				})
-				continue
-			}
-
-			// Check if block info result is nil
-			if blockInfoResult == nil {
-				lastErr = fmt.Errorf("handler returned nil block info")
-				logFailedAttempt(&LogFailedAttemptParams{
-					Reason:              "Block info result is nil",
-					Logger:              n.logger,
-					NetworkPath:         n.Name,
-					FailedAttemptNumber: attempt + 1,
-					MaxAttempts:         n.RequestAttemptCount,
-					StatusCodeOfFailure: lastResponseStatus,
-					Error:               lastErr,
-					Replacer:            repl,
-					ParsedReqBody:       nil,
-					RawResponseBody:     blockInfoBytes,
-				})
-				continue
-			}
-
-			// Update block info with actual data
-			blockInfo = blockInfoResult.Number
-
-			// Log successful block info update
-			if n.logger != nil {
-				n.logger.Debug("Successfully updated block info from separate call",
-					zap.String("network", n.Name),
-					zap.Int64("block_number", blockInfo),
-					zap.Int64("slot", blockInfoResult.Slot),
-					zap.Int64("epoch", blockInfoResult.Epoch))
-			}
-		}
-
-		// If the current attempt was successful, its status code should be used.
-		if statusCode != nil {
-			lastResponseStatus = *statusCode
-		}
-
+	// Ensure handler is available
+	if n.handler == nil {
 		return &getLatestBlockNumberResult{
-			blockNumber:    blockInfo,
-			healthStatus:   health,
-			responseStatus: lastResponseStatus,
-		}, nil
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: 0,
+		}, fmt.Errorf("no handler available for network %s", n.Name)
+	}
+
+	// Add logging for debugging
+	if n.logger != nil {
+		n.logger.Debug("Using handler to get latest block number",
+			zap.String("network", n.Name),
+			zap.String("provider", providerHost),
+			zap.String("handler_type", n.handler.GetType()))
+	}
+
+	// Delegate to handler's GetLatestBlockNumber method
+	result, err := n.handler.GetLatestBlockNumber(httpUrl, headers, n.HttpClient, ac, n.RequestAttemptCount)
+	if err != nil {
+		if n.logger != nil {
+			n.logger.Debug("Handler GetLatestBlockNumber failed",
+				zap.Error(err),
+				zap.String("network", n.Name),
+				zap.String("provider", providerHost))
+		}
+
+		// Convert to the expected result format, casting HealthStatus types
+		return &getLatestBlockNumberResult{
+			blockNumber:    result.BlockNumber,
+			healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+			responseStatus: result.ResponseStatus,
+		}, err
+	}
+
+	// Success!
+	if n.logger != nil {
+		n.logger.Debug("Handler GetLatestBlockNumber succeeded",
+			zap.Int64("block_number", result.BlockNumber),
+			zap.String("health_status", result.HealthStatus.String()),
+			zap.String("network", n.Name),
+			zap.String("provider", providerHost))
 	}
 
 	return &getLatestBlockNumberResult{
-		blockNumber:    0,
-		healthStatus:   lastHealthStatus,
-		responseStatus: lastResponseStatus,
-	}, errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
+		blockNumber:    result.BlockNumber,
+		healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+		responseStatus: result.ResponseStatus,
+	}, nil
 }
 
 // Layer 3: Process response
@@ -715,233 +567,6 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 }
 
 // getHealthCheckMethod returns the health check method using handler
-func (n *network) getHealthCheckMethod() string {
-	// Add logging to track handler usage
-	if n.logger != nil {
-		n.logger.Debug("getHealthCheckMethod called",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type),
-			zap.Bool("has_handler", n.handler != nil))
-	}
-
-	// Use handler method if available
-	if n.handler != nil {
-		method := n.handler.GetHealthCheckMethod()
-		if n.logger != nil {
-			n.logger.Debug("Using handler health check method",
-				zap.String("network", n.Name),
-				zap.String("method", method),
-				zap.String("handler_type", n.handler.GetType()))
-		}
-		return method
-	}
-
-	return ""
-}
-
-// getArchiveMethod returns the archive method using handler
-func (n *network) getArchiveMethod() string {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.GetArchiveMethod()
-	}
-
-	return ""
-}
-
-// processHealthCheckResponse processes health check response using handler
-func (n *network) processHealthCheckResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
-	// Evaluate health status based on status code
-	if statusCode == nil {
-		return 0, Unhealthy, errors.New("received nil statusCode in processHealthCheckResponse")
-	}
-
-	if *statusCode >= 400 {
-		// If status code is 429, set health status to Warning, otherwise return as unhealthy
-		if *statusCode == 429 {
-			return 0, Warning, fmt.Errorf("rate limit error (status code: %d)", *statusCode)
-		}
-		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
-	}
-
-	// Add logging to track handler usage
-	if n.logger != nil {
-		n.logger.Debug("processHealthCheckResponse called",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type),
-			zap.Bool("has_handler", n.handler != nil),
-			zap.String("response_snippet", string(resBytes[:min(len(resBytes), 100)])))
-	}
-
-	// Use handler method if available
-	if n.handler != nil {
-		if n.logger != nil {
-			n.logger.Debug("Using handler to parse health check response",
-				zap.String("network", n.Name),
-				zap.String("handler_type", n.handler.GetType()))
-		}
-		blockInfo, err := n.handler.ParseHealthCheckResponse(resBytes)
-		if err != nil {
-			if n.logger != nil {
-				n.logger.Error("Handler failed to parse health check response",
-					zap.String("network", n.Name),
-					zap.String("handler_type", n.handler.GetType()),
-					zap.Error(err))
-			}
-			return 0, Unhealthy, errors.Wrap(err, "Handler failed to parse health check response")
-		}
-		if n.logger != nil {
-			n.logger.Debug("Handler successfully parsed health check response",
-				zap.String("network", n.Name),
-				zap.Int64("block_number", blockInfo.Number))
-		}
-		return blockInfo.Number, Healthy, nil
-	}
-
-	return 0, Unhealthy, fmt.Errorf("no handler available for network %s", n.Name)
-}
-
-// archiveModeCheck performs archive mode check using handler
-func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac auth.IAuthClient, quarterBlockHeight string) error {
-	// Use handler if available
-	if n.handler == nil {
-		if n.logger != nil {
-			n.logger.Error("No handler available for archive mode check",
-				zap.String("network", n.Name),
-				zap.String("type", n.Type))
-		}
-		return fmt.Errorf("no handler available for archive mode check on network %s", n.Name)
-	}
-
-	// Get archive method from handler
-	method := n.handler.GetArchiveMethod()
-	if method == "" {
-		return fmt.Errorf("handler does not provide archive method for network %s", n.Name)
-	}
-
-	var lastErr error
-
-	// Create synthetic request context for consistent logging
-	providerHost := httpUrl // Use the full URL as provider identifier for archive mode checks
-	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, method)
-
-	// Layer 1: Handle attempts
-	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Use handler to create archive payload
-		payload, err := n.handler.CreateArchivePayload(method, quarterBlockHeight)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Failed to create archive payload")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check payload creation failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: 0, // No status code for payload creation errors
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // no response body for payload creation errors
-			})
-			continue
-		}
-
-		// Update the request body in the replacer with the actual payload
-		repl.Set(RequestBodyKey, payload)
-
-		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, payload, ac)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Error sending POST request")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check HTTP request failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: 0, // No status code for HTTP errors
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // no response body for HTTP errors
-			})
-			continue
-		}
-
-		if *statusCode == http.StatusServiceUnavailable || *statusCode == StatusOriginUnreachable {
-			lastErr = errors.New("Network Unavailable")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check HTTP request failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // Check for JSON-RPC error below
-			})
-			continue
-		}
-
-		// Use handler to parse archive response
-		err = n.handler.ParseArchiveResponse(resBytes)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Archive mode check failed")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check response processing failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     resBytes,
-			})
-			continue
-		}
-
-		// Success case - handler validated the response
-		return nil
-	}
-
-	return errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
-}
-
-// supportsArchiveMode checks if the network supports archive mode using handler
-func (n *network) supportsArchiveMode() bool {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.SupportsArchiveMode()
-	}
-
-	return false
-}
-
-// formatBlockHeight formats block height using handler
-func (n *network) formatBlockHeight(blockNum int64) string {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.FormatBlockHeight(blockNum)
-	}
-
-	return ""
-}
-
-func (n *network) close() {
-	close(n.quit)
-}
 
 // hasOtherHealthyProviders checks if there are any other healthy providers in the pool
 // besides the one being evaluated. This is used during block jump detection to avoid
@@ -1079,74 +704,76 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	if n.CaddyPort == "" {
 		return nil, errors.New("Caddy port is not set")
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
 
-	// Create synthetic request context for consistent logging
+	// Ensure handler is available
+	if n.handler == nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: 0,
+		}, fmt.Errorf("no handler available for network %s", n.Name)
+	}
+
+	// Create synthetic request context for consistent logging (this is critical for logFailedAttempt)
 	providerHost := fmt.Sprintf("127.0.0.1:%s", n.CaddyPort) // Use loopback address as provider identifier
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(n.Name, providerHost, n.getHealthCheckMethod())
+	healthCheckMethod := n.handler.GetHealthCheckMethod()
 
+	repl, genericContext, _ := createHealthCheckRequestContext(n.Name, providerHost, healthCheckMethod, n)
+
+	// Check if handler was able to create context
+	if repl == nil || genericContext == nil {
+		return &getLatestBlockNumberResult{
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: 0,
+		}, fmt.Errorf("handler unavailable or failed to create health check context for network %s", n.Name)
+	}
+
+	// Use the loopback URL as the target
+	loopbackURL := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+
+	// Create headers for the request
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
 
-	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
-	currentResponseStatus := 0 // Default status code if statusCode is nil
-	if statusCode != nil {
-		currentResponseStatus = *statusCode
-	}
-
+	// Use handler's GetLatestBlockNumber method but maintain detailed logging
+	result, err := n.handler.GetLatestBlockNumber(loopbackURL, headers, n.HttpClient, nil, 1)
 	if err != nil {
-		// Log the failed loopback attempt with detailed information
-		logFailedAttempt(&LogFailedAttemptParams{
-			Reason:              "Health check HTTP request failed",
+		// Extract method directly from GenericRequestContext - completely generic
+		var method string = "unknown"
+		if genericContext != nil {
+			method = genericContext.Method
+		}
+
+		// Maintain the detailed logFailedAttempt logging that's imperative
+		logFailedAttempt(LogFailedAttemptParams{
+			Reason:              "Self loopback health check failed",
 			Logger:              n.logger,
 			NetworkPath:         n.Name,
 			FailedAttemptNumber: 1, // Single attempt for loopback
 			MaxAttempts:         1, // Total attempts is always 1 for loopback
-			StatusCodeOfFailure: currentResponseStatus,
+			StatusCodeOfFailure: result.ResponseStatus,
 			Error:               err,
 			Replacer:            repl,
-			ParsedReqBody:       jsonRPCReq,
-			RawResponseBody:     nil, // no response body for HTTP errors
+			RequestMethod:       method,
+			RequestParams:       nil, // No params for health checks - completely generic
+			RawResponseBody:     nil, // Handler abstracted the response processing
 		})
 
+		// Convert handler result to our expected format
 		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   Unhealthy,
-			responseStatus: currentResponseStatus, // Use the safe value
-		}, errors.Wrap(err, "Self loopback health check failed")
+			blockNumber:    result.BlockNumber,
+			healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+			responseStatus: result.ResponseStatus,
+		}, err
 	}
 
-	// statusCode is known to be non-nil here if err was nil, because processBlockNumberResponse requires non-nil statusCode
-	blockNumber, health, err := n.processBlockNumberResponse(resBytes, statusCode)
-	if err != nil {
-		// Log the failed loopback attempt with detailed information
-		logFailedAttempt(&LogFailedAttemptParams{
-			Reason:              "Health check response processing failed",
-			Logger:              n.logger,
-			NetworkPath:         n.Name,
-			FailedAttemptNumber: 1, // Single attempt for loopback
-			MaxAttempts:         1, // Total attempts is always 1 for loopback
-			StatusCodeOfFailure: currentResponseStatus,
-			Error:               err,
-			Replacer:            repl,
-			ParsedReqBody:       jsonRPCReq,
-			RawResponseBody:     resBytes,
-		})
-
-		// It's possible processBlockNumberResponse gets an error but statusCode was valid (e.g. 200 OK with bad JSON)
-		// So, we still use currentResponseStatus (which would be *statusCode from the successful Post)
-		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   health, // Health status from processBlockNumberResponse
-			responseStatus: currentResponseStatus,
-		}, errors.Wrap(err, "Self loopback health check response error")
-	}
-
+	// Success!
 	return &getLatestBlockNumberResult{
-		blockNumber:    blockNumber,
-		healthStatus:   health,
-		responseStatus: currentResponseStatus, // Should be *statusCode from successful Post
+		blockNumber:    result.BlockNumber,
+		healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+		responseStatus: result.ResponseStatus,
 	}, nil
 }
 
@@ -1158,25 +785,31 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.New("Caddy port is not set")
 	}
 
+	// Check if handler supports get block by number
+	if n.handler == nil || !n.handler.SupportsGetBlockByNumber() {
+		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
+		return nil, nil
+	}
+
+	// Check if HttpClient is available
+	if n.HttpClient == nil {
+		return nil, errors.New("HTTP client is not set")
+	}
+
+	// Use loopback URL to make request through the Din middleware
 	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
 
-	// Use handler method instead of string checks
-	if !n.supportsGetBlockByNumber() {
-		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
-		return nil, nil
+	// Get the block by number method directly from the handler
+	getBlockMethod := n.handler.GetBlockByNumberMethod()
+	if getBlockMethod == "" {
+		return nil, errors.New("handler does not provide a getBlockByNumber method")
 	}
 
-	// Use handler method to create block request
-	supportedMethods := n.getSupportedMethods()
-	if len(supportedMethods) == 0 {
-		return nil, errors.New("no supported block methods available")
-	}
-
-	getBlockMethod := n.getBlockByNumberMethod()
-	payload, err := n.createBlockRequest(getBlockMethod, blockNumber, false)
+	// Use handler to create the block request payload
+	payload, err := n.handler.CreateBlockRequest(getBlockMethod, blockNumber, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create block request")
 	}
@@ -1188,86 +821,23 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.Wrap(err, "Error sending POST request")
 	}
 
-	n.logger.Debug("Received getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", string(resBytes[:min(len(resBytes), 200)])))
+	responseSnippet := string(resBytes)
+	if len(resBytes) > 200 {
+		responseSnippet = string(resBytes[:200])
+	}
+	n.logger.Debug("Received getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", responseSnippet))
 
 	if *statusCode != http.StatusOK {
 		n.logger.Warn("Error getting block from response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
 		return nil, errors.New("Error getting block from response")
 	}
 
-	// Use handler method to parse block response
-	blockData, err := n.parseBlockResponse(resBytes)
+	// Use handler to parse the block response
+	blockData, err := n.handler.ParseBlockResponse(resBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error parsing block response")
 	}
 
 	n.logger.Debug("Successfully parsed block response", zap.String("networkName", n.Name))
 	return blockData, nil
-}
-
-// supportsGetBlockByNumber checks if the network supports getBlockByNumber using handler
-func (n *network) supportsGetBlockByNumber() bool {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.SupportsGetBlockByNumber()
-	}
-
-	return false
-}
-
-// getSupportedMethods gets supported methods using handler
-func (n *network) getSupportedMethods() []string {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.GetSupportedMethods()
-	}
-
-	return []string{}
-}
-
-// getBlockByNumberMethod gets the block by number method using handler
-func (n *network) getBlockByNumberMethod() string {
-	// Use handler method if available
-	if n.handler != nil {
-		supportedMethods := n.handler.GetSupportedMethods()
-
-		// First, look for specific getBlockByNumber methods
-		for _, method := range supportedMethods {
-			methodLower := strings.ToLower(method)
-			if strings.Contains(methodLower, "getblockbynumber") ||
-				strings.Contains(methodLower, "get_block_by_number") {
-				return method
-			}
-		}
-
-		// Fallback: look for any block-related method (but this shouldn't happen with proper handlers)
-		for _, method := range supportedMethods {
-			if strings.Contains(strings.ToLower(method), "block") &&
-				!strings.Contains(strings.ToLower(method), "blocknumber") {
-				return method
-			}
-		}
-	}
-
-	return ""
-}
-
-// createBlockRequest creates block request using handler
-func (n *network) createBlockRequest(method string, blockNumber int64, includeTransactions bool) ([]byte, error) {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.CreateBlockRequest(method, blockNumber, includeTransactions)
-	}
-
-	return nil, fmt.Errorf("no handler available for network %s", n.Name)
-}
-
-// parseBlockResponse parses block response using handler
-func (n *network) parseBlockResponse(resBytes []byte) (interface{}, error) {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.ParseBlockResponse(resBytes)
-	}
-
-	return nil, fmt.Errorf("no handler available for network %s", n.Name)
 }
