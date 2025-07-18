@@ -12,19 +12,29 @@ type ResponseWriterWrapper struct {
 }
 
 func NewResponseWriterWrapper(rw http.ResponseWriter) *ResponseWriterWrapper {
-	// delete all leftover headers and reset the Caddy header
-	for k := range rw.Header() {
-		rw.Header().Del(k)
-	}
-	rw.Header().Set("Caddy", "Server")
+	// NOTE: We should NOT delete headers here! The upstream proxy will set
+	// important headers like Content-Type, Content-Length, etc. that need to
+	// be preserved for the response to work properly.
+	//
+	// Commenting out header deletion - this was likely causing socket hangups
+	// for REST APIs because the client wasn't getting proper response headers.
+	//
+	// for k := range rw.Header() {
+	//     rw.Header().Del(k)
+	// }
+	// rw.Header().Set("Caddy", "Server")
+
 	return &ResponseWriterWrapper{
 		ResponseWriter: rw,
 		body:           new(bytes.Buffer),
+		statusCode:     200, // Default to 200 if WriteHeader is never called
 	}
 }
 
 func (rww *ResponseWriterWrapper) WriteHeader(statusCode int) {
 	rww.statusCode = statusCode
+	// Note: We DON'T call the underlying WriteHeader here because we want to
+	// capture the response and write it later after potential retries
 }
 
 func (rww *ResponseWriterWrapper) Write(b []byte) (int, error) {

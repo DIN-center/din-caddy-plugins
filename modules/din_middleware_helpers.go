@@ -184,6 +184,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	// Add the network to the middleware object
 	d.Networks[network.Name] = network
 
+	// Register network in global registry for DinUpstreams access
+	RegisterNetwork(network.Name, network)
+
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
 		network.startHealthcheck()

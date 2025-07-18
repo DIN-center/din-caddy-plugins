@@ -29,30 +29,30 @@ func TestDetectRequestType(t *testing.T) {
 		{
 			name: "JSON-RPC request with explicit EVM type",
 			network: &network{
-				Name:     "ethereum",
-				Type:     "evm",
-				ChainId:  "eip155:0x1",
+				Name:    "ethereum",
+				Type:    "evm",
+				ChainId: "eip155:0x1",
 			},
 			request: httptest.NewRequest("POST", "/ethereum",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}`)),
 			expectedType: networklib.RequestTypeRPC,
 		},
 		{
-			name: "REST request with explicit beacon_chain type",
+			name: "REST request with explicit eth_beacon_chain type",
 			network: &network{
-				Name:       "ethereum-beacon",
-				Type:       "beacon_chain",
+				Name:       "ethereum-beacon-mainnet",
+				Type:       "eth_beacon_chain",
 				ChainId:    "mainnet",
 				HCEndpoint: "/eth/v1/beacon/headers/head",
 			},
-			request:      httptest.NewRequest("GET", "/ethereum-beacon/eth/v1/beacon/genesis", nil),
+			request:      httptest.NewRequest("GET", "/ethereum-beacon-mainnet/eth/v1/beacon/genesis", nil),
 			expectedType: networklib.RequestTypeREST,
 		},
 		{
 			name: "Auto-detect JSON-RPC",
 			network: &network{
-				Name:     "ethereum-auto",
-				ChainId:  "eip155:0x1",
+				Name:    "ethereum-auto",
+				ChainId: "eip155:0x1",
 			},
 			request: func() *http.Request {
 				req := httptest.NewRequest("POST", "/ethereum-auto",
@@ -66,7 +66,7 @@ func TestDetectRequestType(t *testing.T) {
 			name: "Auto-detect REST by path pattern",
 			network: &network{
 				Name:    "ethereum-beacon-auto",
-				ChainId: "mainnet",
+				ChainId: "beacon:1",
 			},
 			request:      httptest.NewRequest("GET", "/ethereum-beacon-auto/eth/v1/beacon/states/head/validators", nil),
 			expectedType: networklib.RequestTypeREST,
@@ -74,9 +74,9 @@ func TestDetectRequestType(t *testing.T) {
 		{
 			name: "Starknet handler",
 			network: &network{
-				Name:     "starknet-mainnet",
-				Type:     "starknet",
-				ChainId:  "starknet:0x534e5f4d41494e",
+				Name:    "starknet-mainnet",
+				Type:    "starknet",
+				ChainId: "starknet:0x534e5f4d41494e",
 			},
 			request: httptest.NewRequest("POST", "/starknet-mainnet",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"starknet_blockNumber","id":1}`)),
@@ -85,9 +85,9 @@ func TestDetectRequestType(t *testing.T) {
 		{
 			name: "Solana handler",
 			network: &network{
-				Name:     "solana-mainnet",
-				Type:     "solana",
-				ChainId:  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+				Name:    "solana-mainnet",
+				Type:    "solana",
+				ChainId: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
 			},
 			request: httptest.NewRequest("POST", "/solana-mainnet",
 				strings.NewReader(`{"jsonrpc":"2.0","method":"getSlot","id":1}`)),
@@ -125,9 +125,9 @@ func TestRequestContext_IsRetryableError(t *testing.T) {
 	networklib.RegisterBuiltinHandlers()
 
 	network := &network{
-		Name:     "test-network",
-		Type:     "evm",
-		ChainId:  "eip155:0x1",
+		Name:    "test-network",
+		Type:    "evm",
+		ChainId: "eip155:0x1",
 	}
 
 	req := httptest.NewRequest("POST", "/test-network",
@@ -168,7 +168,7 @@ func TestHandlerRegistry_Lifecycle(t *testing.T) {
 	// Verify handlers are registered
 	handlers := registry.ListHandlers()
 	assert.Contains(t, handlers, "evm")
-	assert.Contains(t, handlers, "beacon_chain")
+	assert.Contains(t, handlers, "eth_beacon_chain")
 	assert.Contains(t, handlers, "starknet")
 	assert.Contains(t, handlers, "solana")
 
@@ -207,7 +207,7 @@ func TestRequestContext_GetRequestTypeString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
-			ctx := &RequestContext{Type: tt.requestType}
+			ctx := &RequestProcessor{Type: tt.requestType}
 			assert.Equal(t, tt.expected, ctx.GetRequestTypeString())
 		})
 	}
@@ -280,13 +280,13 @@ func TestRequestContextIntegration(t *testing.T) {
 	middleware := &DinMiddleware{
 		Networks: map[string]*network{
 			"ethereum": {
-				Name:     "ethereum",
-				Type:     "evm",
-				ChainId:  "eip155:0x1",
+				Name:    "ethereum",
+				Type:    "evm",
+				ChainId: "eip155:0x1",
 			},
-			"ethereum-beacon": {
-				Name:       "ethereum-beacon",
-				Type:       "beacon_chain",
+			"ethereum-beacon-mainnet": {
+				Name:       "ethereum-beacon-mainnet",
+				Type:       "eth_beacon_chain",
 				ChainId:    "mainnet",
 				HCEndpoint: "/eth/v1/beacon/headers/head",
 			},
@@ -317,11 +317,11 @@ func TestRequestContextIntegration(t *testing.T) {
 		},
 		{
 			name:         "Beacon Chain REST",
-			path:         "/ethereum-beacon/eth/v1/beacon/genesis",
+			path:         "/ethereum-beacon-mainnet/eth/v1/beacon/genesis",
 			method:       "GET",
 			body:         "",
 			contentType:  "",
-			networkName:  "ethereum-beacon",
+			networkName:  "ethereum-beacon-mainnet",
 			expectedType: networklib.RequestTypeREST,
 		},
 	}

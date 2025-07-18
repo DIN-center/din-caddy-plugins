@@ -67,3 +67,34 @@ func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte,
 
 	return body, aws.Int(res.StatusCode), nil
 }
+
+func (h *HTTPClient) Get(url string, headers map[string]string, auth auth.IAuthClient) ([]byte, *int, error) {
+	// Send the GET request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "Error making GET request")
+	}
+
+	// Set headers
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	if auth != nil {
+		if err := auth.Sign(req); err != nil {
+			return nil, nil, errors.Wrap(err, "Error authenticating GET request")
+		}
+	}
+	res, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "Error sending GET request")
+	}
+	defer res.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "Error reading response body")
+	}
+
+	return body, aws.Int(res.StatusCode), nil
+}

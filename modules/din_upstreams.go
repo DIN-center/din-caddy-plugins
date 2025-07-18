@@ -1,23 +1,48 @@
 package modules
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"go.uber.org/zap"
 )
 
+// Global registry for sharing network configurations between modules
 var (
-	// Initializations of extended Caddy Module Interface Guards
-	// https://caddyserver.com/docs/extending-caddy
-
-	// Din Upstream Module
-	_ caddy.Module                = (*DinUpstreams)(nil)
-	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
+	globalNetworkRegistry = make(map[string]*network)
+	globalNetworkMutex    sync.RWMutex
 )
 
-type DinUpstreams struct{}
+// RegisterNetwork registers a network configuration in the global registry
+func RegisterNetwork(name string, net *network) {
+	globalNetworkMutex.Lock()
+	defer globalNetworkMutex.Unlock()
+	globalNetworkRegistry[name] = net
+}
+
+// GetNetwork retrieves a network configuration from the global registry
+func GetNetwork(name string) (*network, bool) {
+	globalNetworkMutex.RLock()
+	defer globalNetworkMutex.RUnlock()
+	net, exists := globalNetworkRegistry[name]
+	return net, exists
+}
+
+// Compile-time check for interface implementations
+var (
+	_ caddy.Provisioner           = (*DinUpstreams)(nil)
+	_ reverseproxy.UpstreamSource = (*DinUpstreams)(nil)
+	_ caddyfile.Unmarshaler       = (*DinUpstreams)(nil)
+)
+
+type DinUpstreams struct {
+	logger *zap.Logger
+}
 
 // CaddyModule returns the Caddy module information.
 func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
@@ -27,16 +52,56 @@ func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up the upstream source.
+func (d *DinUpstreams) Provision(ctx caddy.Context) error {
+	d.logger = ctx.Logger(d)
+	return nil
+}
+
 // GetUpstreams returns the possible upstream endpoints for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
-	var providers map[string]*provider
-
-	// Get upstreams from the replacer context
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
-		providers = v.(map[string]*provider)
+	// Extract network name from request path
+	networkName := d.extractNetworkName(r.URL.Path)
+	if networkName == "" {
+		return nil, fmt.Errorf("no network name found in path")
 	}
 
+	// Get network configuration from global registry
+	networkConfig, exists := GetNetwork(networkName)
+	if !exists {
+		return nil, fmt.Errorf("network %s not found in registry", networkName)
+	}
+
+	// Convert providers to upstreams based on priority and health status
+	upstreamPool := d.buildUpstreamPool(networkConfig.Providers)
+
+	return upstreamPool, nil
+}
+
+// TODO: // Do we need this still?
+// extractNetworkName extracts the network name from the request path
+// For EVM: /optimism-mainnet/... -> "optimism-mainnet"
+// For Beacon: /eth-beacon-mainnet/eth/v1/... -> "eth-beacon-mainnet"
+func (d *DinUpstreams) extractNetworkName(path string) string {
+	// Remove leading slash and split by "/"
+	fullPath := strings.TrimPrefix(path, "/")
+	if fullPath == "" {
+		return ""
+	}
+
+	pathSegments := strings.Split(fullPath, "/")
+	if len(pathSegments) == 0 {
+		return ""
+	}
+
+	// First segment is always the network name
+	networkName := pathSegments[0]
+
+	return networkName
+}
+
+// buildUpstreamPool converts providers to upstreams with priority + health based selection
+func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider) []*reverseproxy.Upstream {
 	upstreamPool := make([]*reverseproxy.Upstream, 0)
 
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
@@ -66,8 +131,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		}
 	}
 
-	// If no upstreams are available, pass along no upstreams
-	return upstreamPool, nil
+	return upstreamPool
 }
 
 func (d *DinUpstreams) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

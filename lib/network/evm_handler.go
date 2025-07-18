@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
@@ -58,22 +60,9 @@ func (h *EVMHandler) Shutdown() error {
 // === EXISTING METHODS ===
 
 // Request processing methods
-func (h *EVMHandler) ProcessRequest(req *http.Request, provider Provider) error {
-	// Validate JSON-RPC request
-	if err := h.ValidateRequest(req); err != nil {
-		return err
-	}
-
-	// For EVM, path translation is simple - just use provider's path
-	if provider != nil {
-		translatedPath, err := h.TranslatePath(req.URL.Path, provider)
-		if err != nil {
-			return err
-		}
-		req.URL.Path = translatedPath
-		req.URL.RawPath = translatedPath
-	}
-
+func (h *EVMHandler) ProcessRequest(req *http.Request) error {
+	// Path translation is handled in DinSelect module
+	// This method is mainly for request validation
 	return nil
 }
 
@@ -123,94 +112,15 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 	return nil
 }
 
-func (h *EVMHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
-	// For EVM, use the provider's configured path
-	if provider != nil {
-		return provider.GetPath(), nil
-	}
-	return gatewayPath, nil
-}
-
-func (h *EVMHandler) NormalizeEndpoint(path string) string {
-	// For JSON-RPC, the "endpoint" is actually the method name
-	// This will be extracted from the request body during processing
-	// For now, return the path as-is since method extraction happens elsewhere
-	return path
-}
-
-// Health check methods
-func (h *EVMHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	// This method is used by the handler interface but the actual health check logic
-	// is handled by the existing network health check system. We return a basic implementation
-	// that indicates the method is available.
-	return &BlockInfo{
-		Number:    0,
-		Hash:      "",
-		Timestamp: time.Now(),
-	}, fmt.Errorf("GetLatestBlock should use the existing network health check system")
-}
-
-func (h *EVMHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	// This method is used by the handler interface but the actual health check logic
-	// is handled by the existing network health check system. We return a basic implementation
-	// that indicates the method is available.
-	return &HealthStatus{
-		Healthy:     false,
-		BlockNumber: 0,
-		Latency:     0,
-		Error:       fmt.Errorf("CheckHealth should use the existing network health check system"),
-	}, fmt.Errorf("CheckHealth should use the existing network health check system")
-}
-
 // Response handling methods
 func (h *EVMHandler) ParseResponse(body []byte, statusCode int) error {
-	// Basic JSON-RPC response validation
-	if statusCode != 200 {
-		return fmt.Errorf("HTTP error: %d", statusCode)
-	}
-
-	var response map[string]interface{}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	// Check for JSON-RPC error
-	if errorField, exists := response["error"]; exists && errorField != nil {
-		return fmt.Errorf("JSON-RPC error: %v", errorField)
-	}
-
-	return nil
+	// Use shared JSON-RPC response parsing logic
+	return ParseJSONRPCResponse(body, statusCode)
 }
 
 func (h *EVMHandler) IsRetryableError(err error, statusCode int) bool {
-	// HTTP server errors are retryable
-	if statusCode >= 500 {
-		return true
-	}
-
-	// If no error provided, check only status code
-	if err == nil {
-		return false
-	}
-
-	// Connection errors are retryable
-	errMsg := strings.ToLower(err.Error())
-	retryablePatterns := []string{
-		"timeout",
-		"connection",
-		"network",
-		"rate limit",
-		"server error",
-		"internal error",
-	}
-
-	for _, pattern := range retryablePatterns {
-		if strings.Contains(errMsg, pattern) {
-			return true
-		}
-	}
-
-	return false
+	// Use shared JSON-RPC retry logic
+	return IsRetryableJSONRPCError(err, statusCode)
 }
 
 // === NEW NETWORK-SPECIFIC METHODS ===
@@ -279,6 +189,47 @@ func (h *EVMHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 		return nil, fmt.Errorf("failed to unmarshal EVM block response: %w", err)
 	}
 	return response, nil
+}
+
+// ParseBlockNumberResponse parses the block number from a raw response
+func (h *EVMHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
+	// Check HTTP status first
+	if statusCode >= 400 {
+		if statusCode == 429 {
+			return 0, fmt.Errorf("rate limit error (status code: %d)", statusCode)
+		}
+		return 0, fmt.Errorf("error status code: %d", statusCode)
+	}
+
+	// Parse JSON-RPC response
+	var response JSONRPCResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON-RPC response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if response.Error != nil {
+		return 0, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	// EVM chains always return block numbers as hex strings
+	return ParseHexBlockNumber(response.Result)
+}
+
+// RequiresSeparateBlockInfoCall returns false for EVM as health check includes block info
+func (h *EVMHandler) RequiresSeparateBlockInfoCall() bool {
+	return false
+}
+
+// GetBlockInfoMethod returns empty for EVM as it uses the same endpoint for health and block info
+func (h *EVMHandler) GetBlockInfoMethod() string {
+	return "" // Not used for JSON-RPC chains
+}
+
+// GetChainID retrieves the chain ID from the EVM provider
+func (h *EVMHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	// Use the shared JSON-RPC logic with EVM-specific parsing
+	return GetChainIDViaJSONRPC(httpUrl, headers, httpClient, authClient, requestAttempts, h.GetChainIDMethod(), h.ParseChainIDResponse)
 }
 
 // Archive Mode methods
@@ -366,6 +317,10 @@ func (h *EVMHandler) GetHealthCheckMethod() string {
 	return "eth_blockNumber"
 }
 
+func (h *EVMHandler) GetHealthCheckHTTPMethod() string {
+	return "POST" // EVM uses JSON-RPC POST requests
+}
+
 func (h *EVMHandler) GetChainIDMethod() string {
 	return "eth_chainId"
 }
@@ -402,9 +357,32 @@ func (h *EVMHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
 	}, nil
 }
 
-// Factory function for EVM handler
-func NewEVMHandlerFactory() HandlerFactory {
-	return func(config *NetworkConfig) (NetworkHandler, error) {
-		return NewEVMHandler(config), nil
+func (h *EVMHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error: %d", statusCode)
 	}
+
+	var respObject map[string]interface{}
+	if err := json.Unmarshal(body, &respObject); err != nil {
+		return "", fmt.Errorf("failed to parse EVM chain ID response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if errorField, exists := respObject["error"]; exists && errorField != nil {
+		return "", fmt.Errorf("JSON-RPC error: %v", errorField)
+	}
+
+	// Extract result field
+	result, ok := respObject["result"]
+	if !ok {
+		return "", fmt.Errorf("missing result field in chain ID response")
+	}
+
+	// Extract chain reference and format full chain ID
+	chainReference, err := h.ExtractChainReference(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract chain reference: %w", err)
+	}
+
+	return h.FormatChainID(chainReference), nil
 }

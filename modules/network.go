@@ -2,11 +2,10 @@ package modules
 
 import (
 	"container/list"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +22,7 @@ import (
 
 type network struct {
 	Name             string
-	Type             string `json:"type,omitempty"` // Network type for handler registry (evm, beacon_chain, starknet, solana)
+	Type             string `json:"type"` // Network type for handler registry (evm, eth_beacon_chain, starknet, solana)
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
@@ -53,11 +52,6 @@ type network struct {
 	Methods   []*string            `json:"methods"`
 	ChainId   string               `json:"chain_id"`
 
-	// REMOVED: Network-specific method fields (now provided by handlers)
-	// HCMethod                string               `json:"healthcheck_method"`
-	// ChainIdMethod           string               `json:"chainid_method"`
-	// CallContractMethod      string               `json:"call_contract_method"`
-	// GetBlockByNumberMethod  string               `json:"get_block_by_number_method"`
 	HCInterval              int   `json:"healthcheck_interval_seconds"`
 	BlockLagLimit           int64 `json:"healthcheck_blocklag_limit"`
 	BlockJumpLimit          int64 `json:"healthcheck_blockjump_limit"`
@@ -74,7 +68,6 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 		Name: name,
 		Type: networkType, // Used for handler selection
 		// Default health check values, to be overridden if specified in the Caddyfile
-		// Removed network-specific method fields - now provided by handlers
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
 		HCInterval:               DefaultHCInterval,
@@ -96,8 +89,7 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 		config := &networklib.NetworkConfig{
 			Name:           name,
 			Type:           networkType,
-			ChainID:        "", // Will be set later from configuration
-			HealthEndpoint: "", // Will be set later from configuration
+			ChainID:        "",
 			MaxPayloadSize: DefaultMaxRequestPayloadSizeKB * 1024,
 			RequestTimeout: time.Duration(DefaultHCTimeout) * time.Second,
 			Custom:         make(map[string]interface{}),
@@ -153,8 +145,8 @@ func (n *network) startHealthcheck() {
 func (n *network) healthCheck() {
 	// Add handler status logging at the start of health check
 
-	// Self loopback health check (run asynchronously)
-	go n.LoopbackHealthCheck()
+	// Self loopback health check (run asynchronously) - TEMPORARILY DISABLED due to circular dependency
+	// go n.LoopbackHealthCheck()
 
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()
@@ -345,21 +337,25 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	}
 
 	// chainId check health check
-	chainId, err := n.getChainID(provider.HttpUrl, provider.Headers, provider.AuthClient())
-	if err != nil {
-		n.logProviderWarning("Error getting chain ID", provider,
-			zap.String("chain_id", chainId),
-			zap.String("expected_chain_id", n.ChainId),
-			zap.String("health_status", Unhealthy.String()))
-		return Unhealthy
-	}
+	// Use handler's GetChainID method for all network types
+	if n.handler != nil {
+		chainId, err := n.handler.GetChainID(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount)
+		if err != nil {
+			n.logProviderWarning("Error getting chain ID", provider,
+				zap.String("expected_chain_id", n.ChainId),
+				zap.String("health_status", Unhealthy.String()),
+				zap.Error(err))
+			return Unhealthy
+		}
 
-	if !n.verifyChainID(chainId) {
-		n.logProviderWarning("Provider has incorrect chain ID", provider,
-			zap.String("chain_id", chainId),
-			zap.String("expected_chain_id", n.ChainId),
-			zap.String("health_status", Unhealthy.String()))
-		return Unhealthy
+		if err := n.handler.ValidateChainID(chainId); err != nil {
+			n.logProviderWarning("Provider has incorrect chain ID", provider,
+				zap.String("chain_id", chainId),
+				zap.String("expected_chain_id", n.ChainId),
+				zap.String("validation_error", err.Error()),
+				zap.String("health_status", Unhealthy.String()))
+			return Unhealthy
+		}
 	}
 
 	// Archive Health Check - Use handler method instead of string checks
@@ -382,11 +378,6 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	}
 
 	return worstStatus
-}
-
-// verifyChainID checks if provider is serving correct chain
-func (n *network) verifyChainID(chainId string) bool {
-	return chainId == n.ChainId
 }
 
 // isStalled checks if provider's block numbers haven't changed
@@ -489,7 +480,7 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 	// Layer 1: Handle attempts
 	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
 		// Use handler-created payload instead of hardcoded format
-		healthPayload, err := n.createHealthCheckPayload(healthCheckMethod)
+		healthPayload, err := n.handler.CreateHealthCheckPayload(healthCheckMethod)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create health check payload: %w", err)
 		}
@@ -499,7 +490,42 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			repl.Set(RequestBodyKey, healthPayload)
 		}
 
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, healthPayload, ac)
+		// Use appropriate HTTP method based on handler preference
+		var resBytes []byte
+		var statusCode *int
+
+		// Debug logging
+		if n.handler != nil {
+			n.logger.Debug("Health check method selection",
+				zap.String("network", n.Name),
+				zap.String("handler_type", n.handler.GetType()),
+				zap.String("http_method", n.handler.GetHealthCheckHTTPMethod()),
+				zap.String("health_check_method", healthCheckMethod),
+				zap.String("provider_url", httpUrl))
+		}
+
+		if n.handler != nil && n.handler.GetHealthCheckHTTPMethod() == "GET" {
+			// For REST APIs like beacon chain, make GET request to the endpoint
+			parsedURL, parseErr := url.Parse(httpUrl)
+			if parseErr != nil {
+				lastErr = fmt.Errorf("failed to parse provider URL: %w", parseErr)
+				continue
+			}
+
+			// Combine the existing path with the health check method
+			parsedURL.Path = parsedURL.Path + healthCheckMethod
+			healthCheckURL := parsedURL.String()
+
+			n.logger.Debug("Making GET request for health check",
+				zap.String("url", healthCheckURL))
+			resBytes, statusCode, err = n.HttpClient.Get(healthCheckURL, headers, ac)
+		} else {
+			// For JSON-RPC APIs, make POST request with payload
+			n.logger.Debug("Making POST request for health check",
+				zap.String("url", httpUrl),
+				zap.ByteString("payload", healthPayload))
+			resBytes, statusCode, err = n.HttpClient.Post(httpUrl, headers, healthPayload, ac)
+		}
 		if err != nil {
 			lastErr = err
 			if statusCode != nil {
@@ -547,6 +573,103 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 			continue
 		}
 
+		// Debug log before checking for separate block info call
+		if n.logger != nil {
+			n.logger.Debug("Checking if separate block info call is needed",
+				zap.String("network", n.Name),
+				zap.Bool("has_handler", n.handler != nil),
+				zap.Bool("requires_separate_call", n.handler != nil && n.handler.RequiresSeparateBlockInfoCall()),
+				zap.Int64("block_info", blockInfo),
+				zap.Bool("condition_met", n.handler != nil && n.handler.RequiresSeparateBlockInfoCall() && blockInfo == -1))
+		}
+
+		// Check if we need a separate call for block info (e.g., beacon chain)
+		if n.handler != nil && n.handler.RequiresSeparateBlockInfoCall() && blockInfo == -1 {
+			// Make separate call to get block info
+			blockInfoMethod := n.handler.GetBlockInfoMethod()
+			blockInfoURL := fmt.Sprintf("%s%s", httpUrl, blockInfoMethod)
+
+			n.logger.Debug("Making separate GET request for block info",
+				zap.String("network", n.Name),
+				zap.String("url", blockInfoURL),
+				zap.String("block_info_method", blockInfoMethod))
+
+			blockInfoBytes, blockInfoStatus, blockInfoErr := n.HttpClient.Get(blockInfoURL, headers, ac)
+			if blockInfoErr != nil {
+				lastErr = blockInfoErr
+				if blockInfoStatus != nil {
+					lastResponseStatus = *blockInfoStatus
+				}
+
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Block info request failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: lastResponseStatus,
+					Error:               blockInfoErr,
+					Replacer:            repl,
+					ParsedReqBody:       nil,
+					RawResponseBody:     nil,
+				})
+				continue
+			}
+
+			// Parse block info response
+			blockInfoResult, parseErr := n.handler.ParseHealthCheckResponse(blockInfoBytes)
+			if parseErr != nil {
+				lastErr = parseErr
+				if blockInfoStatus != nil {
+					lastResponseStatus = *blockInfoStatus
+				}
+
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Block info parsing failed",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: lastResponseStatus,
+					Error:               parseErr,
+					Replacer:            repl,
+					ParsedReqBody:       nil,
+					RawResponseBody:     blockInfoBytes,
+				})
+				continue
+			}
+
+			// Check if block info result is nil
+			if blockInfoResult == nil {
+				lastErr = fmt.Errorf("handler returned nil block info")
+				logFailedAttempt(&LogFailedAttemptParams{
+					Reason:              "Block info result is nil",
+					Logger:              n.logger,
+					NetworkPath:         n.Name,
+					FailedAttemptNumber: attempt + 1,
+					MaxAttempts:         n.RequestAttemptCount,
+					StatusCodeOfFailure: lastResponseStatus,
+					Error:               lastErr,
+					Replacer:            repl,
+					ParsedReqBody:       nil,
+					RawResponseBody:     blockInfoBytes,
+				})
+				continue
+			}
+
+			// Update block info with actual data
+			blockInfo = blockInfoResult.Number
+
+			// Log successful block info update
+			if n.logger != nil {
+				n.logger.Debug("Successfully updated block info from separate call",
+					zap.String("network", n.Name),
+					zap.Int64("block_number", blockInfo),
+					zap.Int64("slot", blockInfoResult.Slot),
+					zap.Int64("epoch", blockInfoResult.Epoch))
+			}
+		}
+
 		// If the current attempt was successful, its status code should be used.
 		if statusCode != nil {
 			lastResponseStatus = *statusCode
@@ -568,41 +691,24 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 // Layer 3: Process response
 func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
-	// Evaluate health status based on status code
+	// Validate input
 	if statusCode == nil {
 		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
 	}
 
-	if *statusCode >= 400 {
-		// If status code is 429, set health status to Warning, otherwise return as unhealthy
-		if *statusCode == 429 {
-			return 0, Warning, fmt.Errorf("rate limit error (status code: %d)", *statusCode)
-		}
-		return 0, Unhealthy, fmt.Errorf("error status code: %d", *statusCode)
+	// Ensure handler is available
+	if n.handler == nil {
+		return 0, Unhealthy, fmt.Errorf("no handler available for network %s", n.Name)
 	}
 
-	var respObject map[string]interface{}
-	err := json.Unmarshal(resBytes, &respObject)
+	// Delegate to handler for network-specific parsing
+	blockNumber, err := n.handler.ParseBlockNumberResponse(resBytes, *statusCode)
 	if err != nil {
-		return 0, Unhealthy, errors.Wrap(err, "Error unmarshalling response")
-	}
-
-	var blockNumber int64
-
-	switch result := respObject["result"].(type) {
-	case string:
-		if result == "" || result[:2] != "0x" {
-			return 0, Unhealthy, errors.New("Invalid block number")
+		// Determine health status based on error type
+		if *statusCode == 429 {
+			return 0, Warning, err
 		}
-
-		blockNumber, err = strconv.ParseInt(result[2:], 16, 64)
-		if err != nil {
-			return 0, Unhealthy, errors.Wrap(err, "Error converting block number")
-		}
-	case float64:
-		blockNumber = int64(result)
-	default:
-		return 0, Unhealthy, errors.New("unsupported block number type")
+		return 0, Unhealthy, err
 	}
 
 	return blockNumber, Healthy, nil
@@ -630,12 +736,6 @@ func (n *network) getHealthCheckMethod() string {
 		return method
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for health check method",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return ""
 }
 
@@ -646,29 +746,7 @@ func (n *network) getArchiveMethod() string {
 		return n.handler.GetArchiveMethod()
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for archive method",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return ""
-}
-
-// createHealthCheckPayload creates health check payload using handler
-func (n *network) createHealthCheckPayload(method string) ([]byte, error) {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.CreateHealthCheckPayload(method)
-	}
-
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for creating health check payload",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
-	return nil, fmt.Errorf("no handler available for network %s", n.Name)
 }
 
 // processHealthCheckResponse processes health check response using handler
@@ -720,147 +798,7 @@ func (n *network) processHealthCheckResponse(resBytes []byte, statusCode *int) (
 		return blockInfo.Number, Healthy, nil
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for parsing health check response",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return 0, Unhealthy, fmt.Errorf("no handler available for network %s", n.Name)
-}
-
-func (n *network) getChainID(httpUrl string, headers map[string]string, ac auth.IAuthClient) (string, error) {
-	var lastErr error
-
-	// We'll extract the provider host from the httpUrl for logging
-	providerHost := httpUrl // Use the full URL as provider identifier for chain ID checks
-
-	// Use handler method instead of hardcoded ChainIdMethod
-	chainIDMethod := n.getChainIDMethod()
-	repl, jsonRPCReq, _ := createHealthCheckRequestContext(n.Name, providerHost, chainIDMethod)
-
-	// Layer 1: Handle attempts
-	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Use handler-created payload
-		chainIDPayload, err := n.createHealthCheckPayload(chainIDMethod)
-		if err != nil {
-			return "", fmt.Errorf("failed to create chain ID payload: %w", err)
-		}
-
-		// Update the replacer with actual payload
-		if chainIDPayload != nil {
-			repl.Set(RequestBodyKey, chainIDPayload)
-		}
-
-		// Send the POST request
-		resBytes, statusCode, err := n.HttpClient.Post(httpUrl, headers, chainIDPayload, ac)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Error sending POST request")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check HTTP request failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: 0, // No status code for HTTP errors
-				Error:               err,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // no response body for HTTP errors
-			})
-			continue
-		}
-
-		if *statusCode != http.StatusOK {
-			lastErr = errors.New("Error getting chain ID from response")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check HTTP request failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     nil, // Check for JSON-RPC error below
-			})
-			continue
-		}
-
-		// response struct
-		var respObject map[string]interface{}
-
-		// Unmarshal the response
-		err = json.Unmarshal(resBytes, &respObject)
-		if err != nil {
-			lastErr = errors.Wrap(err, "Error unmarshalling response")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check response processing failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     resBytes,
-			})
-			continue
-		}
-
-		if _, ok := respObject["result"]; !ok {
-			lastErr = errors.New("Error getting chain ID from response")
-
-			// Log the failed attempt with detailed information
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check response processing failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     resBytes,
-			})
-			continue
-		}
-
-		// Use handler method to extract and format chain ID
-		chainReference, err := n.extractChainReference(respObject["result"])
-		if err != nil {
-			lastErr = err
-
-			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "Health check response processing failed",
-				Logger:              n.logger,
-				NetworkPath:         n.Name,
-				FailedAttemptNumber: attempt + 1,
-				MaxAttempts:         n.RequestAttemptCount,
-				StatusCodeOfFailure: *statusCode,
-				Error:               lastErr,
-				Replacer:            repl,
-				ParsedReqBody:       jsonRPCReq,
-				RawResponseBody:     resBytes,
-			})
-			continue
-		}
-
-		// Use handler method to format full chain ID
-		fullChainId := n.formatChainID(chainReference)
-		return fullChainId, nil
-	}
-
-	return "", errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
 // archiveModeCheck performs archive mode check using handler
@@ -981,54 +919,6 @@ func (n *network) archiveModeCheck(httpUrl string, headers map[string]string, ac
 	return errors.Wrap(lastErr, fmt.Sprintf("Failed after %d attempts", n.RequestAttemptCount))
 }
 
-// getChainIDMethod returns the chain ID method using handler
-func (n *network) getChainIDMethod() string {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.GetChainIDMethod()
-	}
-
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for chain ID method",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
-	return ""
-}
-
-// extractChainReference extracts chain reference using handler
-func (n *network) extractChainReference(result interface{}) (string, error) {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.ExtractChainReference(result)
-	}
-
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for extracting chain reference",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
-	return "", fmt.Errorf("no handler available for network %s", n.Name)
-}
-
-// formatChainID formats the full chain ID using handler
-func (n *network) formatChainID(chainReference string) string {
-	// Use handler method if available
-	if n.handler != nil {
-		return n.handler.FormatChainID(chainReference)
-	}
-
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for formatting chain ID",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
-	return ""
-}
-
 // supportsArchiveMode checks if the network supports archive mode using handler
 func (n *network) supportsArchiveMode() bool {
 	// Use handler method if available
@@ -1036,12 +926,6 @@ func (n *network) supportsArchiveMode() bool {
 		return n.handler.SupportsArchiveMode()
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for archive mode check",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return false
 }
 
@@ -1052,12 +936,6 @@ func (n *network) formatBlockHeight(blockNum int64) string {
 		return n.handler.FormatBlockHeight(blockNum)
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for formatting block height",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return ""
 }
 
@@ -1334,12 +1212,6 @@ func (n *network) supportsGetBlockByNumber() bool {
 		return n.handler.SupportsGetBlockByNumber()
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for getBlockByNumber check",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return false
 }
 
@@ -1350,12 +1222,6 @@ func (n *network) getSupportedMethods() []string {
 		return n.handler.GetSupportedMethods()
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for getting supported methods",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return []string{}
 }
 
@@ -1383,12 +1249,6 @@ func (n *network) getBlockByNumberMethod() string {
 		}
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for getting block by number method",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return ""
 }
 
@@ -1399,12 +1259,6 @@ func (n *network) createBlockRequest(method string, blockNumber int64, includeTr
 		return n.handler.CreateBlockRequest(method, blockNumber, includeTransactions)
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for creating block request",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return nil, fmt.Errorf("no handler available for network %s", n.Name)
 }
 
@@ -1415,11 +1269,5 @@ func (n *network) parseBlockResponse(resBytes []byte) (interface{}, error) {
 		return n.handler.ParseBlockResponse(resBytes)
 	}
 
-	// REMOVED: No fallback logic - all networks must have handlers
-	if n.logger != nil {
-		n.logger.Error("No handler available for parsing block response",
-			zap.String("network", n.Name),
-			zap.String("type", n.Type))
-	}
 	return nil, fmt.Errorf("no handler available for network %s", n.Name)
 }

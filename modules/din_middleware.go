@@ -159,17 +159,23 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	d.handlerRegistry = networklib.DefaultRegistry
 	networklib.RegisterBuiltinHandlers()
 
-	// CRITICAL FIX: Reinitialize handlers after JSON deserialization
-	// The handler field is not JSON-serialized, so we need to recreate handlers based on the Type field
-	for networkName, networkObj := range d.Networks {
-		if networkObj.Type != "" {
+	// Initialize handlers and network configuration in a single loop
+	for networkName := range d.Networks {
+		// Access the network directly from the map to ensure persistence
+		networkObj := d.Networks[networkName]
 
-			// Configure the handler
+		// The handler field is not JSON-serialized, so we need to recreate handlers based on the Type field
+		if networkObj.Type != "" {
+			// Remove any existing handler to force recreation with updated configuration
+			if err := d.handlerRegistry.RemoveHandler(networkName); err != nil {
+				d.logger.Warn("Failed to remove existing handler", zap.String("network", networkName), zap.Error(err))
+			}
+
+			// Configure the handler with complete configuration including ChainID
 			config := &networklib.NetworkConfig{
 				Name:           networkName,
 				Type:           networkObj.Type,
 				ChainID:        networkObj.ChainId,
-				HealthEndpoint: networkObj.HCEndpoint,
 				MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
 				RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
 				Custom:         make(map[string]interface{}),
@@ -183,12 +189,6 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 			// Update the network's handler
 			networkObj.UpdateHandler(handler)
 		}
-	}
-
-	for networkName := range d.Networks {
-		// CRITICAL FIX: network is already a pointer from the map, but range gives us a copy
-		// We need to access the network directly from the map to ensure persistence
-		networkObj := d.Networks[networkName]
 
 		// Initialize the HTTP client for each network and provider
 		httpClient := dinHttp.NewHTTPClient(time.Duration(networkObj.HCTimeout) * time.Second)
@@ -198,8 +198,6 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		networkObj.PrometheusClient = promClient
 		networkObj.machineID = d.machineID
 
-		// Add comprehensive handler logging
-
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range networkObj.Providers {
 			err := d.initializeProvider(provider, httpClient, loggerClient)
@@ -207,6 +205,8 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				return fmt.Errorf("error initializing provider: %v", err)
 			}
 		}
+
+		// Validate that all routed methods are offered by at least one provider
 		if networkObj.MethodFilter != nil {
 			for method, _ := range networkObj.MethodFilter.FilteredMethods {
 				match := false
@@ -221,6 +221,10 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				}
 			}
 		}
+
+		// Register network in global registry for DinUpstreams access
+		RegisterNetwork(networkName, networkObj)
+
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -252,8 +256,12 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
 func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
+
 	url, err := url.Parse(provider.HttpUrl)
 	if err != nil {
+		d.logger.Error("Error parsing provider URL",
+			zap.String("http_url", provider.HttpUrl),
+			zap.Error(err))
 		return fmt.Errorf("error parsing provider URL: %v", err)
 	}
 
@@ -264,10 +272,15 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 
 	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
 	provider.path = url.Path
+
+	// Note: Authentication credentials from URL (username@host) are preserved in the URL
+	// and handled during request construction, not converted to Authorization headers
+
 	// Only set host if it hasn't been set already
 	if provider.host == "" {
 		provider.host = url.Host
 	}
+
 	if provider.Auth != nil {
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
@@ -287,13 +300,18 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	networkPath := strings.TrimPrefix(r.URL.Path, "/")
+	// Extract network path - for REST APIs, this is just the first segment
+	fullPath := strings.TrimPrefix(r.URL.Path, "/")
+	pathSegments := strings.Split(fullPath, "/")
+	networkPath := pathSegments[0] // Get the first segment as network name
+
 	networkObj, ok := d.Networks[networkPath]
 	if !ok {
 		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
@@ -302,6 +320,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			rw.Write([]byte("{}"))
 			return nil
 		}
+
 		rw.WriteHeader(404)
 		rw.Write([]byte("Not Found\n"))
 		return fmt.Errorf("network undefined")
@@ -317,18 +336,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Store request context in replacer for later use
-	repl.Set(RequestContextKey, reqContext)
+	repl.Set(RequestProcessorKey, reqContext)
 
-	// Log request type for debugging
-	d.logger.Debug("Request type detected",
-		zap.String("network", networkPath),
-		zap.String("request_type", reqContext.GetRequestTypeString()),
-		zap.String("network_type", reqContext.NetworkType),
-		zap.String("method", reqContext.Method),
-		zap.Bool("is_health_check", reqContext.IsHealthCheck))
+	// Middleware focuses on request validation only
+	// DinSelect will handle all REST API path processing during provider configuration
 
-	// Process the request using the handler
-	if err := reqContext.Handler.ProcessRequest(r, nil); err != nil {
+	// Process the request using the handler for validation only
+	if err := reqContext.Handler.ProcessRequest(r); err != nil {
+
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Bad Request\n"))
@@ -352,21 +367,30 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("request payload too large")
 	}
 
-	// Check to see if the request is empty,
-	if len(bodyBytes) == 0 {
-		// if the request body is empty, do not increment the prometheus metric, return an error
-		// this is specifically for OPTIONS requests and invalid requests payload bodies
+	// Check to see if the request is empty (only for JSON-RPC requests)
+	// REST APIs like beacon chain can have empty bodies for GET requests
+	if len(bodyBytes) == 0 && reqContext.Type == networklib.RequestTypeRPC {
+		// if the request body is empty for JSON-RPC, do not increment the prometheus metric, return an error
+		// this is specifically for OPTIONS requests and invalid JSON-RPC payload bodies
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Request body is empty\n"))
 		return fmt.Errorf("request body is empty")
 	}
 
-	requestBody, err := getRequestBody(repl)
-	if err != nil {
-		d.logger.Error("Failed to get request body", zap.String("network", networkPath), zap.Error(err))
-		return fmt.Errorf("failed to get request body: %w", err)
+	// For JSON-RPC requests, parse the request body to extract the method
+	var requestBody *dinHttp.JSONRPCRequest
+	if reqContext.Type == networklib.RequestTypeRPC {
+		var err error
+		requestBody, err = getRequestBody(repl)
+		if err != nil {
+			d.logger.Error("Failed to get request body", zap.String("network", networkPath), zap.Error(err))
+			return fmt.Errorf("failed to get request body: %w", err)
+		}
+		repl.Set(RequestMethodKey, requestBody.Method)
+	} else {
+		// For REST APIs, the method is already in the request context
+		repl.Set(RequestMethodKey, reqContext.Method)
 	}
-	repl.Set(RequestMethodKey, requestBody.Method)
 
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
@@ -412,33 +436,37 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
 
-		// Check for success: no HTTP error and 200 status
-		if err == nil && rww.statusCode == http.StatusOK {
-			// Check for JSON-RPC errors in the response body (only once)
+		// Check for success and handle response
+		if err == nil {
+			// Get response body
 			var responseBody []byte
 			if rww.body != nil {
 				responseBody = rww.body.Bytes()
 			}
 
-			jsonRPCError := checkForJSONRPCError(responseBody)
-			if jsonRPCError == nil {
-				// If the request was successful (no HTTP error and no JSON-RPC error), break out of the loop
+			// Create response processor
+			responseProcessor := NewResponseProcessor(networkObj.handler, d.logger.Logger)
+
+			// Check for application-level errors using the handler
+			appError := responseProcessor.CheckForApplicationError(responseBody, rww.statusCode, reqContext)
+			if appError == nil {
+				// Request was successful
 				shouldLogMetrics = true
 				break
 			}
 
-			// Check if this JSON-RPC error is retryable
-			if !isJSONRPCErrorRetryable(jsonRPCError) {
-				// Non-retryable JSON-RPC error (e.g., method not found, invalid params)
+			// Check if the error is retryable using the handler
+			if !responseProcessor.IsRetryableError(appError, rww.statusCode) {
+				// Non-retryable error
 				// Log this for debugging purposes since we won't retry
 				logFailedAttempt(&LogFailedAttemptParams{
-					Reason:              "Non-retryable JSON-RPC error",
+					Reason:              "Non-retryable application error",
 					Logger:              d.logger,
 					NetworkPath:         networkPath,
 					FailedAttemptNumber: attempt + 1,
 					MaxAttempts:         networkObj.RequestAttemptCount,
 					StatusCodeOfFailure: rww.statusCode,
-					Error:               nil, // no upstream error for JSON-RPC errors
+					Error:               appError,
 					Replacer:            repl,
 					ParsedReqBody:       requestBody,
 					RawResponseBody:     responseBody,
@@ -449,15 +477,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				break
 			}
 
-			// Log the failed attempt with JSON-RPC error information (only for retryable errors)
+			// Log the failed attempt with error information (only for retryable errors)
 			logFailedAttempt(&LogFailedAttemptParams{
-				Reason:              "JSON-RPC error",
+				Reason:              "Application error",
 				Logger:              d.logger,
 				NetworkPath:         networkPath,
 				FailedAttemptNumber: attempt + 1,
 				MaxAttempts:         networkObj.RequestAttemptCount,
 				StatusCodeOfFailure: rww.statusCode,
-				Error:               nil, // no upstream error for JSON-RPC errors
+				Error:               appError,
 				Replacer:            repl,
 				ParsedReqBody:       requestBody,
 				RawResponseBody:     responseBody,
@@ -534,11 +562,24 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Write the response body and status to the original response writer
 	// This is done after the request is attempted multiple times if needed
 	if rww != nil {
+
+		// Copy headers from wrapper to original response writer
+		for k, v := range rww.Header() {
+			rw.Header()[k] = v
+		}
+
 		rww.ResponseWriter.WriteHeader(rww.statusCode)
-		_, err = rw.Write(rww.body.Bytes())
+
+		// Write the body
+		_, err := rw.Write(rww.body.Bytes())
 		if err != nil {
 			d.logger.Error("Error writing response body", zap.String("network", networkPath), zap.Error(err))
 			return errors.Wrap(err, "Error writing response body")
+		}
+
+		// Flush the response to ensure all data is sent to the client
+		if flusher, ok := rw.(http.Flusher); ok {
+			flusher.Flush()
 		}
 	}
 
@@ -559,6 +600,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	return nil
+}
+
+// getNetworkNames returns a slice of available network names for debugging
+func (d *DinMiddleware) getNetworkNames() []string {
+	names := make([]string, 0, len(d.Networks))
+	for name := range d.Networks {
+		names = append(names, name)
+	}
+	return names
 }
 
 // UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
@@ -660,7 +710,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							Name:           networkName,
 							Type:           explicitType,
 							ChainID:        d.Networks[networkName].ChainId,
-							HealthEndpoint: d.Networks[networkName].HCEndpoint,
 							MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
 							RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
 							Custom:         make(map[string]interface{}),
@@ -893,7 +942,6 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						Name:           networkName,
 						Type:           "evm",
 						ChainID:        d.Networks[networkName].ChainId,
-						HealthEndpoint: d.Networks[networkName].HCEndpoint,
 						MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
 						RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
 						Custom:         make(map[string]interface{}),

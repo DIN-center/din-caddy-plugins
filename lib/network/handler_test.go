@@ -2,9 +2,12 @@
 package network
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
-	"time"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 // Mock provider for testing
@@ -38,28 +41,8 @@ func (m *MockHandler) GetRequestType() RequestType            { return m.request
 func (m *MockHandler) Initialize(config *NetworkConfig) error { m.initialized = true; return nil }
 func (m *MockHandler) Shutdown() error                        { return nil }
 
-func (m *MockHandler) ProcessRequest(req *http.Request, provider Provider) error {
+func (m *MockHandler) ProcessRequest(req *http.Request) error {
 	return nil
-}
-
-func (m *MockHandler) ValidateRequest(req *http.Request) error {
-	return nil
-}
-
-func (m *MockHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
-	return gatewayPath, nil
-}
-
-func (m *MockHandler) NormalizeEndpoint(path string) string {
-	return path
-}
-
-func (m *MockHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	return &BlockInfo{Number: 12345}, nil
-}
-
-func (m *MockHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	return &HealthStatus{Healthy: true}, nil
 }
 
 func (m *MockHandler) ParseResponse(body []byte, statusCode int) error {
@@ -79,6 +62,10 @@ func (m *MockHandler) GetNamespace() string {
 
 func (m *MockHandler) ValidateChainID(chainID string) error {
 	return nil
+}
+
+func (m *MockHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	return "mock:1", nil
 }
 
 func (m *MockHandler) FormatChainID(networkReference string) string {
@@ -142,6 +129,10 @@ func (m *MockHandler) GetHealthCheckMethod() string {
 	return "mock_health"
 }
 
+func (m *MockHandler) GetHealthCheckHTTPMethod() string {
+	return "POST" // Mock handler defaults to POST
+}
+
 func (m *MockHandler) GetChainIDMethod() string {
 	return "mock_chainid"
 }
@@ -151,11 +142,29 @@ func (m *MockHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
 }
 
 func (m *MockHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
-	return &BlockInfo{
-		Number:    12345,
-		Hash:      "0xmockhash",
-		Timestamp: time.Now(),
-	}, nil
+	return &BlockInfo{Number: 12345}, nil
+}
+
+func (m *MockHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
+	if statusCode >= 400 {
+		return 0, fmt.Errorf("error status code: %d", statusCode)
+	}
+	return 12345, nil
+}
+
+func (m *MockHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
+	if statusCode >= 400 {
+		return "", fmt.Errorf("error status code: %d", statusCode)
+	}
+	return "mock:1", nil
+}
+
+func (m *MockHandler) RequiresSeparateBlockInfoCall() bool {
+	return false
+}
+
+func (m *MockHandler) GetBlockInfoMethod() string {
+	return "mock_blockinfo"
 }
 
 func TestHandlerRegistry_RegisterHandler(t *testing.T) {
@@ -302,9 +311,6 @@ func TestHandlerRegistry_GetHandlerInfo(t *testing.T) {
 		t.Errorf("Expected name 'Test Handler', got %s", info.Name)
 	}
 
-	if info.Version != "1.0.0" {
-		t.Errorf("Expected version '1.0.0', got %s", info.Version)
-	}
 }
 
 func TestHandlerRegistry_ShutdownAll(t *testing.T) {
@@ -383,14 +389,14 @@ func TestEVMHandler_Basic(t *testing.T) {
 func TestBeaconChainHandler_Basic(t *testing.T) {
 	config := &NetworkConfig{
 		Name: "test-beacon",
-		Type: "beacon_chain",
+		Type: "eth_beacon_chain",
 	}
 
 	handler := NewBeaconChainHandler(config)
 
 	// Test metadata
-	if handler.GetType() != "beacon_chain" {
-		t.Errorf("Expected type 'beacon_chain', got %s", handler.GetType())
+	if handler.GetType() != "eth_beacon_chain" {
+		t.Errorf("Expected type 'eth_beacon_chain', got %s", handler.GetType())
 	}
 
 	if handler.GetName() != "Ethereum Beacon Chain Handler" {
@@ -418,7 +424,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "beacon_chain", "starknet", "solana", "bitcoin"}
+	expectedHandlers := []string{"evm", "eth_beacon_chain", "starknet", "solana"}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

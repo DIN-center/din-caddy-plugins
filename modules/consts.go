@@ -16,7 +16,7 @@ const (
 	RequestProviderKey              = "request_provider"
 	RequestBodyKey                  = "request_body"
 	RequestMethodKey                = "request_method"
-	RequestContextKey               = "request_context"
+	RequestProcessorKey             = "request_processor"
 	HealthStatusKey                 = "health_status"
 	BlockNumberKey                  = "block_number"
 	DefaultProviderBlockHistorySize = 10

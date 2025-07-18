@@ -6,35 +6,35 @@ import (
 	"sync"
 )
 
-// HandlerFactory is a function that creates a new handler instance
-type HandlerFactory func(config *NetworkConfig) (NetworkHandler, error)
+// HandlerConstructor is a function that creates a new handler instance
+type HandlerConstructor func(config *NetworkConfig) (NetworkHandler, error)
 
 // HandlerRegistry manages available network handlers
 type HandlerRegistry struct {
-	mu        sync.RWMutex
-	factories map[string]HandlerFactory
-	handlers  map[string]NetworkHandler
+	mu           sync.RWMutex
+	constructors map[string]HandlerConstructor
+	handlers     map[string]NetworkHandler
 }
 
 // NewHandlerRegistry creates a new handler registry
 func NewHandlerRegistry() *HandlerRegistry {
 	return &HandlerRegistry{
-		factories: make(map[string]HandlerFactory),
-		handlers:  make(map[string]NetworkHandler),
+		constructors: make(map[string]HandlerConstructor),
+		handlers:     make(map[string]NetworkHandler),
 	}
 }
 
-// RegisterHandler registers a new handler factory for a network type
-func (r *HandlerRegistry) RegisterHandler(networkType string, factory HandlerFactory) error {
+// RegisterHandler registers a new handler constructor for a network type
+func (r *HandlerRegistry) RegisterHandler(networkType string, constructor HandlerConstructor) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.factories[networkType]; exists {
+	if _, exists := r.constructors[networkType]; exists {
 		// Handler already registered, this is safe to ignore
 		return nil
 	}
 
-	r.factories[networkType] = factory
+	r.constructors[networkType] = constructor
 	return nil
 }
 
@@ -57,14 +57,21 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 		return handler, nil
 	}
 
-	factory, exists := r.factories[networkType]
+	constructor, exists := r.constructors[networkType]
 	if !exists {
 		return nil, fmt.Errorf("no handler registered for network type '%s'", networkType)
 	}
 
-	handler, err := factory(config)
+	handler, err := constructor(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create handler for network type '%s': %w", networkType, err)
+	}
+
+	// Validate ChainID format for the specific network type
+	if config.ChainID != "" {
+		if err := handler.ValidateChainID(config.ChainID); err != nil {
+			return nil, fmt.Errorf("invalid chain ID '%s' for network type '%s': %w", config.ChainID, networkType, err)
+		}
 	}
 
 	if err := handler.Initialize(config); err != nil {
@@ -80,31 +87,33 @@ func (r *HandlerRegistry) ListHandlers() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	types := make([]string, 0, len(r.factories))
-	for handlerType := range r.factories {
+	types := make([]string, 0, len(r.constructors))
+	for handlerType := range r.constructors {
 		types = append(types, handlerType)
 	}
 	return types
 }
 
-// ShutdownAll shuts down all active handlers
+// RemoveHandler removes a specific handler from the registry
+func (r *HandlerRegistry) RemoveHandler(networkName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.handlers[networkName]; exists {
+		// Just remove the handler from the map
+		// No shutdown needed since we removed the Shutdown method
+		delete(r.handlers, networkName)
+	}
+	return nil
+}
+
+// ShutdownAll clears all active handlers
 func (r *HandlerRegistry) ShutdownAll() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	var errors []error
-	for name, handler := range r.handlers {
-		if err := handler.Shutdown(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to shutdown handler '%s': %w", name, err))
-		}
-	}
-
 	// Clear the handlers map
 	r.handlers = make(map[string]NetworkHandler)
-
-	if len(errors) > 0 {
-		return fmt.Errorf("multiple shutdown errors: %v", errors)
-	}
 	return nil
 }
 
@@ -112,7 +121,6 @@ func (r *HandlerRegistry) ShutdownAll() error {
 type HandlerInfo struct {
 	Type        string
 	Name        string
-	Version     string
 	Description string
 }
 
@@ -121,21 +129,20 @@ func (r *HandlerRegistry) GetHandlerInfo(networkType string) (*HandlerInfo, erro
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	factory, exists := r.factories[networkType]
+	constructor, exists := r.constructors[networkType]
 	if !exists {
 		return nil, fmt.Errorf("no handler registered for network type '%s'", networkType)
 	}
 
 	// Create a temporary handler to get its metadata
-	tempHandler, err := factory(&NetworkConfig{Type: networkType})
+	tempHandler, err := constructor(&NetworkConfig{Type: networkType})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary handler: %w", err)
 	}
 
 	return &HandlerInfo{
-		Type:    tempHandler.GetType(),
-		Name:    tempHandler.GetName(),
-		Version: tempHandler.GetVersion(),
+		Type: tempHandler.GetType(),
+		Name: tempHandler.GetName(),
 	}, nil
 }
 

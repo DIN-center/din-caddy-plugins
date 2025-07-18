@@ -3,7 +3,9 @@ package modules
 import (
 	"net/http"
 	"net/url"
+	"strings"
 
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
@@ -53,46 +55,100 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		return nil
 	}
 
-	// Get providers from context
+	// Get providers and request context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var providers map[string]*provider
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		providers = v.(map[string]*provider)
 	}
 
-	// Select upstream based on request
+	// Get request context to determine if this is a REST API
+	var reqContext *RequestProcessor
+	if v, ok := repl.Get(RequestProcessorKey); ok {
+		reqContext = v.(*RequestProcessor)
+	}
+
+	// Select upstream based on request using the header hash selector
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
+	// Apply provider-specific configuration (path, headers, auth)
 	for _, provider := range providers {
-
 		// If the upstream is found in the providers, set the path and headers for the request
 		if selectedUpstream == provider.upstream {
-			r.URL.RawPath = provider.path
-			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range provider.Headers {
-				r.Header.Add(k, v)
-			}
-			if provider.Auth != nil {
-				if err := provider.Auth.Sign(r); err != nil {
-					d.logger.Error("error signing request", zap.String("err", err.Error()))
-				}
-			}
-			if v := r.Header.Get(DinProviderInfo); v != "" {
-				rw.Header().Set(DinProviderInfo, provider.host)
-			}
-			repl.Set(RequestProviderKey, provider.host)
+			d.applyProviderConfiguration(provider, r, rw, repl, reqContext)
 			break
 		}
 	}
 
-	// d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	return selectedUpstream
+}
 
-	// if the request body is nil, return without setting the context for request metrics
-	if r.Body == nil {
-		return selectedUpstream
+// TODO: Can we clean this up?
+// applyProviderConfiguration applies provider-specific settings to the request
+func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, reqContext *RequestProcessor) {
+	// Handle path configuration with generic REST API support
+	currentPath := r.URL.Path
+
+	// For REST APIs, strip the network prefix from the path
+	// e.g., "/eth-beacon-mainnet/eth/v1/beacon/genesis" -> "/eth/v1/beacon/genesis"
+	// This works for any REST API handler (beacon chain, future REST APIs, etc.)
+	if reqContext != nil && reqContext.Type == networklib.RequestTypeREST {
+		pathSegments := strings.Split(strings.TrimPrefix(currentPath, "/"), "/")
+		if len(pathSegments) > 1 {
+			// Remove the first segment (network name) and rebuild path
+			strippedPath := "/" + strings.Join(pathSegments[1:], "/")
+			currentPath = strippedPath
+		}
 	}
 
-	return selectedUpstream
+	// Set the final path based on request type and provider configuration
+	if reqContext != nil && reqContext.Type == networklib.RequestTypeREST {
+		// Parse the original provider URL to extract components
+		if _, err := url.Parse(provider.HttpUrl); err == nil {
+			// We can still parse and use the URL components for other purposes
+			// but we should NOT set scheme/host/user on the request URL
+			// as this confuses Caddy's reverse proxy
+
+			// Combine provider base path with processed request path
+			if provider.path != "" && provider.path != "/" {
+				combinedPath := strings.TrimSuffix(provider.path, "/") + currentPath
+				r.URL.Path = combinedPath
+			} else {
+				r.URL.Path = currentPath
+			}
+			r.URL.RawPath = ""
+		} else {
+			// Fallback to standard path handling if URL parsing fails
+			d.logger.Error("Failed to parse provider URL", zap.String("provider_url", provider.HttpUrl), zap.Error(err))
+			r.URL.Path = currentPath
+		}
+	} else if provider.path != "" {
+		// For RPC providers with configured paths, use the configured provider path
+		r.URL.RawPath = provider.path
+		r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
+	} else {
+		// For RPC providers without configured paths, use the current path
+		r.URL.Path = currentPath
+		r.URL.RawPath = ""
+	}
+
+	// Apply headers
+	for k, v := range provider.Headers {
+		r.Header.Add(k, v)
+	}
+
+	// Apply authentication
+	if provider.Auth != nil {
+		if err := provider.Auth.Sign(r); err != nil {
+			d.logger.Error("error signing request", zap.String("err", err.Error()))
+		}
+	}
+
+	// Set provider info header
+	if v := r.Header.Get(DinProviderInfo); v != "" {
+		rw.Header().Set(DinProviderInfo, provider.host)
+	}
+	repl.Set(RequestProviderKey, provider.host)
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

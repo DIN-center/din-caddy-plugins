@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 type StarknetHandler struct {
@@ -52,21 +53,9 @@ func (h *StarknetHandler) Shutdown() error {
 
 // === EXISTING METHODS ===
 
-func (h *StarknetHandler) ProcessRequest(req *http.Request, provider Provider) error {
-	// Validate Starknet JSON-RPC request
-	if err := h.ValidateRequest(req); err != nil {
-		return err
-	}
-
-	// For Starknet, path translation is simple - just use provider.path
-	if provider != nil {
-		translatedPath, err := h.TranslatePath(req.URL.Path, provider)
-		if err != nil {
-			return err
-		}
-		req.URL.Path = translatedPath
-		req.URL.RawPath = translatedPath
-	}
+func (h *StarknetHandler) ProcessRequest(req *http.Request) error {
+	// Path translation is handled in DinSelect module
+	// This method is mainly for request validation
 
 	return nil
 }
@@ -86,64 +75,14 @@ func (h *StarknetHandler) ValidateRequest(req *http.Request) error {
 	return nil
 }
 
-func (h *StarknetHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
-	// For Starknet, use the provider's configured path
-	if provider != nil {
-		return provider.GetPath(), nil
-	}
-	return gatewayPath, nil
-}
-
-func (h *StarknetHandler) NormalizeEndpoint(path string) string {
-	// For JSON-RPC, the "endpoint" is actually the method name
-	// This will be extracted from the request body during processing
-	return path
-}
-
-func (h *StarknetHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	// Implementation would use starknet_blockNumber instead of eth_blockNumber
-	// For now, return placeholder implementation
-	return &BlockInfo{
-		Number:    0, // To be implemented with starknet_blockNumber call
-		Hash:      "",
-		Timestamp: time.Now(),
-	}, nil
-}
-
-func (h *StarknetHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	// Implementation would use starknet-specific health check logic
-	return &HealthStatus{
-		Healthy:     true,
-		BlockNumber: 0,
-		Latency:     0,
-		Error:       nil,
-	}, nil
-}
-
 func (h *StarknetHandler) ParseResponse(body []byte, statusCode int) error {
-	// Parse Starknet JSON-RPC response and check for errors
-	var response dinHttp.JSONRPCResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse Starknet JSON-RPC response: %w", err)
-	}
-
-	if response.Error != nil {
-		return fmt.Errorf("Starknet JSON-RPC error: %s", response.Error.Message)
-	}
-
-	return nil
+	// Use the shared JSON-RPC response parser
+	return ParseJSONRPCResponse(body, statusCode)
 }
 
 func (h *StarknetHandler) IsRetryableError(err error, statusCode int) bool {
-	// Use similar logic to EVM but could be customized for Starknet-specific errors
-	if statusCode >= 500 {
-		return true
-	}
-
-	// Check for specific Starknet JSON-RPC error codes
-	// This would integrate with existing isJSONRPCErrorRetryable logic
-	// but could be customized for Starknet-specific error patterns
-	return false
+	// Use the shared JSON-RPC error retry logic
+	return IsRetryableJSONRPCError(err, statusCode)
 }
 
 // === NEW NETWORK-SPECIFIC METHODS ===
@@ -217,6 +156,53 @@ func (h *StarknetHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 		return nil, fmt.Errorf("failed to unmarshal Starknet block response: %w", err)
 	}
 	return response, nil
+}
+
+// ParseBlockNumberResponse parses the block number from a raw response
+func (h *StarknetHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
+	// Check HTTP status first
+	if statusCode >= 400 {
+		if statusCode == 429 {
+			return 0, fmt.Errorf("rate limit error (status code: %d)", statusCode)
+		}
+		return 0, fmt.Errorf("error status code: %d", statusCode)
+	}
+
+	// Parse JSON-RPC response
+	var response JSONRPCResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON-RPC response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if response.Error != nil {
+		return 0, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	// Starknet can return block numbers as either numeric or hex values
+	// First try to parse as a number
+	if num, err := ParseNumericBlockNumber(response.Result); err == nil {
+		return num, nil
+	}
+
+	// If that fails, try hex format
+	return ParseHexBlockNumber(response.Result)
+}
+
+// RequiresSeparateBlockInfoCall returns false for Starknet as health check includes block info
+func (h *StarknetHandler) RequiresSeparateBlockInfoCall() bool {
+	return false
+}
+
+// GetBlockInfoMethod returns empty for Starknet as it uses the same endpoint for health and block info
+func (h *StarknetHandler) GetBlockInfoMethod() string {
+	return "" // Not used for JSON-RPC chains
+}
+
+// GetChainID retrieves the chain ID from the Starknet provider
+func (h *StarknetHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	// Use the shared JSON-RPC logic with Starknet-specific parsing
+	return GetChainIDViaJSONRPC(httpUrl, headers, httpClient, authClient, requestAttempts, h.GetChainIDMethod(), h.ParseChainIDResponse)
 }
 
 // Archive Mode methods
@@ -323,6 +309,10 @@ func (h *StarknetHandler) GetHealthCheckMethod() string {
 	return "starknet_blockNumber"
 }
 
+func (h *StarknetHandler) GetHealthCheckHTTPMethod() string {
+	return "POST" // Starknet uses JSON-RPC POST requests
+}
+
 func (h *StarknetHandler) GetChainIDMethod() string {
 	return "starknet_chainId"
 }
@@ -357,6 +347,36 @@ func (h *StarknetHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, err
 		Hash:      "",
 		Timestamp: time.Now(),
 	}, nil
+}
+
+func (h *StarknetHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error: %d", statusCode)
+	}
+
+	var respObject map[string]interface{}
+	if err := json.Unmarshal(body, &respObject); err != nil {
+		return "", fmt.Errorf("failed to parse Starknet chain ID response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if errorField, exists := respObject["error"]; exists && errorField != nil {
+		return "", fmt.Errorf("JSON-RPC error: %v", errorField)
+	}
+
+	// Extract result field
+	result, ok := respObject["result"]
+	if !ok {
+		return "", fmt.Errorf("missing result field in chain ID response")
+	}
+
+	// Extract chain reference and format full chain ID
+	chainReference, err := h.ExtractChainReference(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract chain reference: %w", err)
+	}
+
+	return h.FormatChainID(chainReference), nil
 }
 
 // === COMPATIBILITY METHODS (keeping existing methods) ===

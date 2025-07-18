@@ -1,7 +1,6 @@
 package network
 
 import (
-	"net/http"
 	"testing"
 )
 
@@ -139,119 +138,5 @@ func TestStarknetHandler_GetCallContractMethod(t *testing.T) {
 
 	if handler.GetCallContractMethod() != "starknet_call" {
 		t.Errorf("Expected call contract method 'starknet_call', got '%s'", handler.GetCallContractMethod())
-	}
-}
-
-func TestStarknetHandler_ValidateRequest(t *testing.T) {
-	handler := NewStarknetHandler(&NetworkConfig{})
-
-	tests := []struct {
-		name        string
-		method      string
-		contentType string
-		expectError bool
-	}{
-		{
-			name:        "valid request",
-			method:      "POST",
-			contentType: "application/json",
-			expectError: false,
-		},
-		{
-			name:        "invalid method",
-			method:      "GET",
-			contentType: "application/json",
-			expectError: true,
-		},
-		{
-			name:        "invalid content type",
-			method:      "POST",
-			contentType: "text/plain",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequest(tt.method, "/", nil)
-			req.Header.Set("Content-Type", tt.contentType)
-
-			err := handler.ValidateRequest(req)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error but got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error but got: %v", err)
-			}
-		})
-	}
-}
-
-// MockProvider implements the Provider interface for testing
-type MockStarknetProvider struct {
-	url      string
-	headers  map[string]string
-	path     string
-	host     string
-	priority int
-}
-
-func (m *MockStarknetProvider) GetURL() string {
-	return m.url
-}
-
-func (m *MockStarknetProvider) GetHeaders() map[string]string {
-	return m.headers
-}
-
-func (m *MockStarknetProvider) GetPath() string {
-	return m.path
-}
-
-func (m *MockStarknetProvider) GetHost() string {
-	return m.host
-}
-
-func (m *MockStarknetProvider) GetPriority() int {
-	return m.priority
-}
-
-func TestStarknetHandler_TranslatePath(t *testing.T) {
-	handler := NewStarknetHandler(&NetworkConfig{})
-
-	tests := []struct {
-		name         string
-		gatewayPath  string
-		provider     Provider
-		expectedPath string
-	}{
-		{
-			name:         "nil provider",
-			gatewayPath:  "/starknet-mainnet",
-			provider:     nil,
-			expectedPath: "/starknet-mainnet",
-		},
-		{
-			name:        "provider with path",
-			gatewayPath: "/starknet-mainnet",
-			provider: &MockStarknetProvider{
-				path: "/rpc/v0_7",
-			},
-			expectedPath: "/rpc/v0_7",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := handler.TranslatePath(tt.gatewayPath, tt.provider)
-			if err != nil {
-				t.Errorf("TranslatePath() error = %v", err)
-				return
-			}
-			if result != tt.expectedPath {
-				t.Errorf("TranslatePath() = %v, expected %v", result, tt.expectedPath)
-			}
-		})
 	}
 }

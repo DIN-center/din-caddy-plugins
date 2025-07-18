@@ -16,6 +16,8 @@ require (
 	go.uber.org/zap v1.27.0
 )
 
+require github.com/stretchr/objx v0.5.2 // indirect
+
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect

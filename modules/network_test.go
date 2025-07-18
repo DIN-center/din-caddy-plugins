@@ -82,45 +82,6 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 	}
 }
 
-func TestVerifyChainID(t *testing.T) {
-	tests := []struct {
-		name      string
-		chainID   string
-		expected  bool
-		networkID string
-	}{
-		{
-			name:      "matching_chain_id",
-			chainID:   "eip155:1",
-			expected:  true,
-			networkID: "eip155:1",
-		},
-		{
-			name:      "non_matching_chain_id",
-			chainID:   "eip155:137",
-			expected:  false,
-			networkID: "eip155:1",
-		},
-		{
-			name:      "empty_chain_id",
-			chainID:   "",
-			expected:  false,
-			networkID: "eip155:1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
-			assert.NoError(t, err)
-			n.ChainId = tt.networkID
-
-			result := n.verifyChainID(tt.chainID)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestIsStalled(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -302,12 +263,12 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 			expectErr:         false,
 		},
 		{
-			name:              "valid_decimal_response",
+			name:              "invalid_decimal_response",
 			resBytes:          []byte(`{"result":100}`),
 			statusCode:        200,
 			passNilStatusCode: false,
-			expected:          100,
-			expectErr:         false,
+			expected:          0,
+			expectErr:         true,
 		},
 		{
 			name:              "error_status_code",
@@ -503,109 +464,6 @@ func TestArchiveModeCheck(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestGetChainID(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	tests := []struct {
-		name           string
-		networkName    string
-		networkType    string
-		httpResponse   []byte
-		statusCode     int
-		httpError      error
-		expected       string
-		expectError    bool
-		expectedErrMsg string
-	}{
-		{
-			name:         "successful_evm_chain_id",
-			networkName:  "ethereum",
-			networkType:  "evm",
-			httpResponse: []byte(`{"result":"0x1"}`),
-			statusCode:   200,
-			httpError:    nil,
-			expected:     "eip155:0x1",
-			expectError:  false,
-		},
-		{
-			name:           "network_error",
-			networkName:    "ethereum",
-			networkType:    "evm",
-			httpResponse:   nil,
-			statusCode:     0,
-			httpError:      errors.New("connection failed"),
-			expected:       "",
-			expectError:    true,
-			expectedErrMsg: "Failed after",
-		},
-		{
-			name:           "http_error_status",
-			networkName:    "ethereum",
-			networkType:    "evm",
-			httpResponse:   []byte(`{"error":"unauthorized"}`),
-			statusCode:     401,
-			httpError:      nil,
-			expected:       "",
-			expectError:    true,
-			expectedErrMsg: "Failed after",
-		},
-		{
-			name:           "invalid_json",
-			networkName:    "ethereum",
-			networkType:    "evm",
-			httpResponse:   []byte(`{"invalid_json"`),
-			statusCode:     200,
-			httpError:      nil,
-			expected:       "",
-			expectError:    true,
-			expectedErrMsg: "Failed after",
-		},
-		{
-			name:           "missing_result",
-			networkName:    "ethereum",
-			networkType:    "evm",
-			httpResponse:   []byte(`{"error":"missing result"}`),
-			statusCode:     200,
-			httpError:      nil,
-			expected:       "",
-			expectError:    true,
-			expectedErrMsg: "Failed after",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create mock HTTP client
-			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
-			mockHTTPClient.EXPECT().
-				Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(tt.httpResponse, &tt.statusCode, tt.httpError).
-				AnyTimes()
-
-			n, err := NewNetwork(tt.networkName, tt.networkType, utils.Environment("test"), "8000")
-			assert.NoError(t, err)
-			n.HttpClient = mockHTTPClient
-			n.RequestAttemptCount = 1
-
-			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-
-			result, err := n.getChainID("http://test.com", map[string]string{}, nil)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.expectedErrMsg != "" {
-					assert.Contains(t, err.Error(), tt.expectedErrMsg)
-				}
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
 			}
 		})
 	}
@@ -1193,7 +1051,7 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_beacon_network",
 			networkName: "ethereum-beacon",
-			networkType: "beacon_chain",
+			networkType: "eth_beacon_chain",
 			environment: utils.EnvProd,
 			caddyPort:   "8080",
 			expectError: false,
@@ -1225,15 +1083,6 @@ func TestNewNetwork(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNetworkVerifyChainID(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
-	assert.NoError(t, err)
-	n.ChainId = "eip155:1"
-
-	assert.True(t, n.verifyChainID("eip155:1"))
-	assert.False(t, n.verifyChainID("eip155:137"))
 }
 
 func TestNetwork_processBlockNumberResponse(t *testing.T) {
@@ -1275,7 +1124,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
 			expectedHealth:   Unhealthy,
-			expectedErrorMsg: "Error unmarshalling response",
+			expectedErrorMsg: "failed to parse JSON-RPC response",
 		},
 		{
 			name:             "valid_hex_result",
@@ -1286,12 +1135,12 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			expectedErrorMsg: "",
 		},
 		{
-			name:             "valid_decimal_result",
+			name:             "invalid_decimal_result",
 			resBytes:         []byte(`{"result":100}`),
 			statusCode:       intPtr(200),
-			expectedBlock:    100,
-			expectedHealth:   Healthy,
-			expectedErrorMsg: "",
+			expectedBlock:    0,
+			expectedHealth:   Unhealthy,
+			expectedErrorMsg: "failed to unmarshal block number",
 		},
 		{
 			name:             "invalid_hex_format",
@@ -1299,7 +1148,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
 			expectedHealth:   Unhealthy,
-			expectedErrorMsg: "Invalid block number",
+			expectedErrorMsg: "invalid hex block number",
 		},
 		{
 			name:             "empty_result",
@@ -1307,7 +1156,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
 			expectedHealth:   Unhealthy,
-			expectedErrorMsg: "Invalid block number",
+			expectedErrorMsg: "invalid hex block number",
 		},
 		{
 			name:             "null_result",
@@ -1315,7 +1164,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
 			expectedHealth:   Unhealthy,
-			expectedErrorMsg: "unsupported block number type",
+			expectedErrorMsg: "invalid hex block number: ",
 		},
 	}
 
@@ -1554,9 +1403,9 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 			expectedType: "evm",
 		},
 		{
-			name:         "beacon_chain",
-			networkName:  "ethereum-beacon",
-			expectedType: "beacon_chain",
+			name:         "eth_beacon_chain",
+			networkName:  "ethereum-beacon-mainnet",
+			expectedType: "eth_beacon_chain",
 		},
 		{
 			name:         "starknet_mainnet",

@@ -8,8 +8,8 @@ import (
 func TestBeaconChainHandler_GetType(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	if handler.GetType() != "beacon_chain" {
-		t.Errorf("Expected type 'beacon_chain', got '%s'", handler.GetType())
+	if handler.GetType() != "eth_beacon_chain" {
+		t.Errorf("Expected type 'eth_beacon_chain', got '%s'", handler.GetType())
 	}
 }
 
@@ -33,9 +33,9 @@ func TestBeaconChainHandler_GetRequestType(t *testing.T) {
 func TestBeaconChainHandler_GetNamespace(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	// Beacon chain uses the same namespace as Ethereum
-	if handler.GetNamespace() != "eip155" {
-		t.Errorf("Expected namespace 'eip155', got '%s'", handler.GetNamespace())
+	// Beacon chain uses its own namespace
+	if handler.GetNamespace() != "beacon" {
+		t.Errorf("Expected namespace 'beacon', got '%s'", handler.GetNamespace())
 	}
 }
 
@@ -49,17 +49,17 @@ func TestBeaconChainHandler_ValidateChainID(t *testing.T) {
 	}{
 		{
 			name:      "valid mainnet chain ID",
-			chainID:   "eip155:1",
+			chainID:   "beacon:1",
 			shouldErr: false,
 		},
 		{
 			name:      "valid sepolia chain ID",
-			chainID:   "eip155:11155111",
+			chainID:   "beacon:11155111",
 			shouldErr: false,
 		},
 		{
 			name:      "valid goerli chain ID",
-			chainID:   "eip155:5",
+			chainID:   "beacon:5",
 			shouldErr: false,
 		},
 		{
@@ -103,17 +103,17 @@ func TestBeaconChainHandler_FormatChainID(t *testing.T) {
 		{
 			name:             "mainnet",
 			networkReference: "1",
-			expected:         "eip155:1",
+			expected:         "beacon:1",
 		},
 		{
 			name:             "sepolia",
 			networkReference: "11155111",
-			expected:         "eip155:11155111",
+			expected:         "beacon:11155111",
 		},
 		{
 			name:             "goerli",
 			networkReference: "5",
-			expected:         "eip155:5",
+			expected:         "beacon:5",
 		},
 	}
 
@@ -294,7 +294,7 @@ func TestBeaconChainHandler_GetSupportedMethods(t *testing.T) {
 func TestBeaconChainHandler_GetHealthCheckMethod(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	expected := "/eth/v1/beacon/headers/head"
+	expected := "/eth/v1/node/health"
 	if handler.GetHealthCheckMethod() != expected {
 		t.Errorf("Expected health check method '%s', got '%s'", expected, handler.GetHealthCheckMethod())
 	}
@@ -303,7 +303,7 @@ func TestBeaconChainHandler_GetHealthCheckMethod(t *testing.T) {
 func TestBeaconChainHandler_GetChainIDMethod(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	expected := "/eth/v1/beacon/genesis"
+	expected := "/eth/v1/config/spec"
 	if handler.GetChainIDMethod() != expected {
 		t.Errorf("Expected chain ID method '%s', got '%s'", expected, handler.GetChainIDMethod())
 	}
@@ -478,46 +478,6 @@ func TestBeaconChainHandler_ValidateRequest(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error for test '%s', but got: %v", tt.name, err)
-			}
-		})
-	}
-}
-
-func TestBeaconChainHandler_NormalizeEndpoint(t *testing.T) {
-	handler := NewBeaconChainHandler(&NetworkConfig{})
-
-	tests := []struct {
-		name     string
-		path     string
-		expected string
-	}{
-		{
-			name:     "block with slot number",
-			path:     "/eth/v1/beacon/blocks/12345",
-			expected: "/eth/v1/beacon/blocks/{block_id}",
-		},
-		{
-			name:     "header with head",
-			path:     "/eth/v1/beacon/headers/head",
-			expected: "/eth/v1/beacon/headers/{block_id}",
-		},
-		{
-			name:     "state with finalized",
-			path:     "/eth/v1/beacon/states/finalized/validators",
-			expected: "/eth/v1/beacon/states/{state_id}/validators",
-		},
-		{
-			name:     "unchanged path",
-			path:     "/eth/v1/beacon/genesis",
-			expected: "/eth/v1/beacon/genesis",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := handler.NormalizeEndpoint(tt.path)
-			if result != tt.expected {
-				t.Errorf("NormalizeEndpoint(%s) = %s, expected %s", tt.path, result, tt.expected)
 			}
 		})
 	}

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
 type SolanaHandler struct {
@@ -52,21 +54,9 @@ func (h *SolanaHandler) Shutdown() error {
 
 // === EXISTING METHODS ===
 
-func (h *SolanaHandler) ProcessRequest(req *http.Request, provider Provider) error {
-	// Validate Solana JSON-RPC request
-	if err := h.ValidateRequest(req); err != nil {
-		return err
-	}
-
-	// For Solana, path translation is simple - just use provider.path
-	if provider != nil {
-		translatedPath, err := h.TranslatePath(req.URL.Path, provider)
-		if err != nil {
-			return err
-		}
-		req.URL.Path = translatedPath
-		req.URL.RawPath = translatedPath
-	}
+func (h *SolanaHandler) ProcessRequest(req *http.Request) error {
+	// Path translation is handled in DinSelect module
+	// This method is mainly for request validation
 
 	return nil
 }
@@ -86,81 +76,14 @@ func (h *SolanaHandler) ValidateRequest(req *http.Request) error {
 	return nil
 }
 
-func (h *SolanaHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
-	// For Solana, use the provider's configured path
-	if provider != nil {
-		return provider.GetPath(), nil
-	}
-	return gatewayPath, nil
-}
-
-func (h *SolanaHandler) NormalizeEndpoint(path string) string {
-	// For JSON-RPC, the "endpoint" is actually the method name
-	// This will be extracted from the request body during processing
-	return path
-}
-
-func (h *SolanaHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	// Create health check payload for getBlockHeight
-	_, err := h.CreateHealthCheckPayload("getBlockHeight")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create health check payload: %w", err)
-	}
-
-	// This would need an HTTP client to make the actual request
-	// For now, we'll return a structure that indicates the method works
-	// In real usage, this would make an HTTP call to the provider
-	return &BlockInfo{
-		Number:    0,  // Would be populated from actual response
-		Hash:      "", // Solana uses blockhash, not traditional hash
-		Timestamp: time.Now(),
-	}, nil
-}
-
-func (h *SolanaHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	// Create health check payload
-	_, err := h.CreateHealthCheckPayload(h.GetHealthCheckMethod())
-	if err != nil {
-		return &HealthStatus{
-			Healthy:     false,
-			BlockNumber: 0,
-			Latency:     0,
-			Error:       err,
-		}, fmt.Errorf("failed to create health check payload: %w", err)
-	}
-
-	// In real implementation, this would make an HTTP request and parse the response
-	// For now, return a successful health check indicating the handler is functional
-	return &HealthStatus{
-		Healthy:     true,
-		BlockNumber: 0, // Would be populated from actual getBlockHeight response
-		Latency:     0,
-		Error:       nil,
-	}, nil
-}
-
 func (h *SolanaHandler) ParseResponse(body []byte, statusCode int) error {
-	// Parse Solana JSON-RPC response and check for errors
-	var response dinHttp.JSONRPCResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse Solana JSON-RPC response: %w", err)
-	}
-
-	if response.Error != nil {
-		return fmt.Errorf("Solana JSON-RPC error: %s", response.Error.Message)
-	}
-
-	return nil
+	// Use the shared JSON-RPC response parser
+	return ParseJSONRPCResponse(body, statusCode)
 }
 
 func (h *SolanaHandler) IsRetryableError(err error, statusCode int) bool {
-	// Use similar logic to EVM but with Solana-specific considerations
-	if statusCode >= 500 {
-		return true
-	}
-
-	// Solana-specific error handling could be added here
-	return false
+	// Use the shared JSON-RPC error retry logic
+	return IsRetryableJSONRPCError(err, statusCode)
 }
 
 // === NEW NETWORK-SPECIFIC METHODS ===
@@ -250,6 +173,47 @@ func (h *SolanaHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 	return response, nil
 }
 
+// ParseBlockNumberResponse parses the block number from a raw response
+func (h *SolanaHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
+	// Check HTTP status first
+	if statusCode >= 400 {
+		if statusCode == 429 {
+			return 0, fmt.Errorf("rate limit error (status code: %d)", statusCode)
+		}
+		return 0, fmt.Errorf("error status code: %d", statusCode)
+	}
+
+	// Parse JSON-RPC response
+	var response JSONRPCResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON-RPC response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if response.Error != nil {
+		return 0, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	// Solana returns block numbers as numeric values
+	return ParseNumericBlockNumber(response.Result)
+}
+
+// RequiresSeparateBlockInfoCall returns false for Solana as health check includes block info
+func (h *SolanaHandler) RequiresSeparateBlockInfoCall() bool {
+	return false
+}
+
+// GetBlockInfoMethod returns empty for Solana as it uses the same endpoint for health and block info
+func (h *SolanaHandler) GetBlockInfoMethod() string {
+	return "" // Not used for JSON-RPC chains
+}
+
+// GetChainID retrieves the chain ID from the Solana provider
+func (h *SolanaHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	// Use the shared JSON-RPC logic with Solana-specific parsing
+	return GetChainIDViaJSONRPC(httpUrl, headers, httpClient, authClient, requestAttempts, h.GetChainIDMethod(), h.ParseChainIDResponse)
+}
+
 // Archive Mode methods
 func (h *SolanaHandler) SupportsArchiveMode() bool {
 	return false // Solana doesn't support archive mode
@@ -317,6 +281,10 @@ func (h *SolanaHandler) GetHealthCheckMethod() string {
 	return "getBlockHeight"
 }
 
+func (h *SolanaHandler) GetHealthCheckHTTPMethod() string {
+	return "POST" // Solana uses JSON-RPC POST requests
+}
+
 func (h *SolanaHandler) GetChainIDMethod() string {
 	return "getGenesisHash"
 }
@@ -342,4 +310,34 @@ func (h *SolanaHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error
 		Hash:      "",
 		Timestamp: time.Now(),
 	}, nil
+}
+
+func (h *SolanaHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error: %d", statusCode)
+	}
+
+	var respObject map[string]interface{}
+	if err := json.Unmarshal(body, &respObject); err != nil {
+		return "", fmt.Errorf("failed to parse Solana chain ID response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if errorField, exists := respObject["error"]; exists && errorField != nil {
+		return "", fmt.Errorf("JSON-RPC error: %v", errorField)
+	}
+
+	// Extract result field
+	result, ok := respObject["result"]
+	if !ok {
+		return "", fmt.Errorf("missing result field in chain ID response")
+	}
+
+	// Extract chain reference and format full chain ID
+	chainReference, err := h.ExtractChainReference(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract chain reference: %w", err)
+	}
+
+	return h.FormatChainID(chainReference), nil
 }

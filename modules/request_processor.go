@@ -9,11 +9,11 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 )
 
-// RequestContext contains information about the request type and appropriate handler
-type RequestContext struct {
+// RequestProcessor contains information about the request type and appropriate handler
+type RequestProcessor struct {
 	Type          networklib.RequestType    `json:"type"`
 	Method        string                    `json:"method"`       // RPC method or REST endpoint
-	NetworkType   string                    `json:"network_type"` // "evm", "beacon_chain", etc.
+	NetworkType   string                    `json:"network_type"` // "evm", "eth_beacon_chain", etc.
 	OriginalPath  string                    `json:"original_path"`
 	Parameters    map[string]string         `json:"parameters"`
 	Handler       networklib.NetworkHandler `json:"-"` // Don't serialize handler
@@ -21,8 +21,8 @@ type RequestContext struct {
 }
 
 // DetectRequestType analyzes the incoming request and determines the appropriate handler
-func DetectRequestType(req *http.Request, networkObj *network, registry *networklib.HandlerRegistry) (*RequestContext, error) {
-	ctx := &RequestContext{
+func DetectRequestType(req *http.Request, networkObj *network, registry *networklib.HandlerRegistry) (*RequestProcessor, error) {
+	ctx := &RequestProcessor{
 		OriginalPath: req.URL.Path,
 		Parameters:   make(map[string]string),
 	}
@@ -32,7 +32,6 @@ func DetectRequestType(req *http.Request, networkObj *network, registry *network
 		Name:           networkObj.Name,
 		Type:           networkObj.Type,
 		ChainID:        networkObj.ChainId,
-		HealthEndpoint: networkObj.HCEndpoint,
 		MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB,
 		RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
 		Custom:         make(map[string]interface{}),
@@ -49,24 +48,6 @@ func DetectRequestType(req *http.Request, networkObj *network, registry *network
 		ctx.NetworkType = networkObj.Type
 		ctx.Type = handler.GetRequestType()
 
-		// Set method based on handler type
-		if ctx.Type == networklib.RequestTypeREST {
-			ctx.Method = handler.NormalizeEndpoint(req.URL.Path)
-			// Check if this is a health check endpoint
-			if isHealthCheckEndpoint(req.URL.Path, networkObj.HCEndpoint) {
-				ctx.IsHealthCheck = true
-			}
-		} else if ctx.Type == networklib.RequestTypeRPC {
-			// Parse RPC method from body
-			if method, err := extractRPCMethod(req); err == nil {
-				ctx.Method = method
-				// Check if this is a health check method
-				if method == networkObj.getHealthCheckMethod() {
-					ctx.IsHealthCheck = true
-				}
-			}
-		}
-
 		return ctx, nil
 	}
 
@@ -75,7 +56,7 @@ func DetectRequestType(req *http.Request, networkObj *network, registry *network
 }
 
 // autoDetectRequestType attempts to determine request type based on request characteristics
-func autoDetectRequestType(req *http.Request, networkObj *network, registry *networklib.HandlerRegistry, config *networklib.NetworkConfig) (*RequestContext, error) {
+func autoDetectRequestType(req *http.Request, networkObj *network, registry *networklib.HandlerRegistry, config *networklib.NetworkConfig) (*RequestProcessor, error) {
 	contentType := req.Header.Get("Content-Type")
 
 	// Check for JSON-RPC characteristics
@@ -87,20 +68,12 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 				return nil, fmt.Errorf("failed to get EVM handler: %w", err)
 			}
 
-			ctx := &RequestContext{
+			ctx := &RequestProcessor{
 				Type:         networklib.RequestTypeRPC,
 				NetworkType:  "evm",
 				Handler:      handler,
 				OriginalPath: req.URL.Path,
 				Parameters:   make(map[string]string),
-			}
-
-			// Extract RPC method
-			if method, err := extractRPCMethod(req); err == nil {
-				ctx.Method = method
-				if method == networkObj.getHealthCheckMethod() {
-					ctx.IsHealthCheck = true
-				}
 			}
 
 			return ctx, nil
@@ -109,22 +82,17 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 
 	// Check for REST characteristics
 	if isRESTPattern(req.URL.Path) {
-		handler, err := registry.GetHandler("beacon_chain", config)
+		handler, err := registry.GetHandler("eth_beacon_chain", config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get Beacon Chain handler: %w", err)
 		}
 
-		ctx := &RequestContext{
+		ctx := &RequestProcessor{
 			Type:         networklib.RequestTypeREST,
-			NetworkType:  "beacon_chain",
+			NetworkType:  "eth_beacon_chain",
 			Handler:      handler,
 			OriginalPath: req.URL.Path,
 			Parameters:   make(map[string]string),
-		}
-
-		ctx.Method = handler.NormalizeEndpoint(req.URL.Path)
-		if isHealthCheckEndpoint(req.URL.Path, networkObj.HCEndpoint) {
-			ctx.IsHealthCheck = true
 		}
 
 		return ctx, nil
@@ -136,20 +104,12 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 		return nil, fmt.Errorf("failed to get default EVM handler: %w", err)
 	}
 
-	ctx := &RequestContext{
+	ctx := &RequestProcessor{
 		Type:         networklib.RequestTypeRPC,
 		NetworkType:  "evm",
 		Handler:      handler,
 		OriginalPath: req.URL.Path,
 		Parameters:   make(map[string]string),
-	}
-
-	// Try to extract RPC method
-	if method, err := extractRPCMethod(req); err == nil {
-		ctx.Method = method
-		if method == networkObj.getHealthCheckMethod() {
-			ctx.IsHealthCheck = true
-		}
 	}
 
 	return ctx, nil
@@ -204,13 +164,6 @@ func isRESTPattern(path string) bool {
 	return false
 }
 
-// extractRPCMethod extracts the method name from a JSON-RPC request body
-func extractRPCMethod(req *http.Request) (string, error) {
-	// This is a simplified version - in practice, you'd need to read the body
-	// For now, return empty string to indicate we need body parsing
-	return "", fmt.Errorf("method extraction not implemented for this context")
-}
-
 // isHealthCheckEndpoint checks if the path matches the configured health check endpoint
 func isHealthCheckEndpoint(path, healthEndpoint string) bool {
 	if healthEndpoint == "" {
@@ -226,18 +179,8 @@ func isHealthCheckEndpoint(path, healthEndpoint string) bool {
 	return strings.HasSuffix(cleanPath, healthEndpoint)
 }
 
-// ValidateRequestContext performs additional validation on the request context
-func ValidateRequestContext(ctx *RequestContext, req *http.Request) error {
-	if ctx.Handler == nil {
-		return fmt.Errorf("no handler assigned to request context")
-	}
-
-	// Use handler to validate the request
-	return ctx.Handler.ValidateRequest(req)
-}
-
 // GetRequestTypeString returns a human-readable string for the request type
-func (ctx *RequestContext) GetRequestTypeString() string {
+func (ctx *RequestProcessor) GetRequestTypeString() string {
 	switch ctx.Type {
 	case networklib.RequestTypeRPC:
 		return "JSON-RPC"
@@ -251,7 +194,7 @@ func (ctx *RequestContext) GetRequestTypeString() string {
 }
 
 // IsRetryableError determines if an error should trigger a retry based on the request type
-func (ctx *RequestContext) IsRetryableError(err error, statusCode int, responseBody []byte) bool {
+func (ctx *RequestProcessor) IsRetryableError(err error, statusCode int, responseBody []byte) bool {
 	if ctx.Handler == nil {
 		// Fallback to generic retry logic
 		return statusCode >= 500
@@ -262,7 +205,7 @@ func (ctx *RequestContext) IsRetryableError(err error, statusCode int, responseB
 }
 
 // ProcessResponse processes the response using the appropriate handler
-func (ctx *RequestContext) ProcessResponse(body []byte, statusCode int) error {
+func (ctx *RequestProcessor) ProcessResponse(body []byte, statusCode int) error {
 	if ctx.Handler == nil {
 		return fmt.Errorf("no handler available for response processing")
 	}

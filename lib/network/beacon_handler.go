@@ -8,29 +8,35 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"go.uber.org/zap"
 )
 
 // BeaconChainHandler handles Ethereum Beacon Chain REST API requests
 type BeaconChainHandler struct {
 	config              *NetworkConfig
-	pathNormalizer      *BeaconPathNormalizer
 	healthCheckEndpoint string
 	version             string
+	logger              *zap.Logger
 }
 
 // NewBeaconChainHandler creates a new Beacon Chain handler instance
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
+	logger := zap.NewExample() // Use example logger for debugging
+
 	return &BeaconChainHandler{
 		config:              config,
-		pathNormalizer:      NewBeaconPathNormalizer(),
 		healthCheckEndpoint: "/eth/v1/beacon/headers/head",
 		version:             "1.0.0",
+		logger:              logger,
 	}
 }
 
 // Metadata methods for registry
 func (h *BeaconChainHandler) GetType() string {
-	return "beacon_chain"
+	return "eth_beacon_chain"
 }
 
 func (h *BeaconChainHandler) GetName() string {
@@ -49,18 +55,6 @@ func (h *BeaconChainHandler) GetRequestType() RequestType {
 func (h *BeaconChainHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
 
-	// Use custom health endpoint if provided
-	if config.HealthEndpoint != "" {
-		h.healthCheckEndpoint = config.HealthEndpoint
-	}
-
-	// Initialize path normalizer with custom patterns if provided
-	if patterns, ok := config.Custom["path_patterns"]; ok {
-		if patternSlice, ok := patterns.([]PathPattern); ok {
-			h.pathNormalizer = NewBeaconPathNormalizerWithPatterns(patternSlice)
-		}
-	}
-
 	return nil
 }
 
@@ -72,130 +66,62 @@ func (h *BeaconChainHandler) Shutdown() error {
 // === EXISTING METHODS ===
 
 // Request processing methods
-func (h *BeaconChainHandler) ProcessRequest(req *http.Request, provider Provider) error {
+func (h *BeaconChainHandler) ProcessRequest(req *http.Request) error {
 	// Validate the request
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
 
-	// Translate the path for the specific provider
-	if provider != nil {
-		translatedPath, err := h.TranslatePath(req.URL.Path, provider)
-		if err != nil {
-			return err
-		}
-
-		// Update the request
-		req.URL.Path = translatedPath
-		req.URL.RawPath = translatedPath
-	}
+	// For Beacon Chain, path translation is handled by DinSelect for REST APIs
+	// This maintains consistency with the generic REST API processing approach
+	// Unlike EVM which uses JSON-RPC and needs provider-specific path handling
 
 	return nil
 }
 
 func (h *BeaconChainHandler) ValidateRequest(req *http.Request) error {
-	// Check for valid HTTP methods
+	// Check for valid HTTP methods - Beacon Chain REST API supports GET and POST
 	if req.Method != "GET" && req.Method != "POST" {
 		return fmt.Errorf("unsupported HTTP method for Beacon Chain REST API: %s", req.Method)
 	}
 
-	// Check for valid path format
-	if !strings.HasPrefix(req.URL.Path, "/eth/v") {
-		return fmt.Errorf("invalid Beacon Chain API path: %s", req.URL.Path)
+	// Check for valid path format - must contain Beacon Chain API pattern
+	// Accept both formats: "/eth/v1/..." and "/network-name/eth/v1/..."
+	path := req.URL.Path
+	if !strings.Contains(path, "/eth/v") {
+		return fmt.Errorf("invalid Beacon Chain API path: %s", path)
+	}
+
+	// For POST requests, validate content type if present
+	if req.Method == "POST" {
+		contentType := req.Header.Get("Content-Type")
+		if contentType != "" && !strings.Contains(contentType, "application/json") {
+			return fmt.Errorf("invalid content type for Beacon Chain REST API POST request: %s", contentType)
+		}
 	}
 
 	return nil
 }
 
-func (h *BeaconChainHandler) TranslatePath(gatewayPath string, provider Provider) (string, error) {
-	// Remove gateway prefix if present (e.g., /ethereum-beacon)
-	relativePath := gatewayPath
-	if h.config != nil && h.config.Name != "" {
-		relativePath = strings.TrimPrefix(gatewayPath, "/"+h.config.Name)
-	}
-
-	// Apply provider-specific transformations
-	if provider != nil {
-		// Check if provider has path prefix method
-		if pathPrefix := getProviderPathPrefix(provider); pathPrefix != "" {
-			return pathPrefix + relativePath, nil
-		}
-
-		// Check if provider has path template method
-		if pathTemplate := getProviderPathTemplate(provider); pathTemplate != "" {
-			return strings.Replace(pathTemplate, "{path}", relativePath, 1), nil
-		}
-
-		// Check if provider has strip prefix method
-		if stripPrefix := getProviderStripPrefix(provider); stripPrefix != "" {
-			relativePath = strings.TrimPrefix(relativePath, stripPrefix)
-		}
-	}
-
-	return relativePath, nil
-}
-
-// Helper functions to extract provider-specific path configuration
-// These would be implemented when provider struct is updated in Phase 3
-func getProviderPathPrefix(provider Provider) string {
-	// This is a placeholder - will be implemented when provider is extended
-	return ""
-}
-
-func getProviderPathTemplate(provider Provider) string {
-	// This is a placeholder - will be implemented when provider is extended
-	return ""
-}
-
-func getProviderStripPrefix(provider Provider) string {
-	// This is a placeholder - will be implemented when provider is extended
-	return ""
-}
-
-func (h *BeaconChainHandler) NormalizeEndpoint(path string) string {
-	return h.pathNormalizer.NormalizePath(path)
-}
-
-// Health check methods
-func (h *BeaconChainHandler) GetLatestBlock(provider Provider) (*BlockInfo, error) {
-	// This would make a request to /eth/v1/beacon/headers/head
-	// For now, return a placeholder - this will be implemented in integration
-	return &BlockInfo{
-		Number:    0,
-		Hash:      "",
-		Timestamp: time.Now(),
-		Slot:      0,
-		Epoch:     0,
-	}, nil
-}
-
-func (h *BeaconChainHandler) CheckHealth(provider Provider) (*HealthStatus, error) {
-	// This would implement health check logic using the beacon chain endpoint
-	// For now, return a placeholder - this will be implemented in integration
-	return &HealthStatus{
-		Healthy:     true,
-		BlockNumber: 0,
-		Latency:     0,
-		Error:       nil,
-	}, nil
-}
-
 // Response handling methods
 func (h *BeaconChainHandler) ParseResponse(body []byte, statusCode int) error {
-	// Check HTTP status code
+	// Check HTTP status code and handle non-2xx responses as errors
 	if statusCode < 200 || statusCode >= 300 {
-		return fmt.Errorf("HTTP error: %d", statusCode)
+		err := fmt.Errorf("HTTP error: %d", statusCode)
+		return err
 	}
 
 	// Parse JSON response
 	var response map[string]interface{}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse JSON response: %w", err)
+		jsonErr := fmt.Errorf("failed to parse JSON response: %w", err)
+		return jsonErr
 	}
 
 	// Check for error field in response
 	if errorField, exists := response["error"]; exists && errorField != nil {
-		return fmt.Errorf("Beacon Chain API error: %v", errorField)
+		apiErr := fmt.Errorf("Beacon Chain API error: %v", errorField)
+		return apiErr
 	}
 
 	return nil
@@ -217,7 +143,7 @@ func (h *BeaconChainHandler) IsRetryableError(err error, statusCode int) bool {
 		return false
 	}
 
-	// Connection errors are retryable
+	// Connection errors are retryable (following EVM handler patterns)
 	errMsg := strings.ToLower(err.Error())
 	retryablePatterns := []string{
 		"timeout",
@@ -227,6 +153,9 @@ func (h *BeaconChainHandler) IsRetryableError(err error, statusCode int) bool {
 		"server error",
 		"internal error",
 		"unavailable",
+		"socket hang up",
+		"connection reset",
+		"temporary failure",
 	}
 
 	for _, pattern := range retryablePatterns {
@@ -242,13 +171,13 @@ func (h *BeaconChainHandler) IsRetryableError(err error, statusCode int) bool {
 
 // Chain ID and Namespace methods
 func (h *BeaconChainHandler) GetNamespace() string {
-	return "eip155" // Beacon chain uses same namespace as Ethereum mainnet
+	return "beacon" // Beacon chain uses same namespace as Ethereum mainnet
 }
 
 func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
 	// Beacon chain uses the same chain ID format as Ethereum mainnet
-	if !strings.HasPrefix(chainID, "eip155:") {
-		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, expected format: eip155:{chainId}", chainID)
+	if !strings.HasPrefix(chainID, "beacon:") {
+		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, expected format: beacon:{chainId}", chainID)
 	}
 
 	// Extract chain ID number and validate it's numeric
@@ -271,17 +200,27 @@ func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
 }
 
 func (h *BeaconChainHandler) FormatChainID(networkReference string) string {
-	return "eip155:" + networkReference
+	return h.GetNamespace() + ":" + networkReference
 }
 
 func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
-	// Beacon chain doesn't really have a chain ID method like JSON-RPC
-	// This would be used for validator registration or fork choice
-	chainRef, ok := result.(string)
-	if !ok {
-		return "", fmt.Errorf("invalid chain reference type: %T", result)
+	// For beacon chain, we extract chain reference from genesis response
+	// The result should be the parsed response bytes
+	if responseBytes, ok := result.([]byte); ok {
+		var genesisResponse BeaconGenesisResponse
+		if err := json.Unmarshal(responseBytes, &genesisResponse); err != nil {
+			return "", fmt.Errorf("failed to parse beacon genesis response: %w", err)
+		}
+		// For beacon chain, we use "1" as the chain reference for mainnet
+		return "1", nil
 	}
-	return chainRef, nil
+
+	// If it's already a string, return as is
+	if chainRef, ok := result.(string); ok {
+		return chainRef, nil
+	}
+
+	return "", fmt.Errorf("invalid chain reference type: %T", result)
 }
 
 // Block Operations methods
@@ -301,6 +240,26 @@ func (h *BeaconChainHandler) ParseBlockResponse(body []byte) (interface{}, error
 		return nil, fmt.Errorf("failed to unmarshal Beacon Chain block response: %w", err)
 	}
 	return response, nil
+}
+
+// ParseBlockNumberResponse parses the block number from a raw response
+func (h *BeaconChainHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
+	// Check HTTP status first
+	if statusCode >= 400 {
+		if statusCode == 429 {
+			return 0, fmt.Errorf("rate limit error (status code: %d)", statusCode)
+		}
+		return 0, fmt.Errorf("error status code: %d", statusCode)
+	}
+
+	// For beacon chain REST API, parse the health check response to get slot number
+	blockInfo, err := h.ParseHealthCheckResponse(body)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return slot number as the "block number" for consistency
+	return blockInfo.Slot, nil
 }
 
 // Archive Mode methods
@@ -363,11 +322,27 @@ func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) 
 
 // Health Check Specifics methods
 func (h *BeaconChainHandler) GetHealthCheckMethod() string {
-	return "/eth/v1/beacon/headers/head" // REST endpoint, not JSON-RPC method
+	// Use the node health endpoint for health checks
+	// This returns HTTP status codes: 200 (ready), 206 (syncing), 503 (not initialized)
+	return "/eth/v1/node/health"
+}
+
+func (h *BeaconChainHandler) GetHealthCheckHTTPMethod() string {
+	return "GET" // Beacon chain uses REST GET requests
+}
+
+func (h *BeaconChainHandler) RequiresSeparateBlockInfoCall() bool {
+	return true
+}
+
+func (h *BeaconChainHandler) GetBlockInfoMethod() string {
+	return "/eth/v1/beacon/headers/head"
 }
 
 func (h *BeaconChainHandler) GetChainIDMethod() string {
-	return "/eth/v1/beacon/genesis" // REST endpoint for genesis info
+	// Use config/spec endpoint to get network information
+	// This provides chain configuration including the CONFIG_NAME
+	return "/eth/v1/config/spec"
 }
 
 func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
@@ -376,12 +351,28 @@ func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, er
 }
 
 func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
-	var beaconResponse BeaconHeadResponse
-	if err := json.Unmarshal(body, &beaconResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse Beacon Chain health check response: %w", err)
+	// The /eth/v1/node/health endpoint returns only status codes, no body
+	// If we have an empty body, it means the health check passed but we need
+	// to make a separate call to get block info
+	if len(body) == 0 {
+		// Return a placeholder indicating health check passed but no block info
+		return &BlockInfo{
+			Number:    -1, // Special value to indicate we need a separate call
+			Hash:      "",
+			Timestamp: time.Now(),
+			Slot:      -1,
+			Epoch:     -1,
+		}, nil
 	}
 
-	slot, err := h.parseSlot(beaconResponse.Data.Header.Message.Slot)
+	// If we have a body, it's from the block info endpoint
+	var headResponse BeaconHeadResponse
+	if err := json.Unmarshal(body, &headResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse beacon head response: %w", err)
+	}
+
+	// Parse slot from the response
+	slot, err := h.parseSlot(headResponse.Data.Header.Message.Slot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse slot: %w", err)
 	}
@@ -390,24 +381,66 @@ func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, 
 	epoch := slot / 32
 
 	return &BlockInfo{
-		Number:    slot, // Use slot as "block number"
-		Hash:      beaconResponse.Data.Root,
-		Timestamp: time.Now(),
+		Number:    slot, // Use slot as block number for consistency
+		Hash:      headResponse.Data.Root,
+		Timestamp: time.Now(), // Beacon chain responses don't include timestamp in header
 		Slot:      slot,
 		Epoch:     epoch,
 	}, nil
 }
 
-// === EXISTING HELPER METHODS ===
-
-// Helper function to parse beacon chain responses
-func (h *BeaconChainHandler) parseBeaconResponse(body []byte) (*BeaconHeadResponse, error) {
-	var response BeaconHeadResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse beacon head response: %w", err)
+func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error: %d", statusCode)
 	}
-	return &response, nil
+
+	// Parse the config/spec response
+	var specResponse struct {
+		Data map[string]string `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &specResponse); err != nil {
+		return "", fmt.Errorf("failed to parse beacon config response: %w", err)
+	}
+
+	// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
+	chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]
+	if !exists {
+		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response")
+	}
+
+	return h.FormatChainID(chainID), nil
 }
+
+// GetChainID retrieves the chain ID for beacon chain
+// For beacon chain, we can either return the configured chain ID directly
+// or make a REST API call to get the network configuration
+func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < requestAttempts; attempt++ {
+		// Make GET request to config/spec endpoint
+		configURL := fmt.Sprintf("%s%s", httpUrl, h.GetChainIDMethod())
+		resBytes, statusCode, err := httpClient.Get(configURL, headers, authClient)
+		if err != nil {
+			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
+			continue
+		}
+
+		// Parse the response to extract chain ID
+		chainID, err := h.ParseChainIDResponse(resBytes, *statusCode)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Success!
+		return chainID, nil
+	}
+
+	return "", fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+}
+
+// === EXISTING HELPER METHODS ===
 
 // Response structures for beacon chain
 type BeaconHeadResponse struct {
@@ -424,6 +457,14 @@ type BeaconHeadResponse struct {
 	} `json:"data"`
 }
 
+type BeaconGenesisResponse struct {
+	Data struct {
+		GenesisTime           string `json:"genesis_time"`
+		GenesisValidatorsRoot string `json:"genesis_validators_root"`
+		GenesisForkVersion    string `json:"genesis_fork_version"`
+	} `json:"data"`
+}
+
 // Helper function to convert slot string to int64
 func (h *BeaconChainHandler) parseSlot(slotStr string) (int64, error) {
 	slot, err := strconv.ParseInt(slotStr, 10, 64)
@@ -431,11 +472,4 @@ func (h *BeaconChainHandler) parseSlot(slotStr string) (int64, error) {
 		return 0, fmt.Errorf("failed to parse slot: %w", err)
 	}
 	return slot, nil
-}
-
-// Factory function for Beacon Chain handler
-func NewBeaconChainHandlerFactory() HandlerFactory {
-	return func(config *NetworkConfig) (NetworkHandler, error) {
-		return NewBeaconChainHandler(config), nil
-	}
 }
