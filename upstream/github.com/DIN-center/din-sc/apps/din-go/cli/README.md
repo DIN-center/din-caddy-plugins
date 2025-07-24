@@ -32,9 +32,7 @@ Flags:
       --din-registry-contract-addr string   The DIN Registry contract address, takes precedence over environment variable
   -h, --help                                help for din-cli
       --json                                Output in JSON format
-      --keystore-path string                The path to the keystore file (wallet credentials), takes precedence over environment variable
       --rpc-url string                      The RPC URL to connect to, takes precedence over environment variable
-      --tx-confirmation-sec int             The maximum number of seconds to wait for a transaction confirmation. Applies to all commands that write to the registry (default 10)
 
 Use "din-cli [command] --help" for more information about a command.
 ```
@@ -45,10 +43,9 @@ Use "din-cli [command] --help" for more information about a command.
 
 #### Using Global Flags
 Set the following global flags:
-- `--din-registry-contract-addr`: Smart contract address where the DIN Registry is deployed
 - `--rpc-url`: JSON-RPC endpoint URL (supports local blockchain nodes like Anvil)
+- `--din-registry-contract-addr`: Smart contract address where the DIN Registry is deployed
 - `--json`: Output results in JSON format instead of human-readable format
-- `--tx-confirmation-sec`: Number of seconds to wait for transaction confirmation before displaying success status and gas consumption details
 
 #### Using Environment Variables
 For convenience and brevity in commands, you may prefer to use system environment variables:
@@ -210,6 +207,13 @@ The following commands modify the registry and require authentication:
 - `provider remove`: Remove a provider from the registry
 - `provider remove-service`: Remove a network service from a provider
 - `provider set-service-status`: Update network service status
+
+Addionaly, all "write" commands support the following flags:
+- `--keystore-path`: The path to the keystore file (wallet credentials), takes precedence over environment variable
+- `--tx-confirmation-sec`: Number of seconds to wait for transaction confirmation before displaying success status and gas consumption details
+- `--dry-run`: If true, the transaction will not be sent to the network.
+- `--gas-price`: The gas price (in wei) to use for the transaction, if not provided, the gas price from the network will be used.
+- `--nonce`: The nonce to use for the transaction (default is the next available nonce).
 
 ## DevOps Support
 

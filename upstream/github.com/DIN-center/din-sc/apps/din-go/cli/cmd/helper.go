@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
@@ -187,38 +189,99 @@ func getConfigValue(flagValue, envValue string) string {
 
 func handleTxConfirmation(tx *types.Transaction, dinClient din.IDinClient) error {
 
-	fmt.Printf("Transaction pending: 0x%x\n", tx.Hash())
-
-	var receipt *types.Receipt
-	var err error
-
-	for i := range maxTxConfirmationInSeconds {
-		time.Sleep(1 * time.Second)
-		receipt, err = dinClient.GetEthereumRpcClient().TransactionReceipt(context.Background(), tx.Hash())
-		if err == nil {
-			break
+	if !dryRun {
+		fmt.Printf("⌛ Transaction pending: 0x%x\n", tx.Hash())
+		var receipt *types.Receipt
+		rpc_client := dinClient.GetEthereumRpcClient()
+		trials := 0
+		for trials < maxTxConfirmationInSeconds {
+			time.Sleep(1 * time.Second)
+			receipt, _ = rpc_client.TransactionReceipt(context.Background(), tx.Hash())
+			trials++
+			// Found the receipt, break the loop
+			if receipt != nil {
+				break
+			}
 		}
-		if i == maxTxConfirmationInSeconds-1 {
-			return errors.New("failed call to TransactionReceipt after max retries")
-		}
-	}
 
-	if receipt == nil {
-		fmt.Println("Check the transaction on a block explorer")
-	} else {
-		if receipt.Status == types.ReceiptStatusSuccessful {
-			fmt.Printf("✅ [SUCCESS]")
-			fmt.Printf("Block: %d\n", receipt.BlockNumber)
-			gasUsed := receipt.GasUsed
-			gasPrice := tx.GasPrice()
-			totalCost := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), gasPrice)
-			ethCost := new(big.Float).Quo(new(big.Float).SetInt(totalCost), new(big.Float).SetInt64(1e18))
-			gweiPrice := new(big.Float).Quo(new(big.Float).SetInt(gasPrice), new(big.Float).SetInt64(1e9))
-			fmt.Printf("Paid: %s ETH (%d gas * %s gwei)\n", ethCost.Text('f', 18), gasUsed, gweiPrice.Text('f', 9))
+		if receipt == nil {
+			fmt.Println("👀 Please check the transaction status on a block explorer")
 		} else {
-			fmt.Printf("❌ [FAILED]")
+			if receipt.Status == types.ReceiptStatusSuccessful {
+				fmt.Printf("✅ [SUCCESS]")
+				fmt.Printf("Block: %d\n", receipt.BlockNumber)
+				gasUsed := receipt.GasUsed
+				effectiveGasPrice := receipt.EffectiveGasPrice
+				totalCost := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), effectiveGasPrice)
+				ethCost := new(big.Float).Quo(new(big.Float).SetInt(totalCost), new(big.Float).SetInt64(1e18))
+				effectiveGweiPrice := new(big.Float).Quo(new(big.Float).SetInt(effectiveGasPrice), new(big.Float).SetInt64(1e9))
+				fmt.Printf("Paid: %s ETH (%d gas * %s gwei)\n", ethCost.Text('f', 18), gasUsed, effectiveGweiPrice.Text('f', 9))
+			} else {
+				fmt.Printf("❌ [FAILED]")
+			}
+		}
+	} else {
+		fmt.Printf("🧪 Not sending transaction: 0x%x (dry-run mode)\n", tx.Hash())
+
+		if tx.Type() < types.DynamicFeeTxType { // Legacy tx type
+			ethCost := new(big.Float).Quo(new(big.Float).SetInt(tx.Cost()), new(big.Float).SetInt64(1e18))
+			gweiPrice := new(big.Float).Quo(new(big.Float).SetInt(tx.GasPrice()), new(big.Float).SetInt64(1e9))
+			fmt.Printf("(Legacy)Transaction would have cost at max: %s ETH (%d gas * %s gwei)\n", ethCost.Text('f', 18), tx.Gas(), gweiPrice.Text('f', 9))
+		} else {
+			totalGasPrice := new(big.Int).Add(tx.GasFeeCap(), tx.GasTipCap())
+			txMaxGas := tx.Gas()
+			totalGasCost := new(big.Int).Mul(totalGasPrice, big.NewInt(int64(txMaxGas)))
+			totalEthCost := new(big.Float).Quo(new(big.Float).SetInt(totalGasCost), new(big.Float).SetInt64(1e18))
+			totalGweiPrice := new(big.Float).Quo(new(big.Float).SetInt(totalGasPrice), new(big.Float).SetInt64(1e9))
+			fmt.Printf("Transaction would have cost at max: %s ETH (%d gas * %s gwei)\n", totalEthCost.Text('f', 18), txMaxGas, totalGweiPrice.Text('f', 9))
 		}
 	}
 
+	return nil
+}
+
+func addWriteFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&keystorePath, "keystore-path", "", "The path to the keystore file (wallet credentials), takes precedence over environment variable")
+	cmd.Flags().IntVar(&maxTxConfirmationInSeconds, "tx-confirmation-sec", 10, "The maximum number of seconds to wait for a transaction confirmation.")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "If true, the transaction will not be sent to the network.")
+	cmd.Flags().Int64Var(&gasPriceInWei, "gas-price", 0, "The gas price (in wei) to use for the transaction, if not provided, the gas price from the network will be used.")
+	cmd.Flags().Int64Var(&nonce, "nonce", 0, "The nonce to use for the transaction (default is the next available nonce).")
+}
+
+func adjustTxOptions(txOptions *bind.TransactOpts) error {
+	// Set the nonce if provided
+	if nonce != 0 {
+		txOptions.Nonce = big.NewInt(nonce)
+	}
+
+	// Set the gas price if provided, otherwise suggest it from the network
+	if gasPriceInWei != 0 {
+		txOptions.GasPrice = big.NewInt(gasPriceInWei)
+	} else {
+		if feesEstimator == nil {
+			return errors.New("fees estimator not initialized")
+		}
+		feesData, err := feesEstimator.EstimateFees()
+		if err != nil {
+			return err
+		}
+
+		if feesData.GasPrice != nil {
+			gweiPrice := new(big.Float).Quo(new(big.Float).SetInt(feesData.GasPrice), new(big.Float).SetInt64(1e9))
+			fmt.Printf("⛽ Gas price suggested by the network: %s gwei\n", gweiPrice.Text('f', 9))
+			txOptions.GasPrice = feesData.GasPrice
+		} else if feesData.GasFeeCap != nil {
+			gweiBaseFee := new(big.Float).Quo(new(big.Float).SetInt(feesData.GasFeeCap), new(big.Float).SetInt64(1e9))
+			gweiTip := new(big.Float).Quo(new(big.Float).SetInt(feesData.GasTipCap), new(big.Float).SetInt64(1e9))
+			fmt.Printf("⛽ Max Base Fee (suggested): %s gwei,  Max Priority Fee (suggested tip): %s gwei\n", gweiBaseFee.Text('f', 9), gweiTip.Text('f', 9))
+			txOptions.GasFeeCap = feesData.GasFeeCap
+			txOptions.GasTipCap = feesData.GasTipCap
+		} else {
+			return errors.New("no gas price or gas fee cap provided by the fees estimator")
+		}
+	}
+
+	// Set the dry run flag if provided (default is false)
+	txOptions.NoSend = dryRun
 	return nil
 }

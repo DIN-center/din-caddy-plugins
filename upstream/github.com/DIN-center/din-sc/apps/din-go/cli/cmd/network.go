@@ -97,12 +97,13 @@ func init() {
 	setNetworkStatusCmd.Flags().StringVar(&networkURI, "uri", "", "Network URI in the format of 'network://flavor'")
 	setNetworkStatusCmd.MarkFlagRequired("status")
 	setNetworkStatusCmd.MarkFlagRequired("uri")
-
+	addWriteFlags(setNetworkStatusCmd)
 	// Define flags for the set-config subcommand
 	setNetworkConfigCmd.Flags().StringVar(&networkURI, "uri", "", "Network URI in the format of 'network://flavor'")
 	setNetworkConfigCmd.Flags().StringVar(&networkConfigJsonAsString, "config-json", "", "Network config in JSON format")
 	setNetworkConfigCmd.MarkFlagRequired("uri")
 	setNetworkConfigCmd.MarkFlagRequired("config-json")
+	addWriteFlags(setNetworkConfigCmd)
 }
 
 // internal functions used in command execution
@@ -136,11 +137,18 @@ func doListNetworks() error {
 }
 
 func doSetNetworkStatus(keystorePath string, keystorePassword string) (*types.Transaction, error) {
-	authTransactor, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
+	auth, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
 	if err != nil {
 		return nil, err
 	}
-	tx, err := dinClient.SetNetworkStatus(authTransactor, networkURI, networkStatus)
+
+	// Adjust transaction options before sending the transaction
+	err = adjustTxOptions(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := dinClient.SetNetworkStatus(auth, networkURI, networkStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -153,12 +161,18 @@ func doSetNetworkConfig(keystorePath string, keystorePassword string) (*types.Tr
 		return nil, err
 	}
 
-	authTransactor, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
+	auth, err := dinClient.CreateAuthorizedTransactor(keystorePath, keystorePassword)
 	if err != nil {
 		return nil, err
 	}
 
-	tx, err := dinClient.SetNetworkConfig(authTransactor, networkURI, *newConfig)
+	// Adjust transaction options before sending the transaction
+	err = adjustTxOptions(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := dinClient.SetNetworkConfig(auth, networkURI, *newConfig)
 	if err != nil {
 		return nil, err
 	}

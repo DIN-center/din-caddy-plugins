@@ -1,4 +1,4 @@
-Caddyfile.private
+Caddyfile*.private
 caddy.log
 .vscode/
 data/

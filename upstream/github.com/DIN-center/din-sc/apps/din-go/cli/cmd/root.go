@@ -35,15 +35,16 @@ var rootCmd = &cobra.Command{
 		} else {
 			outputFormatter = NewPrettyPrinterFormatter()
 		}
+
+		// Initialize the gas estimator
+		feesEstimator = NewEVMFeesEstimator(dinClient.GetEthereumRpcClient())
 	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&dinRegistryContractAddr, "din-registry-contract-addr", "", "The DIN Registry contract address, takes precedence over environment variable")
 	rootCmd.PersistentFlags().StringVar(&rpcURL, "rpc-url", "", "The RPC URL to connect to, takes precedence over environment variable")
-	rootCmd.PersistentFlags().StringVar(&keystorePath, "keystore-path", "", "The path to the keystore file (wallet credentials), takes precedence over environment variable")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	rootCmd.PersistentFlags().IntVar(&maxTxConfirmationInSeconds, "tx-confirmation-sec", 10, "The maximum number of seconds to wait for a transaction confirmation. Applies to all commands that write to the registry")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

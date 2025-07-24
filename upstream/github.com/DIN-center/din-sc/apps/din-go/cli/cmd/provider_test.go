@@ -155,6 +155,7 @@ func TestSetProviderStatusCommand(t *testing.T) {
 
 	// set CLI states
 	dinClient = mockDinClient
+	feesEstimator = &MockFeesEstimator{}
 
 	// Helper function to reset global variables
 	resetSetStatusGlobalVariables := func() {
@@ -175,7 +176,7 @@ func TestSetProviderStatusCommand(t *testing.T) {
 
 		// Mock SetProviderStatus call
 		expectedAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
-		mockDinClient.EXPECT().SetProviderStatus(mockTransactor, expectedAddr, din.ProviderStatusActive).Return(nil).Times(1)
+		mockDinClient.EXPECT().SetProviderStatus(mockTransactor, expectedAddr, din.ProviderStatusActive).Return(&types.Transaction{}, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetProviderStatus("keystorePath", "test-password", expectedAddr)
@@ -242,7 +243,7 @@ func TestSetProviderStatusCommand(t *testing.T) {
 
 		// Mock SetProviderStatus failure
 		expectedAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
-		mockDinClient.EXPECT().SetProviderStatus(mockTransactor, expectedAddr, din.ProviderStatusActive).Return(errors.New("provider not found")).Times(1)
+		mockDinClient.EXPECT().SetProviderStatus(mockTransactor, expectedAddr, din.ProviderStatusActive).Return(nil, errors.New("provider not found")).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetProviderStatus("keystorePath", "test-password", expectedAddr)
@@ -261,7 +262,7 @@ func TestRemoveProviderCommand(t *testing.T) {
 
 	// set CLI states
 	dinClient = mockDinClient
-
+	feesEstimator = &MockFeesEstimator{}
 	// Helper function to reset global variables
 	resetRemoveGlobalVariables := func() {
 		providerAddr = ""
@@ -279,7 +280,7 @@ func TestRemoveProviderCommand(t *testing.T) {
 
 		// Mock RemoveProvider call
 		expectedAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
-		mockDinClient.EXPECT().RemoveProvider(mockTransactor, expectedAddr).Return(nil).Times(1)
+		mockDinClient.EXPECT().RemoveProvider(mockTransactor, expectedAddr).Return(&types.Transaction{}, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doRemoveProvider("keystorePath", "test-password", expectedAddr)
@@ -320,7 +321,7 @@ func TestRemoveProviderCommand(t *testing.T) {
 
 		// Mock RemoveProvider failure
 		expectedAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
-		mockDinClient.EXPECT().RemoveProvider(mockTransactor, expectedAddr).Return(errors.New("provider not found")).Times(1)
+		mockDinClient.EXPECT().RemoveProvider(mockTransactor, expectedAddr).Return(nil, errors.New("provider not found")).Times(1)
 
 		// Execute core function being tested
 		tx, err := doRemoveProvider("keystorePath", "test-password", expectedAddr)
@@ -339,7 +340,7 @@ func TestRemoveNetworkServiceCommand(t *testing.T) {
 
 	// set CLI states
 	dinClient = mockDinClient
-
+	feesEstimator = &MockFeesEstimator{}
 	// Helper function to reset global variables
 	resetRemoveServiceGlobalVariables := func() {
 		providerAddr = ""

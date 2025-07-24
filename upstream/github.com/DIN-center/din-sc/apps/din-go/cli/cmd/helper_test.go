@@ -2,13 +2,23 @@ package dincli
 
 import (
 	"errors"
+	"math/big"
 	"os"
 	"testing"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+type MockFeesEstimator struct {
+	fees FeeData
+}
+
+func (m *MockFeesEstimator) EstimateFees() (FeeData, error) {
+	return m.fees, nil
+}
 
 func TestHelperFunctions(t *testing.T) {
 	t.Run("readContractAddr fails if no address is set in environment or flag", func(t *testing.T) {
@@ -163,6 +173,79 @@ func TestHelperFunctions(t *testing.T) {
 		dinRegistryContractAddr = ""
 		rpcURL = ""
 	})
+
+	t.Run("adjustTxOptions with fees estimator, gas price set", func(t *testing.T) {
+		mockFeesEstimator := &MockFeesEstimator{fees: FeeData{GasPrice: big.NewInt(1000000000)}}
+		//set global variable
+		feesEstimator = mockFeesEstimator
+		gasPriceInWei = 0
+
+		//call adjustTxOptions
+		txOptions := &bind.TransactOpts{}
+		err := adjustTxOptions(txOptions)
+		assert.NoError(t, err)
+
+		//assert that the gas price was set
+		assert.Equal(t, uint64(1000000000), txOptions.GasPrice.Uint64())
+	})
+
+	t.Run("adjustTxOptions without fees estimator, gas price flag set", func(t *testing.T) {
+		mockFeesEstimator := &MockFeesEstimator{fees: FeeData{}}
+		feesEstimator = mockFeesEstimator
+		gasPriceInWei = 99999
+
+		//call adjustTxOptions
+		txOptions := &bind.TransactOpts{}
+		err := adjustTxOptions(txOptions)
+		assert.NoError(t, err)
+
+		//assert that the gas price was set
+		assert.Equal(t, uint64(99999), txOptions.GasPrice.Uint64())
+	})
+
+	t.Run("adjustTxOptions with fees estimator, gas fee cap and tip cap set", func(t *testing.T) {
+		mockFeesEstimator := &MockFeesEstimator{fees: FeeData{GasTipCap: big.NewInt(99999), GasFeeCap: big.NewInt(77777)}}
+		feesEstimator = mockFeesEstimator
+		gasPriceInWei = 0
+
+		//call adjustTxOptions
+		txOptions := &bind.TransactOpts{}
+		err := adjustTxOptions(txOptions)
+		assert.NoError(t, err)
+
+		//assert that the gas fee cap and tip cap were set
+		assert.Equal(t, uint64(77777), txOptions.GasFeeCap.Uint64())
+		assert.Equal(t, uint64(99999), txOptions.GasTipCap.Uint64())
+	})
+
+	t.Run("adjustTxOptions with dry run", func(t *testing.T) {
+		mockFeesEstimator := &MockFeesEstimator{fees: FeeData{GasPrice: big.NewInt(1000000000)}}
+		feesEstimator = mockFeesEstimator
+		dryRun = true
+
+		//call adjustTxOptions
+		txOptions := &bind.TransactOpts{}
+		err := adjustTxOptions(txOptions)
+		assert.NoError(t, err)
+
+		//assert that the dry run flag was set
+		assert.True(t, txOptions.NoSend)
+	})
+
+	t.Run("adjustTxOptions with dry nonce", func(t *testing.T) {
+		mockFeesEstimator := &MockFeesEstimator{fees: FeeData{GasPrice: big.NewInt(1000000000)}}
+		feesEstimator = mockFeesEstimator
+		nonce = 1984
+
+		//call adjustTxOptions
+		txOptions := &bind.TransactOpts{}
+		err := adjustTxOptions(txOptions)
+		assert.NoError(t, err)
+
+		//assert that the nonce was set
+		assert.Equal(t, uint64(1984), txOptions.Nonce.Uint64())
+	})
+
 }
 
 func TestFilterProviders(t *testing.T) {

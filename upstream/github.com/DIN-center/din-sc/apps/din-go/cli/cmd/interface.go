@@ -1,6 +1,10 @@
 package dincli
 
-import "github.com/DIN-center/din-sc/apps/din-go/lib/din"
+import (
+	"math/big"
+
+	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+)
 
 // IOutputFormatter defines the interface for formatting and displaying DIN registry data
 // in different output formats (human-friendly, JSON, etc.)
@@ -28,4 +32,16 @@ type FormatOptions struct {
 
 	// Defines if the output should be verbose or not
 	Verbose bool
+}
+
+// IFeesEstimator defines the interface for estimating fees on a network
+type IFeesEstimator interface {
+	// EstimateFees estimates the current fees on a network
+	EstimateFees() (FeeData, error)
+}
+
+type FeeData struct {
+	GasPrice  *big.Int // Gas price to use for the transaction execution (nil = gas price oracle)
+	GasFeeCap *big.Int // Gas fee cap to use for the 1559 transaction execution (nil = gas price oracle)
+	GasTipCap *big.Int // Gas priority fee cap to use for the 1559 transaction execution (nil = gas price oracle)
 }
