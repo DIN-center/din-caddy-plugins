@@ -57,9 +57,12 @@ func (h *StarknetHandler) Shutdown() error {
 // === EXISTING METHODS ===
 
 func (h *StarknetHandler) ProcessRequest(req *http.Request) error {
+	// Validate the request using our validation logic
+	if err := h.ValidateRequest(req); err != nil {
+		return err
+	}
+	
 	// Path translation is handled in DinSelect module
-	// This method is mainly for request validation
-
 	return nil
 }
 
