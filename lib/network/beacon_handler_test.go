@@ -274,6 +274,8 @@ func TestBeaconChainHandler_GetSupportedMethods(t *testing.T) {
 	expectedMethods := []string{
 		"/eth/v1/beacon/headers/head",
 		"/eth/v1/beacon/blocks/head",
+		"/eth/v2/beacon/blocks/head",
+		"/eth/v2/beacon/blocks/{block_id}",
 		"/eth/v1/beacon/states/head/validators",
 		"/eth/v1/beacon/genesis",
 		"/eth/v1/node/version",
@@ -313,7 +315,7 @@ func TestBeaconChainHandler_GetChainIDMethod(t *testing.T) {
 func TestBeaconChainHandler_GetBlockInfoMethod(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	expected := "/eth/v1/beacon/headers"
+	expected := "/eth/v2/beacon/blocks/head"
 	if handler.GetBlockInfoMethod() != expected {
 		t.Errorf("Expected block info method '%s', got '%s'", expected, handler.GetBlockInfoMethod())
 	}
@@ -541,26 +543,21 @@ func TestBeaconChainHandler_ValidateRequest(t *testing.T) {
 func TestBeaconChainHandler_ParseHealthCheckResponse_NewFormat(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	t.Run("Valid beacon head response with array data", func(t *testing.T) {
+	t.Run("Valid beacon head response with v2 blocks format", func(t *testing.T) {
 		responseBody := `{
+			"version": "phase0",
 			"execution_optimistic": false,
 			"finalized": true,
-			"data": [
-				{
-					"root": "0xcf8e0d4e9587369b2301d0790347320302cc094345018845603676e8208d920f2",
-					"canonical": true,
-					"header": {
-						"message": {
-							"slot": "12345",
-							"proposer_index": "1",
-							"parent_root": "0xabcd1234",
-							"state_root": "0xefgh5678",
-							"body_root": "0xijkl9012"
-						},
-						"signature": "0x1234567890abcdef"
-					}
-				}
-			]
+			"data": {
+				"message": {
+					"slot": "12345",
+					"proposer_index": "1",
+					"parent_root": "0xabcd1234",
+					"state_root": "0xefgh5678",
+					"body": {}
+				},
+				"signature": "0x1234567890abcdef"
+			}
 		}`
 
 		blockInfo, err := handler.ParseHealthCheckResponse([]byte(responseBody))
@@ -585,8 +582,8 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_NewFormat(t *testing.T) {
 			t.Errorf("Expected epoch 385, got %d", blockInfo.Epoch)
 		}
 
-		if blockInfo.Hash != "0xcf8e0d4e9587369b2301d0790347320302cc094345018845603676e8208d920f2" {
-			t.Errorf("Expected specific hash, got %s", blockInfo.Hash)
+		if blockInfo.Hash != "0xabcd1234" {
+			t.Errorf("Expected hash to be parent_root '0xabcd1234', got %s", blockInfo.Hash)
 		}
 
 		if !blockInfo.Finalized {
@@ -598,21 +595,29 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_NewFormat(t *testing.T) {
 		}
 	})
 
-	t.Run("Empty data array", func(t *testing.T) {
+	t.Run("Missing slot field", func(t *testing.T) {
 		responseBody := `{
 			"execution_optimistic": false,
 			"finalized": true,
-			"data": []
+			"data": {
+				"message": {
+					"proposer_index": "1",
+					"parent_root": "0xabcd1234",
+					"state_root": "0xefgh5678",
+					"body": {}
+				},
+				"signature": "0x1234567890abcdef"
+			}
 		}`
 
 		_, err := handler.ParseHealthCheckResponse([]byte(responseBody))
 
 		if err == nil {
-			t.Error("Expected error for empty data array")
+			t.Error("Expected error for missing slot field")
 		}
 
-		if !strings.Contains(err.Error(), "no data entries") {
-			t.Errorf("Expected error about no data entries, got: %v", err)
+		if !strings.Contains(err.Error(), "failed to parse slot") {
+			t.Errorf("Expected error about parsing slot, got: %v", err)
 		}
 	})
 
@@ -630,27 +635,22 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_NewFormat(t *testing.T) {
 func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	t.Run("Real beacon chain response from Rivet", func(t *testing.T) {
-		// This is actual response data from eth.beacon.rivet.cloud/eth/v1/beacon/headers
+	t.Run("Real beacon chain response v2 blocks format", func(t *testing.T) {
+		// This simulates response data from /eth/v2/beacon/blocks/head
 		responseBody := `{
+			"version": "deneb",
 			"execution_optimistic": false,
 			"finalized": false,
-			"data": [
-				{
-					"root": "0x39f492c78d795dd91c59ea71fbc22039ece44d44d4ec08eebf2bdb9f1abb8a9b",
-					"canonical": true,
-					"header": {
-						"message": {
-							"slot": "12170038",
-							"proposer_index": "1527972",
-							"parent_root": "0xc0b76a4d9893b6421cf7860ab3c39a88b9ae4e461780f0b14fa87f4af3bb29b7",
-							"state_root": "0xcc6c1d4cb2cca1835f3d8c3c1ecd7e38ae2e29ca5029fce25e80376abf651d2d",
-							"body_root": "0xdcd63269b121432e6eab7fda95ae7a634aab279446257d69d678c44854cfc594"
-						},
-						"signature": "0xa10a8090622b91cf1e30e7ce35374c3365be00b039612169e0ed581598613dd2807b40dcafc23a561817254c7b9c10ce1977b9ffcd3ebebec55dfd5e005e988517eff7c32c6bd7ce675362a1115ce530b4bc14d543352ddca0d7e99316d80cfb"
-					}
-				}
-			]
+			"data": {
+				"message": {
+					"slot": "12170038",
+					"proposer_index": "1527972",
+					"parent_root": "0xc0b76a4d9893b6421cf7860ab3c39a88b9ae4e461780f0b14fa87f4af3bb29b7",
+					"state_root": "0xcc6c1d4cb2cca1835f3d8c3c1ecd7e38ae2e29ca5029fce25e80376abf651d2d",
+					"body": {}
+				},
+				"signature": "0xa10a8090622b91cf1e30e7ce35374c3365be00b039612169e0ed581598613dd2807b40dcafc23a561817254c7b9c10ce1977b9ffcd3ebebec55dfd5e005e988517eff7c32c6bd7ce675362a1115ce530b4bc14d543352ddca0d7e99316d80cfb"
+			}
 		}`
 
 		blockInfo, err := handler.ParseHealthCheckResponse([]byte(responseBody))
@@ -679,8 +679,8 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 			t.Errorf("Expected epoch %d, got %d", expectedEpoch, blockInfo.Epoch)
 		}
 
-		// Verify the root hash
-		expectedHash := "0x39f492c78d795dd91c59ea71fbc22039ece44d44d4ec08eebf2bdb9f1abb8a9b"
+		// Verify the parent root hash (v2 blocks uses parent_root as hash)
+		expectedHash := "0xc0b76a4d9893b6421cf7860ab3c39a88b9ae4e461780f0b14fa87f4af3bb29b7"
 		if blockInfo.Hash != expectedHash {
 			t.Errorf("Expected hash %s, got %s", expectedHash, blockInfo.Hash)
 		}
@@ -698,27 +698,22 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 			blockInfo.Slot, blockInfo.Epoch, blockInfo.Hash)
 	})
 
-	t.Run("Latest real beacon chain response from Rivet", func(t *testing.T) {
-		// This is the most recent response data from eth.beacon.rivet.cloud/eth/v1/beacon/headers
+	t.Run("Latest real beacon chain response v2 blocks format", func(t *testing.T) {
+		// This simulates response data from /eth/v2/beacon/blocks/head
 		responseBody := `{
+			"version": "deneb",
 			"execution_optimistic": false,
 			"finalized": false,
-			"data": [
-				{
-					"root": "0x033089c8e4abd4c81c27e45059a0d161de685abd238ae2115a90ad3d736390aa",
-					"canonical": true,
-					"header": {
-						"message": {
-							"slot": "12170151",
-							"proposer_index": "568631",
-							"parent_root": "0xb771076ff61241f2c6b176f98f662bc3a2df659dfa6cf60bf099a1ed67fb7438",
-							"state_root": "0x88930925964a327cc9896780b8769bde8d4bcbea4e1bdd9ff6ff5894f966e151",
-							"body_root": "0x8a838d8fab36a3f8fa6e52bae9a78aa39b1e09f39c7141faae4a41beca101fd2"
-						},
-						"signature": "0xb1aa51a5b01c44f2fe22624be813992f2e765c7fe18c6c7f714ba100b5eb04908db5a4ad58bee036ebd43a15ef0a098514c9b6c82c800e8b11b20ce547b3eb59b1d938926782daf7ca2be88334d0d330a6335a31202e1ea20f8b35ffbe5cf160"
-					}
-				}
-			]
+			"data": {
+				"message": {
+					"slot": "12170151",
+					"proposer_index": "568631",
+					"parent_root": "0xb771076ff61241f2c6b176f98f662bc3a2df659dfa6cf60bf099a1ed67fb7438",
+					"state_root": "0x88930925964a327cc9896780b8769bde8d4bcbea4e1bdd9ff6ff5894f966e151",
+					"body": {}
+				},
+				"signature": "0xb1aa51a5b01c44f2fe22624be813992f2e765c7fe18c6c7f714ba100b5eb04908db5a4ad58bee036ebd43a15ef0a098514c9b6c82c800e8b11b20ce547b3eb59b1d938926782daf7ca2be88334d0d330a6335a31202e1ea20f8b35ffbe5cf160"
+			}
 		}`
 
 		blockInfo, err := handler.ParseHealthCheckResponse([]byte(responseBody))
@@ -747,8 +742,8 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 			t.Errorf("Expected epoch %d, got %d", expectedEpoch, blockInfo.Epoch)
 		}
 
-		// Verify the root hash
-		expectedHash := "0x033089c8e4abd4c81c27e45059a0d161de685abd238ae2115a90ad3d736390aa"
+		// Verify the parent root hash (v2 blocks uses parent_root as hash)
+		expectedHash := "0xb771076ff61241f2c6b176f98f662bc3a2df659dfa6cf60bf099a1ed67fb7438"
 		if blockInfo.Hash != expectedHash {
 			t.Errorf("Expected hash %s, got %s", expectedHash, blockInfo.Hash)
 		}
@@ -832,8 +827,8 @@ func TestBeaconChainHandler_EndpointConfiguration(t *testing.T) {
 	t.Run("Verify endpoint and HTTP method configuration", func(t *testing.T) {
 		// Test the endpoint configuration
 		endpoint := handler.GetBlockInfoMethod()
-		if endpoint != "/eth/v1/beacon/headers" {
-			t.Errorf("Expected endpoint '/eth/v1/beacon/headers', got '%s'", endpoint)
+		if endpoint != "/eth/v2/beacon/blocks/head" {
+			t.Errorf("Expected endpoint '/eth/v2/beacon/blocks/head', got '%s'", endpoint)
 		}
 
 		httpMethod := handler.GetHealthCheckHTTPMethod()
