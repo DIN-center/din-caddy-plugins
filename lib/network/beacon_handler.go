@@ -263,7 +263,7 @@ func (h *BeaconChainHandler) ParseBlockNumberResponse(body []byte, statusCode in
 
 // Archive Mode methods
 func (h *BeaconChainHandler) SupportsArchiveMode() bool {
-	return false // Beacon chain doesn't use archive mode concept
+	return false // Archive mode disabled for beacon chain
 }
 
 func (h *BeaconChainHandler) GetArchiveMethod() string {
@@ -288,6 +288,8 @@ func (h *BeaconChainHandler) GetSupportedMethods() []string {
 	return []string{
 		"/eth/v1/beacon/headers/head",
 		"/eth/v1/beacon/blocks/head",
+		"/eth/v2/beacon/blocks/head",
+		"/eth/v2/beacon/blocks/{block_id}",
 		"/eth/v1/beacon/states/head/validators",
 		"/eth/v1/beacon/genesis",
 		"/eth/v1/node/version",
@@ -297,8 +299,8 @@ func (h *BeaconChainHandler) GetSupportedMethods() []string {
 }
 
 func (h *BeaconChainHandler) GetBlockByNumberMethod() string {
-	// Beacon chain doesn't support getBlockByNumber in the same way as JSON-RPC chains
-	return ""
+	// Use the blocks endpoint - the {block_id} will be replaced with actual slot number
+	return "/eth/v2/beacon/blocks/{block_id}"
 }
 
 // Data Format Conversions methods
@@ -347,9 +349,9 @@ func (h *BeaconChainHandler) RequiresSeparateBlockInfoCall() bool {
 }
 
 func (h *BeaconChainHandler) GetBlockInfoMethod() string {
-	// Returns the /eth/v1/beacon/headers endpoint which, when called without
-	// query parameters, returns the current head block headers by default
-	return "/eth/v1/beacon/headers"
+	// Use the /eth/v2/beacon/blocks/head endpoint to get the latest block
+	// This provides complete block information including slot number
+	return "/eth/v2/beacon/blocks/head"
 }
 
 func (h *BeaconChainHandler) GetChainIDMethod() string {
@@ -378,28 +380,14 @@ func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, 
 		}, nil
 	}
 
-	// If we have a body, it's from the block info endpoint
-	var headResponse BeaconHeadResponse
-	if err := json.Unmarshal(body, &headResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse beacon head response: %w", err)
+	// If we have a body, it's from the block info endpoint (/eth/v2/beacon/blocks/head)
+	var blockResponse BeaconBlockResponse
+	if err := json.Unmarshal(body, &blockResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse beacon block response: %w", err)
 	}
-
-	// Validate that we have at least one data entry
-	if len(headResponse.Data) == 0 {
-		return nil, fmt.Errorf("beacon head response contains no data entries")
-	}
-
-	// For the head endpoint, we expect exactly one entry
-	if len(headResponse.Data) > 1 {
-		h.logger.Warn("Beacon head response contains multiple entries, using first one",
-			zap.Int("entry_count", len(headResponse.Data)))
-	}
-
-	// Use the first (and typically only) entry
-	headerData := headResponse.Data[0]
 
 	// Parse slot from the response
-	slot, err := h.parseSlot(headerData.Header.Message.Slot)
+	slot, err := h.parseSlot(blockResponse.Data.Message.Slot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse slot: %w", err)
 	}
@@ -409,12 +397,12 @@ func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, 
 
 	return &BlockInfo{
 		Number:              slot, // Use slot as block number for consistency
-		Hash:                headerData.Root,
+		Hash:                blockResponse.Data.Message.ParentRoot,
 		Timestamp:           time.Now(), // Beacon chain responses don't include timestamp in header
 		Slot:                slot,
 		Epoch:               epoch,
-		ExecutionOptimistic: headResponse.ExecutionOptimistic,
-		Finalized:           headResponse.Finalized,
+		ExecutionOptimistic: blockResponse.ExecutionOptimistic,
+		Finalized:           blockResponse.Finalized,
 	}, nil
 }
 
@@ -470,7 +458,7 @@ func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]strin
 }
 
 // GetLatestBlockNumber retrieves the latest block number (slot) for beacon chain
-// Uses the REST API endpoint /eth/v1/beacon/headers/head to get the latest slot
+// Uses the REST API endpoint /eth/v2/beacon/blocks/head to get the latest slot
 func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	var lastErr error
 	var lastResponseStatus int
@@ -592,16 +580,34 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 
-// PerformArchiveCheck for beacon chain - not implemented for now
+// PerformArchiveCheck for beacon chain - stubbed out (archive mode disabled)
 func (h *BeaconChainHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
-	// Beacon chain archive checks are not implemented yet - focusing on JSON-RPC handlers for now
-	return fmt.Errorf("archive mode check not implemented for beacon chain")
+	// Archive checks are disabled for beacon chain
+	return nil
 }
 
-// PerformGetBlockByNumber for beacon chain - placeholder implementation
+// PerformGetBlockByNumber for beacon chain using blocks endpoint
 func (h *BeaconChainHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	// Beacon chain get block by number is not implemented yet - focusing on JSON-RPC handlers for now
-	return nil, fmt.Errorf("get block by number not implemented for beacon chain")
+	// Use the blocks endpoint with the specific slot number
+	blockEndpoint := fmt.Sprintf("/eth/v2/beacon/blocks/%d", blockNumber)
+	fullURL := fmt.Sprintf("%s%s", httpUrl, blockEndpoint)
+	
+	resBytes, statusCode, err := httpClient.Get(fullURL, headers, authClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block by number: %w", err)
+	}
+	
+	if *statusCode >= 400 {
+		return nil, fmt.Errorf("HTTP error %d getting block by number", *statusCode)
+	}
+	
+	// Parse the response using the same structure as health check
+	var blockResponse BeaconBlockResponse
+	if err := json.Unmarshal(resBytes, &blockResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse block response: %w", err)
+	}
+	
+	return blockResponse, nil
 }
 
 // === EXISTING HELPER METHODS ===
@@ -623,6 +629,23 @@ type BeaconHeadResponse struct {
 			} `json:"message"`
 			Signature string `json:"signature"`
 		} `json:"header"`
+	} `json:"data"`
+}
+
+// BeaconBlockResponse represents the response from /eth/v2/beacon/blocks/head
+type BeaconBlockResponse struct {
+	Version             string `json:"version"`
+	ExecutionOptimistic bool   `json:"execution_optimistic"`
+	Finalized           bool   `json:"finalized"`
+	Data                struct {
+		Message struct {
+			Slot          string `json:"slot"`
+			ProposerIndex string `json:"proposer_index"`
+			ParentRoot    string `json:"parent_root"`
+			StateRoot     string `json:"state_root"`
+			Body          interface{} `json:"body"` // Complex structure, we only need slot
+		} `json:"message"`
+		Signature string `json:"signature"`
 	} `json:"data"`
 }
 

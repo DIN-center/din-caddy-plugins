@@ -252,9 +252,10 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Track the worst status we find
 	worstStatus := healthStatus
 
-	// if provider has no block history, set it to unhealthy
-	if len(provider.BlockHistory()) == 0 {
-		n.logProviderWarning("Provider has no block history, marking as unhealthy", provider,
+	// if provider has no block history and current health check failed, set it to unhealthy
+	// Allow providers with no history to be healthy if the current check succeeded
+	if len(provider.BlockHistory()) == 0 && healthStatus != Healthy {
+		n.logProviderWarning("Provider has no block history and current check failed, marking as unhealthy", provider,
 			zap.Int64("current_block", currentBlock),
 			zap.Int64("latest_network_block", latestNetworkBlock),
 			zap.String("health_status", Unhealthy.String()))

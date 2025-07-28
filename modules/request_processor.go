@@ -48,6 +48,13 @@ func DetectRequestType(req *http.Request, networkObj *network, registry *network
 		ctx.NetworkType = networkObj.Type
 		ctx.Type = handler.GetRequestType()
 
+		// Set method based on request type
+		if ctx.Type == networklib.RequestTypeREST {
+			ctx.Method = req.URL.Path
+		} else {
+			ctx.Method = "unknown" // Will be set later when body is parsed for RPC
+		}
+
 		return ctx, nil
 	}
 
@@ -73,6 +80,7 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 				NetworkType:  "evm",
 				Handler:      handler,
 				OriginalPath: req.URL.Path,
+				Method:       "unknown", // Will be set when body is parsed
 				Parameters:   make(map[string]string),
 			}
 
@@ -92,6 +100,7 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 			NetworkType:  "eth_beacon_chain",
 			Handler:      handler,
 			OriginalPath: req.URL.Path,
+			Method:       req.URL.Path,
 			Parameters:   make(map[string]string),
 		}
 
@@ -109,6 +118,7 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 		NetworkType:  "evm",
 		Handler:      handler,
 		OriginalPath: req.URL.Path,
+		Method:       "unknown", // Will be set when body is parsed
 		Parameters:   make(map[string]string),
 	}
 
