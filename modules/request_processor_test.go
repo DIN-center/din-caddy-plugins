@@ -38,10 +38,10 @@ func TestDetectRequestType(t *testing.T) {
 			expectedType: networklib.RequestTypeRPC,
 		},
 		{
-			name: "REST request with explicit eth_beacon_chain type",
+			name: "REST request with explicit beacon-chain type",
 			network: &network{
 				Name:       "ethereum-beacon-mainnet",
-				Type:       "eth_beacon_chain",
+				Type:       "beacon-chain",
 				ChainId:    "mainnet",
 				HCEndpoint: "/eth/v1/beacon/headers",
 			},
@@ -168,7 +168,7 @@ func TestHandlerRegistry_Lifecycle(t *testing.T) {
 	// Verify handlers are registered
 	handlers := registry.ListHandlers()
 	assert.Contains(t, handlers, "evm")
-	assert.Contains(t, handlers, "eth_beacon_chain")
+	assert.Contains(t, handlers, "beacon-chain")
 	assert.Contains(t, handlers, "starknet")
 	assert.Contains(t, handlers, "solana")
 
@@ -286,7 +286,7 @@ func TestRequestContextIntegration(t *testing.T) {
 			},
 			"ethereum-beacon-mainnet": {
 				Name:       "ethereum-beacon-mainnet",
-				Type:       "eth_beacon_chain",
+				Type:       "beacon-chain",
 				ChainId:    "mainnet",
 				HCEndpoint: "/eth/v1/beacon/headers",
 			},

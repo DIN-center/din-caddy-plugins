@@ -245,7 +245,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 		},
 		{
 			name:        "beacon_network_does_not_support_json_rpc_get_block",
-			networkType: "eth_beacon_chain",
+			networkType: "beacon-chain",
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				// Beacon chain should return false for SupportsGetBlockByNumber

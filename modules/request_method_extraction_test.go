@@ -32,7 +32,7 @@ func TestRequestMethodExtraction(t *testing.T) {
 			name: "REST request method extraction - Beacon v1",
 			network: &network{
 				Name:    "ethereum-beacon",
-				Type:    "eth_beacon_chain",
+				Type:    "beacon-chain",
 				ChainId: "beacon:1",
 			},
 			request:        httptest.NewRequest("GET", "/ethereum-beacon/eth/v1/beacon/genesis", nil),
@@ -43,7 +43,7 @@ func TestRequestMethodExtraction(t *testing.T) {
 			name: "REST request method extraction - Beacon v2",
 			network: &network{
 				Name:    "beacon-mainnet",
-				Type:    "eth_beacon_chain",
+				Type:    "beacon-chain",
 				ChainId: "beacon:1",
 			},
 			request:        httptest.NewRequest("GET", "/beacon-mainnet/eth/v2/beacon/blocks/head", nil),
@@ -54,7 +54,7 @@ func TestRequestMethodExtraction(t *testing.T) {
 			name: "REST request with query parameters",
 			network: &network{
 				Name:    "beacon",
-				Type:    "eth_beacon_chain",
+				Type:    "beacon-chain",
 				ChainId: "beacon:1",
 			},
 			request:        httptest.NewRequest("GET", "/beacon/eth/v1/beacon/states/head/validators?id=1,2,3", nil),
@@ -65,7 +65,7 @@ func TestRequestMethodExtraction(t *testing.T) {
 			name: "REST POST request",
 			network: &network{
 				Name:    "beacon",
-				Type:    "eth_beacon_chain",
+				Type:    "beacon-chain",
 				ChainId: "beacon:1",
 			},
 			request: func() *http.Request {
