@@ -169,7 +169,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				continue
 			}
 
-			provider, err = d.createNewProvider(provider, regProvider.AuthConfig, networkService.Address)
+			provider, err = d.createNewProvider(provider, network, regProvider.AuthConfig, networkService.Address)
 			if err != nil {
 				d.logger.Error("Failed to create new provider", zap.Error(err))
 				continue
@@ -226,7 +226,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 					continue
 				}
 				// create a new provider object and add it to the copied network object
-				newProvider, err := d.createNewProvider(newProvider, regProvider.AuthConfig, networkService.Address)
+				newProvider, err := d.createNewProvider(newProvider, newNetwork, regProvider.AuthConfig, networkService.Address)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
@@ -392,7 +392,7 @@ func (d *DinMiddleware) updateField(fieldName, networkName string, target interf
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
-func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
+func (d *DinMiddleware) createNewProvider(provider *provider, network *network, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
 	httpClient := din_http.NewHTTPClient(time.Duration(DefaultHCTimeout) * time.Second)
 
 	// Set the provider auth config based on the auth type
@@ -404,7 +404,7 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 		}
 	}
 
-	err := d.initializeProvider(provider, httpClient, d.logger)
+	err := d.initializeProvider(provider, network, httpClient, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}

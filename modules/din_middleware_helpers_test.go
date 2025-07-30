@@ -721,6 +721,10 @@ func TestCreateNewProvider(t *testing.T) {
 				DefaultSiweSigner: defaultSigner,
 			}
 
+			// Create test network
+			network, err := NewNetwork("test-network", "evm", utils.Environment("test"), "8080")
+			assert.NoError(t, err)
+
 			// Mock GetNetworkServiceMethods
 			mockDingoClient.EXPECT().
 				GetNetworkServiceMethods(tt.networkServiceAddress).
@@ -728,7 +732,7 @@ func TestCreateNewProvider(t *testing.T) {
 				Times(1)
 
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, tt.authConfig, tt.networkServiceAddress)
+			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, network, tt.authConfig, tt.networkServiceAddress)
 
 			// Assert results
 			if tt.expectedError != nil {

@@ -32,6 +32,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/oauth2"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
@@ -181,7 +182,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 				MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
 				RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
 				Logger:         loggerClient,
-				Custom:         make(map[string]interface{}),
+				Custom:         networkObj.CustomConfig,
 			}
 
 			handler, err := d.handlerRegistry.GetHandler(networkObj.Type, config)
@@ -203,7 +204,7 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 		// Initialize the provider's upstream, path, and HTTP client
 		for _, provider := range networkObj.Providers {
-			err := d.initializeProvider(provider, httpClient, loggerClient)
+			err := d.initializeProvider(provider, networkObj, httpClient, loggerClient)
 			if err != nil {
 				return fmt.Errorf("error initializing provider: %v", err)
 			}
@@ -257,8 +258,58 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	return nil
 }
 
+// initializeOAuth2ForProvider initializes OAuth2 authentication for a provider
+func (d *DinMiddleware) initializeOAuth2ForProvider(provider *provider, networkObj *network, logger *logger.LoggerClient) error {
+	if networkObj.CustomConfig == nil {
+		return fmt.Errorf("OAuth2 enabled but no custom_config found")
+	}
+
+	// Extract OAuth2 configuration from custom_config
+	clientID, ok := networkObj.CustomConfig["oauth2_client_id"].(string)
+	if !ok || clientID == "" {
+		return fmt.Errorf("oauth2_client_id not found in custom_config")
+	}
+
+	clientSecret, ok := networkObj.CustomConfig["oauth2_client_secret"].(string)
+	if !ok || clientSecret == "" {
+		return fmt.Errorf("oauth2_client_secret not found in custom_config")
+	}
+
+	tokenURL, ok := networkObj.CustomConfig["oauth2_token_url"].(string)
+	if !ok || tokenURL == "" {
+		return fmt.Errorf("oauth2_token_url not found in custom_config")
+	}
+
+	// Get optional refresh interval
+	refreshInterval := 240 // default 4 minutes
+	if interval, ok := networkObj.CustomConfig["oauth2_refresh_interval"].(int); ok {
+		refreshInterval = interval
+	}
+
+	// Create OAuth2 client
+	oauth2Config := oauth2.OAuth2Config{
+		ClientID:           clientID,
+		ClientSecret:       clientSecret,
+		TokenURL:           tokenURL,
+		RefreshIntervalSec: refreshInterval,
+		Scope:              "openid", // default scope
+	}
+
+	oauth2Client := oauth2.NewOAuth2Client(oauth2Config)
+	
+	// Start the OAuth2 client
+	if err := oauth2Client.Start(logger.Logger); err != nil {
+		return fmt.Errorf("failed to start OAuth2 client: %w", err)
+	}
+
+	// Set the auth client on the provider
+	provider.SetAuthClient(oauth2Client)
+
+	return nil
+}
+
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
-func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
+func (d *DinMiddleware) initializeProvider(provider *provider, networkObj *network, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 
 	url, err := url.Parse(provider.HttpUrl)
 	if err != nil {
@@ -284,7 +335,15 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 		provider.host = url.Host
 	}
 
-	if provider.Auth != nil {
+	// Initialize authentication
+	if provider.OAuth2Enabled {
+		// Initialize OAuth2 auth from network's custom config
+		if err := d.initializeOAuth2ForProvider(provider, networkObj, logger); err != nil {
+			d.logger.Error("Failed to initialize OAuth2 auth", zap.String("provider", provider.HttpUrl), zap.Error(err))
+			return err
+		}
+	} else if provider.Auth != nil {
+		// Initialize SIWE auth
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 		}
@@ -742,7 +801,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							ChainID:        d.Networks[networkName].ChainId,
 							MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
 							RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
-							Custom:         make(map[string]interface{}),
+							Custom:         d.Networks[networkName].CustomConfig,
 						}
 
 						handler, err := d.handlerRegistry.GetHandler(explicitType, config)
@@ -788,6 +847,17 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 									providerObj.Methods = make(map[string]struct{})
 									for _, method := range methods {
 										providerObj.Methods[*method] = struct{}{}
+									}
+								case "auth_type":
+									dispenser.Next()
+									authType := dispenser.Val()
+									switch authType {
+									case "oauth2":
+										// OAuth2 will be configured from network's custom_config later
+										// Just mark that this provider uses OAuth2
+										providerObj.OAuth2Enabled = true
+									default:
+										return fmt.Errorf("unknown auth type: %s (use 'auth' block for siwe or 'auth_type oauth2' for OAuth2)", authType)
 									}
 								case "auth":
 									auth := siweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
@@ -953,6 +1023,27 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							return fmt.Errorf("invalid archive enabled: %v", err)
 						}
 						d.Networks[networkName].ArchiveEnabled = archiveEnabled
+					case "custom_config":
+						// Initialize custom config map if needed
+						if d.Networks[networkName].CustomConfig == nil {
+							d.Networks[networkName].CustomConfig = make(map[string]interface{})
+						}
+						// Parse custom configuration block
+						for dispenser.NextBlock(nesting + 1) {
+							key := dispenser.Val()
+							if !dispenser.Next() {
+								return dispenser.Errf("custom_config key '%s' has no value", key)
+							}
+							value := dispenser.Val()
+							// Try to parse as int first, then bool, then keep as string
+							if intVal, err := strconv.Atoi(value); err == nil {
+								d.Networks[networkName].CustomConfig[key] = intVal
+							} else if boolVal, err := strconv.ParseBool(value); err == nil {
+								d.Networks[networkName].CustomConfig[key] = boolVal
+							} else {
+								d.Networks[networkName].CustomConfig[key] = value
+							}
+						}
 					default:
 						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 					}
@@ -974,7 +1065,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						ChainID:        d.Networks[networkName].ChainId,
 						MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
 						RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
-						Custom:         make(map[string]interface{}),
+						Custom:         d.Networks[networkName].CustomConfig,
 					}
 
 					handler, err := d.handlerRegistry.GetHandler("evm", config)
