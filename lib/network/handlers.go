@@ -174,7 +174,7 @@ func RegisterBuiltinHandlers() {
 		panic(fmt.Sprintf("Failed to register Solana handler: %v", err))
 	}
 
-	if err := DefaultRegistry.RegisterHandler("eth_beacon_chain", func(config *NetworkConfig) (NetworkHandler, error) {
+	if err := DefaultRegistry.RegisterHandler("beacon-chain", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewBeaconChainHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Beacon Chain handler: %v", err))

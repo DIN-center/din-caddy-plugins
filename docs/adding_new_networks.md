@@ -579,7 +579,7 @@ Add your handler to the registry test in `lib/network/handler_test.go`:
 func TestDefaultRegistry_Initialization(t *testing.T) {
     registry := DefaultRegistry
     
-    expectedHandlers := []string{"evm", "beacon_chain", "starknet", "solana", "yournetwork"}
+    expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "yournetwork"}
     registeredHandlers := registry.ListHandlers()
     
     for _, expected := range expectedHandlers {

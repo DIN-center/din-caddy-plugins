@@ -35,7 +35,7 @@ func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 
 // Metadata methods for registry
 func (h *BeaconChainHandler) GetType() string {
-	return "eth_beacon_chain"
+	return "beacon-chain"
 }
 
 func (h *BeaconChainHandler) GetName() string {
@@ -591,22 +591,22 @@ func (h *BeaconChainHandler) PerformGetBlockByNumber(httpUrl string, headers map
 	// Use the blocks endpoint with the specific slot number
 	blockEndpoint := fmt.Sprintf("/eth/v2/beacon/blocks/%d", blockNumber)
 	fullURL := fmt.Sprintf("%s%s", httpUrl, blockEndpoint)
-	
+
 	resBytes, statusCode, err := httpClient.Get(fullURL, headers, authClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block by number: %w", err)
 	}
-	
+
 	if *statusCode >= 400 {
 		return nil, fmt.Errorf("HTTP error %d getting block by number", *statusCode)
 	}
-	
+
 	// Parse the response using the same structure as health check
 	var blockResponse BeaconBlockResponse
 	if err := json.Unmarshal(resBytes, &blockResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse block response: %w", err)
 	}
-	
+
 	return blockResponse, nil
 }
 
@@ -639,10 +639,10 @@ type BeaconBlockResponse struct {
 	Finalized           bool   `json:"finalized"`
 	Data                struct {
 		Message struct {
-			Slot          string `json:"slot"`
-			ProposerIndex string `json:"proposer_index"`
-			ParentRoot    string `json:"parent_root"`
-			StateRoot     string `json:"state_root"`
+			Slot          string      `json:"slot"`
+			ProposerIndex string      `json:"proposer_index"`
+			ParentRoot    string      `json:"parent_root"`
+			StateRoot     string      `json:"state_root"`
 			Body          interface{} `json:"body"` // Complex structure, we only need slot
 		} `json:"message"`
 		Signature string `json:"signature"`

@@ -1051,7 +1051,7 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_beacon_network",
 			networkName: "ethereum-beacon",
-			networkType: "eth_beacon_chain",
+			networkType: "beacon-chain",
 			environment: utils.EnvProd,
 			caddyPort:   "8080",
 			expectError: false,
@@ -1403,9 +1403,9 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 			expectedType: "evm",
 		},
 		{
-			name:         "eth_beacon_chain",
+			name:         "beacon-chain",
 			networkName:  "ethereum-beacon-mainnet",
-			expectedType: "eth_beacon_chain",
+			expectedType: "beacon-chain",
 		},
 		{
 			name:         "starknet_mainnet",

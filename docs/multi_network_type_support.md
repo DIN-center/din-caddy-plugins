@@ -172,7 +172,7 @@ func RegisterBuiltinHandlers() {
     DefaultRegistry.RegisterHandler("evm", NewEVMHandlerFactory())
     DefaultRegistry.RegisterHandler("solana", NewSolanaHandlerFactory())
     DefaultRegistry.RegisterHandler("starknet", NewStarknetHandlerFactory())
-    DefaultRegistry.RegisterHandler("beacon_chain", NewBeaconHandlerFactory())
+    DefaultRegistry.RegisterHandler("beacon-chain", NewBeaconHandlerFactory())
     // Additional handlers...
 }
 ```
@@ -226,7 +226,7 @@ din {
         
         # Beacon Chain (REST API)
         ethereum-beacon {
-            type beacon_chain
+            type beacon-chain
             chain_id beacon:mainnet
             healthcheck_endpoint "/eth/v1/beacon/headers/head"
             providers {
@@ -248,7 +248,7 @@ If `type` is not specified, the system attempts auto-detection based on network 
 | Contains "solana" | `solana` |
 | Contains "starknet" | `starknet` |
 | Contains "bitcoin" or "btc" | `bitcoin` |
-| Contains "beacon" or "consensus" | `beacon_chain` |
+| Contains "beacon" or "consensus" | `beacon-chain` |
 | All others | `evm` (default) |
 
 **Best Practice**: Always specify `type` explicitly for clarity.

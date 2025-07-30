@@ -64,7 +64,7 @@ Add the `type` field to explicitly specify which handler to use:
 | `*solana*` | `solana` | Automatic |
 | `*starknet*` | `starknet` | Automatic |
 | `*bitcoin*` or `*btc*` | `bitcoin` | Automatic |
-| `*beacon*` or `*consensus*` | `beacon_chain` | Automatic |
+| `*beacon*` or `*consensus*` | `beacon-chain` | Automatic |
 | Everything else | `evm` | Default |
 
 **Note:** While auto-detection works, explicitly specifying the `type` is recommended for clarity.
@@ -233,7 +233,7 @@ ethereum-beacon {
 **After (New Format):**
 ```caddyfile
 ethereum-beacon {
-    type beacon_chain                          # Add explicit type
+    type beacon-chain                          # Add explicit type
     providers {
         https://beacon-api.example.com {
             priority 1
@@ -296,7 +296,7 @@ Each network type uses specific methods automatically:
 | `evm` | `eth_blockNumber` | `eth_chainId` | `eth_getBlockByNumber` |
 | `starknet` | `starknet_blockNumber` | `starknet_chainId` | `starknet_getBlockWithTxHashes` |
 | `bitcoin` | `getblockcount` | `getblockchaininfo` | `getblock` |
-| `beacon_chain` | `/eth/v1/beacon/headers/head` | `/eth/v1/config/spec` | `/eth/v2/beacon/blocks/{block_id}` |
+| `beacon-chain` | `/eth/v1/beacon/headers/head` | `/eth/v1/config/spec` | `/eth/v2/beacon/blocks/{block_id}` |
 
 ## Troubleshooting Common Issues
 
@@ -397,7 +397,7 @@ When you specify a network `type`, the following methods are automatically confi
 - Archive: Not supported
 - Chain ID Format: `bip122:{network_name}`
 
-#### Beacon Chain Handler (`type: beacon_chain`)
+#### Beacon Chain Handler (`type: beacon-chain`)
 - Health Check: `/eth/v1/beacon/headers/head`
 - Chain ID: `/eth/v1/config/spec`
 - Block Method: `/eth/v2/beacon/blocks/{block_id}`
