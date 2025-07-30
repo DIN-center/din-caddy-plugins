@@ -13,7 +13,7 @@ import (
 type RequestProcessor struct {
 	Type          networklib.RequestType    `json:"type"`
 	Method        string                    `json:"method"`       // RPC method or REST endpoint
-	NetworkType   string                    `json:"network_type"` // "evm", "eth_beacon_chain", etc.
+	NetworkType   string                    `json:"network_type"` // "evm", "beacon-chain", etc.
 	OriginalPath  string                    `json:"original_path"`
 	Parameters    map[string]string         `json:"parameters"`
 	Handler       networklib.NetworkHandler `json:"-"` // Don't serialize handler
@@ -90,14 +90,14 @@ func autoDetectRequestType(req *http.Request, networkObj *network, registry *net
 
 	// Check for REST characteristics
 	if isRESTPattern(req.URL.Path) {
-		handler, err := registry.GetHandler("eth_beacon_chain", config)
+		handler, err := registry.GetHandler("beacon-chain", config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get Beacon Chain handler: %w", err)
 		}
 
 		ctx := &RequestProcessor{
 			Type:         networklib.RequestTypeREST,
-			NetworkType:  "eth_beacon_chain",
+			NetworkType:  "beacon-chain",
 			Handler:      handler,
 			OriginalPath: req.URL.Path,
 			Method:       req.URL.Path,

@@ -9,8 +9,8 @@ import (
 func TestBeaconChainHandler_GetType(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	if handler.GetType() != "eth_beacon_chain" {
-		t.Errorf("Expected type 'eth_beacon_chain', got '%s'", handler.GetType())
+	if handler.GetType() != "beacon-chain" {
+		t.Errorf("Expected type 'beacon-chain', got '%s'", handler.GetType())
 	}
 }
 

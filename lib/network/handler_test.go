@@ -415,14 +415,14 @@ func TestEVMHandler_Basic(t *testing.T) {
 func TestBeaconChainHandler_Basic(t *testing.T) {
 	config := &NetworkConfig{
 		Name: "test-beacon",
-		Type: "eth_beacon_chain",
+		Type: "beacon-chain",
 	}
 
 	handler := NewBeaconChainHandler(config)
 
 	// Test metadata
-	if handler.GetType() != "eth_beacon_chain" {
-		t.Errorf("Expected type 'eth_beacon_chain', got %s", handler.GetType())
+	if handler.GetType() != "beacon-chain" {
+		t.Errorf("Expected type 'beacon-chain', got %s", handler.GetType())
 	}
 
 	if handler.GetName() != "Ethereum Beacon Chain Handler" {
@@ -450,7 +450,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "eth_beacon_chain", "starknet", "solana", "bitcoin-esplora"}
+	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "bitcoin-esplora"}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

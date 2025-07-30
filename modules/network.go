@@ -20,7 +20,7 @@ import (
 
 type network struct {
 	Name             string
-	Type             string `json:"type"` // Network type for handler registry (evm, eth_beacon_chain, starknet, solana)
+	Type             string `json:"type"` // Network type for handler registry (evm, beacon-chain, starknet, solana)
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
