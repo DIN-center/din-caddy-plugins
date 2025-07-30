@@ -179,4 +179,10 @@ func RegisterBuiltinHandlers() {
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Beacon Chain handler: %v", err))
 	}
+
+	if err := DefaultRegistry.RegisterHandler("bitcoin-esplora", func(config *NetworkConfig) (NetworkHandler, error) {
+		return NewBitcoinEsploraHandler(config), nil
+	}); err != nil {
+		panic(fmt.Sprintf("Failed to register Bitcoin Esplora handler: %v", err))
+	}
 }

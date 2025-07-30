@@ -26,6 +26,12 @@ type provider struct {
 	// Registry Configuration Values
 	Methods map[string]struct{}  `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
+	
+	// Generic auth client for supporting multiple auth types
+	authClient auth.IAuthClient
+	
+	// OAuth2 configuration flag
+	OAuth2Enabled bool
 
 	consecutiveUnhealthyChecks int
 	blockHistory               *list.List
@@ -78,10 +84,20 @@ func (p *provider) IsAvailableWithWarning() bool {
 }
 
 func (p *provider) AuthClient() auth.IAuthClient {
+	// Return generic auth client if available (OAuth2, etc.)
+	if p.authClient != nil {
+		return p.authClient
+	}
+	// Fall back to SIWE auth if available
 	if p.Auth == nil {
 		return nil
 	}
 	return p.Auth
+}
+
+// SetAuthClient sets the generic auth client for this provider
+func (p *provider) SetAuthClient(authClient auth.IAuthClient) {
+	p.authClient = authClient
 }
 
 // Healthy returns True if the node is passing healthchecks, False otherwise

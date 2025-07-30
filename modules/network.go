@@ -56,6 +56,9 @@ type network struct {
 	MaxRequestPayloadSizeKB int64 `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int   `json:"request_attempt_count"`
 	ArchiveEnabled          bool  `json:"archive_enabled"`
+	
+	// Custom configuration passed from Caddyfile
+	CustomConfig map[string]interface{} `json:"custom_config,omitempty"`
 }
 
 // NewNetwork creates a new network with the given name and network type
@@ -144,7 +147,7 @@ func (n *network) startHealthcheck() {
 func (n *network) healthCheck() {
 	// Add handler status logging at the start of health check
 
-	// Self loopback health check (run asynchronously) - TEMPORARILY DISABLED due to circular dependency
+	// Self loopback health check (run asynchronously)
 	go n.LoopbackHealthCheck()
 
 	// Get latest network block for comparison

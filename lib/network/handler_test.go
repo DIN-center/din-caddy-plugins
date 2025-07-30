@@ -450,7 +450,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "eth_beacon_chain", "starknet", "solana"}
+	expectedHandlers := []string{"evm", "eth_beacon_chain", "starknet", "solana", "bitcoin-esplora"}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

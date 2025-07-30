@@ -1,0 +1,2 @@
+- Never put emojis in any documentation
+- Never state that anything was co-written by Claude
