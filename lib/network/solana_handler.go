@@ -30,7 +30,7 @@ func NewSolanaHandler(config *NetworkConfig) *SolanaHandler {
 
 // Metadata methods for registry
 func (h *SolanaHandler) GetType() string {
-	return "solana"
+	return "solana" // Must match modules.SolanaHandler constant value
 }
 
 func (h *SolanaHandler) GetName() string {
@@ -48,6 +48,11 @@ func (h *SolanaHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *SolanaHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
+	
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
+	
 	return nil
 }
 
@@ -64,6 +69,30 @@ func (h *SolanaHandler) ProcessRequest(req *http.Request) error {
 	}
 	
 	// Path translation is handled in DinSelect module
+	return nil
+}
+
+// ExtractMethod extracts the JSON-RPC method from the request body
+func (h *SolanaHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	if len(body) == 0 {
+		return "", fmt.Errorf("empty request body")
+	}
+	
+	var rpcRequest din_http.JSONRPCRequest
+	if err := json.Unmarshal(body, &rpcRequest); err != nil {
+		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
+	}
+	
+	if rpcRequest.Method == "" {
+		return "", fmt.Errorf("missing method in JSON-RPC request")
+	}
+	
+	return rpcRequest.Method, nil
+}
+
+// ConfigureRequestPath configures the request path for JSON-RPC requests
+func (h *SolanaHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureJSONRPCRequestPath(req, providerPath)
 	return nil
 }
 

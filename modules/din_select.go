@@ -3,9 +3,7 @@ package modules
 import (
 	"net/http"
 	"net/url"
-	"strings"
 
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
@@ -62,10 +60,10 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		providers = v.(map[string]*provider)
 	}
 
-	// Get request context to determine if this is a REST API
-	var reqContext *RequestProcessor
-	if v, ok := repl.Get(RequestProcessorKey); ok {
-		reqContext = v.(*RequestProcessor)
+	// Get network object to determine if this is a REST API
+	var networkObj *network
+	if v, ok := repl.Get("network_object"); ok {
+		networkObj = v.(*network)
 	}
 
 	// Select upstream based on request using the header hash selector
@@ -75,7 +73,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	for _, provider := range providers {
 		// If the upstream is found in the providers, set the path and headers for the request
 		if selectedUpstream == provider.upstream {
-			d.applyProviderConfiguration(provider, r, rw, repl, reqContext)
+			d.applyProviderConfiguration(provider, r, rw, repl, networkObj)
 			break
 		}
 	}
@@ -83,53 +81,23 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	return selectedUpstream
 }
 
-// TODO: Can we clean this up?
 // applyProviderConfiguration applies provider-specific settings to the request
-func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, reqContext *RequestProcessor) {
-	// Handle path configuration with generic REST API support
-	currentPath := r.URL.Path
-
-	// For REST APIs, strip the network prefix from the path
-	// e.g., "/eth-beacon-mainnet/eth/v1/beacon/genesis" -> "/eth/v1/beacon/genesis"
-	// This works for any REST API handler (beacon chain, future REST APIs, etc.)
-	if reqContext != nil && reqContext.Type == networklib.RequestTypeREST {
-		pathSegments := strings.Split(strings.TrimPrefix(currentPath, "/"), "/")
-		if len(pathSegments) > 1 {
-			// Remove the first segment (network name) and rebuild path
-			strippedPath := "/" + strings.Join(pathSegments[1:], "/")
-			currentPath = strippedPath
+func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, networkObj *network) {
+	// Use the network handler to configure the request path
+	if networkObj != nil && networkObj.handler != nil {
+		networkName := networkObj.Name
+		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, networkName); err != nil {
+			d.logger.Error("Failed to configure request path", 
+				zap.String("network", networkName),
+				zap.String("provider_path", provider.path),
+				zap.Error(err))
 		}
-	}
-
-	// Set the final path based on request type and provider configuration
-	if reqContext != nil && reqContext.Type == networklib.RequestTypeREST {
-		// Parse the original provider URL to extract components
-		if _, err := url.Parse(provider.HttpUrl); err == nil {
-			// We can still parse and use the URL components for other purposes
-			// but we should NOT set scheme/host/user on the request URL
-			// as this confuses Caddy's reverse proxy
-
-			// Combine provider base path with processed request path
-			if provider.path != "" && provider.path != "/" {
-				combinedPath := strings.TrimSuffix(provider.path, "/") + currentPath
-				r.URL.Path = combinedPath
-			} else {
-				r.URL.Path = currentPath
-			}
-			r.URL.RawPath = ""
-		} else {
-			// Fallback to standard path handling if URL parsing fails
-			d.logger.Error("Failed to parse provider URL", zap.String("provider_url", provider.HttpUrl), zap.Error(err))
-			r.URL.Path = currentPath
-		}
-	} else if provider.path != "" {
-		// For RPC providers with configured paths, use the configured provider path
-		r.URL.RawPath = provider.path
-		r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
 	} else {
-		// For RPC providers without configured paths, use the current path
-		r.URL.Path = currentPath
-		r.URL.RawPath = ""
+		// Fallback for cases where handler is not available
+		if provider.path != "" {
+			r.URL.RawPath = provider.path
+			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
+		}
 	}
 
 	// Apply headers

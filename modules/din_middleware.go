@@ -128,16 +128,62 @@ func (d *DinMiddleware) Provision(context caddy.Context) error {
 
 // initialize initializes the din middleware object with the necessary configuration values
 func (d *DinMiddleware) initialize(context caddy.Context) error {
-	var err error
+	// Initialize core services
+	if err := d.initializeCoreServices(context); err != nil {
+		return fmt.Errorf("failed to initialize core services: %w", err)
+	}
+
+	// Initialize default configuration values
+	d.initializeDefaults()
+
+	// Initialize DIN registry client
+	if err := d.initializeDinRegistryClient(); err != nil {
+		return fmt.Errorf("failed to initialize DIN registry: %w", err)
+	}
+
+	// Initialize network handler registry
+	d.initializeHandlerRegistry()
+
+	// Initialize all networks
+	if err := d.initializeNetworks(); err != nil {
+		return fmt.Errorf("failed to initialize networks: %w", err)
+	}
+
+	d.logger.Info("Din middleware provisioned")
+
+	// Start background services if not in test mode
+	if !d.testMode {
+		if err := d.startBackgroundServices(); err != nil {
+			return fmt.Errorf("failed to start background services: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// initializeCoreServices initializes core services like logger, prometheus, and SIWE
+func (d *DinMiddleware) initializeCoreServices(context caddy.Context) error {
 	d.machineID = utils.GetMachineId()
+	
+	// Initialize logger
 	loggerClient := logger.NewLoggerClient(context.Logger(d), d.Env)
 	d.logger = loggerClient
-	// Initialize the prometheus client on the din middleware object
+	
+	// Initialize prometheus client
 	promClient := prom.NewPrometheusClient(loggerClient, d.machineID)
 	d.PrometheusClient = promClient
+	
+	// Initialize SIWE signer client
 	d.SiweSignerClient = siwe.NewSIWESignerClient()
+	
+	// Initialize quit channel
 	d.quit = make(chan struct{})
+	
+	return nil
+}
 
+// initializeDefaults sets default values for configuration
+func (d *DinMiddleware) initializeDefaults() {
 	if d.RegistryBlockCheckIntervalSec == 0 {
 		d.RegistryBlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
 	}
@@ -150,108 +196,154 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	if d.CaddyPort == "" {
 		d.CaddyPort = DefaultPort
 	}
+}
 
-	// Initialize the din registry configuration values
-	d.DingoClient, err = din.NewDinClient(loggerClient.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+// initializeDinRegistryClient initializes the DIN registry client
+func (d *DinMiddleware) initializeDinRegistryClient() error {
+	client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
 	if err != nil {
 		return fmt.Errorf("error initializing din client: %v", err)
 	}
+	d.DingoClient = client
+	return nil
+}
 
-	// Initialize the handler registry with built-in handlers
+// initializeHandlerRegistry initializes the network handler registry
+func (d *DinMiddleware) initializeHandlerRegistry() {
 	d.handlerRegistry = networklib.DefaultRegistry
 	networklib.RegisterBuiltinHandlers()
+}
 
-	// Initialize handlers and network configuration in a single loop
+// initializeNetworks initializes all configured networks
+func (d *DinMiddleware) initializeNetworks() error {
 	for networkName := range d.Networks {
-		// Access the network directly from the map to ensure persistence
-		networkObj := d.Networks[networkName]
-
-		// The handler field is not JSON-serialized, so we need to recreate handlers based on the Type field
-		if networkObj.Type != "" {
-			// Remove any existing handler to force recreation with updated configuration
-			if err := d.handlerRegistry.RemoveHandler(networkName); err != nil {
-				d.logger.Warn("Failed to remove existing handler", zap.String("network", networkName), zap.Error(err))
-			}
-
-			// Configure the handler with complete configuration including ChainID
-			config := &networklib.NetworkConfig{
-				Name:           networkName,
-				Type:           networkObj.Type,
-				ChainID:        networkObj.ChainId,
-				MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
-				RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
-				Logger:         loggerClient,
-				Custom:         make(map[string]interface{}),
-			}
-
-			handler, err := d.handlerRegistry.GetHandler(networkObj.Type, config)
-			if err != nil {
-				return fmt.Errorf("failed to get handler for network '%s' type '%s': %w", networkName, networkObj.Type, err)
-			}
-
-			// Update the network's handler
-			networkObj.UpdateHandler(handler)
+		if err := d.initializeNetwork(networkName); err != nil {
+			return fmt.Errorf("failed to initialize network '%s': %w", networkName, err)
 		}
+	}
+	return nil
+}
 
-		// Initialize the HTTP client for each network and provider
-		httpClient := dinHttp.NewHTTPClient(time.Duration(networkObj.HCTimeout) * time.Second)
-		d.logger.Debug("Registered network", zap.String("name", networkName))
-		networkObj.HttpClient = httpClient
-		networkObj.logger = loggerClient
-		networkObj.PrometheusClient = promClient
-		networkObj.machineID = d.machineID
+// initializeNetwork initializes a single network
+func (d *DinMiddleware) initializeNetwork(networkName string) error {
+	networkObj := d.Networks[networkName]
 
-		// Initialize the provider's upstream, path, and HTTP client
-		for _, provider := range networkObj.Providers {
-			err := d.initializeProvider(provider, httpClient, loggerClient)
-			if err != nil {
-				return fmt.Errorf("error initializing provider: %v", err)
-			}
-		}
-
-		// Validate that all routed methods are offered by at least one provider
-		if networkObj.MethodFilter != nil {
-			for method, _ := range networkObj.MethodFilter.FilteredMethods {
-				match := false
-				for _, provider := range networkObj.Providers {
-					if _, ok := provider.Methods[method]; ok {
-						match = true
-						break
-					}
-				}
-				if !match {
-					d.logger.Warn("Method marked as routed, but not offered by any providers", zap.String("network", networkName), zap.String("method", method))
-				}
-			}
-		}
-
-		// Register network in global registry for DinUpstreams access
-		RegisterNetwork(networkName, networkObj)
-
+	// Initialize handler if needed
+	if err := d.initializeNetworkHandler(networkName, networkObj); err != nil {
+		return err
 	}
 
-	d.logger.Info("Din middleware provisioned")
+	// Initialize network services
+	if err := d.initializeNetworkServices(networkName, networkObj); err != nil {
+		return err
+	}
 
-	// Start the latest block number polling for each provider in each network.
-	// This is done in a goroutine that sets the latest block number in the network object,
-	// and updates the provider's health status accordingly.
-	// Skips if test mode is enabled.
-	if !d.testMode {
-		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the network object,
-		// and updates the provider's health status accordingly.
-		err := d.startHealthChecks()
+	// Validate network configuration
+	if err := d.validateNetworkConfiguration(networkName, networkObj); err != nil {
+		return err
+	}
+
+	// Register network in global registry
+	RegisterNetwork(networkName, networkObj)
+
+	return nil
+}
+
+// initializeNetworkHandler initializes the handler for a network if needed
+func (d *DinMiddleware) initializeNetworkHandler(networkName string, networkObj *network) error {
+	// Check if handler needs to be initialized
+	// Handler may be nil if:
+	// 1. Configuration was loaded from JSON (handlers are not serialized)
+	// 2. Network was created programmatically without going through UnmarshalCaddyfile
+	if networkObj.handler == nil && networkObj.HandlerType != "" {
+		d.logger.Debug("Initializing handler during provision",
+			zap.String("network", networkName),
+			zap.String("handler_type", string(networkObj.HandlerType)))
+
+		// Configure the handler with complete configuration including ChainID
+		config := &networklib.NetworkConfig{
+			Name:           networkName,
+			Type:           string(networkObj.HandlerType),
+			ChainID:        networkObj.ChainId,
+			MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
+			RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
+			Logger:         d.logger,
+			Custom:         make(map[string]interface{}),
+		}
+
+		handler, err := d.handlerRegistry.GetHandler(string(networkObj.HandlerType), config)
 		if err != nil {
-			return fmt.Errorf("error starting healthchecks: %v", err)
+			return fmt.Errorf("failed to get handler for network '%s' handler_type '%s': %w", networkName, networkObj.HandlerType, err)
 		}
 
-		// Pull data from the din registry
-		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
-		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.RegistryEnabled {
-			d.logger.Info("Din registry is enabled, pulling data from the registry")
-			d.startRegistrySync()
+		// Set the network's handler
+		if err := networkObj.SetHandler(handler); err != nil {
+			return fmt.Errorf("failed to set handler for network '%s': %w", networkName, err)
 		}
+	} else if networkObj.handler != nil {
+		d.logger.Debug("Handler already initialized, skipping",
+			zap.String("network", networkName),
+			zap.String("handler_type", string(networkObj.HandlerType)))
+	}
+
+	return nil
+}
+
+// initializeNetworkServices initializes HTTP client and providers for a network
+func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj *network) error {
+	// Initialize the HTTP client for the network
+	httpClient := dinHttp.NewHTTPClient(time.Duration(networkObj.HCTimeout) * time.Second)
+	d.logger.Debug("Registered network", zap.String("name", networkName))
+	
+	// Set network dependencies
+	networkObj.HttpClient = httpClient
+	networkObj.logger = d.logger
+	networkObj.PrometheusClient = d.PrometheusClient
+	networkObj.machineID = d.machineID
+
+	// Initialize providers
+	for _, provider := range networkObj.Providers {
+		if err := d.initializeProvider(provider, httpClient, d.logger); err != nil {
+			return fmt.Errorf("error initializing provider: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// validateNetworkConfiguration validates the network's method filter configuration
+func (d *DinMiddleware) validateNetworkConfiguration(networkName string, networkObj *network) error {
+	// Validate that all routed methods are offered by at least one provider
+	if networkObj.MethodFilter != nil {
+		for method := range networkObj.MethodFilter.FilteredMethods {
+			match := false
+			for _, provider := range networkObj.Providers {
+				if _, ok := provider.Methods[method]; ok {
+					match = true
+					break
+				}
+			}
+			if !match {
+				d.logger.Warn("Method marked as routed, but not offered by any providers", 
+					zap.String("network", networkName), 
+					zap.String("method", method))
+			}
+		}
+	}
+	return nil
+}
+
+// startBackgroundServices starts health checks and registry sync
+func (d *DinMiddleware) startBackgroundServices() error {
+	// Start health checks
+	if err := d.startHealthChecks(); err != nil {
+		return fmt.Errorf("error starting healthchecks: %v", err)
+	}
+
+	// Start registry sync if enabled
+	if d.RegistryEnabled {
+		d.logger.Info("Din registry is enabled, pulling data from the registry")
+		d.startRegistrySync()
 	}
 
 	return nil
@@ -329,24 +421,22 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("network undefined")
 	}
 
-	// Detect request type and get appropriate handler
-	reqContext, err := DetectRequestType(r, networkObj, d.handlerRegistry)
-	if err != nil {
-		d.logger.Error("Failed to detect request type", zap.String("network", networkPath), zap.Error(err))
+	// Ensure handler is available
+	if networkObj.handler == nil {
+		d.logger.Error("No handler available for network", zap.String("network", networkPath))
 		rw.WriteHeader(http.StatusInternalServerError)
 		rw.Write([]byte("Internal Server Error\n"))
-		return fmt.Errorf("failed to detect request type: %w", err)
+		return fmt.Errorf("no handler available for network %s", networkPath)
 	}
 
-	// Store request context in replacer for later use
-	repl.Set(RequestProcessorKey, reqContext)
+	// Store network object in replacer for later use
+	repl.Set("network_object", networkObj)
 
 	// Middleware focuses on request validation only
 	// DinSelect will handle all REST API path processing during provider configuration
 
 	// Process the request using the handler for validation only
-	if err := reqContext.Handler.ProcessRequest(r); err != nil {
-
+	if err := networkObj.handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Bad Request\n"))
@@ -372,7 +462,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Check to see if the request is empty (only for JSON-RPC requests)
 	// REST APIs like beacon chain can have empty bodies for GET requests
-	if len(bodyBytes) == 0 && reqContext.Type == networklib.RequestTypeRPC {
+	if len(bodyBytes) == 0 && networkObj.handler.GetRequestType() == networklib.RequestTypeRPC {
 		// if the request body is empty for JSON-RPC, do not increment the prometheus metric, return an error
 		// this is specifically for OPTIONS requests and invalid JSON-RPC payload bodies
 		rw.WriteHeader(http.StatusBadRequest)
@@ -380,27 +470,30 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return fmt.Errorf("request body is empty")
 	}
 
-	// For JSON-RPC requests, parse the request body to extract the method
-	var requestBody *dinHttp.JSONRPCRequest
-	if reqContext.Type == networklib.RequestTypeRPC {
-		var err error
-		requestBody, err = getRequestBody(repl)
-		if err != nil {
-			d.logger.Error("Failed to get request body", zap.String("network", networkPath), zap.Error(err))
-			return fmt.Errorf("failed to get request body: %w", err)
-		}
-		repl.Set(RequestMethodKey, requestBody.Method)
-	} else {
-		// For REST APIs, the method is already in the request context
-		repl.Set(RequestMethodKey, reqContext.Method)
+	// Extract the method using the handler
+	method, err := networkObj.handler.ExtractMethod(r, bodyBytes)
+	if err != nil {
+		d.logger.Error("Failed to extract method", zap.String("network", networkPath), zap.Error(err))
+		// Don't fail the request, just set method to unknown for metrics
+		method = "unknown"
 	}
+	repl.Set(RequestMethodKey, method)
 
 	// Create a new response writer wrapper to capture the response body and status code
 	var rww *ResponseWriterWrapper
 
 	if networkObj.MethodFilter != nil {
+		// For method filtering, we need to parse the JSON-RPC request
+		// Only do this if we have a body and it's a JSON-RPC request
+		var parsedRequest *dinHttp.JSONRPCRequest
+		if len(bodyBytes) > 0 && networkObj.handler.GetRequestType() == networklib.RequestTypeRPC {
+			var rpcReq dinHttp.JSONRPCRequest
+			if err := json.Unmarshal(bodyBytes, &rpcReq); err == nil {
+				parsedRequest = &rpcReq
+			}
+		}
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(requestBody, networkObj.Providers))
+		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(parsedRequest, networkObj.Providers))
 	} else {
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
@@ -450,29 +543,26 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			// Decompress gzip if necessary before passing to handler
 			responseBody = decompressGzipBodyIfNecessary(rww.Header(), responseBody, d.logger, networkPath)
 
-			// Create response processor
-			responseProcessor := NewResponseProcessor(networkObj.handler, d.logger.Logger)
-
 			// Check for application-level errors using the handler
-			appError := responseProcessor.CheckForApplicationError(responseBody, rww.statusCode, reqContext)
+			var appError error
+			if rww.statusCode >= 200 && rww.statusCode < 300 {
+				// For successful HTTP responses, check for application-level errors
+				appError = networkObj.handler.ParseResponse(responseBody, rww.statusCode)
+			} else {
+				// For non-2xx responses, create an HTTP error
+				appError = fmt.Errorf("HTTP error: %d", rww.statusCode)
+			}
 			if appError == nil {
 				// Request was successful
 				shouldLogMetrics = true
 				break
 			}
 
-			// Extract method and params directly from JSONRPCRequest for logging
-			var method string = "unknown"
+			// Use the method we already extracted
 			var params json.RawMessage
-			if requestBody != nil {
-				method = requestBody.Method
-				if len(requestBody.Params) > 0 {
-					params = requestBody.Params
-				}
-			}
 
 			// Check if the error is retryable using the handler
-			if !responseProcessor.IsRetryableError(appError, rww.statusCode) {
+			if !networkObj.handler.IsRetryableError(appError, rww.statusCode) {
 				// Non-retryable error
 				// Log this for debugging purposes since we won't retry
 				logFailedAttempt(LogFailedAttemptParams{
@@ -511,15 +601,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		// Check for HTTP/low-level errors (non-200 status codes, network issues, etc.)
 		if err != nil {
-			// Extract method and params directly from JSONRPCRequest for logging
-			var method string = "unknown"
+			// Use the method we already extracted
 			var params json.RawMessage
-			if requestBody != nil {
-				method = requestBody.Method
-				if len(requestBody.Params) > 0 {
-					params = requestBody.Params
-				}
-			}
 
 			// Log HTTP/low-level error
 			var responseBody []byte
@@ -570,14 +653,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		if !shouldLogMetrics && !d.testMode && d.PrometheusClient != nil {
 			// Record metrics for the failed request
 			d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
-				Method:         requestBody.Method,
+				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
 				HealthStatus:   "unhealthy", // All providers failed
 				Environment:    string(d.Env),
-			}, duration, requestBody)
+			}, duration, nil)
 		}
 
 		return errors.Wrap(err, "Error serving HTTP")
@@ -625,7 +708,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			Replacer:      repl,
 			Duration:      duration,
 			OriginalReq:   r,
-			ParsedReqBody: requestBody,
+			ParsedReqBody: nil,
 		})
 	}
 
@@ -730,30 +813,11 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						if !dispenser.Args(d.Networks[networkName].Methods...) {
 							return dispenser.Errf("invalid 'methods' argument for network %s", networkName)
 						}
-					case "type":
+					case "handler":
 						dispenser.Next()
 						explicitType := dispenser.Val()
-						d.Networks[networkName].Type = explicitType
-
-						// Reinitialize handler when type is explicitly set
-						config := &networklib.NetworkConfig{
-							Name:           networkName,
-							Type:           explicitType,
-							ChainID:        d.Networks[networkName].ChainId,
-							MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
-							RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
-							Custom:         make(map[string]interface{}),
-						}
-
-						handler, err := d.handlerRegistry.GetHandler(explicitType, config)
-						if err != nil {
-							fmt.Printf(" Failed to get handler for explicit network type '%s': %v\n", explicitType, err)
-							return fmt.Errorf("failed to get handler for explicit network type '%s': %w", explicitType, err)
-						}
-
-						// Update the handler reference in the network
-
-						d.Networks[networkName].UpdateHandler(handler)
+						d.Networks[networkName].HandlerType = HandlerType(explicitType)
+						// Handler creation deferred to Provision phase for proper logger initialization
 					case "routed_methods":
 						methods := make([]*string, dispenser.CountRemainingArgs())
 						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
@@ -961,30 +1025,12 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 				if d.Networks[networkName].ChainId == "" {
 					return fmt.Errorf("chain ID is not set for network %s", networkName)
 				}
-				if d.Networks[networkName].Type == "" {
-					// DEFAULT to EVM for unspecified network types (most common blockchain type)
-					d.logger.Info("No explicit network type specified, defaulting to EVM",
+				if d.Networks[networkName].HandlerType == "" {
+					// DEFAULT to EVM for unspecified handler types (most common blockchain type)
+					d.logger.Info("No explicit handler type specified, defaulting to EVM",
 						zap.String("network", networkName))
-					d.Networks[networkName].Type = "evm"
-
-					// Initialize EVM handler for the defaulted network
-					config := &networklib.NetworkConfig{
-						Name:           networkName,
-						Type:           "evm",
-						ChainID:        d.Networks[networkName].ChainId,
-						MaxPayloadSize: d.Networks[networkName].MaxRequestPayloadSizeKB * 1024,
-						RequestTimeout: time.Duration(d.Networks[networkName].HCTimeout) * time.Second,
-						Custom:         make(map[string]interface{}),
-					}
-
-					handler, err := d.handlerRegistry.GetHandler("evm", config)
-					if err != nil {
-						return fmt.Errorf("failed to get default EVM handler for network '%s': %w", networkName, err)
-					}
-
-					// Update the network's handler
-					d.Networks[networkName].UpdateHandler(handler)
-
+					d.Networks[networkName].HandlerType = EVMHandler
+					// Handler creation deferred to Provision phase for proper logger initialization
 				}
 			}
 		case "din_registry":

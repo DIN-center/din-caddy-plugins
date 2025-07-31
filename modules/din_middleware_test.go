@@ -60,6 +60,9 @@ func TestMiddlewareCaddyModule(t *testing.T) {
 }
 
 func TestMiddlewareServeHTTP(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	dinMiddleware := new(DinMiddleware)
 	dinMiddleware.testMode = true
 	dinMiddleware.logger = logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest)
@@ -96,6 +99,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name: "eth",
+					handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							blockHistory: func() *list.List {
@@ -121,6 +125,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name: "eth",
+					handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
 							blockHistory: func() *list.List {
@@ -153,6 +158,17 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock handler expectations if network has a handler
+			for _, net := range tt.networks {
+				if mockHandler, ok := net.handler.(*networklib.MockNetworkHandler); ok {
+					mockHandler.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil).AnyTimes()
+					mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+					mockHandler.EXPECT().ProcessRequest(gomock.Any()).Return(nil).AnyTimes()
+					mockHandler.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+					mockHandler.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				}
+			}
+
 			dinMiddleware.Networks = tt.networks
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			rw := httptest.NewRecorder()
@@ -599,12 +615,36 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			// mockCtrl and mockHttpClient setup will be handled by tt.setupNetwork for relevant cases
 
 			// Create a proper network with handler using NewNetwork
-			netw, err := NewNetwork("test", "evm", utils.EnvTest, "8000")
+			netw, err := NewNetwork("test", EVMHandler, utils.EnvTest, "8000")
 			if err != nil {
 				t.Fatalf("Failed to create network: %v", err)
 			}
 			netw.logger = dm.logger
 			netw.HttpClient = nil // Initialize as nil; setupNetwork can override for specific tests
+
+			// Create and set handler for the network since it's not created until Provision
+			mockCtrl := gomock.NewController(t)
+			mockHandler := networklib.NewMockNetworkHandler(mockCtrl)
+			netw.handler = mockHandler
+
+			// Set up default expectations for the mock handler
+			mockHandler.EXPECT().GetHealthCheckMethod().Return("eth_blockNumber").AnyTimes()
+			mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+			mockHandler.EXPECT().GetHealthCheckHTTPMethod().Return("POST").AnyTimes()
+			mockHandler.EXPECT().CreateHealthCheckPayload(gomock.Any()).Return([]byte(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`), nil).AnyTimes()
+			mockHandler.EXPECT().ParseBlockNumberResponse(gomock.Any(), gomock.Any()).Return(int64(100), nil).AnyTimes()
+			mockHandler.EXPECT().SupportsGetBlockByNumber().Return(true).AnyTimes()
+			mockHandler.EXPECT().GetBlockByNumberMethod().Return("eth_getBlockByNumber").AnyTimes()
+			mockHandler.EXPECT().CreateBlockRequest(gomock.Any(), gomock.Any(), gomock.Any()).Return([]byte(`{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["0x64",false],"id":1}`), nil).AnyTimes()
+			mockHandler.EXPECT().ParseBlockResponse(gomock.Any()).Return(din_http.JSONRPCEVMBlockResponse{
+				Jsonrpc: "2.0",
+				ID:      json.RawMessage(`1`),
+				Result: din_http.EVMBlockResult{
+					Hash:   "0x123abc",
+					Number: "0x64",
+				},
+			}, nil).AnyTimes()
+			mockHandler.EXPECT().ExtractBlockHash(gomock.Any()).Return("0x123abc").AnyTimes()
 
 			if tt.setupNetwork != nil {
 				tt.setupNetwork(t, netw) // Pass t to setupNetwork
@@ -640,14 +680,14 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			_ = printfOutput // Suppress unused variable warning for printfOutput
 
 			if tt.expectNoProcessLogs {
-				assert.NotContains(t, actualLogOutput, "Processing response for HCMethod", "Should not log 'Processing response' for this case: "+tt.name)
-				assert.NotContains(t, actualLogOutput, "successfully processed block number", "Should not log 'successfully processed' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "Goroutine: Processing response for HCMethod", "Should not log 'Processing response' for this case: "+tt.name)
+				assert.NotContains(t, actualLogOutput, "successfully processed block number and added to network history", "Should not log 'successfully processed' for this case: "+tt.name)
 				assert.NotContains(t, actualLogOutput, "error processing block number", "Should not log 'error processing' for this case: "+tt.name)
 			} else {
-				assert.Contains(t, actualLogOutput, "Processing response for HCMethod", "Expected 'Processing response for HCMethod' log for case: "+tt.name+"; Log: "+actualLogOutput)
+				assert.Contains(t, actualLogOutput, "Goroutine: Processing response for HCMethod", "Expected 'Processing response for HCMethod' log for case: "+tt.name+"; Log: "+actualLogOutput)
 
 				if tt.name == "Successful processing" {
-					assert.Contains(t, actualLogOutput, "successfully processed block number", "Expected 'successfully processed block number' log for successful case; Log: "+actualLogOutput)
+					assert.Contains(t, actualLogOutput, "successfully processed block number and added to network history", "Expected 'successfully processed block number' log for successful case; Log: "+actualLogOutput)
 				} else if tt.name == "Error from processBlockNumberResponse - malformed respBody" || tt.name == "Error from processBlockNumberResponse - http error status" {
 					assert.Contains(t, actualLogOutput, "error processing block number from response using processBlockNumberResponse", "Expected 'error processing block number' log for error cases; Log: "+actualLogOutput)
 				}

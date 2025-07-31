@@ -1023,7 +1023,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
 			// Create test network with proper handler initialization
-			network, err := NewNetwork("test", "evm", utils.Environment("test"), "8080")
+			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8080")
 			assert.NoError(t, err)
 			network.logger = loggerClient
 			network.Name = "test/eth" // Update name to match test expectations

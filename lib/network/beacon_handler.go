@@ -53,6 +53,11 @@ func (h *BeaconChainHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *BeaconChainHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
+	
+	// Update logger from config if available
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
 
 	return nil
 }
@@ -75,6 +80,19 @@ func (h *BeaconChainHandler) ProcessRequest(req *http.Request) error {
 	// This maintains consistency with the generic REST API processing approach
 	// Unlike EVM which uses JSON-RPC and needs provider-specific path handling
 
+	return nil
+}
+
+// ExtractMethod extracts the method name from the request for logging/metrics
+// For REST APIs like Beacon Chain, the method is the URL path
+func (h *BeaconChainHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	// For REST APIs, the "method" is the path
+	return req.URL.Path, nil
+}
+
+// ConfigureRequestPath configures the request path for REST API requests
+func (h *BeaconChainHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureRESTRequestPath(req, providerPath, networkName)
 	return nil
 }
 

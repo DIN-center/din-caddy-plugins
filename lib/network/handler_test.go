@@ -45,6 +45,15 @@ func (m *MockHandler) ProcessRequest(req *http.Request) error {
 	return nil
 }
 
+func (m *MockHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	return "mock_method", nil
+}
+
+func (m *MockHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	// Mock implementation - just return nil
+	return nil
+}
+
 func (m *MockHandler) ParseResponse(body []byte, statusCode int) error {
 	return nil
 }
@@ -450,7 +459,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana"}
+	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "bitcoin-esplora"}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

@@ -29,7 +29,7 @@ func NewStarknetHandler(config *NetworkConfig) *StarknetHandler {
 
 // Metadata methods for registry
 func (h *StarknetHandler) GetType() string {
-	return "starknet"
+	return "starknet" // Must match modules.StarknetHandler constant value
 }
 
 func (h *StarknetHandler) GetName() string {
@@ -47,6 +47,11 @@ func (h *StarknetHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *StarknetHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
+	
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
+	
 	return nil
 }
 
@@ -63,6 +68,30 @@ func (h *StarknetHandler) ProcessRequest(req *http.Request) error {
 	}
 	
 	// Path translation is handled in DinSelect module
+	return nil
+}
+
+// ExtractMethod extracts the JSON-RPC method from the request body
+func (h *StarknetHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	if len(body) == 0 {
+		return "", fmt.Errorf("empty request body")
+	}
+	
+	var rpcRequest din_http.JSONRPCRequest
+	if err := json.Unmarshal(body, &rpcRequest); err != nil {
+		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
+	}
+	
+	if rpcRequest.Method == "" {
+		return "", fmt.Errorf("missing method in JSON-RPC request")
+	}
+	
+	return rpcRequest.Method, nil
+}
+
+// ConfigureRequestPath configures the request path for JSON-RPC requests
+func (h *StarknetHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureJSONRPCRequestPath(req, providerPath)
 	return nil
 }
 

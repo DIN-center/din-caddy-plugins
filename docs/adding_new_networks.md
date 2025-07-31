@@ -687,24 +687,6 @@ if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMe
 }
 ```
 
-### Legacy Fallback Support
-
-The middleware maintains a legacy fallback mechanism for networks without handlers:
-
-```go
-// In helpers.go - createRequestWithReplacer
-if networkObj != nil && networkObj.handler != nil {
-    payload, err = networkObj.handler.CreateBlockRequest(method, blockNumber, false)
-    if err != nil {
-        // Fall back to legacy string-based logic
-        payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
-    }
-} else {
-    // Use legacy logic when no handler available
-    payload, params = createLegacyBlockRequest(networkName, method, blockNumber)
-}
-```
-
 ### Default Type Assignment
 
 Networks without an explicit type specification default to EVM:
