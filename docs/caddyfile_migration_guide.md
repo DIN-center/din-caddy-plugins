@@ -77,10 +77,10 @@ Add the `type` field to explicitly specify which handler to use:
 ```caddyfile
 solana-mainnet {
     providers {
-        https://din-mainnet.rpc.extrnode.com/99b0a2da-8853-488e-bc37-f20e9e7dc62b {
+        https://din-mainnet.rpc.extrnode.com/{Key}{
             priority 1
         }
-        https://consensys.rpcpool.com/5f3f44fa-b944-4102-81d1-3dbfa8e0b3b0 {
+        https://consensys.rpcpool.com/{Key} {
             priority 0
         }
     }
@@ -96,10 +96,10 @@ solana-mainnet {
 solana-mainnet {
     type solana                                # Add explicit type
     providers {
-        https://din-mainnet.rpc.extrnode.com/99b0a2da-8853-488e-bc37-f20e9e7dc62b {
+        https://din-mainnet.rpc.extrnode.com/{Key} {
             priority 1
         }
-        https://consensys.rpcpool.com/5f3f44fa-b944-4102-81d1-3dbfa8e0b3b0 {
+        https://consensys.rpcpool.com/{Key} {
             priority 0
         }
     }
