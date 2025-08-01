@@ -69,11 +69,31 @@ func IsRetryableJSONRPCError(err error, statusCode int) bool {
 
 	errMsg := strings.ToLower(err.Error())
 
-	// Check for retryable JSON-RPC error codes
-	// -32000 to -32099: Server errors (implementation defined)
-	// These are typically retryable
-	if strings.Contains(errMsg, "json-rpc error -320") {
-		return true
+	// First check for explicitly non-retryable patterns
+	// These should never be retried regardless of error code
+	nonRetryablePatterns := []string{
+		"method not found",   // -32601
+		"invalid params",     // -32602
+		"invalid request",    // -32600
+		"parse error",        // -32700
+		"unauthorized",       // Often permanent
+		"forbidden",          // Often permanent
+		"insufficient funds", // Transaction specific
+		"nonce too low",      // Transaction specific
+		"already known",      // Transaction already submitted
+		"gas",                // Gas-related errors (insufficient gas, gas estimation failed, etc.)
+		"revert",             // EVM execution reverts
+		"execution reverted", // Explicit execution revert
+		"out of gas",         // Gas limit exceeded
+		"intrinsic gas",      // Intrinsic gas too low
+		"gas limit exceeded", // Gas limit exceeded
+		"vm execution error", // Virtual machine execution errors
+	}
+
+	for _, pattern := range nonRetryablePatterns {
+		if strings.Contains(errMsg, pattern) {
+			return false
+		}
 	}
 
 	// Common retryable error patterns
@@ -99,23 +119,11 @@ func IsRetryableJSONRPCError(err error, statusCode int) bool {
 		}
 	}
 
-	// Non-retryable JSON-RPC errors
-	nonRetryablePatterns := []string{
-		"method not found",   // -32601
-		"invalid params",     // -32602
-		"invalid request",    // -32600
-		"parse error",        // -32700
-		"unauthorized",       // Often permanent
-		"forbidden",          // Often permanent
-		"insufficient funds", // Transaction specific
-		"nonce too low",      // Transaction specific
-		"already known",      // Transaction already submitted
-	}
-
-	for _, pattern := range nonRetryablePatterns {
-		if strings.Contains(errMsg, pattern) {
-			return false
-		}
+	// Check for retryable JSON-RPC error codes (after non-retryable pattern check)
+	// -32000 to -32099: Server errors (implementation defined)
+	// Only retry these if they don't match non-retryable patterns above
+	if strings.Contains(errMsg, "json-rpc error -320") {
+		return true
 	}
 
 	// Default to not retrying unknown errors
@@ -482,7 +490,7 @@ func ConfigureJSONRPCRequestPath(req *http.Request, providerPath string) {
 // This is shared logic for all REST handlers (Beacon Chain, Bitcoin Esplora)
 func ConfigureRESTRequestPath(req *http.Request, providerPath string, networkName string) {
 	currentPath := req.URL.Path
-	
+
 	// Strip the network prefix from the path
 	// e.g., "/eth-beacon-mainnet/eth/v1/beacon/genesis" -> "/eth/v1/beacon/genesis"
 	pathSegments := strings.Split(strings.TrimPrefix(currentPath, "/"), "/")
@@ -491,10 +499,15 @@ func ConfigureRESTRequestPath(req *http.Request, providerPath string, networkNam
 		strippedPath := "/" + strings.Join(pathSegments[1:], "/")
 		currentPath = strippedPath
 	}
-	
+
 	// Combine provider base path with processed request path
 	if providerPath != "" && providerPath != "/" {
-		combinedPath := strings.TrimSuffix(providerPath, "/") + currentPath
+		combinedPath, err := url.JoinPath(providerPath, currentPath)
+		if err != nil {
+			// If JoinPath fails, fall back to current behavior
+			// This ensures backward compatibility
+			combinedPath = strings.TrimSuffix(providerPath, "/") + currentPath
+		}
 		req.URL.Path = combinedPath
 	} else {
 		req.URL.Path = currentPath

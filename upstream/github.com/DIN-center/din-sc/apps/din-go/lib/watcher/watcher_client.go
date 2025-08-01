@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/pkg/errors"
 )
@@ -26,13 +27,16 @@ func NewClient(baseURL, apiKey string) *WatcherAPIClient {
 
 func (c *WatcherAPIClient) doRequest(method, endpoint string, params interface{}) ([]byte, error) {
 	// Build URL with query parameters
-	url := fmt.Sprintf("%s%s", c.BaseURL, endpoint)
+	apiURL, err := url.JoinPath(c.BaseURL, endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %w", err)
+	}
 	if qs := buildQuery(params); qs != "" {
-		url = fmt.Sprintf("%s?%s", url, qs)
+		apiURL = fmt.Sprintf("%s?%s", apiURL, qs)
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

@@ -63,7 +63,7 @@ type network struct {
 // Don't kick off any Background processes here
 func NewNetwork(name string, handlerType HandlerType, environment utils.Environment, caddyPort string) (*network, error) {
 	n := &network{
-		Name: name,
+		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCThreshold:              DefaultHCThreshold,
@@ -375,11 +375,6 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 		return nil // Archive mode disabled, skip check
 	}
 
-	// Check if handler is available
-	if n.handler == nil {
-		return nil // No handler available, skip check
-	}
-
 	// Check if handler supports archive mode
 	if !n.handler.SupportsArchiveMode() {
 		return nil // Handler doesn't support archive mode, skip check
@@ -489,20 +484,6 @@ type getLatestBlockNumberResult struct {
 }
 
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient, providerHost string) (*getLatestBlockNumberResult, error) {
-	// Ensure handler is available
-	if n.handler == nil {
-		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   Unhealthy,
-			responseStatus: 0,
-		}, fmt.Errorf("no handler available for network %s", n.Name)
-	}
-
-	n.logger.Debug("Using handler to get latest block number",
-		zap.String("network", n.Name),
-		zap.String("provider", providerHost),
-		zap.String("handler_type", n.handler.GetType()))
-
 	// Delegate to handler's GetLatestBlockNumber method
 	result, err := n.handler.GetLatestBlockNumber(httpUrl, headers, n.HttpClient, ac, n.RequestAttemptCount)
 	if err != nil {
@@ -547,11 +528,6 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 	// Validate input
 	if statusCode == nil {
 		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
-	}
-
-	// Ensure handler is available
-	if n.handler == nil {
-		return 0, Unhealthy, fmt.Errorf("no handler available for network %s", n.Name)
 	}
 
 	// Delegate to handler for network-specific parsing
@@ -704,15 +680,6 @@ func (n *network) getLatestBlockEntry() *blockHistoryEntry {
 func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
 	if n.CaddyPort == "" {
 		return nil, errors.New("Caddy port is not set")
-	}
-
-	// Ensure handler is available
-	if n.handler == nil {
-		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   Unhealthy,
-			responseStatus: 0,
-		}, fmt.Errorf("no handler available for network %s", n.Name)
 	}
 
 	// Create synthetic request context for consistent logging (this is critical for logFailedAttempt)

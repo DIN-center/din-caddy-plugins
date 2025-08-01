@@ -92,14 +92,10 @@ type NetworkHandler interface {
 
 // BlockInfo represents block information across different network types
 type BlockInfo struct {
-	Number    int64     `json:"number"`
-	Hash      string    `json:"hash"`
-	Timestamp time.Time `json:"timestamp"`
-	// For beacon chain specific fields
-	Slot                int64 `json:"slot,omitempty"`
-	Epoch               int64 `json:"epoch,omitempty"`
-	ExecutionOptimistic bool  `json:"execution_optimistic,omitempty"`
-	Finalized           bool  `json:"finalized,omitempty"`
+	Number    int64                  `json:"number"`
+	Hash      string                 `json:"hash"`
+	Timestamp time.Time              `json:"timestamp"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // LatestBlockResult represents the result of getting the latest block number

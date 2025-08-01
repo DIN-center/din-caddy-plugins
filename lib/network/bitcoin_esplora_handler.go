@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -399,7 +400,10 @@ func (h *BitcoinEsploraHandler) ParseArchiveResponse(body []byte) error {
 }
 
 func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
-	endpoint := fmt.Sprintf("%s/block-height/%s", httpUrl, blockHeight)
+	endpoint, err := url.JoinPath(httpUrl, "block-height", blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to construct archive check URL: %w", err)
+	}
 
 	respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
 	if err != nil {
@@ -416,7 +420,10 @@ func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[
 // === Get Block By Number ===
 
 func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	endpoint := fmt.Sprintf("%s/block-height/%d", httpUrl, blockNumber)
+	endpoint, err := url.JoinPath(httpUrl, "block-height", strconv.FormatInt(blockNumber, 10))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct block by number URL: %w", err)
+	}
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
