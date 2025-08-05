@@ -28,7 +28,7 @@ type BeaconChainHandler struct {
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 	return &BeaconChainHandler{
 		config:              config,
-		healthCheckEndpoint: "/eth/v2/beacon/blocks/head",
+		healthCheckEndpoint: "/eth/v1/node/health",
 		version:             "1.0.0",
 		logger:              config.Logger,
 	}
@@ -381,6 +381,20 @@ func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, er
 }
 
 func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
+	// Handle empty response (node health endpoint returns empty body for 200 OK)
+	if len(body) == 0 {
+		return &BlockInfo{
+			Number:    -1,
+			Hash:      "",
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"health": "ready",
+				"slot":   int64(-1),
+				"epoch":  int64(-1),
+			},
+		}, nil
+	}
+
 	// from the block info endpoint (/eth/v2/beacon/blocks/head)
 	var blockResponse BeaconBlockResponse
 	if err := json.Unmarshal(body, &blockResponse); err != nil {
