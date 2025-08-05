@@ -6,10 +6,12 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -60,7 +62,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.HCThreshold = tt.hcThreshold
 
@@ -117,7 +119,7 @@ func TestIsStalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.ProviderBlockHistorySize = tt.historySize
 
@@ -225,7 +227,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.Providers = make(map[string]*provider)
 
@@ -330,8 +332,16 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", "", utils.Environment("test"), "8000")
 			assert.NoError(t, err)
+			// Set handler for tests
+			config := &networklib.NetworkConfig{
+				Name:    "test",
+				Type:    string(EVMHandler),
+				ChainID: "eip155:1",
+			}
+			n.SetHandler(networklib.NewEVMHandler(config))
+			
 			var sc *int
 			if !tt.passNilStatusCode {
 				statusCodeVal := tt.statusCode
@@ -389,7 +399,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      errors.New("connection failed"),
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "Failed after",
+			expectedErrMsg: "failed after",
 		},
 		{
 			name:           "service_unavailable",
@@ -399,7 +409,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "Failed after",
+			expectedErrMsg: "failed after",
 		},
 		{
 			name:           "json_rpc_error",
@@ -409,7 +419,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "Failed after",
+			expectedErrMsg: "failed after",
 		},
 		{
 			name:         "starknet_successful",
@@ -428,7 +438,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "1000",
 			expectError:    true,
-			expectedErrMsg: "Failed after",
+			expectedErrMsg: "failed after",
 		},
 	}
 
@@ -442,18 +452,30 @@ func TestArchiveModeCheck(t *testing.T) {
 				AnyTimes()
 
 			// Use appropriate network type based on network name
-			networkType := "evm"
+			networkType := string(EVMHandler)
 			if strings.Contains(tt.networkName, "starknet") {
-				networkType = "starknet"
+				networkType = string(StarknetHandler)
 			}
 
-			n, err := NewNetwork(tt.networkName, networkType, utils.Environment("test"), "8000")
+			n, err := NewNetwork(tt.networkName, "", utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.HttpClient = mockHTTPClient
 			n.RequestAttemptCount = 1
 
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			
+			// Set the handler
+			config := &networklib.NetworkConfig{
+				Name:    tt.networkName,
+				Type:    networkType,
+				ChainID: "test-chain",
+			}
+			if networkType == string(EVMHandler) {
+				n.SetHandler(networklib.NewEVMHandler(config))
+			} else {
+				n.SetHandler(networklib.NewStarknetHandler(config))
+			}
 
 			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
 
@@ -548,7 +570,7 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.Providers = make(map[string]*provider)
 
@@ -619,7 +641,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 			n.BlockJumpLimit = tt.blockJumpLimit
 			n.Providers = make(map[string]*provider)
@@ -741,11 +763,21 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			// Create mock logger
 			mockLogger := logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
-			n, err := NewNetwork(tt.networkName, "evm", utils.Environment("test"), tt.caddyPort)
+			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), tt.caddyPort)
 			assert.NoError(t, err)
 			n.HttpClient = mockHTTPClient
 			n.logger = mockLogger
 			n.RequestAttemptCount = 1
+			
+			// Create and set handler for test since it's not created in NewNetwork anymore
+			config := &networklib.NetworkConfig{
+				Name: tt.networkName,
+				Type: string(EVMHandler),
+				Logger: mockLogger,
+			}
+			handler := networklib.NewEVMHandler(config)
+			err = n.SetHandler(handler)
+			assert.NoError(t, err)
 
 			result, err := n.getLatestBlockNumber("http://test.com", map[string]string{}, nil, "test-provider")
 
@@ -762,10 +794,19 @@ func TestGetLatestBlockNumber(t *testing.T) {
 }
 
 func newTestNetwork(name string, historySize int) *network {
-	n, _ := NewNetwork(name, "evm", utils.Environment("test"), "8000")
+	n, _ := NewNetwork(name, EVMHandler, utils.Environment("test"), "8000")
 	n.NetworkBlockHistorySize = historySize
 	// Initialize logger to prevent panic
 	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	
+	// Create and set handler for test since it's not created in NewNetwork anymore
+	config := &networklib.NetworkConfig{
+		Name: name,
+		Type: string(EVMHandler),
+		Logger: n.logger,
+	}
+	handler := networklib.NewEVMHandler(config)
+	n.SetHandler(handler)
 	return n
 }
 
@@ -1004,7 +1045,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 					AnyTimes()
 			}
 
-			n, err := NewNetwork(tt.networkName, "evm", utils.Environment("test"), tt.caddyPort)
+			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), tt.caddyPort)
 			assert.NoError(t, err)
 			if mockHTTPClient != nil {
 				n.HttpClient = mockHTTPClient
@@ -1012,6 +1053,16 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			
+			// Create and set handler for test since it's not created in NewNetwork anymore
+			config := &networklib.NetworkConfig{
+				Name: tt.networkName,
+				Type: string(EVMHandler),
+				Logger: n.logger,
+			}
+			handler := networklib.NewEVMHandler(config)
+			err = n.SetHandler(handler)
+			assert.NoError(t, err)
 
 			result, err := n.checkSelfLoopbackHealth()
 
@@ -1043,7 +1094,7 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_evm_network",
 			networkName: "ethereum",
-			networkType: "evm",
+			networkType: string(EVMHandler),
 			environment: utils.EnvDev,
 			caddyPort:   "8000",
 			expectError: false,
@@ -1051,24 +1102,24 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_beacon_network",
 			networkName: "ethereum-beacon",
-			networkType: "beacon-chain",
+			networkType: string(BeaconHandler),
 			environment: utils.EnvProd,
 			caddyPort:   "8080",
 			expectError: false,
 		},
 		{
-			name:        "invalid_network_type",
+			name:        "empty_network_type",
 			networkName: "unknown",
-			networkType: "unknown",
+			networkType: "",
 			environment: utils.EnvDev,
 			caddyPort:   "8000",
-			expectError: true,
+			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			network, err := NewNetwork(tt.networkName, tt.networkType, tt.environment, tt.caddyPort)
+			network, err := NewNetwork(tt.networkName, HandlerType(tt.networkType), tt.environment, tt.caddyPort)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -1077,7 +1128,7 @@ func TestNewNetwork(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, network)
 				assert.Equal(t, tt.networkName, network.Name)
-				assert.Equal(t, tt.networkType, network.Type)
+				assert.Equal(t, HandlerType(tt.networkType), network.HandlerType)
 				assert.Equal(t, tt.environment, network.Environment)
 				assert.Equal(t, tt.caddyPort, network.CaddyPort)
 			}
@@ -1170,8 +1221,15 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork("test", "", utils.Environment("test"), "8000")
 			assert.NoError(t, err)
+			// Set handler for processBlockNumberResponse tests
+			config := &networklib.NetworkConfig{
+				Name:    "test",
+				Type:    string(EVMHandler),
+				ChainID: "eip155:1",
+			}
+			n.SetHandler(networklib.NewEVMHandler(config))
 
 			blockNumber, healthStatus, err := n.processBlockNumberResponse(tt.resBytes, tt.statusCode)
 
@@ -1193,7 +1251,7 @@ func intPtr(i int) *int {
 }
 
 func TestNetwork_isStalled(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 	n.ProviderBlockHistorySize = 3
 
@@ -1218,7 +1276,7 @@ func TestNetwork_isStalled(t *testing.T) {
 }
 
 func TestNetwork_allProvidersStalled(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 	n.ProviderBlockHistorySize = 3
 
@@ -1248,7 +1306,7 @@ func TestNetwork_allProvidersStalled(t *testing.T) {
 }
 
 func TestNetwork_getLatestHealthyBlock(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 
 	// Test empty providers
@@ -1273,7 +1331,7 @@ func TestNetwork_getLatestHealthyBlock(t *testing.T) {
 }
 
 func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 
 	provider1, err := NewProvider("http://provider1.com")
@@ -1302,7 +1360,7 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 }
 
 func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 	n.NetworkBlockHistorySize = 3
 
@@ -1325,7 +1383,7 @@ func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
 }
 
 func TestNetwork_getLatestBlockEntry(t *testing.T) {
-	n, err := NewNetwork("test", "evm", utils.Environment("test"), "8000")
+	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8000")
 	assert.NoError(t, err)
 
 	// Test empty history
@@ -1373,7 +1431,7 @@ func TestNetwork_ExtractBlockHashByNetworkType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork(tt.networkName, "evm", utils.Environment("test"), "8000")
+			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), "8000")
 			assert.NoError(t, err)
 
 			// Initialize logger to prevent panic
@@ -1400,36 +1458,36 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 		{
 			name:         "ethereum_mainnet",
 			networkName:  "ethereum",
-			expectedType: "evm",
+			expectedType: string(EVMHandler),
 		},
 		{
 			name:         "beacon-chain",
 			networkName:  "ethereum-beacon-mainnet",
-			expectedType: "beacon-chain",
+			expectedType: string(BeaconHandler),
 		},
 		{
 			name:         "starknet_mainnet",
 			networkName:  "starknet-mainnet",
-			expectedType: "starknet",
+			expectedType: string(StarknetHandler),
 		},
 		{
 			name:         "solana_mainnet",
 			networkName:  "solana-mainnet",
-			expectedType: "solana",
+			expectedType: string(SolanaHandler),
 		},
 		{
 			name:         "unknown_network",
 			networkName:  "unknown-network",
-			expectedType: "evm", // Default fallback
+			expectedType: string(EVMHandler), // Default fallback
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test this through NewNetwork since the detection logic is internal
-			n, err := NewNetwork(tt.networkName, tt.expectedType, utils.Environment("test"), "8000")
+			n, err := NewNetwork(tt.networkName, HandlerType(tt.expectedType), utils.Environment("test"), "8000")
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedType, n.Type)
+			assert.Equal(t, HandlerType(tt.expectedType), n.HandlerType)
 		})
 	}
 }
@@ -1446,4 +1504,54 @@ func createMockProviderWithStatus(host string, entries []blockHistoryEntry) *pro
 	}
 
 	return p
+}
+
+func TestNetworkSetHandler(t *testing.T) {
+	tests := []struct {
+		name          string
+		handler       networklib.NetworkHandler
+		expectedError string
+	}{
+		{
+			name:          "set nil handler",
+			handler:       nil,
+			expectedError: "cannot set nil handler",
+		},
+		{
+			name:    "set valid handler",
+			handler: networklib.NewEVMHandler(&networklib.NetworkConfig{}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, err := NewNetwork("test-network", "", utils.EnvTest, "2019")
+			require.NoError(t, err)
+
+			err = n.SetHandler(tt.handler)
+			if tt.expectedError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.handler, n.handler)
+			}
+		})
+	}
+}
+
+func TestNetworkSetHandler_AvoidDuplicates(t *testing.T) {
+	n, err := NewNetwork("test-network", "", utils.EnvTest, "2019")
+	require.NoError(t, err)
+
+	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{})
+
+	// Set handler first time
+	err = n.SetHandler(handler)
+	assert.NoError(t, err)
+
+	// Set same handler again - should not error and should be a no-op
+	err = n.SetHandler(handler)
+	assert.NoError(t, err)
+	assert.Equal(t, handler, n.handler)
 }

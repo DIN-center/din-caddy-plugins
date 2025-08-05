@@ -78,10 +78,9 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 	return upstreamPool, nil
 }
 
-// TODO: // Do we need this still?
 // extractNetworkName extracts the network name from the request path
-// For EVM: /optimism-mainnet/... -> "optimism-mainnet"
-// For Beacon: /eth-beacon-mainnet/eth/v1/... -> "eth-beacon-mainnet"
+// For JSON-RPC: /optimism-mainnet/... -> "optimism-mainnet"
+// For REST: /eth-beacon-mainnet/eth/v1/... -> "eth-beacon-mainnet"
 func (d *DinUpstreams) extractNetworkName(path string) string {
 	// Remove leading slash and split by "/"
 	fullPath := strings.TrimPrefix(path, "/")

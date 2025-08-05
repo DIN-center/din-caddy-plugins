@@ -20,7 +20,7 @@ import (
 
 type network struct {
 	Name             string
-	Type             string `json:"type"` // Network type for handler registry (evm, beacon-chain, starknet, solana)
+	HandlerType      HandlerType `json:"handler"` // Network handler type for handler registry
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
@@ -61,13 +61,13 @@ type network struct {
 	CustomConfig map[string]interface{} `json:"custom_config,omitempty"`
 }
 
-// NewNetwork creates a new network with the given name and network type
+// NewNetwork creates a new network with the given name and handler type
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, networkType string, environment utils.Environment, caddyPort string) (*network, error) {
+func NewNetwork(name string, handlerType HandlerType, environment utils.Environment, caddyPort string) (*network, error) {
 	n := &network{
-		Name: name,
-		Type: networkType, // Used for handler selection
+		Name:        name,
+		HandlerType: handlerType, // Used for handler selection
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
@@ -85,42 +85,40 @@ func NewNetwork(name string, networkType string, environment utils.Environment, 
 		CaddyPort:                caddyPort,
 	}
 
-	// Initialize handler based on network type
-	if networkType != "" {
-		config := &networklib.NetworkConfig{
-			Name:           name,
-			Type:           networkType,
-			ChainID:        "",
-			MaxPayloadSize: DefaultMaxRequestPayloadSizeKB * 1024,
-			RequestTimeout: time.Duration(DefaultHCTimeout) * time.Second,
-			Custom:         make(map[string]interface{}),
-		}
-
-		// NOTE: Logger will be set later via SetLogger method after network initialization
-		// This is because the network's logger isn't available during NewNetwork
-
-		handler, err := networklib.DefaultRegistry.GetHandler(networkType, config)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get handler for network type '%s': %w", networkType, err)
-		}
-
-		n.handler = handler
-	}
+	// Note: Handler initialization is deferred to avoid duplicate initialization.
+	// The handler will be set later when:
+	// 1. The "type" field is parsed in Caddyfile configuration
+	// 2. The network defaults to EVM if no type is specified
+	// This ensures the handler is only initialized once with complete configuration
+	// including ChainID and other network-specific settings.
 
 	return n, nil
 }
 
-// UpdateHandler updates the network's handler (used when type is explicitly set in Caddyfile)
-func (n *network) UpdateHandler(handler networklib.NetworkHandler) {
+// SetHandler sets the network's handler. This is used when:
+// 1. Creating a network with an explicit type
+// 2. Setting type in Caddyfile configuration
+// 3. Defaulting to EVM when no type is specified
+func (n *network) SetHandler(handler networklib.NetworkHandler) error {
+	if handler == nil {
+		return fmt.Errorf("cannot set nil handler")
+	}
+
+	// Only set if different to avoid redundant updates
+	if n.handler == handler {
+		return nil
+	}
+
 	n.handler = handler
 
-	// Verify handler immediately after setting
-	if n.handler == nil {
-		// This should never happen, but log if it does
-		if n.logger != nil {
-			n.logger.Error("CRITICAL: Handler is nil immediately after setting", zap.String("network", n.Name))
-		}
+	// Only log if logger is available (it's initialized during Provision)
+	if n.logger != nil {
+		n.logger.Debug("Network handler set",
+			zap.String("network", n.Name),
+			zap.String("handler_type", handler.GetType()))
 	}
+
+	return nil
 }
 
 func (n *network) startHealthcheck() {
@@ -380,11 +378,6 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 		return nil // Archive mode disabled, skip check
 	}
 
-	// Check if handler is available
-	if n.handler == nil {
-		return nil // No handler available, skip check
-	}
-
 	// Check if handler supports archive mode
 	if !n.handler.SupportsArchiveMode() {
 		return nil // Handler doesn't support archive mode, skip check
@@ -494,49 +487,37 @@ type getLatestBlockNumberResult struct {
 }
 
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient, providerHost string) (*getLatestBlockNumberResult, error) {
-	// Ensure handler is available
-	if n.handler == nil {
-		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   Unhealthy,
-			responseStatus: 0,
-		}, fmt.Errorf("no handler available for network %s", n.Name)
-	}
-
-	// Add logging for debugging
-	if n.logger != nil {
-		n.logger.Debug("Using handler to get latest block number",
-			zap.String("network", n.Name),
-			zap.String("provider", providerHost),
-			zap.String("handler_type", n.handler.GetType()))
-	}
-
 	// Delegate to handler's GetLatestBlockNumber method
 	result, err := n.handler.GetLatestBlockNumber(httpUrl, headers, n.HttpClient, ac, n.RequestAttemptCount)
 	if err != nil {
-		if n.logger != nil {
-			n.logger.Debug("Handler GetLatestBlockNumber failed",
-				zap.Error(err),
-				zap.String("network", n.Name),
-				zap.String("provider", providerHost))
-		}
+		n.logger.Debug("Handler GetLatestBlockNumber failed",
+			zap.Error(err),
+			zap.String("network", n.Name),
+			zap.String("provider", providerHost))
 
-		// Convert to the expected result format, casting HealthStatus types
-		return &getLatestBlockNumberResult{
-			blockNumber:    result.BlockNumber,
-			healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
-			responseStatus: result.ResponseStatus,
-		}, err
+		// If there's an error, result might be nil or partially populated
+		if result != nil {
+			return &getLatestBlockNumberResult{
+				blockNumber:    result.BlockNumber,
+				healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+				responseStatus: result.ResponseStatus,
+			}, err
+		} else {
+			// Return a default unhealthy result when result is nil
+			return &getLatestBlockNumberResult{
+				blockNumber:    0,
+				healthStatus:   Unhealthy,
+				responseStatus: 0,
+			}, err
+		}
 	}
 
 	// Success!
-	if n.logger != nil {
-		n.logger.Debug("Handler GetLatestBlockNumber succeeded",
-			zap.Int64("block_number", result.BlockNumber),
-			zap.String("health_status", result.HealthStatus.String()),
-			zap.String("network", n.Name),
-			zap.String("provider", providerHost))
-	}
+	n.logger.Debug("Handler GetLatestBlockNumber succeeded",
+		zap.Int64("block_number", result.BlockNumber),
+		zap.String("health_status", result.HealthStatus.String()),
+		zap.String("network", n.Name),
+		zap.String("provider", providerHost))
 
 	return &getLatestBlockNumberResult{
 		blockNumber:    result.BlockNumber,
@@ -550,11 +531,6 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 	// Validate input
 	if statusCode == nil {
 		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
-	}
-
-	// Ensure handler is available
-	if n.handler == nil {
-		return 0, Unhealthy, fmt.Errorf("no handler available for network %s", n.Name)
 	}
 
 	// Delegate to handler for network-specific parsing
@@ -707,15 +683,6 @@ func (n *network) getLatestBlockEntry() *blockHistoryEntry {
 func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
 	if n.CaddyPort == "" {
 		return nil, errors.New("Caddy port is not set")
-	}
-
-	// Ensure handler is available
-	if n.handler == nil {
-		return &getLatestBlockNumberResult{
-			blockNumber:    0,
-			healthStatus:   Unhealthy,
-			responseStatus: 0,
-		}, fmt.Errorf("no handler available for network %s", n.Name)
 	}
 
 	// Create synthetic request context for consistent logging (this is critical for logFailedAttempt)

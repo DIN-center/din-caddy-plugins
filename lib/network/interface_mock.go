@@ -36,6 +36,20 @@ func (m *MockNetworkHandler) EXPECT() *MockNetworkHandlerMockRecorder {
 	return m.recorder
 }
 
+// ConfigureRequestPath mocks base method.
+func (m *MockNetworkHandler) ConfigureRequestPath(req *http0.Request, providerPath, networkName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfigureRequestPath", req, providerPath, networkName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConfigureRequestPath indicates an expected call of ConfigureRequestPath.
+func (mr *MockNetworkHandlerMockRecorder) ConfigureRequestPath(req, providerPath, networkName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigureRequestPath", reflect.TypeOf((*MockNetworkHandler)(nil).ConfigureRequestPath), req, providerPath, networkName)
+}
+
 // CreateArchivePayload mocks base method.
 func (m *MockNetworkHandler) CreateArchivePayload(method, blockHeight string) ([]byte, error) {
 	m.ctrl.T.Helper()
@@ -93,6 +107,21 @@ func (m *MockNetworkHandler) ExtractBlockHash(blockData interface{}) string {
 func (mr *MockNetworkHandlerMockRecorder) ExtractBlockHash(blockData interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExtractBlockHash", reflect.TypeOf((*MockNetworkHandler)(nil).ExtractBlockHash), blockData)
+}
+
+// ExtractMethod mocks base method.
+func (m *MockNetworkHandler) ExtractMethod(req *http0.Request, body []byte) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ExtractMethod", req, body)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ExtractMethod indicates an expected call of ExtractMethod.
+func (mr *MockNetworkHandlerMockRecorder) ExtractMethod(req, body interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExtractMethod", reflect.TypeOf((*MockNetworkHandler)(nil).ExtractMethod), req, body)
 }
 
 // FormatBlockHeight mocks base method.

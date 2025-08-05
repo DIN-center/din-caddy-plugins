@@ -574,23 +574,29 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_NewFormat(t *testing.T) {
 			t.Errorf("Expected block number 12345, got %d", blockInfo.Number)
 		}
 
-		if blockInfo.Slot != 12345 {
-			t.Errorf("Expected slot 12345, got %d", blockInfo.Slot)
+		// Check metadata for slot
+		expectedSlot := int64(12345)
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != expectedSlot {
+			t.Errorf("Expected slot 12345, got %d", slot)
 		}
 
-		if blockInfo.Epoch != 385 { // 12345 / 32 = 385
-			t.Errorf("Expected epoch 385, got %d", blockInfo.Epoch)
+		// Check metadata for epoch
+		expectedEpoch := int64(385) // 12345 / 32 = 385
+		if epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch"); epoch != expectedEpoch {
+			t.Errorf("Expected epoch 385, got %d", epoch)
 		}
 
 		if blockInfo.Hash != "0xabcd1234" {
 			t.Errorf("Expected hash to be parent_root '0xabcd1234', got %s", blockInfo.Hash)
 		}
 
-		if !blockInfo.Finalized {
+		// Check metadata for finalized
+		if finalized := getBoolFromMetadata(blockInfo.Metadata, "finalized"); !finalized {
 			t.Error("Expected finalized to be true")
 		}
 
-		if blockInfo.ExecutionOptimistic {
+		// Check metadata for execution_optimistic
+		if execOptimistic := getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic"); execOptimistic {
 			t.Error("Expected execution_optimistic to be false")
 		}
 	})
@@ -669,14 +675,15 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 			t.Errorf("Expected block number %d, got %d", expectedSlot, blockInfo.Number)
 		}
 
-		if blockInfo.Slot != expectedSlot {
-			t.Errorf("Expected slot %d, got %d", expectedSlot, blockInfo.Slot)
+		// Check metadata for slot
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != expectedSlot {
+			t.Errorf("Expected slot %d, got %d", expectedSlot, slot)
 		}
 
 		// Verify epoch calculation (slot / 32)
 		expectedEpoch := expectedSlot / 32 // 12170038 / 32 = 380313
-		if blockInfo.Epoch != expectedEpoch {
-			t.Errorf("Expected epoch %d, got %d", expectedEpoch, blockInfo.Epoch)
+		if epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch"); epoch != expectedEpoch {
+			t.Errorf("Expected epoch %d, got %d", expectedEpoch, epoch)
 		}
 
 		// Verify the parent root hash (v2 blocks uses parent_root as hash)
@@ -686,16 +693,18 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 		}
 
 		// Verify beacon-specific fields
-		if blockInfo.ExecutionOptimistic {
+		if execOptimistic := getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic"); execOptimistic {
 			t.Error("Expected execution_optimistic to be false")
 		}
 
-		if blockInfo.Finalized {
+		if finalized := getBoolFromMetadata(blockInfo.Metadata, "finalized"); finalized {
 			t.Error("Expected finalized to be false")
 		}
 
+		slot := getInt64FromMetadata(blockInfo.Metadata, "slot")
+		epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch")
 		t.Logf("Successfully parsed real beacon data: slot=%d, epoch=%d, hash=%s",
-			blockInfo.Slot, blockInfo.Epoch, blockInfo.Hash)
+			slot, epoch, blockInfo.Hash)
 	})
 
 	t.Run("Latest real beacon chain response v2 blocks format", func(t *testing.T) {
@@ -732,14 +741,15 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 			t.Errorf("Expected block number %d, got %d", expectedSlot, blockInfo.Number)
 		}
 
-		if blockInfo.Slot != expectedSlot {
-			t.Errorf("Expected slot %d, got %d", expectedSlot, blockInfo.Slot)
+		// Check metadata for slot
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != expectedSlot {
+			t.Errorf("Expected slot %d, got %d", expectedSlot, slot)
 		}
 
 		// Verify epoch calculation (slot / 32)
 		expectedEpoch := expectedSlot / 32 // 12170151 / 32 = 380317
-		if blockInfo.Epoch != expectedEpoch {
-			t.Errorf("Expected epoch %d, got %d", expectedEpoch, blockInfo.Epoch)
+		if epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch"); epoch != expectedEpoch {
+			t.Errorf("Expected epoch %d, got %d", expectedEpoch, epoch)
 		}
 
 		// Verify the parent root hash (v2 blocks uses parent_root as hash)
@@ -749,16 +759,18 @@ func TestBeaconChainHandler_ParseHealthCheckResponse_RealData(t *testing.T) {
 		}
 
 		// Verify beacon-specific fields
-		if blockInfo.ExecutionOptimistic {
+		if execOptimistic := getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic"); execOptimistic {
 			t.Error("Expected execution_optimistic to be false")
 		}
 
-		if blockInfo.Finalized {
+		if finalized := getBoolFromMetadata(blockInfo.Metadata, "finalized"); finalized {
 			t.Error("Expected finalized to be false")
 		}
 
+		slot := getInt64FromMetadata(blockInfo.Metadata, "slot")
+		epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch")
 		t.Logf("Successfully parsed latest beacon data: slot=%d, epoch=%d, hash=%s",
-			blockInfo.Slot, blockInfo.Epoch, blockInfo.Hash)
+			slot, epoch, blockInfo.Hash)
 	})
 }
 
@@ -863,8 +875,9 @@ func TestBeaconChainHandler_HealthCheckResponse_RealData(t *testing.T) {
 			t.Errorf("Expected block number -1 for health-only response, got %d", blockInfo.Number)
 		}
 
-		if blockInfo.Slot != -1 {
-			t.Errorf("Expected slot -1 for health-only response, got %d", blockInfo.Slot)
+		// Check metadata for slot
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != -1 {
+			t.Errorf("Expected slot -1 for health-only response, got %d", slot)
 		}
 
 		if blockInfo.Hash != "" {
@@ -887,5 +900,207 @@ func TestBeaconChainHandler_HealthCheckResponse_RealData(t *testing.T) {
 		}
 
 		t.Logf("Correctly handled error response: %v", err)
+	})
+}
+
+func TestGetInt64FromMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]interface{}
+		key      string
+		expected int64
+	}{
+		{
+			name:     "valid int64 value",
+			metadata: map[string]interface{}{"slot": int64(12345)},
+			key:      "slot",
+			expected: 12345,
+		},
+		{
+			name:     "missing key",
+			metadata: map[string]interface{}{"other": int64(999)},
+			key:      "slot",
+			expected: 0,
+		},
+		{
+			name:     "nil metadata",
+			metadata: nil,
+			key:      "slot",
+			expected: 0,
+		},
+		{
+			name:     "wrong type",
+			metadata: map[string]interface{}{"slot": "not-a-number"},
+			key:      "slot",
+			expected: 0,
+		},
+		{
+			name:     "empty metadata",
+			metadata: map[string]interface{}{},
+			key:      "slot",
+			expected: 0,
+		},
+		{
+			name:     "zero value",
+			metadata: map[string]interface{}{"slot": int64(0)},
+			key:      "slot",
+			expected: 0,
+		},
+		{
+			name:     "negative value",
+			metadata: map[string]interface{}{"epoch": int64(-1)},
+			key:      "epoch",
+			expected: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getInt64FromMetadata(tt.metadata, tt.key)
+			if result != tt.expected {
+				t.Errorf("getInt64FromMetadata(%v, %s) = %d, expected %d", tt.metadata, tt.key, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetBoolFromMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]interface{}
+		key      string
+		expected bool
+	}{
+		{
+			name:     "valid true value",
+			metadata: map[string]interface{}{"finalized": true},
+			key:      "finalized",
+			expected: true,
+		},
+		{
+			name:     "valid false value",
+			metadata: map[string]interface{}{"execution_optimistic": false},
+			key:      "execution_optimistic",
+			expected: false,
+		},
+		{
+			name:     "missing key",
+			metadata: map[string]interface{}{"other": true},
+			key:      "finalized",
+			expected: false,
+		},
+		{
+			name:     "nil metadata",
+			metadata: nil,
+			key:      "finalized",
+			expected: false,
+		},
+		{
+			name:     "wrong type",
+			metadata: map[string]interface{}{"finalized": "true"},
+			key:      "finalized",
+			expected: false,
+		},
+		{
+			name:     "empty metadata",
+			metadata: map[string]interface{}{},
+			key:      "finalized",
+			expected: false,
+		},
+		{
+			name:     "int value instead of bool",
+			metadata: map[string]interface{}{"finalized": 1},
+			key:      "finalized",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getBoolFromMetadata(tt.metadata, tt.key)
+			if result != tt.expected {
+				t.Errorf("getBoolFromMetadata(%v, %s) = %t, expected %t", tt.metadata, tt.key, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBeaconChainHandler_ParseHealthCheckResponse_WithMetadata(t *testing.T) {
+	handler := NewBeaconChainHandler(&NetworkConfig{})
+
+	t.Run("Verify metadata structure in parsed response", func(t *testing.T) {
+		responseBody := `{
+			"version": "phase0",
+			"execution_optimistic": true,
+			"finalized": false,
+			"data": {
+				"message": {
+					"slot": "7890",
+					"proposer_index": "1",
+					"parent_root": "0xtest1234",
+					"state_root": "0xtest5678",
+					"body": {}
+				},
+				"signature": "0xsignature"
+			}
+		}`
+
+		blockInfo, err := handler.ParseHealthCheckResponse([]byte(responseBody))
+
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		// Verify metadata is not nil
+		if blockInfo.Metadata == nil {
+			t.Fatal("Expected metadata to be non-nil")
+		}
+
+		// Verify all expected metadata keys exist
+		expectedKeys := []string{"slot", "epoch", "execution_optimistic", "finalized"}
+		for _, key := range expectedKeys {
+			if _, exists := blockInfo.Metadata[key]; !exists {
+				t.Errorf("Expected metadata key '%s' to exist", key)
+			}
+		}
+
+		// Verify metadata values using helper functions
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != 7890 {
+			t.Errorf("Expected metadata slot 7890, got %d", slot)
+		}
+
+		expectedEpoch := int64(7890) / 32 // 246
+		if epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch"); epoch != expectedEpoch {
+			t.Errorf("Expected metadata epoch %d, got %d", expectedEpoch, epoch)
+		}
+
+		if execOptimistic := getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic"); !execOptimistic {
+			t.Error("Expected metadata execution_optimistic to be true")
+		}
+
+		if finalized := getBoolFromMetadata(blockInfo.Metadata, "finalized"); finalized {
+			t.Error("Expected metadata finalized to be false")
+		}
+	})
+
+	t.Run("Empty body creates metadata with placeholder values", func(t *testing.T) {
+		blockInfo, err := handler.ParseHealthCheckResponse([]byte(""))
+
+		if err != nil {
+			t.Fatalf("Expected no error for empty body, got: %v", err)
+		}
+
+		// Verify metadata exists and has placeholder values
+		if blockInfo.Metadata == nil {
+			t.Fatal("Expected metadata to be non-nil even for empty response")
+		}
+
+		if slot := getInt64FromMetadata(blockInfo.Metadata, "slot"); slot != -1 {
+			t.Errorf("Expected metadata slot -1 for empty response, got %d", slot)
+		}
+
+		if epoch := getInt64FromMetadata(blockInfo.Metadata, "epoch"); epoch != -1 {
+			t.Errorf("Expected metadata epoch -1 for empty response, got %d", epoch)
+		}
 	})
 }
