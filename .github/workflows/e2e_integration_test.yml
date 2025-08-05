@@ -1,46 +1,269 @@
-name: e2e Caddy Integration Test
+name: E2E Handler Registry Integration Test
 
-'on':
+on:
   pull_request:
+    paths:
+      - 'lib/network/**'
+      - 'modules/**'
+      - '.github/workflows/e2e_integration_test/**'
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  GOPRIVATE: github.com/DIN-center
+  GO_VERSION: '1.21'
+  CADDY_TIMEOUT: 30s
+  TEST_TIMEOUT: 300s
 
 jobs:
-    test-caddy:
-        runs-on: ubuntu-latest
+  # First job: Build and validate
+  build-validation:
+    name: Build Validation
+    runs-on: ubuntu-latest
+    outputs:
+      build-success: ${{ steps.build.outputs.success }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          
+      - name: Authenticate with GitHub
+        env:
+          TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
+          
+      - name: Clone Dependencies  
+        env:
+          TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone https://github.com/DIN-center/din-sc.git
+          
+      - name: Install xcaddy
+        run: |
+          export GOBIN=$HOME/go/bin
+          export PATH=$PATH:$HOME/go/bin
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.3.5
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          
+      - name: Build Caddy with DIN Plugins
+        id: build
+        run: |
+          echo "Building Caddy with DIN plugins..."
+          if xcaddy build --with github.com/DIN-center/din-caddy-plugins=. --output ./caddy-din; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "Build successful"
+            ./caddy-din version
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "Build failed"
+            exit 1
+          fi
+          
+      - name: Upload Caddy Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-din-binary
+          path: ./caddy-din
+          retention-days: 1
 
-        steps:
-            - uses: actions/checkout@v3
+  # Second job: E2E Integration Test
+  e2e-integration:
+    name: E2E Handler Registry Test
+    runs-on: ubuntu-latest
+    needs: build-validation
+    if: needs.build-validation.outputs.build-success == 'true'
+    
+    strategy:
+      matrix:
+        test-scenario:
+          - evm-only
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Download Caddy Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: caddy-din-binary
+          path: ./
+          
+      - name: Make Caddy Executable
+        run: |
+          chmod +x ./caddy-din
+          ./caddy-din version
+          
+      - name: Setup Test Environment
+        run: |
+          echo "Setting up test environment for scenario: ${{ matrix.test-scenario }}"
+          # Ensure test scripts are executable
+          chmod +x ./.github/workflows/e2e_integration_test/send_requests.sh
+          
+          # Create test results directory
+          mkdir -p test-results
+          
+      - name: Start Caddy Server
+        run: |
+          echo "Starting Caddy server..."
+          ./caddy-din start --config ./.github/workflows/e2e_integration_test/Caddyfile &
+          CADDY_PID=$!
+          echo $CADDY_PID > caddy.pid
+          
+          # Wait for Caddy to start
+          echo "⏳ Waiting for Caddy to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Caddy server is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Caddy failed to start within 30 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
+          
+      - name: Verify Handler Registry
+        run: |
+          echo "Verifying handler registry is working..."
+          
+          # Test basic connectivity
+          if curl -f http://localhost:8000/health; then
+            echo "Health endpoint responding"
+          else
+            echo "Health endpoint not responding"
+            exit 1
+          fi
+          
+      - name: Run E2E Tests
+        id: e2e-tests
+        env:
+          TEST_SCENARIO: ${{ matrix.test-scenario }}
+        run: |
+          echo "🧪 Running E2E tests for scenario: $TEST_SCENARIO"
+          
+          # Verify script exists and is executable
+          if [ ! -x ./.github/workflows/e2e_integration_test/send_requests.sh ]; then
+            echo "Test script not found or not executable"
+            exit 1
+          fi
+          
+          # Set test scenario environment variable for the test script
+          export TEST_SCENARIO
+          
+          # Run the enhanced test script
+          echo "Executing test script: ./.github/workflows/e2e_integration_test/send_requests.sh"
+          if timeout ${{ env.TEST_TIMEOUT }} ./.github/workflows/e2e_integration_test/send_requests.sh; then
+            echo "test-result=success" >> $GITHUB_OUTPUT
+            echo "E2E tests passed for scenario: $TEST_SCENARIO"
+          else
+            echo "test-result=failure" >> $GITHUB_OUTPUT
+            echo "E2E tests failed for scenario: $TEST_SCENARIO"
+            exit 1
+          fi
+          
+      - name: Collect Test Artifacts
+        if: always()
+        run: |
+          echo "📦 Collecting test artifacts..."
+          
+          # Collect Caddy logs if available
+          if [ -f caddy.log ]; then
+            cp caddy.log test-results/caddy-${{ matrix.test-scenario }}.log
+          fi
+          
+          # Create test summary
+          echo "Test Scenario: ${{ matrix.test-scenario }}" > test-results/summary-${{ matrix.test-scenario }}.txt
+          echo "Test Result: ${{ steps.e2e-tests.outputs.test-result }}" >> test-results/summary-${{ matrix.test-scenario }}.txt
+          echo "Timestamp: $(date)" >> test-results/summary-${{ matrix.test-scenario }}.txt
+          
+      - name: Stop Caddy Server
+        if: always()
+        run: |
+          echo "🛑 Stopping Caddy server..."
+          if [ -f caddy.pid ]; then
+            CADDY_PID=$(cat caddy.pid)
+            if kill -0 $CADDY_PID 2>/dev/null; then
+              ./caddy-din stop || kill $CADDY_PID
+              echo "Caddy server stopped"
+            else
+              echo "Caddy process not running"
+            fi
+            rm -f caddy.pid
+          else
+            echo "No Caddy PID file found"
+          fi
+          
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.test-scenario }}
+          path: test-results/
+          retention-days: 7
 
-            - name: Authenticate with GitHub and Clone Private Repo
-              env:
-                TOKEN: ${{ secrets.GH_TOKEN }}  # Use the token from GitHub Secrets
-              run: |
-                git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
-                git clone https://github.com/DIN-center/din-sc.git
-
-            - name: Set up Go
-              uses: actions/setup-go@v4
-              with:
-                go-version: '1.21'
-            
-            - name: Install xcaddy
-              run: |
-                export GOBIN=$HOME/go/bin
-                go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.3.5
-
-            - name: Use Custom Caddyfile and Run Caddy
-              run: |
-                GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy start --config ./.github/workflows/e2e_integration_test/Caddyfile
-              shell: bash
-
-            - name: Make the script executable
-              run: chmod +x ./.github/workflows/e2e_integration_test/send_requests.sh
-
-            - name: Send test requests
-              run: |
-                ./.github/workflows/e2e_integration_test/send_requests.sh
-              shell: bash
-              
-            - name: Stop Caddy server
-              run: |
-               GOPRIVATE=github.com/DIN-center $HOME/go/bin/xcaddy stop
-              shell: bash
+  # Fourth job: Test Summary and Reporting
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [build-validation, e2e-integration]
+    if: always()
+    
+    steps:
+      - name: Download All Test Results
+        uses: actions/download-artifact@v4
+        with:
+          path: all-test-results/
+          
+  # Fifth job: Performance benchmarks (optional, only on main/develop)
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [build-validation, e2e-integration]
+    if: |
+      needs.build-validation.outputs.build-success == 'true' && 
+      needs.e2e-integration.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          
+      - name: Authenticate with GitHub
+        env:
+          TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
+          
+      - name: Clone Dependencies
+        env:
+          TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone https://github.com/DIN-center/din-sc.git
+          
+      - name: Run Performance Benchmarks
+        run: |
+          echo "* Running performance benchmarks for handler registry..."
+          go test -bench=. -benchmem ./lib/network/... > benchmark-results.txt
+          
+          echo "Benchmark Results:"
+          cat benchmark-results.txt
+          
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-benchmarks
+          path: benchmark-results.txt
+          retention-days: 30

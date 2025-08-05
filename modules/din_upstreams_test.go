@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"net/http"
+	"net/url"
 	reflect "reflect"
 	"testing"
 
@@ -40,6 +41,20 @@ func TestUpstreamsCaddyModule(t *testing.T) {
 }
 
 func TestGetDinUpstreams(t *testing.T) {
+	// Set up a test network in the global registry
+	testNetwork := &network{
+		Name:      "ethereum",
+		Providers: make(map[string]*provider),
+	}
+	globalNetworkMutex.Lock()
+	globalNetworkRegistry["ethereum"] = testNetwork
+	globalNetworkMutex.Unlock()
+	defer func() {
+		globalNetworkMutex.Lock()
+		delete(globalNetworkRegistry, "ethereum")
+		globalNetworkMutex.Unlock()
+	}()
+
 	dinUpstreams := new(DinUpstreams)
 
 	upstream1 := &reverseproxy.Upstream{
@@ -56,8 +71,10 @@ func TestGetDinUpstreams(t *testing.T) {
 		output            []*reverseproxy.Upstream
 	}{
 		{
-			name:    "TestGetDinUpstreams successful, both 0 Priority",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, both 0 Priority",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -81,8 +98,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 Priority and healthy",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, both 0 Priority and healthy",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -106,8 +125,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 Priority and 1 is healthy",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, both 0 Priority and 1 is healthy",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -131,8 +152,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 Priority and both are warning",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, both 0 Priority and both are warning",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -156,8 +179,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, both 0 Priority and one is Warning the other is Unhealthy",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, both 0 Priority and one is Warning the other is Unhealthy",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -181,8 +206,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    "successful, both 1 Priority",
-			request: &http.Request{},
+			name: "successful, both 1 Priority",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -206,8 +233,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1, upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, different priorities",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, different priorities",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -231,8 +260,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream1},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, different priorities, different health statues",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, different priorities, different health statues",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -256,8 +287,10 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{upstream2},
 		},
 		{
-			name:    "TestGetDinUpstreams successful, different priorities, unhealthy health statuses",
-			request: &http.Request{},
+			name: "TestGetDinUpstreams successful, different priorities, unhealthy health statuses",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
 					upstream: upstream1,
@@ -281,14 +314,21 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{},
 		},
 		{
-			name:              "TestGetDinUpstreams succesful, no priorities",
-			request:           &http.Request{},
+			name: "TestGetDinUpstreams succesful, no priorities",
+			request: &http.Request{
+				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
+			},
 			replacerProviders: map[string]*provider{},
 			output:            []*reverseproxy.Upstream{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Update the test network with the providers for this test case
+			globalNetworkMutex.Lock()
+			testNetwork.Providers = tt.replacerProviders
+			globalNetworkMutex.Unlock()
+
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(DinUpstreamsContextKey, tt.replacerProviders)

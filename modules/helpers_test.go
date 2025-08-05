@@ -535,8 +535,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				repl.Set(RequestProviderKey, "https://eth-mainnet.g.alchemy.com/v2/test")
 			},
 			expectedStatusCode: http.StatusRequestTimeout,
-			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request attempt failed, initiating retry",
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request attempt failed",
 			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
 		},
 		{
@@ -549,8 +549,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				repl.Set(RequestProviderKey, "https://polygon-rpc.com")
 			},
 			expectedStatusCode: http.StatusGatewayTimeout,
-			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request attempt failed, initiating retry",
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request attempt failed",
 			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
 		},
 		{
@@ -563,8 +563,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				// No provider set to test "No provider selected" case
 			},
 			expectedStatusCode: http.StatusServiceUnavailable,
-			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request attempt failed, initiating retry",
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request attempt failed",
 			expectedResponse:   `{"error": "Service unavailable", "code": 503}`,
 		},
 		{
@@ -580,8 +580,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				repl.Set(RequestProviderKey, "https://eth-mainnet.infura.io/v3/test")
 			},
 			expectedStatusCode: http.StatusRequestTimeout,
-			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request attempt failed, initiating retry",
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request attempt failed",
 			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
 		},
 		{
@@ -593,8 +593,8 @@ func TestHandleContextCancellation(t *testing.T) {
 				// Don't set any keys to test empty cases
 			},
 			expectedStatusCode: http.StatusGatewayTimeout,
-			expectedLogLevel:   zapcore.WarnLevel,
-			expectedLogMsg:     "Request attempt failed, initiating retry",
+			expectedLogLevel:   zapcore.ErrorLevel,
+			expectedLogMsg:     "Request attempt failed",
 			expectedResponse:   `{"error": "Request timeout exceeded", "code": 504}`,
 		},
 	}
@@ -722,7 +722,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_getBalance"},
 			jsonRPCError:           &din_http.JSONRPCError{Code: -32601, Message: "Method not found"},
-			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error", "provider": "jsonrpc-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_getBalance", "jsonrpc_error_code": int64(-32601), "jsonrpc_error_message": "Method not found", "reason": "Test failure", "response_type": "jsonrpc"},
+			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error", "provider": "jsonrpc-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_getBalance", "reason": "Test failure"},
 		},
 		{
 			name:                   "with JSON-RPC error and data",
@@ -733,7 +733,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-data-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_call"},
 			jsonRPCError:           &din_http.JSONRPCError{Code: -32603, Message: "Internal error", Data: map[string]interface{}{"details": "Server overloaded"}},
-			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error-data", "provider": "jsonrpc-data-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_call", "jsonrpc_error_code": int64(-32603), "jsonrpc_error_message": "Internal error", "jsonrpc_error_data": map[string]interface{}{"details": "Server overloaded"}, "reason": "Test failure", "response_type": "jsonrpc"},
+			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error-data", "provider": "jsonrpc-data-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_call", "reason": "Test failure"},
 		},
 		{
 			name:                   "with valid JSON array params",
@@ -767,8 +767,8 @@ func TestLogFailedAttempt(t *testing.T) {
 			parsedReqBody:                 &din_http.JSONRPCRequest{Method: "method_malformed", Params: json.RawMessage(`{"key":incomplete}`)},
 			jsonRPCError:                  nil,
 			expectedErrorLogFields:        map[string]interface{}{"network": "test-malformed-params", "provider": "malformed-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_malformed", "raw_request_params": `{"key":incomplete}`, "reason": "Test failure"},
-			expectDebugLogForParamFailure: true,
-			expectedDebugLogFields:        map[string]interface{}{"raw_params_attempted": `{"key":incomplete}`},
+			expectDebugLogForParamFailure: false, // Debug logging was removed as part of generic refactoring
+			expectedDebugLogFields:        nil,
 		},
 		{
 			name:                   "with JSON null params",
@@ -855,17 +855,26 @@ func TestLogFailedAttempt(t *testing.T) {
 			// Create raw response body if jsonRPCError is provided
 			var rawResponseBody []byte
 			if tt.jsonRPCError != nil {
-				jsonRPCResponse := din_http.JSONRPCResponse{
-					JSONRPC: "2.0",
-					ID:      json.RawMessage(`1`),
-					Error:   tt.jsonRPCError,
-				}
-				var err error
-				rawResponseBody, err = json.Marshal(jsonRPCResponse)
+				jsonRPCErrorBytes, err := json.Marshal(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      1,
+					"error":   tt.jsonRPCError,
+				})
 				require.NoError(t, err, "failed to marshal JSON-RPC error response for test")
+				rawResponseBody = jsonRPCErrorBytes
 			}
 
-			logFailedAttempt(&LogFailedAttemptParams{
+			// Extract method and params directly from JSONRPCRequest for the new logging structure
+			var method string = "unknown"
+			var params json.RawMessage
+			if tt.parsedReqBody != nil {
+				method = tt.parsedReqBody.Method
+				if len(tt.parsedReqBody.Params) > 0 {
+					params = tt.parsedReqBody.Params
+				}
+			}
+
+			logFailedAttempt(LogFailedAttemptParams{
 				Reason:              "Test failure",
 				Logger:              loggerClient,
 				NetworkPath:         tt.networkPath,
@@ -874,7 +883,8 @@ func TestLogFailedAttempt(t *testing.T) {
 				StatusCodeOfFailure: tt.statusCodeOfFailure,
 				Error:               tt.error,
 				Replacer:            repl,
-				ParsedReqBody:       tt.parsedReqBody,
+				RequestMethod:       method,
+				RequestParams:       params,
 				RawResponseBody:     rawResponseBody,
 			})
 
@@ -885,7 +895,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			require.NotEmpty(t, allLogs, "expected at least one log message")
 
 			for _, loggedEntry := range allLogs {
-				if loggedEntry.Level == zapcore.WarnLevel && loggedEntry.Message == "Request attempt failed, initiating retry" {
+				if loggedEntry.Level == zapcore.ErrorLevel && loggedEntry.Message == "Request attempt failed" {
 					foundErrorLog = true
 					for k, expectedV := range tt.expectedErrorLogFields {
 						actualV, ok := loggedEntry.ContextMap()[k]
@@ -920,7 +930,7 @@ func TestLogFailedAttempt(t *testing.T) {
 				}
 			}
 
-			require.True(t, foundErrorLog, "expected warning log 'Request attempt failed, initiating retry' was not found")
+			require.True(t, foundErrorLog, "expected error log 'Request attempt failed' was not found")
 			if tt.expectDebugLogForParamFailure {
 				require.True(t, foundDebugLogForParamFailure, "expected debug log for param failure was not found")
 			}

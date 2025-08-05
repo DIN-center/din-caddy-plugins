@@ -2,8 +2,11 @@ package modules
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
+
+	"encoding/json"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -11,6 +14,47 @@ import (
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"go.uber.org/zap"
 )
+
+// Helper functions for backward compatibility with different NetworkConfig struct versions
+
+// getNetworkConfigUint8Field safely gets a uint8 field from NetworkConfig using reflection
+func getNetworkConfigUint8Field(config *dinreg.NetworkConfig, fieldName string) uint8 {
+	if config == nil {
+		return 0
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.Uint8 {
+		return 0
+	}
+	return uint8(field.Uint())
+}
+
+// getNetworkConfigStringField safely gets a string field from NetworkConfig using reflection
+func getNetworkConfigStringField(config *dinreg.NetworkConfig, fieldName string) string {
+	if config == nil {
+		return ""
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return field.String()
+}
+
+// getNetworkConfigBoolField safely gets a bool field from NetworkConfig using reflection
+func getNetworkConfigBoolField(config *dinreg.NetworkConfig, fieldName string) bool {
+	if config == nil {
+		return false
+	}
+	v := reflect.ValueOf(config).Elem()
+	field := v.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.Bool {
+		return false
+	}
+	return field.Bool()
+}
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock() {
@@ -94,8 +138,13 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	network := NewNetwork(regNetwork.ProxyName, d.Env, d.CaddyPort)
-	network, err := d.syncNetworkConfig(regNetwork, network)
+	// Step 2: Create a new network without type - will be set via Caddyfile configuration
+	// Registry networks must have explicit 'type' configuration in Caddyfile like all other networks
+	network, err := NewNetwork(regNetwork.ProxyName, "", d.Env, d.CaddyPort)
+	if err != nil {
+		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
+	}
+	network, err = d.syncNetworkConfig(regNetwork, network)
 	if err != nil {
 		d.logger.Error("Failed to sync network config", zap.Error(err))
 		return err
@@ -136,6 +185,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	}
 	// Add the network to the middleware object
 	d.Networks[network.Name] = network
+
+	// Register network in global registry for DinUpstreams access
+	RegisterNetwork(network.Name, network)
 
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
@@ -206,114 +258,137 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 
 // syncNetworkConfig updates the network object with the registry network config data
 func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
-	// Get the healthcheck method name from the registry, usually eth_blockNumber or similar
-	registryHCMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit)
+	// Extract all required method names in a single batch to minimize registry calls
+	methodNames, err := d.extractNetworkMethods(regNetwork)
 	if err != nil {
-		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
 		return nil, err
 	}
 
-	// Get the chain ID method name from the registry, usually eth_chainId or similar
-	registryChainIdMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.ChainIdMethodBit)
-	if err != nil {
-		d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
-		return nil, err
-	}
+	// Extract all config fields once to minimize reflection calls
+	config := extractNetworkConfigFields(regNetwork.NetworkConfig)
 
-	// Get the call contract method name from the registry, usually eth_call or similar
-	registryCallContractMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.CallContractMethodBit)
-	if err != nil {
-		d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
-		return nil, err
-	}
-
-	// Update Chain ID if changed
-	if regNetwork.NetworkConfig.ChainId != "" && regNetwork.NetworkConfig.ChainId != network.ChainId {
-		d.logger.Debug("Setting network chain Id",
-			zap.String("network", network.Name),
-			zap.String("chain_id", regNetwork.NetworkConfig.ChainId))
-		network.ChainId = regNetwork.NetworkConfig.ChainId
-	}
-
-	// Update Healthcheck Method if changed
-	if registryHCMethod != "" && registryHCMethod != network.HCMethod {
-		d.logger.Debug("Setting network healthcheck method",
-			zap.String("network", network.Name),
-			zap.String("healthcheck_method", registryHCMethod))
-		network.HCMethod = registryHCMethod
-	}
-
-	// Update Chain ID Method if changed
-	if registryChainIdMethod != "" && registryChainIdMethod != network.ChainIdMethod {
-		d.logger.Debug("Setting network chain ID method",
-			zap.String("network", network.Name),
-			zap.String("chain_id_method", registryChainIdMethod))
-		network.ChainIdMethod = registryChainIdMethod
-	}
-
-	// Update Call Contract Method if changed
-	if registryCallContractMethod != "" && registryCallContractMethod != network.CallContractMethod {
-		d.logger.Debug("Setting network call contract method",
-			zap.String("network", network.Name),
-			zap.String("call_contract_method", registryCallContractMethod))
-		network.CallContractMethod = registryCallContractMethod
-	}
-
-	// Update Healthcheck Interval if changed
-	hcInterval := int(regNetwork.NetworkConfig.HealthcheckIntervalSec)
-	if hcInterval != 0 && hcInterval != network.HCInterval {
-		d.logger.Debug("Setting network healthcheck interval",
-			zap.String("network", network.Name),
-			zap.Int("interval", hcInterval))
-		network.HCInterval = hcInterval
-	}
-
-	// Update Block Lag Limit if changed
-	blockLagLimit := int64(regNetwork.NetworkConfig.BlockLagLimit)
-	if blockLagLimit != 0 && blockLagLimit != network.BlockLagLimit {
-		d.logger.Debug("Setting network block lag limit",
-			zap.String("network", network.Name),
-			zap.Int64("block_lag_limit", blockLagLimit))
-		network.BlockLagLimit = blockLagLimit
-	}
-
-	// Update Block Jump Limit if changed
-	blockJumpLimit := int64(regNetwork.NetworkConfig.BlockJumpLimit)
-	if blockJumpLimit != 0 && blockJumpLimit != network.BlockJumpLimit {
-		d.logger.Debug("Setting network block jump limit",
-			zap.String("network", network.Name),
-			zap.Int64("block_jump_limit", blockJumpLimit))
-		network.BlockJumpLimit = blockJumpLimit
-	}
-
-	// Update Max Request Payload Size if changed
-	maxPayloadSize := int64(regNetwork.NetworkConfig.MaxRequestPayloadSizeKb)
-	if maxPayloadSize != 0 && maxPayloadSize != network.MaxRequestPayloadSizeKB {
-		d.logger.Debug("Setting network max request payload size",
-			zap.String("network", network.Name),
-			zap.Int64("max_payload_size_kb", maxPayloadSize))
-		network.MaxRequestPayloadSizeKB = maxPayloadSize
-	}
-
-	// Update Request Attempt Count if changed
-	requestAttempts := int(regNetwork.NetworkConfig.RequestAttemptCount)
-	if requestAttempts != 0 && requestAttempts != network.RequestAttemptCount {
-		d.logger.Debug("Setting network request attempt count",
-			zap.String("network", network.Name),
-			zap.Int("request_attempts", requestAttempts))
-		network.RequestAttemptCount = requestAttempts
-	}
-
-	// Update Archive Enabled if changed
-	archiveEnabled := regNetwork.NetworkConfig.ArchiveEnabled
-	if archiveEnabled != network.ArchiveEnabled {
-		d.logger.Debug("Setting network archive enabled",
-			zap.String("network", network.Name),
-			zap.Bool("archive_enabled", archiveEnabled))
-		network.ArchiveEnabled = archiveEnabled
-	}
+	// Update network configuration using extracted values
+	d.updateNetworkFields(network, config, methodNames)
 
 	return network, nil
+}
+
+// NetworkMethodNames holds extracted method names
+type NetworkMethodNames struct {
+	HealthCheck  string
+	ChainID      string
+	CallContract string
+}
+
+// NetworkConfigFields holds extracted configuration values
+type NetworkConfigFields struct {
+	ChainID             string
+	HealthCheckInterval int
+	BlockLagLimit       int64
+	BlockJumpLimit      int64
+	MaxPayloadSizeKB    int64
+	RequestAttemptCount int
+	ArchiveEnabled      bool
+}
+
+// extractNetworkMethods gets all required method names in a single batch
+func (d *DinMiddleware) extractNetworkMethods(regNetwork *din.Network) (*NetworkMethodNames, error) {
+	methods := &NetworkMethodNames{}
+
+	// Get healthcheck method (required)
+	if hcMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit); err != nil {
+		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
+		return nil, err
+	} else {
+		methods.HealthCheck = hcMethod
+	}
+
+	// Get chain ID method (optional)
+	if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
+		if chainIdMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, chainIdBit); err != nil {
+			d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			return nil, fmt.Errorf("failed to get network chain ID method: %w", err)
+		} else {
+			methods.ChainID = chainIdMethod
+		}
+	}
+
+	// Get call contract method (optional)
+	if callContractBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "CallContractMethodBit"); callContractBit > 0 {
+		if callMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, callContractBit); err != nil {
+			d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
+			return nil, fmt.Errorf("failed to get network call contract method: %w", err)
+		} else {
+			methods.CallContract = callMethod
+		}
+	}
+
+	return methods, nil
+}
+
+// extractNetworkConfigFields extracts all config fields in a single pass
+func extractNetworkConfigFields(config *dinreg.NetworkConfig) *NetworkConfigFields {
+	return &NetworkConfigFields{
+		ChainID:             getNetworkConfigStringField(config, "ChainId"),
+		HealthCheckInterval: int(config.HealthcheckIntervalSec),
+		BlockLagLimit:       int64(config.BlockLagLimit),
+		BlockJumpLimit:      int64(getNetworkConfigUint8Field(config, "BlockJumpLimit")),
+		MaxPayloadSizeKB:    int64(config.MaxRequestPayloadSizeKb),
+		RequestAttemptCount: int(config.RequestAttemptCount),
+		ArchiveEnabled:      getNetworkConfigBoolField(config, "ArchiveEnabled"),
+	}
+}
+
+// updateNetworkFields applies configuration updates using a streamlined approach
+func (d *DinMiddleware) updateNetworkFields(network *network, config *NetworkConfigFields, methods *NetworkMethodNames) {
+	// Log available registry methods (handlers provide the actual implementations)
+	d.logRegistryMethods(network.Name, methods)
+
+	// Update fields using helper function to reduce duplication
+	d.updateField("chain Id", network.Name, &network.ChainId, config.ChainID, config.ChainID != "" && config.ChainID != network.ChainId)
+	d.updateField("healthcheck interval", network.Name, &network.HCInterval, config.HealthCheckInterval, config.HealthCheckInterval != 0 && config.HealthCheckInterval != network.HCInterval)
+	d.updateField("block lag limit", network.Name, &network.BlockLagLimit, config.BlockLagLimit, config.BlockLagLimit != 0 && config.BlockLagLimit != network.BlockLagLimit)
+	d.updateField("block jump limit", network.Name, &network.BlockJumpLimit, config.BlockJumpLimit, config.BlockJumpLimit != 0 && config.BlockJumpLimit != network.BlockJumpLimit)
+	d.updateField("max request payload size", network.Name, &network.MaxRequestPayloadSizeKB, config.MaxPayloadSizeKB, config.MaxPayloadSizeKB != 0 && config.MaxPayloadSizeKB != network.MaxRequestPayloadSizeKB)
+	d.updateField("request attempt count", network.Name, &network.RequestAttemptCount, config.RequestAttemptCount, config.RequestAttemptCount != 0 && config.RequestAttemptCount != network.RequestAttemptCount)
+	d.updateField("archive enabled", network.Name, &network.ArchiveEnabled, config.ArchiveEnabled, config.ArchiveEnabled != network.ArchiveEnabled)
+}
+
+// logRegistryMethods logs available registry methods in a batch
+func (d *DinMiddleware) logRegistryMethods(networkName string, methods *NetworkMethodNames) {
+	if methods.HealthCheck != "" {
+		d.logger.Debug("Registry healthcheck method available (provided by handler)",
+			zap.String("network", networkName),
+			zap.String("healthcheck_method", methods.HealthCheck))
+	}
+	if methods.ChainID != "" {
+		d.logger.Debug("Registry chain ID method available (provided by handler)",
+			zap.String("network", networkName),
+			zap.String("chain_id_method", methods.ChainID))
+	}
+	if methods.CallContract != "" {
+		d.logger.Debug("Registry call contract method available (provided by handler)",
+			zap.String("network", networkName),
+			zap.String("call_contract_method", methods.CallContract))
+	}
+}
+
+// updateField is a generic helper that updates a field and logs the change
+func (d *DinMiddleware) updateField(fieldName, networkName string, target interface{}, newValue interface{}, shouldUpdate bool) {
+	if !shouldUpdate {
+		return
+	}
+
+	// Use reflection to set the value generically
+	targetVal := reflect.ValueOf(target).Elem()
+	newVal := reflect.ValueOf(newValue)
+
+	if targetVal.CanSet() && targetVal.Type() == newVal.Type() {
+		targetVal.Set(newVal)
+		d.logger.Debug(fmt.Sprintf("Setting network %s", fieldName),
+			zap.String("network", networkName),
+			zap.Any(strings.ReplaceAll(fieldName, " ", "_"), newValue))
+	}
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
@@ -373,7 +448,7 @@ func (d *DinMiddleware) createProviderSIWEAuth(authConfig *dinreg.NetworkService
 // updateNetwork updates the network object in the middleware object with the provided registry network data
 func (d *DinMiddleware) updateNetworkData(network *network) {
 	// update the network object with the registry network config data
-	d.Networks[network.Name].HCMethod = network.HCMethod
+	// REMOVED: HCMethod is now provided by handlers
 	d.Networks[network.Name].HCInterval = network.HCInterval
 	d.Networks[network.Name].BlockLagLimit = network.BlockLagLimit
 	d.Networks[network.Name].BlockJumpLimit = network.BlockJumpLimit
@@ -416,23 +491,31 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string
 // When a valid block number is extracted, it also retrieves the corresponding block hash and adds both
 // to the network's block history. This information is crucial for tracking the network's current state
 // and ensuring proper synchronization across providers.
-func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, method string) {
-	if len(respBody) == 0 || networkObj == nil || networkObj.HCMethod == "" {
+func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, requestMethod string) {
+	if len(respBody) == 0 || networkObj == nil || networkObj.handler == nil {
 		return
 	}
 
-	// If method is "other_method" and networkObj.HCMethod is "eth_blockNumber", this should be true.
-	if method != networkObj.HCMethod {
+	// Only process if the request method matches the network's health check method
+	if requestMethod != networkObj.handler.GetHealthCheckMethod() {
 		return
 	}
 
-	// This log should only appear if Condition 2 is false.
-	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", method), zap.String("network", networkPath))
+	// This log should only appear for health check method requests
+	d.logger.Debug("Goroutine: Processing response for HCMethod", zap.String("method", requestMethod), zap.String("network", networkPath))
 
 	// Create synthetic request context for consistent logging
 	// Since this is async processing of a response, we use "din" as provider identifier
 	providerHost := "din"
-	repl, jsonRPCReq, payload := createHealthCheckRequestContext(networkPath, providerHost, method)
+	repl, genericContext, payload := createHealthCheckRequestContext(networkPath, providerHost, requestMethod, networkObj)
+
+	// Check if handler was able to create context - if not, skip detailed logging
+	if repl == nil || genericContext == nil || payload == nil {
+		d.logger.Debug("Handler unavailable or failed to create health check context, skipping detailed async processing",
+			zap.String("method", requestMethod),
+			zap.String("network", networkPath))
+		return
+	}
 
 	// Ensure the replacer has the correct payload for consistent logging
 	repl.Set(RequestBodyKey, payload)
@@ -441,8 +524,14 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	// processBlockNumberResponse checks for respStatus >= 400
 	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
+		// Extract method directly from GenericRequestContext - completely generic
+		var method string = "unknown"
+		if genericContext != nil {
+			method = genericContext.Method
+		}
+
 		// Log the failed async processing with detailed information
-		logFailedAttempt(&LogFailedAttemptParams{
+		logFailedAttempt(LogFailedAttemptParams{
 			Reason:              "Async health check processing failed",
 			Logger:              d.logger,
 			NetworkPath:         networkPath,
@@ -451,7 +540,8 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 			StatusCodeOfFailure: respStatus,
 			Error:               processingError,
 			Replacer:            repl,
-			ParsedReqBody:       jsonRPCReq,
+			RequestMethod:       method,
+			RequestParams:       nil, // No params for health checks - completely generic
 			RawResponseBody:     respBody,
 		})
 		return
@@ -461,17 +551,41 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	if err != nil {
 		// Create a new context specifically for the getBlockByNumber call that failed
 		// This ensures the logging shows the correct method and parameters for the failed call
-		getBlockMethod := networkObj.GetBlockByNumberMethod
+		getBlockMethod := networkObj.handler.GetBlockByNumberMethod()
 		if getBlockMethod == "" {
-			getBlockMethod = DefaultGetBlockByNumberMethod // Default fallback
+			getBlockMethod = "getBlockByNumber" // Default fallback method name for logging
 		}
 
 		// Create context for the getBlockByNumber call
-		getBlockRepl, getBlockJSONRPCReq, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)
+		getBlockRepl, getBlockGenericContext, _ := createGetBlockByNumberRequestContext(networkPath, providerHost, getBlockMethod, blockNumber, networkObj)
+
+		// Check if handler was able to create context
+		if getBlockRepl == nil || getBlockGenericContext == nil {
+			d.logger.Debug("Handler unavailable or failed to create getBlockByNumber context, using minimal error logging",
+				zap.String("method", getBlockMethod),
+				zap.String("network", networkPath),
+				zap.Int64("block_number", blockNumber),
+				zap.Error(err))
+			return
+		}
+
+		// Extract method and params directly from getBlockByNumber GenericRequestContext for logging
+		var getBlockMethodName string = "unknown"
+		var getBlockParams json.RawMessage
+		if getBlockGenericContext != nil {
+			getBlockMethodName = getBlockGenericContext.Method
+			if getBlockGenericContext.Context != nil {
+				if rpcParams, hasParams := getBlockGenericContext.Context["params"]; hasParams {
+					if paramBytes, ok := rpcParams.(json.RawMessage); ok {
+						getBlockParams = paramBytes
+					}
+				}
+			}
+		}
 
 		// For getBlockByNumber errors, we don't have a JSON-RPC error from the original response
 		// since this is a separate internal call
-		logFailedAttempt(&LogFailedAttemptParams{
+		logFailedAttempt(LogFailedAttemptParams{
 			Reason:              "Get block by number failed",
 			Logger:              d.logger,
 			NetworkPath:         networkPath,
@@ -480,7 +594,8 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 			StatusCodeOfFailure: 200, // getBlockByNumber is an internal call, assume 200 for the original response
 			Error:               err,
 			Replacer:            getBlockRepl,
-			ParsedReqBody:       getBlockJSONRPCReq,
+			RequestMethod:       getBlockMethodName,
+			RequestParams:       getBlockParams,
 			RawResponseBody:     nil, // No response body for internal getBlockByNumber calls
 		})
 		return

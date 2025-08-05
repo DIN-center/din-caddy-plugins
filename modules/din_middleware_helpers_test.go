@@ -380,9 +380,6 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 }
 
 func TestSyncNetworkConfig(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	tests := []struct {
 		name                     string
 		regNetwork               *din.Network
@@ -418,10 +415,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				},
 			},
 			existingNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "old-method",
-				ChainIdMethod:           "old-chain-method",
-				CallContractMethod:      "old-call-method",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x0",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -437,10 +432,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			callContractMethodName:  "eth_call",
 			callsCallContractMethod: true,
 			expectedNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              20,
 				BlockLagLimit:           10,
@@ -484,6 +477,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &dinreg.NetworkConfig{
+					HealthcheckMethodBit:  1,
+					ChainIdMethodBit:      1,
 					CallContractMethodBit: 1,
 				},
 			},
@@ -491,8 +486,10 @@ func TestSyncNetworkConfig(t *testing.T) {
 				Name: "test-network",
 			},
 			callsHealthcheckMethod:   true,
+			hcMethodName:             "eth_blockNumber",
 			getCallContractMethodErr: errors.New("failed to get call contract method"),
 			callsChainIDMethod:       true,
+			chainIDMethodName:        "eth_chainId",
 			callsCallContractMethod:  true,
 			expectedError:            errors.New("failed to get network call contract method"),
 		},
@@ -504,6 +501,7 @@ func TestSyncNetworkConfig(t *testing.T) {
 					HealthcheckMethodBit:    1,
 					ChainIdMethodBit:        1,
 					ChainId:                 "0x1",
+					CallContractMethodBit:   0, // Explicitly set to 0 to show this is intentional
 					HealthcheckIntervalSec:  0,
 					BlockLagLimit:           0,
 					BlockJumpLimit:          0,
@@ -513,10 +511,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				},
 			},
 			existingNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -525,17 +521,14 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			callsHealthcheckMethod:  true,
-			callsChainIDMethod:      true,
-			callsCallContractMethod: true,
-			hcMethodName:            "eth_blockNumber",
-			chainIDMethodName:       "eth_chainId",
-			callContractMethodName:  "eth_call",
+			callsHealthcheckMethod: true,
+			callsChainIDMethod:     true,
+			hcMethodName:           "eth_blockNumber",
+			chainIDMethodName:      "eth_chainId",
+			callContractMethodName: "",
 			expectedNetwork: &network{
-				Name:                    "test-network",
-				HCMethod:                "eth_blockNumber",
-				ChainIdMethod:           "eth_chainId",
-				CallContractMethod:      "eth_call",
+				Name: "test-network",
+				// REMOVED: Method fields now provided by handlers
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -549,6 +542,9 @@ func TestSyncNetworkConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
 			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
 
 			// Create logger
@@ -584,10 +580,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedNetwork.HCMethod, result.HCMethod)
-			assert.Equal(t, tt.expectedNetwork.ChainIdMethod, result.ChainIdMethod)
+			// REMOVED: Method field assertions (now provided by handlers)
 			assert.Equal(t, tt.expectedNetwork.ChainId, result.ChainId)
-			assert.Equal(t, tt.expectedNetwork.CallContractMethod, result.CallContractMethod)
 			assert.Equal(t, tt.expectedNetwork.HCInterval, result.HCInterval)
 			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, result.BlockLagLimit)
 			assert.Equal(t, tt.expectedNetwork.BlockJumpLimit, result.BlockJumpLimit)
@@ -764,7 +758,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			name: "Successful update of network data",
 			initialNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "initial-method",
 				HCInterval:              10,
 				BlockLagLimit:           5,
 				MaxRequestPayloadSizeKB: 1024,
@@ -777,7 +770,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			updatedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -790,7 +782,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			expectedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -809,7 +800,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			name: "Update with empty providers",
 			initialNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "initial-method",
 				HCInterval:              10,
 				BlockLagLimit:           5,
 				MaxRequestPayloadSizeKB: 1024,
@@ -822,7 +812,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			updatedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -831,7 +820,6 @@ func TestUpdateNetworkData(t *testing.T) {
 			},
 			expectedNetwork: &network{
 				Name:                    "test-network",
-				HCMethod:                "new-method",
 				HCInterval:              20,
 				BlockLagLimit:           10,
 				MaxRequestPayloadSizeKB: 2048,
@@ -865,7 +853,6 @@ func TestUpdateNetworkData(t *testing.T) {
 
 			// Assert that the network data was updated correctly
 			updatedNetwork := dinMiddleware.Networks[tt.initialNetwork.Name]
-			assert.Equal(t, tt.expectedNetwork.HCMethod, updatedNetwork.HCMethod)
 			assert.Equal(t, tt.expectedNetwork.HCInterval, updatedNetwork.HCInterval)
 			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, updatedNetwork.BlockLagLimit)
 			assert.Equal(t, tt.expectedNetwork.MaxRequestPayloadSizeKB, updatedNetwork.MaxRequestPayloadSizeKB)
@@ -989,30 +976,24 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 	}{
 		{
 			name:           "JSON parsing error should trigger robust logging",
-			respBody:       []byte(`{"invalid": json}`),
+			respBody:       []byte("invalid json"),
 			respStatus:     200,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "Non-200 status should trigger robust logging",
-			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x64"}`),
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"result":"0x123"}`),
 			respStatus:     500,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "JSON-RPC error should trigger robust logging",
-			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Server error"}}`),
+			respBody:       []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error"}}`),
 			respStatus:     200,
-			method:         "eth_blockNumber",
-			expectLogCall:  true,
-			expectLogLevel: zapcore.WarnLevel,
-			expectLogMsg:   "Request attempt failed, initiating retry",
+			expectLogMsg:   "Request attempt failed",
+			expectLogLevel: zapcore.ErrorLevel,
 		},
 		{
 			name:           "Method mismatch should not trigger failure logging",
@@ -1041,13 +1022,11 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			observedLogger := zap.New(observedZapCore)
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
-			// Create test network with CaddyPort to avoid getBlockByNumber errors
-			network := &network{
-				Name:      "test/eth",
-				HCMethod:  "eth_blockNumber",
-				logger:    loggerClient,
-				CaddyPort: "8080", // Set CaddyPort to avoid errors in successful case
-			}
+			// Create test network with proper handler initialization
+			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8080")
+			assert.NoError(t, err)
+			network.logger = loggerClient
+			network.Name = "test/eth" // Update name to match test expectations
 
 			// Create test middleware
 			middleware := &DinMiddleware{
@@ -1092,7 +1071,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			} else {
 				// Should not have any failure logs with the expected message
 				for _, log := range logs {
-					assert.NotEqual(t, "Request attempt failed, initiating retry", log.Message, "Unexpected failure log found")
+					assert.NotEqual(t, "Request attempt failed", log.Message, "Unexpected failure log found")
 				}
 			}
 		})

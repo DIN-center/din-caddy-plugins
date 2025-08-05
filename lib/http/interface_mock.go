@@ -7,8 +7,8 @@ package http
 import (
 	reflect "reflect"
 
-	gomock "github.com/golang/mock/gomock"
 	auth "github.com/DIN-center/din-caddy-plugins/lib/auth"
+	gomock "github.com/golang/mock/gomock"
 )
 
 // MockIHTTPClient is a mock of IHTTPClient interface.
@@ -48,4 +48,20 @@ func (m *MockIHTTPClient) Post(url string, headers map[string]string, payload []
 func (mr *MockIHTTPClientMockRecorder) Post(url, headers, payload, auth interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Post", reflect.TypeOf((*MockIHTTPClient)(nil).Post), url, headers, payload, auth)
+}
+
+// Get mocks base method.
+func (m *MockIHTTPClient) Get(url string, headers map[string]string, auth auth.IAuthClient) ([]byte, *int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", url, headers, auth)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(*int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockIHTTPClientMockRecorder) Get(url, headers, auth interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockIHTTPClient)(nil).Get), url, headers, auth)
 }

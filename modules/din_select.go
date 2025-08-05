@@ -53,46 +53,70 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		return nil
 	}
 
-	// Get providers from context
+	// Get providers and request context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var providers map[string]*provider
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		providers = v.(map[string]*provider)
 	}
 
-	// Select upstream based on request
+	// Get network object to determine if this is a REST API
+	var networkObj *network
+	if v, ok := repl.Get("network_object"); ok {
+		networkObj = v.(*network)
+	}
+
+	// Select upstream based on request using the header hash selector
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
+	// Apply provider-specific configuration (path, headers, auth)
 	for _, provider := range providers {
-
 		// If the upstream is found in the providers, set the path and headers for the request
 		if selectedUpstream == provider.upstream {
-			r.URL.RawPath = provider.path
-			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
-			for k, v := range provider.Headers {
-				r.Header.Add(k, v)
-			}
-			if provider.Auth != nil {
-				if err := provider.Auth.Sign(r); err != nil {
-					d.logger.Error("error signing request", zap.String("err", err.Error()))
-				}
-			}
-			if v := r.Header.Get(DinProviderInfo); v != "" {
-				rw.Header().Set(DinProviderInfo, provider.host)
-			}
-			repl.Set(RequestProviderKey, provider.host)
+			d.applyProviderConfiguration(provider, r, rw, repl, networkObj)
 			break
 		}
 	}
 
-	// d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	return selectedUpstream
+}
 
-	// if the request body is nil, return without setting the context for request metrics
-	if r.Body == nil {
-		return selectedUpstream
+// applyProviderConfiguration applies provider-specific settings to the request
+func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, networkObj *network) {
+	// Use the network handler to configure the request path
+	if networkObj != nil && networkObj.handler != nil {
+		networkName := networkObj.Name
+		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, networkName); err != nil {
+			d.logger.Error("Failed to configure request path", 
+				zap.String("network", networkName),
+				zap.String("provider_path", provider.path),
+				zap.Error(err))
+		}
+	} else {
+		// Fallback for cases where handler is not available
+		if provider.path != "" {
+			r.URL.RawPath = provider.path
+			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
+		}
 	}
 
-	return selectedUpstream
+	// Apply headers
+	for k, v := range provider.Headers {
+		r.Header.Add(k, v)
+	}
+
+	// Apply authentication
+	if provider.Auth != nil {
+		if err := provider.Auth.Sign(r); err != nil {
+			d.logger.Error("error signing request", zap.String("err", err.Error()))
+		}
+	}
+
+	// Set provider info header
+	if v := r.Header.Get(DinProviderInfo); v != "" {
+		rw.Header().Set(DinProviderInfo, provider.host)
+	}
+	repl.Set(RequestProviderKey, provider.host)
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

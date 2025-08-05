@@ -1,0 +1,24 @@
+# Cursor AI Rules for DIN Caddy Plugins Project
+
+## Professional Standards
+- NEVER use emojis in any code, comments, commit messages, or documentation
+- Maintain professional, business-appropriate language throughout the codebase
+- Use clear, descriptive comments without decorative symbols
+
+## Code Quality Guidelines
+- Follow Go best practices and idioms
+- Use clear, descriptive variable and function names
+- Prefer explicit error handling over silent failures
+- Write comprehensive tests for new functionality
+
+## Documentation Standards  
+- Use plain text markers like "NOTE:", "TODO:", "DEPRECATED:" instead of emojis
+- Write clear, professional documentation
+- Use standard markdown formatting without decorative symbols
+
+## Architecture Principles
+- Maintain handler-based abstraction for network-specific logic
+- Avoid hardcoded network-specific string checks in core modules
+- Use dependency injection and interfaces for testability
+- Follow established patterns for new network type implementations
+ 

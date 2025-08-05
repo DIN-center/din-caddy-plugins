@@ -1,4 +1,4 @@
-# Caddyfile for Din e2e testing
+# Caddyfile for Din e2e testing - Enhanced for Handler Registry Testing
 {
 	debug
 	order din before reverse_proxy
@@ -13,18 +13,16 @@
 		# middleware declaration
 		din {
 			environment prod
-			# middleware configurtion data, read by DinMiddleware.UnmarshalCaddyfile()
+			# Test the new handler registry with multiple network types
 			networks {
+				# EVM Network (existing functionality)
 				eth {
 					providers {
 						https://eth.llamarpc.com:443 {
 							priority 0
 						}
 						https://ethereum-rpc.publicnode.com:443 {
-							priority 0
-						}
-						https://api.zan.top/eth-mainnet {
-							priority 0
+							priority 1
 						}
 					}
 					chain_id eip155:0x1
@@ -32,7 +30,6 @@
 			}
 		}
 		# din reverse proxy directive configuration
-		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
 		reverse_proxy {
 			lb_policy din_reverse_proxy_policy
 			transport http {

@@ -13,9 +13,10 @@ require (
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.10.0
-	github.com/zeebo/assert v1.1.0
 	go.uber.org/zap v1.27.0
 )
+
+require github.com/stretchr/objx v0.5.2 // indirect
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
@@ -89,7 +90,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.4.0 // indirect
+	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
