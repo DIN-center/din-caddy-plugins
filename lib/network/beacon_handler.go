@@ -428,22 +428,50 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 		return "", fmt.Errorf("HTTP error: %d", statusCode)
 	}
 
-	// Parse the config/spec response
+	// First try to parse as standard format (data as object with mixed types)
 	var specResponse struct {
-		Data map[string]string `json:"data"`
+		Data map[string]interface{} `json:"data"`
 	}
 
-	if err := json.Unmarshal(body, &specResponse); err != nil {
-		return "", fmt.Errorf("failed to parse beacon config response: %w", err)
-	}
-
-	// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
-	chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]
-	if !exists {
+	if err := json.Unmarshal(body, &specResponse); err == nil && specResponse.Data != nil {
+		// Standard format - extract DEPOSIT_CHAIN_ID
+		if chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]; exists {
+			// Handle as string
+			if chainIDStr, ok := chainID.(string); ok {
+				return h.FormatChainID(chainIDStr), nil
+			}
+			// Handle as number
+			if chainIDNum, ok := chainID.(float64); ok {
+				return h.FormatChainID(fmt.Sprintf("%d", int64(chainIDNum))), nil
+			}
+			return "", fmt.Errorf("DEPOSIT_CHAIN_ID has unexpected type: %T", chainID)
+		}
 		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response")
 	}
 
-	return h.FormatChainID(chainID), nil
+	// Try parsing as array format (some providers might return data as array)
+	var arrayResponse struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &arrayResponse); err == nil && len(arrayResponse.Data) > 0 {
+		// Look for DEPOSIT_CHAIN_ID in the array
+		for _, item := range arrayResponse.Data {
+			if chainID, exists := item["DEPOSIT_CHAIN_ID"]; exists {
+				if chainIDStr, ok := chainID.(string); ok {
+					return h.FormatChainID(chainIDStr), nil
+				}
+				// Try as number
+				if chainIDNum, ok := chainID.(float64); ok {
+					return h.FormatChainID(fmt.Sprintf("%d", int64(chainIDNum))), nil
+				}
+			}
+		}
+		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config array response")
+	}
+
+	// If neither format works, return error
+	return "", fmt.Errorf("failed to parse beacon config response: unexpected format")
 }
 
 // GetChainID retrieves the chain ID for beacon chain
