@@ -53,11 +53,11 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:      "valid POST request for tx broadcast",
+			name:      "blocked POST request for tx broadcast",
 			method:    "POST",
 			path:      "/api/tx",
 			headers:   map[string]string{"Content-Type": "text/plain"},
-			expectErr: false,
+			expectErr: true,
 		},
 		{
 			name:      "invalid method PUT",
@@ -72,7 +72,7 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "invalid content type for tx broadcast",
+			name:      "blocked POST request with invalid content type",
 			method:    "POST",
 			path:      "/api/tx",
 			headers:   map[string]string{"Content-Type": "application/json"},
@@ -99,6 +99,23 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 	}
 }
 
+func TestBitcoinEsploraHandler_ValidateRequest_HTTPError(t *testing.T) {
+	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
+
+	// Test that POST requests return HTTPError with 405 status code
+	req, err := http.NewRequest("POST", "https://example.com/api/tx", nil)
+	require.NoError(t, err)
+
+	err = handler.ValidateRequest(req)
+	require.Error(t, err)
+
+	// Check that it's an HTTPError with the correct status code
+	httpErr, ok := err.(*HTTPError)
+	require.True(t, ok, "Expected HTTPError type")
+	assert.Equal(t, http.StatusMethodNotAllowed, httpErr.StatusCode)
+	assert.Equal(t, "POST method not allowed for Bitcoin Esplora API", httpErr.Message)
+}
+
 func TestBitcoinEsploraHandler_NormalizeEndpoint(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
@@ -108,19 +125,19 @@ func TestBitcoinEsploraHandler_NormalizeEndpoint(t *testing.T) {
 	}{
 		{
 			path:     "/api/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-			expected: "/api/tx/{txid}",
+			expected: "/api/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 		},
 		{
 			path:     "/api/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-			expected: "/api/address/{address}",
+			expected: "/api/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 		},
 		{
 			path:     "/api/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
-			expected: "/api/block/{hash}",
+			expected: "/api/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
 		},
 		{
 			path:     "/api/block-height/123456",
-			expected: "/api/block-height/{height}",
+			expected: "/api/block-height/123456",
 		},
 		{
 			path:     "/api/blocks/tip/height",
@@ -191,9 +208,16 @@ func TestBitcoinEsploraHandler_HealthCheckMethods(t *testing.T) {
 func TestBitcoinEsploraHandler_ParseHealthCheckResponse(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
-	// Test valid response
-	body := []byte("123456")
+	// Test valid response with the actual format from enterprise.blockstream.info
+	body := []byte("908752")
 	blockInfo, err := handler.ParseHealthCheckResponse(body)
+	require.NoError(t, err)
+	assert.Equal(t, int64(908752), blockInfo.Number)
+	assert.NotZero(t, blockInfo.Timestamp)
+
+	// Test another valid response
+	body = []byte("123456")
+	blockInfo, err = handler.ParseHealthCheckResponse(body)
 	require.NoError(t, err)
 	assert.Equal(t, int64(123456), blockInfo.Number)
 
@@ -201,23 +225,65 @@ func TestBitcoinEsploraHandler_ParseHealthCheckResponse(t *testing.T) {
 	body = []byte("invalid")
 	_, err = handler.ParseHealthCheckResponse(body)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse block height")
+
+	// Test empty response
+	body = []byte("")
+	_, err = handler.ParseHealthCheckResponse(body)
+	assert.Error(t, err)
 }
 
 func TestBitcoinEsploraHandler_ParseBlockResponse(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
-	// Test valid block response
-	body := []byte(`{"id": "00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa", "height": 123456}`)
+	// Test with full block response matching the actual Esplora format
+	body := []byte(`{
+		"id": "000000000000000000015bab48eb378f6327ead7d07615d11d5f14a701ce9f14",
+		"height": 908747,
+		"version": 723279872,
+		"timestamp": 1754411308,
+		"tx_count": 3559,
+		"size": 1757871,
+		"weight": 3993702,
+		"merkle_root": "2f6dd2d049cf681a55c342a7fdab4eab38e0c7bafa41c65c510c93c5e645ad4a",
+		"previousblockhash": "000000000000000000020b810fd6ad7348f0cf28e5913a4ac3e2042716d1a63b",
+		"mediantime": 1754408985,
+		"nonce": 1659613267,
+		"bits": 386020510,
+		"difficulty": 127620086886391.78
+	}`)
+
 	block, err := handler.ParseBlockResponse(body)
 	require.NoError(t, err)
 
-	blockMap, ok := block.(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa", blockMap["id"])
+	// Type assert to our struct
+	bitcoinBlock, ok := block.(BitcoinEsploraBlock)
+	require.True(t, ok, "Expected BitcoinEsploraBlock type")
+
+	// Verify parsed fields
+	assert.Equal(t, "000000000000000000015bab48eb378f6327ead7d07615d11d5f14a701ce9f14", bitcoinBlock.ID)
+	assert.Equal(t, int64(908747), bitcoinBlock.Height)
+	assert.Equal(t, int64(723279872), bitcoinBlock.Version)
+	assert.Equal(t, int64(1754411308), bitcoinBlock.Timestamp)
+	assert.Equal(t, 3559, bitcoinBlock.TxCount)
+	assert.Equal(t, 1757871, bitcoinBlock.Size)
+	assert.Equal(t, 3993702, bitcoinBlock.Weight)
+	assert.Equal(t, "2f6dd2d049cf681a55c342a7fdab4eab38e0c7bafa41c65c510c93c5e645ad4a", bitcoinBlock.MerkleRoot)
+	assert.Equal(t, "000000000000000000020b810fd6ad7348f0cf28e5913a4ac3e2042716d1a63b", bitcoinBlock.PreviousBlockHash)
+	assert.Equal(t, int64(1754408985), bitcoinBlock.MedianTime)
+	assert.Equal(t, int64(1659613267), bitcoinBlock.Nonce)
+	assert.Equal(t, int64(386020510), bitcoinBlock.Bits)
+	assert.Equal(t, 127620086886391.78, bitcoinBlock.Difficulty)
 
 	// Test block hash extraction
 	hash := handler.ExtractBlockHash(block)
-	assert.Equal(t, "00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa", hash)
+	assert.Equal(t, "000000000000000000015bab48eb378f6327ead7d07615d11d5f14a701ce9f14", hash)
+
+	// Test invalid JSON
+	invalidBody := []byte(`{"invalid": json}`)
+	_, err = handler.ParseBlockResponse(invalidBody)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse Bitcoin block response")
 }
 
 func TestBitcoinEsploraHandler_UnsupportedOperations(t *testing.T) {

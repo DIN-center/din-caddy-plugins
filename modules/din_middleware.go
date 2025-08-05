@@ -497,8 +497,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Process the request using the handler for validation only
 	if err := networkObj.handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
-		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte("Bad Request\n"))
+
+		// Check if it's an HTTPError with specific status code
+		if httpErr, ok := err.(*networklib.HTTPError); ok {
+			rw.WriteHeader(httpErr.StatusCode)
+			rw.Write([]byte(httpErr.Message + "\n"))
+		} else {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write([]byte("Bad Request\n"))
+		}
 		return fmt.Errorf("handler failed to process request: %w", err)
 	}
 

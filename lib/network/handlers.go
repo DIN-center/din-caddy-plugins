@@ -98,13 +98,23 @@ type BlockInfo struct {
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// HTTPError represents an error with a specific HTTP status code
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	return e.Message
+}
+
 // LatestBlockResult represents the result of getting the latest block number
 type LatestBlockResult struct {
 	BlockNumber    int64
 	HealthStatus   HealthStatus
 	ResponseStatus int
 	// Additional context that might be useful for debugging
-	Extra map[string]interface{}
+	Metadata map[string]interface{}
 }
 
 // HealthStatus represents the health status of a provider

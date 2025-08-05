@@ -717,6 +717,12 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 			method = genericContext.Method
 		}
 
+		// Set default values for when result is nil
+		var statusCode int = 0
+		if result != nil {
+			statusCode = result.ResponseStatus
+		}
+
 		// Maintain the detailed logFailedAttempt logging that's imperative
 		logFailedAttempt(LogFailedAttemptParams{
 			Reason:              "Self loopback health check failed",
@@ -724,7 +730,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 			NetworkPath:         n.Name,
 			FailedAttemptNumber: 1, // Single attempt for loopback
 			MaxAttempts:         1, // Total attempts is always 1 for loopback
-			StatusCodeOfFailure: result.ResponseStatus,
+			StatusCodeOfFailure: statusCode,
 			Error:               err,
 			Replacer:            repl,
 			RequestMethod:       method,
@@ -732,11 +738,11 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 			RawResponseBody:     nil, // Handler abstracted the response processing
 		})
 
-		// Convert handler result to our expected format
+		// Return safe defaults when request failed (result may be nil)
 		return &getLatestBlockNumberResult{
-			blockNumber:    result.BlockNumber,
-			healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
-			responseStatus: result.ResponseStatus,
+			blockNumber:    0,        // Unknown block number since request failed
+			healthStatus:   Unhealthy, // Mark as unhealthy since the request failed
+			responseStatus: statusCode, // Use safe status code (0 if result is nil)
 		}, err
 	}
 
