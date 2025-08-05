@@ -28,7 +28,7 @@ type BeaconChainHandler struct {
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 	return &BeaconChainHandler{
 		config:              config,
-		healthCheckEndpoint: "/eth/v1/beacon/headers/head",
+		healthCheckEndpoint: "/eth/v2/beacon/blocks/head",
 		version:             "1.0.0",
 		logger:              config.Logger,
 	}
@@ -76,10 +76,6 @@ func (h *BeaconChainHandler) ProcessRequest(req *http.Request) error {
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
-
-	// For Beacon Chain, path translation is handled by DinSelect for REST APIs
-	// This maintains consistency with the generic REST API processing approach
-	// Unlike EVM which uses JSON-RPC and needs provider-specific path handling
 
 	return nil
 }
@@ -356,7 +352,7 @@ func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) 
 func (h *BeaconChainHandler) GetHealthCheckMethod() string {
 	// Use the node health endpoint for health checks
 	// This returns HTTP status codes: 200 (ready), 206 (syncing), 503 (not initialized)
-	return "/eth/v1/node/health"
+	return h.healthCheckEndpoint
 }
 
 func (h *BeaconChainHandler) GetHealthCheckHTTPMethod() string {
@@ -385,23 +381,7 @@ func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, er
 }
 
 func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
-	// The /eth/v1/node/health endpoint returns only status codes, no body
-	// If we have an empty body, it means the health check passed but we need
-	// to make a separate call to get block info
-	if len(body) == 0 {
-		// Return a placeholder indicating health check passed but no block info
-		return &BlockInfo{
-			Number:    -1, // Special value to indicate we need a separate call
-			Hash:      "",
-			Timestamp: time.Now(),
-			Metadata: map[string]interface{}{
-				"slot":  int64(-1),
-				"epoch": int64(-1),
-			},
-		}, nil
-	}
-
-	// If we have a body, it's from the block info endpoint (/eth/v2/beacon/blocks/head)
+	// from the block info endpoint (/eth/v2/beacon/blocks/head)
 	var blockResponse BeaconBlockResponse
 	if err := json.Unmarshal(body, &blockResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse beacon block response: %w", err)
@@ -587,7 +567,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 			BlockNumber:    blockInfo.Number, // This will be the slot number
 			HealthStatus:   Healthy,
 			ResponseStatus: lastResponseStatus,
-			Extra: map[string]interface{}{
+			Metadata: map[string]interface{}{
 				"slot":      blockInfo.Number, // Number field contains slot for beacon chain
 				"epoch":     getInt64FromMetadata(blockInfo.Metadata, "epoch"),
 				"hash":      blockInfo.Hash,
@@ -608,7 +588,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 		BlockNumber:    0,
 		HealthStatus:   lastHealthStatus,
 		ResponseStatus: lastResponseStatus,
-		Extra:          make(map[string]interface{}),
+		Metadata:       make(map[string]interface{}),
 	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +14,23 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
+// BitcoinEsploraBlock represents a Bitcoin block from Esplora API
+type BitcoinEsploraBlock struct {
+	ID                string  `json:"id"`
+	Height            int64   `json:"height"`
+	Version           int64   `json:"version"`
+	Timestamp         int64   `json:"timestamp"`
+	TxCount           int     `json:"tx_count"`
+	Size              int     `json:"size"`
+	Weight            int     `json:"weight"`
+	MerkleRoot        string  `json:"merkle_root"`
+	PreviousBlockHash string  `json:"previousblockhash"`
+	MedianTime        int64   `json:"mediantime"`
+	Nonce             int64   `json:"nonce"`
+	Bits              int64   `json:"bits"`
+	Difficulty        float64 `json:"difficulty"`
+}
+
 // BitcoinEsploraHandler handles Bitcoin Esplora REST API requests
 type BitcoinEsploraHandler struct {
 	config              *NetworkConfig
@@ -22,17 +38,6 @@ type BitcoinEsploraHandler struct {
 	blockInfoEndpoint   string
 	version             string
 	logger              *logger.LoggerClient
-	pathNormalizer      *BitcoinPathNormalizer
-}
-
-// BitcoinPathNormalizer normalizes Bitcoin Esplora API paths for metrics
-type BitcoinPathNormalizer struct {
-	patterns []compiledPattern
-}
-
-type compiledPattern struct {
-	regex       *regexp.Regexp
-	replacement string
 }
 
 // NewBitcoinEsploraHandler creates a new Bitcoin Esplora handler instance
@@ -43,36 +48,7 @@ func NewBitcoinEsploraHandler(config *NetworkConfig) *BitcoinEsploraHandler {
 		blockInfoEndpoint:   "/api/blocks/tip/hash",
 		version:             "1.0.0",
 		logger:              config.Logger,
-		pathNormalizer:      NewBitcoinPathNormalizer(),
 	}
-}
-
-// NewBitcoinPathNormalizer creates a new path normalizer for Bitcoin Esplora
-func NewBitcoinPathNormalizer() *BitcoinPathNormalizer {
-	patterns := []compiledPattern{
-		{
-			regex:       regexp.MustCompile(`/api/tx/[a-fA-F0-9]{64}`),
-			replacement: "/api/tx/{txid}",
-		},
-		{
-			regex:       regexp.MustCompile(`/api/address/[a-zA-Z0-9]+`),
-			replacement: "/api/address/{address}",
-		},
-		{
-			regex:       regexp.MustCompile(`/api/block/[a-fA-F0-9]{64}`),
-			replacement: "/api/block/{hash}",
-		},
-		{
-			regex:       regexp.MustCompile(`/api/block-height/\d+`),
-			replacement: "/api/block-height/{height}",
-		},
-		{
-			regex:       regexp.MustCompile(`/api/scripthash/[a-fA-F0-9]+/txs`),
-			replacement: "/api/scripthash/{hash}/txs",
-		},
-	}
-
-	return &BitcoinPathNormalizer{patterns: patterns}
 }
 
 // Metadata methods for registry
@@ -95,6 +71,8 @@ func (h *BitcoinEsploraHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *BitcoinEsploraHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
+
+	// Update logger from config if available
 	if config.Logger != nil {
 		h.logger = config.Logger
 	}
@@ -106,15 +84,15 @@ func (h *BitcoinEsploraHandler) Shutdown() error {
 	return nil
 }
 
+// === EXISTING METHODS ===
+
 // Request processing methods
 func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
-	// Validate the request
+	// Validate the request, reject POST requests
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
 
-	// For REST APIs like Bitcoin Esplora, path translation is handled by DinSelect
-	// This maintains consistency with the beacon chain approach
 	return nil
 }
 
@@ -129,9 +107,23 @@ func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, provider
 	return nil
 }
 
+func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
+	// For now, return path as-is since we don't have path normalizer
+	// This can be enhanced later if needed
+	return path
+}
+
 func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
-	// Check for valid HTTP methods - Bitcoin Esplora REST API supports GET and POST
-	if req.Method != "GET" && req.Method != "POST" {
+	// Block POST requests and return 405 Method Not Allowed
+	if req.Method == "POST" {
+		return &HTTPError{
+			StatusCode: http.StatusMethodNotAllowed,
+			Message:    "POST method not allowed for Bitcoin Esplora API",
+		}
+	}
+
+	// Check for valid HTTP methods - Bitcoin Esplora REST API now only supports GET
+	if req.Method != "GET" {
 		return fmt.Errorf("unsupported HTTP method for Bitcoin Esplora REST API: %s", req.Method)
 	}
 
@@ -141,35 +133,13 @@ func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
 		return fmt.Errorf("invalid Bitcoin Esplora API path: %s", path)
 	}
 
-	// For POST requests (transaction broadcast), validate content type
-	if req.Method == "POST" {
-		contentType := req.Header.Get("Content-Type")
-		if path == "/api/tx" && contentType != "" && !strings.Contains(contentType, "text/plain") {
-			return fmt.Errorf("invalid content type for transaction broadcast: %s", contentType)
-		}
-	}
-
 	return nil
-}
-
-func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
-	return h.pathNormalizer.NormalizePath(path)
-}
-
-// NormalizePath applies all patterns and returns the normalized path
-func (n *BitcoinPathNormalizer) NormalizePath(path string) string {
-	for _, pattern := range n.patterns {
-		if pattern.regex.MatchString(path) {
-			return pattern.regex.ReplaceAllString(path, pattern.replacement)
-		}
-	}
-	return path
 }
 
 // Response handling methods
 func (h *BitcoinEsploraHandler) ParseResponse(body []byte, statusCode int) error {
 	if statusCode >= 400 {
-		return fmt.Errorf("HTTP error: %d", statusCode)
+		return fmt.Errorf("HTTP error: %d, body: %s", statusCode, string(body))
 	}
 	return nil
 }
@@ -206,23 +176,20 @@ func (h *BitcoinEsploraHandler) FormatBlockHeight(blockNum int64) string {
 }
 
 func (h *BitcoinEsploraHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	// Bitcoin Esplora uses REST endpoints, not JSON-RPC
 	return nil, fmt.Errorf("Bitcoin Esplora uses REST API, not JSON-RPC")
 }
 
 func (h *BitcoinEsploraHandler) ParseBlockResponse(body []byte) (interface{}, error) {
-	var block map[string]interface{}
+	var block BitcoinEsploraBlock
 	if err := json.Unmarshal(body, &block); err != nil {
-		return nil, fmt.Errorf("failed to parse block response: %w", err)
+		return nil, fmt.Errorf("failed to parse Bitcoin block response: %w", err)
 	}
 	return block, nil
 }
 
 func (h *BitcoinEsploraHandler) ExtractBlockHash(blockData interface{}) string {
-	if block, ok := blockData.(map[string]interface{}); ok {
-		if hash, ok := block["id"].(string); ok {
-			return hash
-		}
+	if block, ok := blockData.(BitcoinEsploraBlock); ok {
+		return block.ID
 	}
 	return ""
 }
@@ -232,19 +199,60 @@ func (h *BitcoinEsploraHandler) SupportsGetBlockByNumber() bool {
 }
 
 func (h *BitcoinEsploraHandler) GetSupportedMethods() []string {
-	// These are REST endpoints, not JSON-RPC methods
+	// These are REST endpoints from Esplora API documentation, not JSON-RPC methods
 	return []string{
+		// Transaction endpoints
+		"/api/tx/{txid}",
+		"/api/tx/{txid}/status",
+		"/api/tx/{txid}/hex",
+		"/api/tx/{txid}/raw",
+		"/api/tx/{txid}/merkleblock-proof",
+		"/api/tx/{txid}/merkle-proof",
+		"/api/tx/{txid}/outspend/{vout}",
+		"/api/tx/{txid}/outspends",
+
+		// Address endpoints
+		"/api/address/{address}",
+		"/api/scripthash/{hash}",
+		"/api/address/{address}/txs",
+		"/api/scripthash/{hash}/txs",
+		"/api/address/{address}/txs/chain",
+		"/api/address/{address}/txs/chain/{last_seen_txid}",
+		"/api/scripthash/{hash}/txs/chain",
+		"/api/scripthash/{hash}/txs/chain/{last_seen_txid}",
+		"/api/address/{address}/txs/mempool",
+		"/api/scripthash/{hash}/txs/mempool",
+		"/api/address/{address}/utxo",
+		"/api/scripthash/{hash}/utxo",
+		"/api/address-prefix/{prefix}",
+
+		// Block endpoints
+		"/api/block/{hash}",
+		"/api/block/{hash}/header",
+		"/api/block/{hash}/status",
+		"/api/block/{hash}/txs",
+		"/api/block/{hash}/txs/{start_index}",
+		"/api/block/{hash}/txids",
+		"/api/block/{hash}/txid/{index}",
+		"/api/block/{hash}/raw",
+		"/api/block-height/{height}",
+		"/api/blocks",
+		"/api/blocks/{start_height}",
 		"/api/blocks/tip/height",
 		"/api/blocks/tip/hash",
-		"/api/block-height/{height}",
-		"/api/block/{hash}",
-		"/api/tx/{txid}",
-		"/api/address/{address}",
+
+		// Mempool endpoints
+		"/api/mempool",
+		"/api/mempool/txids",
+		"/api/mempool/recent",
+
+		// Fee estimate endpoints
+		"/api/fee-estimates",
 	}
 }
 
 func (h *BitcoinEsploraHandler) GetBlockByNumberMethod() string {
-	return "/api/block-height" // REST endpoint for getting block by height
+	return "/api/blocks/tip/height" // REST endpoint for getting block by height
 }
 
 // Health check methods
@@ -316,7 +324,7 @@ func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map
 		BlockNumber:    blockInfo.Number,
 		HealthStatus:   Healthy,
 		ResponseStatus: 200,
-		Extra:          make(map[string]interface{}),
+		Metadata:       make(map[string]interface{}),
 	}, nil
 }
 

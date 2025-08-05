@@ -105,9 +105,9 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 		r.Header.Add(k, v)
 	}
 
-	// Apply authentication
-	if provider.Auth != nil {
-		if err := provider.Auth.Sign(r); err != nil {
+	// Apply authentication (supports both SIWE and OAuth2)
+	if authClient := provider.AuthClient(); authClient != nil {
+		if err := authClient.Sign(r); err != nil {
 			d.logger.Error("error signing request", zap.String("err", err.Error()))
 		}
 	}

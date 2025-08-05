@@ -93,7 +93,7 @@ For APIs requiring OAuth2 authentication (like Blockstream Enterprise):
 
 ## Supported Endpoints
 
-The handler supports all standard Esplora API endpoints:
+The handler supports standard Esplora API endpoints with **GET requests only**:
 
 ### Block Endpoints
 - `/api/blocks/tip/height` - Latest block height (used for health checks)
@@ -102,8 +102,7 @@ The handler supports all standard Esplora API endpoints:
 - `/api/block-height/{height}` - Block hash at specific height
 
 ### Transaction Endpoints
-- `/api/tx/{txid}` - Transaction details
-- `/api/tx` - Broadcast transaction (POST)
+- `/api/tx/{txid}` - Transaction details (GET only)
 
 ### Address Endpoints
 - `/api/address/{address}` - Address information
@@ -113,6 +112,11 @@ The handler supports all standard Esplora API endpoints:
 ### Other Endpoints
 - `/api/mempool` - Mempool statistics
 - `/api/fee-estimates` - Fee estimates
+
+### HTTP Method Restrictions
+- **POST requests are blocked**: All POST requests return `405 Method Not Allowed`
+- **Transaction broadcasting is not supported**: The `/api/tx` POST endpoint is blocked
+- Only GET requests are allowed for all endpoints
 
 ## OAuth2 Authentication Flow
 
@@ -165,14 +169,13 @@ func init() {
 }
 ```
 
-### Path Normalization
+### Path Handling
 
-The handler normalizes paths for metrics collection:
+The handler passes paths directly to the provider without normalization:
 
-- `/api/tx/{txid}` → `/api/tx/{txid}`
-- `/api/address/{address}` → `/api/address/{address}`
-- `/api/block/{hash}` → `/api/block/{hash}`
-- `/api/block-height/{height}` → `/api/block-height/{height}`
+- Paths are forwarded as-is to maintain exact API compatibility
+- No parameter substitution or normalization is performed
+- This ensures complete transparency between client requests and provider API
 
 ### Error Handling
 
@@ -248,15 +251,31 @@ Monitor OAuth2 token rotation:
    - Check network connectivity to token endpoint
    - Verify client credentials are correct
    - Ensure token endpoint URL is correct
+   - Check logs for: `"failed to refresh OAuth2 token"`
 
-2. **Authentication Errors**
+2. **Authentication Errors (401 Unauthorized)**
    - Check logs for token refresh errors
    - Verify refresh interval is less than token lifetime
    - Ensure provider has `auth_type oauth2` set
+   - Verify OAuth2 configuration in `custom_config` block
+   - Check that all required OAuth2 fields are present:
+     - `oauth2_client_id`
+     - `oauth2_client_secret`
+     - `oauth2_token_url`
 
 3. **Invalid API Paths**
    - All paths must contain `/api/`
    - Use correct endpoint format per Esplora API specification
+
+4. **405 Method Not Allowed Errors**
+   - Only GET requests are supported
+   - POST requests (including transaction broadcasting) are blocked
+   - Use alternative services for transaction broadcasting
+
+5. **Nil Pointer Errors in Health Checks**
+   - Usually indicates network connectivity issues
+   - Check provider URL is accessible
+   - Verify network configuration
 
 ### Debug Tips
 
@@ -286,6 +305,7 @@ The handler is compatible with:
 ## Performance Considerations
 
 - OAuth2 token refresh runs in background (non-blocking)
-- Path normalization is optimized with pre-compiled regex patterns
+- Minimal request overhead with direct path forwarding
 - Supports connection pooling via the HTTP client
 - Health checks run at configurable intervals
+- No regex processing on request paths for optimal performance
