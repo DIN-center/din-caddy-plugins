@@ -41,7 +41,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 	}{
 		{
 			name:               "Beacon Chain Genesis endpoint integration",
-			networkType:        "beacon-chain",
+			networkType:        string(BeaconHandler),
 			networkName:        "ethereum-beacon",
 			requestPath:        "/ethereum-beacon/eth/v1/beacon/genesis",
 			requestMethod:      "GET",
@@ -61,7 +61,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain Block by ID integration",
-			networkType:        "beacon-chain",
+			networkType:        string(BeaconHandler),
 			networkName:        "beacon-mainnet",
 			requestPath:        "/beacon-mainnet/eth/v2/beacon/blocks/head",
 			requestMethod:      "GET",
@@ -80,7 +80,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain Validators with query params integration",
-			networkType:        "beacon-chain",
+			networkType:        string(BeaconHandler),
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/beacon/states/head/validators?id=1,2,3&status=active",
 			requestMethod:      "GET",
@@ -95,7 +95,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain with provider base path integration",
-			networkType:        "beacon-chain",
+			networkType:        string(BeaconHandler),
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/node/version",
 			requestMethod:      "GET",
@@ -109,7 +109,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain POST request integration",
-			networkType:        "beacon-chain",
+			networkType:        string(BeaconHandler),
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/beacon/pool/attestations",
 			requestMethod:      "POST",
@@ -135,7 +135,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 				Networks: map[string]*network{
 					tt.networkName: {
 						Name:    tt.networkName,
-						Type:    tt.networkType,
+						HandlerType: HandlerType(tt.networkType),
 						ChainId: "beacon:1",
 						Providers: map[string]*provider{
 							"test-provider": {
@@ -257,7 +257,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 	}{
 		{
 			name:           "Network not found error",
-			networkType:    "beacon-chain",
+			networkType:    string(BeaconHandler),
 			networkName:    "beacon",
 			requestPath:    "/unknown-network/eth/v1/beacon/genesis",
 			requestMethod:  "GET",
@@ -277,7 +277,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 		},
 		{
 			name:          "Request payload too large",
-			networkType:   "beacon-chain",
+			networkType:   string(BeaconHandler),
 			networkName:   "beacon",
 			requestPath:   "/beacon/eth/v1/beacon/pool/attestations",
 			requestMethod: "POST",
@@ -304,7 +304,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 			if tt.name != "Network not found error" {
 				network := &network{
 					Name:    tt.networkName,
-					Type:    tt.networkType,
+					HandlerType: HandlerType(tt.networkType),
 					ChainId: "beacon:1",
 					Providers: map[string]*provider{
 						"test-provider": {
@@ -389,7 +389,7 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 		Networks: map[string]*network{
 			"beacon": {
 				Name:    "beacon",
-				Type:    "beacon-chain",
+				HandlerType: BeaconHandler,
 				ChainId: "beacon:1",
 				Providers: map[string]*provider{
 					"provider1": {
@@ -468,7 +468,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "Beacon REST API GET request flow",
 			network: &network{
 				Name:                    "ethereum-beacon",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -477,22 +477,24 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			expectedError:      false,
 			expectedStatusCode: 200,
 			validateRequest: func(t *testing.T, req *http.Request) {
-				// Verify request type was properly detected
+				// Verify network object was properly set
 				repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-				reqProcessorVal, ok := repl.Get(RequestProcessorKey)
-				require.True(t, ok, "RequestProcessor should be set in context")
+				networkObjVal, ok := repl.Get("network_object")
+				require.True(t, ok, "Network object should be set in context")
 
-				reqProcessor := reqProcessorVal.(*RequestProcessor)
-				assert.Equal(t, networklib.RequestTypeREST, reqProcessor.Type)
-				assert.Equal(t, "beacon-chain", reqProcessor.NetworkType)
-				assert.Equal(t, "/ethereum-beacon/eth/v1/beacon/genesis", reqProcessor.Method)
+				networkObj := networkObjVal.(*network)
+				assert.Equal(t, networklib.RequestTypeREST, networkObj.handler.GetRequestType())
+				assert.Equal(t, string(BeaconHandler), string(networkObj.HandlerType))
+				// The method is now stored in RequestMethodKey
+				methodVal, _ := repl.Get(RequestMethodKey)
+				assert.Equal(t, "/ethereum-beacon/eth/v1/beacon/genesis", methodVal)
 			},
 		},
 		{
 			name: "Beacon REST API POST request flow",
 			network: &network{
 				Name:                    "beacon",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -515,7 +517,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "JSON-RPC request flow (not REST)",
 			network: &network{
 				Name:                    "ethereum",
-				Type:                    "evm",
+				HandlerType:             EVMHandler,
 				ChainId:                 "eip155:0x1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -525,21 +527,21 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			expectedError:      false,
 			expectedStatusCode: 200,
 			validateRequest: func(t *testing.T, req *http.Request) {
-				// Verify request type was properly detected
+				// Verify network object was properly set
 				repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-				reqProcessorVal, ok := repl.Get(RequestProcessorKey)
-				require.True(t, ok, "RequestProcessor should be set in context")
+				networkObjVal, ok := repl.Get("network_object")
+				require.True(t, ok, "Network object should be set in context")
 
-				reqProcessor := reqProcessorVal.(*RequestProcessor)
-				assert.Equal(t, networklib.RequestTypeRPC, reqProcessor.Type)
-				assert.Equal(t, "evm", reqProcessor.NetworkType)
+				networkObj := networkObjVal.(*network)
+				assert.Equal(t, networklib.RequestTypeRPC, networkObj.handler.GetRequestType())
+				assert.Equal(t, string(EVMHandler), string(networkObj.HandlerType))
 			},
 		},
 		{
 			name: "REST API with query parameters",
 			network: &network{
 				Name:                    "beacon",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -557,7 +559,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "REST API request to unknown network",
 			network: &network{
 				Name:                    "unknown",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -570,7 +572,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "Large REST API payload",
 			network: &network{
 				Name:                    "beacon",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: 0, // 0 means 1KB limit
 			},
@@ -695,9 +697,9 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Determine network type based on path pattern
-			networkType := "evm"
+			networkType := string(EVMHandler)
 			if strings.Contains(tt.requestPath, "/eth/v") {
-				networkType = "beacon-chain"
+				networkType = string(BeaconHandler)
 			}
 
 			// Create middleware
@@ -708,7 +710,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 				Networks: map[string]*network{
 					tt.networkName: {
 						Name:                    tt.networkName,
-						Type:                    networkType,
+						HandlerType:             HandlerType(networkType),
 						ChainId:                 getValidChainIDForType(networkType),
 						MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 						Providers: map[string]*provider{
@@ -734,7 +736,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 
 			// Create request
 			var req *http.Request
-			if networkType == "evm" {
+			if networkType == string(EVMHandler) {
 				// JSON-RPC request
 				req = httptest.NewRequest("POST", "http://test.com"+tt.requestPath,
 					strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`))
@@ -790,7 +792,7 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 		Networks: map[string]*network{
 			"beacon": {
 				Name:                    "beacon",
-				Type:                    "beacon-chain",
+				HandlerType:             BeaconHandler,
 				ChainId:                 "beacon:1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 				Providers: map[string]*provider{
@@ -826,11 +828,11 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 		// Verify request metadata is set
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-		// Check request type
-		reqProcessorVal, ok := repl.Get(RequestProcessorKey)
+		// Check network object
+		networkObjVal, ok := repl.Get("network_object")
 		assert.True(t, ok)
-		reqProcessor := reqProcessorVal.(*RequestProcessor)
-		assert.Equal(t, networklib.RequestTypeREST, reqProcessor.Type)
+		networkObj := networkObjVal.(*network)
+		assert.Equal(t, networklib.RequestTypeREST, networkObj.handler.GetRequestType())
 
 		// Check method
 		method, ok := repl.Get(RequestMethodKey)
@@ -847,9 +849,9 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 // Helper function for valid chain IDs
 func getValidChainIDForType(networkType string) string {
 	switch networkType {
-	case "beacon-chain":
+	case string(BeaconHandler):
 		return "beacon:1"
-	case "evm":
+	case string(EVMHandler):
 		return "eip155:0x1"
 	default:
 		return "unknown:1"

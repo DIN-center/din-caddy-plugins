@@ -34,7 +34,7 @@ func NewEVMHandler(config *NetworkConfig) *EVMHandler {
 
 // Metadata methods for registry
 func (h *EVMHandler) GetType() string {
-	return "evm"
+	return "evm" // Must match modules.EVMHandler constant value
 }
 
 func (h *EVMHandler) GetName() string {
@@ -52,6 +52,11 @@ func (h *EVMHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *EVMHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
+
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
+
 	return nil
 }
 
@@ -68,9 +73,27 @@ func (h *EVMHandler) ProcessRequest(req *http.Request) error {
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
-	
+
 	// Path translation is handled in DinSelect module
 	return nil
+}
+
+// ExtractMethod extracts the JSON-RPC method from the request body
+func (h *EVMHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	if len(body) == 0 {
+		return "", fmt.Errorf("empty request body")
+	}
+
+	var rpcRequest din_http.JSONRPCRequest
+	if err := json.Unmarshal(body, &rpcRequest); err != nil {
+		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
+	}
+
+	if rpcRequest.Method == "" {
+		return "", fmt.Errorf("missing method in JSON-RPC request")
+	}
+
+	return rpcRequest.Method, nil
 }
 
 func (h *EVMHandler) ValidateRequest(req *http.Request) error {
@@ -116,6 +139,12 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 		// We don't need to validate the actual method name here as that's provider-specific
 	}
 
+	return nil
+}
+
+// ConfigureRequestPath configures the request path for JSON-RPC requests
+func (h *EVMHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureJSONRPCRequestPath(req, providerPath)
 	return nil
 }
 
@@ -180,13 +209,12 @@ func (h *EVMHandler) ExtractChainReference(result interface{}) (string, error) {
 
 // Block Operations methods
 func (h *EVMHandler) FormatBlockHeight(blockNum int64) string {
-	return fmt.Sprintf("0x%x", blockNum) // Hex format for EVM
+	return fmt.Sprintf("%#x", blockNum) // Hex format for EVM
 }
 
 func (h *EVMHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	blockHex := h.FormatBlockHeight(blockNum)
-	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s",%t]}`,
-		method, blockHex, includeTransactions)
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%#x",%t]}`,
+		method, blockNum, includeTransactions)
 	return []byte(payload), nil
 }
 

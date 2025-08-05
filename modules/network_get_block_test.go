@@ -182,7 +182,7 @@ func TestGetBlockByNumber(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", "evm", utils.Environment("test"), tt.caddyPort)
+			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), tt.caddyPort)
 			assert.NoError(t, err)
 
 			// Set dependencies
@@ -233,7 +233,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 	}{
 		{
 			name:        "evm_network_supports_get_block",
-			networkType: "evm",
+			networkType: string(EVMHandler),
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().SupportsGetBlockByNumber().Return(true)
@@ -245,7 +245,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 		},
 		{
 			name:        "beacon_network_does_not_support_json_rpc_get_block",
-			networkType: "beacon-chain",
+			networkType: string(BeaconHandler),
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				// Beacon chain should return false for SupportsGetBlockByNumber
@@ -256,7 +256,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 		},
 		{
 			name:        "solana_network_supports_get_block",
-			networkType: "solana",
+			networkType: string(SolanaHandler),
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().SupportsGetBlockByNumber().Return(true)
@@ -275,7 +275,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network with specific type
-			n, err := NewNetwork("test-network", tt.networkType, utils.Environment("test"), "8080")
+			n, err := NewNetwork("test-network", HandlerType(tt.networkType), utils.Environment("test"), "8080")
 			assert.NoError(t, err)
 
 			// Set dependencies

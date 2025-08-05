@@ -4,6 +4,9 @@ package network
 import (
 	"fmt"
 	"sync"
+	
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"go.uber.org/zap"
 )
 
 // HandlerConstructor is a function that creates a new handler instance
@@ -43,6 +46,17 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	r.mu.RLock()
 	// Check if handler already exists
 	if handler, exists := r.handlers[config.Name]; exists {
+		// Validate that the cached handler matches the requested type
+		if handler.GetType() != networkType {
+			r.mu.RUnlock()
+			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'", 
+				config.Name, handler.GetType(), networkType)
+		}
+		if config.Logger != nil {
+			config.Logger.Debug("Returning cached handler from registry",
+				zap.String("network", config.Name),
+				zap.String("type", networkType))
+		}
 		r.mu.RUnlock()
 		return handler, nil
 	}
@@ -54,12 +68,30 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 
 	// Double-check after acquiring write lock
 	if handler, exists := r.handlers[config.Name]; exists {
+		// Validate that the cached handler matches the requested type
+		if handler.GetType() != networkType {
+			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'", 
+				config.Name, handler.GetType(), networkType)
+		}
+		if config.Logger != nil {
+			config.Logger.Debug("Returning cached handler from registry (after lock)",
+				zap.String("network", config.Name),
+				zap.String("type", networkType))
+		}
 		return handler, nil
 	}
 
 	constructor, exists := r.constructors[networkType]
 	if !exists {
 		return nil, fmt.Errorf("no handler registered for network type '%s'", networkType)
+	}
+
+	// Ensure logger is available
+	if config.Logger == nil {
+		// This should not happen in production, but we'll create a default logger
+		// to prevent nil pointer dereferences
+		zapLogger, _ := zap.NewProduction()
+		config.Logger = logger.NewLoggerClient(zapLogger, "production")
 	}
 
 	handler, err := constructor(config)
@@ -79,6 +111,14 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	}
 
 	r.handlers[config.Name] = handler
+	
+	if config.Logger != nil {
+		config.Logger.Debug("Created and cached new handler in registry",
+			zap.String("network", config.Name),
+			zap.String("type", networkType),
+			zap.String("handler_type", handler.GetType()))
+	}
+	
 	return handler, nil
 }
 
@@ -99,11 +139,9 @@ func (r *HandlerRegistry) RemoveHandler(networkName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.handlers[networkName]; exists {
-		// Just remove the handler from the map
-		// No shutdown needed since we removed the Shutdown method
-		delete(r.handlers, networkName)
-	}
+	// Just remove the handler from the map
+	// No shutdown needed since we removed the Shutdown method
+	delete(r.handlers, networkName)
 	return nil
 }
 

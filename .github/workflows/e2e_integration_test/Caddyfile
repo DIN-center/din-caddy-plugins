@@ -17,7 +17,6 @@
 			networks {
 				# EVM Network (existing functionality)
 				eth {
-					type evm  # Test explicit EVM handler
 					providers {
 						https://eth.llamarpc.com:443 {
 							priority 0

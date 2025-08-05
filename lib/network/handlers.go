@@ -1,6 +1,8 @@
 // lib/network/handlers.go
 package network
 
+//go:generate mockgen -source=handlers.go -destination=interface_mock.go -package=network NetworkHandler
+
 import (
 	"fmt"
 	"net/http"
@@ -24,6 +26,10 @@ type NetworkHandler interface {
 
 	// === Request Processing ===
 	ProcessRequest(req *http.Request) error
+	// ExtractMethod extracts the method name from the request for logging/metrics
+	ExtractMethod(req *http.Request, body []byte) (string, error)
+	// ConfigureRequestPath configures the request URL path based on the provider and network type
+	ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error
 
 	// === Response Handling ===
 	ParseResponse(body []byte, statusCode int) error
@@ -86,14 +92,10 @@ type NetworkHandler interface {
 
 // BlockInfo represents block information across different network types
 type BlockInfo struct {
-	Number    int64     `json:"number"`
-	Hash      string    `json:"hash"`
-	Timestamp time.Time `json:"timestamp"`
-	// For beacon chain specific fields
-	Slot                int64 `json:"slot,omitempty"`
-	Epoch               int64 `json:"epoch,omitempty"`
-	ExecutionOptimistic bool  `json:"execution_optimistic,omitempty"`
-	Finalized           bool  `json:"finalized,omitempty"`
+	Number    int64                  `json:"number"`
+	Hash      string                 `json:"hash"`
+	Timestamp time.Time              `json:"timestamp"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // LatestBlockResult represents the result of getting the latest block number
@@ -151,35 +153,43 @@ type NetworkConfig struct {
 	MaxPayloadSize int64
 	RequestTimeout time.Duration
 	Logger         *logger.LoggerClient
-	Custom         map[string]interface{}
+
+	// Custom configuration for the network handler
+	Custom map[string]interface{}
 }
 
 // RegisterBuiltinHandlers registers all built-in network handlers
+// Note: The handler type strings must match the HandlerType constants in modules/consts.go
 func RegisterBuiltinHandlers() {
+	// Register EVM handler - matches modules.EVMHandler constant
 	if err := DefaultRegistry.RegisterHandler("evm", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewEVMHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register EVM handler: %v", err))
 	}
 
+	// Register Starknet handler - matches modules.StarknetHandler constant
 	if err := DefaultRegistry.RegisterHandler("starknet", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewStarknetHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Starknet handler: %v", err))
 	}
 
+	// Register Solana handler - matches modules.SolanaHandler constant
 	if err := DefaultRegistry.RegisterHandler("solana", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewSolanaHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Solana handler: %v", err))
 	}
 
+	// Register Beacon Chain handler - matches modules.BeaconHandler constant
 	if err := DefaultRegistry.RegisterHandler("beacon-chain", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewBeaconChainHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Beacon Chain handler: %v", err))
 	}
 
+	// Register Bitcoin Esplora handler - matches modules.BitcoinEsploraHandler constant
 	if err := DefaultRegistry.RegisterHandler("bitcoin-esplora", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewBitcoinEsploraHandler(config), nil
 	}); err != nil {

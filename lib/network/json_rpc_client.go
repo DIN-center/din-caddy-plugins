@@ -1,202 +1,18 @@
-// lib/network/helpers.go
+// lib/network/json_rpc_client.go
 package network
 
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
-// JSONRPCResponse represents a standard JSON-RPC 2.0 response
-type JSONRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *JSONRPCError   `json:"error,omitempty"`
-}
-
-// JSONRPCError represents a JSON-RPC 2.0 error object
-type JSONRPCError struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-// ParseJSONRPCResponse parses a JSON-RPC response and checks for errors
-// This is shared logic for all JSON-RPC based handlers (EVM, Starknet, Solana)
-func ParseJSONRPCResponse(body []byte, statusCode int) error {
-	// First check HTTP status
-	if statusCode < 200 || statusCode >= 300 {
-		return fmt.Errorf("HTTP error: %d", statusCode)
-	}
-
-	// Parse JSON-RPC response
-	var response JSONRPCResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse JSON-RPC response: %w", err)
-	}
-
-	// Check for JSON-RPC error
-	if response.Error != nil {
-		return fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
-	}
-
-	return nil
-}
-
-// IsRetryableJSONRPCError checks if a JSON-RPC error is retryable
-// This is shared logic for all JSON-RPC based handlers
-func IsRetryableJSONRPCError(err error, statusCode int) bool {
-	// HTTP server errors are always retryable
-	if statusCode >= 500 {
-		return true
-	}
-
-	// Rate limiting is retryable
-	if statusCode == 429 {
-		return true
-	}
-
-	if err == nil {
-		return false
-	}
-
-	errMsg := strings.ToLower(err.Error())
-
-	// Check for retryable JSON-RPC error codes
-	// -32000 to -32099: Server errors (implementation defined)
-	// These are typically retryable
-	if strings.Contains(errMsg, "json-rpc error -320") {
-		return true
-	}
-
-	// Common retryable error patterns
-	retryablePatterns := []string{
-		"timeout",
-		"connection",
-		"network",
-		"rate limit",
-		"server error",
-		"internal error",
-		"unavailable",
-		"socket hang up",
-		"connection reset",
-		"temporary failure",
-		"too many requests",
-		"service unavailable",
-		"gateway timeout",
-	}
-
-	for _, pattern := range retryablePatterns {
-		if strings.Contains(errMsg, pattern) {
-			return true
-		}
-	}
-
-	// Non-retryable JSON-RPC errors
-	nonRetryablePatterns := []string{
-		"method not found",   // -32601
-		"invalid params",     // -32602
-		"invalid request",    // -32600
-		"parse error",        // -32700
-		"unauthorized",       // Often permanent
-		"forbidden",          // Often permanent
-		"insufficient funds", // Transaction specific
-		"nonce too low",      // Transaction specific
-		"already known",      // Transaction already submitted
-	}
-
-	for _, pattern := range nonRetryablePatterns {
-		if strings.Contains(errMsg, pattern) {
-			return false
-		}
-	}
-
-	// Default to not retrying unknown errors
-	return false
-}
-
-// ExtractJSONRPCError extracts the JSON-RPC error from a response body
-// Returns nil if no error is found
-func ExtractJSONRPCError(body []byte) *JSONRPCError {
-	var response JSONRPCResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil
-	}
-	return response.Error
-}
-
-// IsJSONRPCErrorCode checks if an error matches a specific JSON-RPC error code
-func IsJSONRPCErrorCode(err error, code int) bool {
-	if err == nil {
-		return false
-	}
-
-	// Try to extract JSON-RPC error from the error message
-	errMsg := err.Error()
-	expectedMsg := fmt.Sprintf("json-rpc error %d:", code)
-	return strings.Contains(strings.ToLower(errMsg), strings.ToLower(expectedMsg))
-}
-
-// ParseJSONRPCBlockNumberResponse parses a JSON-RPC response containing a block number
-// This is shared logic for JSON-RPC based handlers (EVM, Starknet, Solana)
-func ParseJSONRPCBlockNumberResponse(body []byte, statusCode int) (int64, error) {
-	// Check HTTP status first
-	if statusCode >= 400 {
-		if statusCode == 429 {
-			return 0, fmt.Errorf("rate limit error (status code: %d)", statusCode)
-		}
-		return 0, fmt.Errorf("error status code: %d", statusCode)
-	}
-
-	// Parse JSON-RPC response
-	var response JSONRPCResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return 0, fmt.Errorf("failed to parse JSON-RPC response: %w", err)
-	}
-
-	// Check for JSON-RPC error
-	if response.Error != nil {
-		return 0, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
-	}
-
-	// Parse the result - this will be network-specific
-	// Each handler should implement its own logic for extracting the block number
-	return 0, fmt.Errorf("block number parsing must be implemented by specific handler")
-}
-
-// ParseHexBlockNumber parses a hex-encoded block number (common for EVM chains)
-func ParseHexBlockNumber(result json.RawMessage) (int64, error) {
-	var hexStr string
-	if err := json.Unmarshal(result, &hexStr); err != nil {
-		return 0, fmt.Errorf("failed to unmarshal block number: %w", err)
-	}
-
-	if hexStr == "" || len(hexStr) < 2 || hexStr[:2] != "0x" {
-		return 0, fmt.Errorf("invalid hex block number: %s", hexStr)
-	}
-
-	blockNumber, err := strconv.ParseInt(hexStr[2:], 16, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse hex block number: %w", err)
-	}
-
-	return blockNumber, nil
-}
-
-// ParseNumericBlockNumber parses a numeric block number (common for Solana and Starknet)
-func ParseNumericBlockNumber(result json.RawMessage) (int64, error) {
-	var num float64
-	if err := json.Unmarshal(result, &num); err != nil {
-		return 0, fmt.Errorf("failed to unmarshal numeric block number: %w", err)
-	}
-
-	return int64(num), nil
-}
+// ============================================================================
+// JSON-RPC Client Operations
+// ============================================================================
 
 // GetChainIDViaJSONRPC performs a JSON-RPC chain ID request
 // This is shared logic for JSON-RPC based handlers (EVM, Starknet, Solana)
@@ -310,7 +126,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		HealthStatus:   lastHealthStatus,
 		ResponseStatus: lastResponseStatus,
 		Extra:          make(map[string]interface{}),
-	}, fmt.Errorf("Failed after %d attempts: %w", requestAttempts, lastErr)
+	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 
 // PerformArchiveCheckViaJSONRPC performs a JSON-RPC archive mode check request
@@ -360,7 +176,7 @@ func PerformArchiveCheckViaJSONRPC(httpUrl string, headers map[string]string, ht
 	}
 
 	// All attempts failed
-	return fmt.Errorf("Failed after %d attempts: %w", requestAttempts, lastErr)
+	return fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 
 // PerformGetBlockByNumberViaJSONRPC performs a JSON-RPC get block by number request
@@ -420,45 +236,5 @@ func PerformGetBlockByNumberViaJSONRPC(httpUrl string, headers map[string]string
 	}
 
 	// All attempts failed
-	return nil, fmt.Errorf("Failed after %d attempts: %w", requestAttempts, lastErr)
-}
-
-// CreateJSONRPCRequestContext creates a JSON-RPC specific request context
-// This contains the JSON-RPC parsing logic moved from modules/helpers.go
-func CreateJSONRPCRequestContext(payload []byte, method string) (map[string]interface{}, error) {
-	context := make(map[string]interface{})
-
-	// Extract params from payload for accurate JSONRPCRequest
-	var params json.RawMessage
-	var tempReq struct {
-		Params json.RawMessage `json:"params"`
-	}
-	if err := json.Unmarshal(payload, &tempReq); err == nil && len(tempReq.Params) > 0 {
-		params = tempReq.Params
-	} else {
-		// Default to empty array for requests without params
-		params = json.RawMessage(`[]`)
-	}
-
-	// Store RPC-specific context
-	context["jsonrpc"] = "2.0"
-	context["method"] = method
-	context["id"] = json.RawMessage(`1`)
-	context["params"] = params
-
-	return context, nil
-}
-
-// ParseJSONRPCPayload extracts method and params from a JSON-RPC payload
-func ParseJSONRPCPayload(payload []byte) (method string, params json.RawMessage, err error) {
-	var tempReq struct {
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
-
-	if err := json.Unmarshal(payload, &tempReq); err != nil {
-		return "", nil, fmt.Errorf("failed to parse JSON-RPC payload: %w", err)
-	}
-
-	return tempReq.Method, tempReq.Params, nil
+	return nil, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }

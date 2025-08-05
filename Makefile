@@ -1,6 +1,9 @@
 # DIN Caddy Plugins Makefile
 # Provides common development commands for building, testing, and running the DIN middleware
 
+# Ensure bash is used for all shell commands to guarantee cross-environment reproducibility
+SHELL := /bin/bash
+
 .PHONY: help build run test test-verbose test-coverage test-race clean install dev-deps lint format check-deps benchmark profile docker-build docker-run
 
 # Default target

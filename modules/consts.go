@@ -2,12 +2,26 @@ package modules
 
 type HealthStatus int
 
+// HandlerType represents the type of network handler
+type HandlerType string
+
+const (
+	// Handler types
+	EVMHandler            HandlerType = "evm"
+	BeaconHandler         HandlerType = "beacon-chain"
+	StarknetHandler       HandlerType = "starknet"
+	SolanaHandler         HandlerType = "solana"
+	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
+)
+
 const (
 	// Health status enums
 	Healthy HealthStatus = iota
 	Warning
 	Unhealthy
+)
 
+const (
 	LineaMainnet = "linea-mainnet"
 	LineaSepolia = "linea-sepolia"
 
@@ -16,7 +30,6 @@ const (
 	RequestProviderKey              = "request_provider"
 	RequestBodyKey                  = "request_body"
 	RequestMethodKey                = "request_method"
-	RequestProcessorKey             = "request_processor"
 	HealthStatusKey                 = "health_status"
 	BlockNumberKey                  = "block_number"
 	DefaultProviderBlockHistorySize = 10

@@ -71,7 +71,7 @@ func NewBitcoinPathNormalizer() *BitcoinPathNormalizer {
 			replacement: "/api/scripthash/{hash}/txs",
 		},
 	}
-	
+
 	return &BitcoinPathNormalizer{patterns: patterns}
 }
 
@@ -118,6 +118,17 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 	return nil
 }
 
+// ExtractMethod extracts the method name from the request for logging/metrics
+func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	return req.URL.Path, nil
+}
+
+// ConfigureRequestPath configures the request path for REST API requests
+func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureRESTRequestPath(req, providerPath, networkName)
+	return nil
+}
+
 func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
 	// Check for valid HTTP methods - Bitcoin Esplora REST API supports GET and POST
 	if req.Method != "GET" && req.Method != "POST" {
@@ -140,7 +151,6 @@ func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
 
 	return nil
 }
-
 
 func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
 	return h.pathNormalizer.NormalizePath(path)
@@ -179,7 +189,7 @@ func (h *BitcoinEsploraHandler) IsRetryableError(err error, statusCode int) bool
 			"temporary",
 			"rate limit",
 		}
-		
+
 		for _, pattern := range retryablePatterns {
 			if strings.Contains(message, pattern) {
 				return true
@@ -272,7 +282,7 @@ func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map
 	var resp []byte
 	var lastErr error
 	var statusCode int
-	
+
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
 		if err != nil {
@@ -291,7 +301,7 @@ func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map
 		}
 		lastErr = fmt.Errorf("HTTP error %d", statusCode)
 	}
-	
+
 	if resp == nil {
 		return nil, lastErr
 	}
@@ -384,7 +394,7 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 	var resp []byte
 	var lastErr error
 	var statusCode int
-	
+
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
 		if err != nil {
@@ -403,7 +413,7 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 		}
 		lastErr = fmt.Errorf("HTTP error %d", statusCode)
 	}
-	
+
 	if resp == nil {
 		return nil, fmt.Errorf("failed to get block hash: %w", lastErr)
 	}
@@ -419,7 +429,7 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 	// Execute request to get block data
 	var blockResp []byte
 	lastErr = nil
-	
+
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(blockEndpoint, headers, authClient)
 		if err != nil {
@@ -438,7 +448,7 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 		}
 		lastErr = fmt.Errorf("HTTP error %d", statusCode)
 	}
-	
+
 	if blockResp == nil {
 		return nil, fmt.Errorf("failed to get block data: %w", lastErr)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,11 @@ func (h *BeaconChainHandler) GetRequestType() RequestType {
 func (h *BeaconChainHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
 
+	// Update logger from config if available
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
+
 	return nil
 }
 
@@ -75,6 +81,19 @@ func (h *BeaconChainHandler) ProcessRequest(req *http.Request) error {
 	// This maintains consistency with the generic REST API processing approach
 	// Unlike EVM which uses JSON-RPC and needs provider-specific path handling
 
+	return nil
+}
+
+// ExtractMethod extracts the method name from the request for logging/metrics
+// For REST APIs like Beacon Chain, the method is the URL path
+func (h *BeaconChainHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
+	// For REST APIs, the "method" is the path
+	return req.URL.Path, nil
+}
+
+// ConfigureRequestPath configures the request path for REST API requests
+func (h *BeaconChainHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+	ConfigureRESTRequestPath(req, providerPath, networkName)
 	return nil
 }
 
@@ -258,7 +277,7 @@ func (h *BeaconChainHandler) ParseBlockNumberResponse(body []byte, statusCode in
 	}
 
 	// Return slot number as the "block number" for consistency
-	return blockInfo.Slot, nil
+	return blockInfo.Number, nil
 }
 
 // Archive Mode methods
@@ -375,8 +394,10 @@ func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, 
 			Number:    -1, // Special value to indicate we need a separate call
 			Hash:      "",
 			Timestamp: time.Now(),
-			Slot:      -1,
-			Epoch:     -1,
+			Metadata: map[string]interface{}{
+				"slot":  int64(-1),
+				"epoch": int64(-1),
+			},
 		}, nil
 	}
 
@@ -396,13 +417,15 @@ func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, 
 	epoch := slot / 32
 
 	return &BlockInfo{
-		Number:              slot, // Use slot as block number for consistency
-		Hash:                blockResponse.Data.Message.ParentRoot,
-		Timestamp:           time.Now(), // Beacon chain responses don't include timestamp in header
-		Slot:                slot,
-		Epoch:               epoch,
-		ExecutionOptimistic: blockResponse.ExecutionOptimistic,
-		Finalized:           blockResponse.Finalized,
+		Number:    slot, // Use slot as block number for consistency
+		Hash:      blockResponse.Data.Message.ParentRoot,
+		Timestamp: time.Now(), // Beacon chain responses don't include timestamp in header
+		Metadata: map[string]interface{}{
+			"slot":                 slot,
+			"epoch":                epoch,
+			"execution_optimistic": blockResponse.ExecutionOptimistic,
+			"finalized":            blockResponse.Finalized,
+		},
 	}, nil
 }
 
@@ -436,7 +459,11 @@ func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]strin
 	var lastErr error
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Make GET request to config/spec endpoint
-		configURL := fmt.Sprintf("%s%s", httpUrl, h.GetChainIDMethod())
+		configURL, err := url.JoinPath(httpUrl, h.GetChainIDMethod())
+		if err != nil {
+			lastErr = fmt.Errorf("failed to construct config URL: %w", err)
+			continue
+		}
 		resBytes, statusCode, err := httpClient.Get(configURL, headers, authClient)
 		if err != nil {
 			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
@@ -474,7 +501,12 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Make GET request to beacon headers/head endpoint
-		blockInfoURL := fmt.Sprintf("%s%s", httpUrl, blockInfoMethod)
+		blockInfoURL, err := url.JoinPath(httpUrl, blockInfoMethod)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to construct block info URL: %w", err)
+			lastHealthStatus = Unhealthy
+			continue
+		}
 
 		h.logger.Debug("Making GET request for latest block number",
 			zap.String("url", blockInfoURL),
@@ -544,20 +576,20 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 
 		// Success! Use slot as block number for consistency with other networks
 		h.logger.Debug("Successfully retrieved latest block number",
-			zap.Int64("slot", blockInfo.Slot),
+			zap.Int64("slot", blockInfo.Number), // Number field contains slot for beacon chain
 			zap.Int64("block_number", blockInfo.Number),
-			zap.Int64("epoch", blockInfo.Epoch),
+			zap.Int64("epoch", getInt64FromMetadata(blockInfo.Metadata, "epoch")),
 			zap.String("hash", blockInfo.Hash),
-			zap.Bool("execution_optimistic", blockInfo.ExecutionOptimistic),
-			zap.Bool("finalized", blockInfo.Finalized))
+			zap.Bool("execution_optimistic", getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic")),
+			zap.Bool("finalized", getBoolFromMetadata(blockInfo.Metadata, "finalized")))
 
 		return &LatestBlockResult{
 			BlockNumber:    blockInfo.Number, // This will be the slot number
 			HealthStatus:   Healthy,
 			ResponseStatus: lastResponseStatus,
 			Extra: map[string]interface{}{
-				"slot":      blockInfo.Slot,
-				"epoch":     blockInfo.Epoch,
+				"slot":      blockInfo.Number, // Number field contains slot for beacon chain
+				"epoch":     getInt64FromMetadata(blockInfo.Metadata, "epoch"),
 				"hash":      blockInfo.Hash,
 				"timestamp": blockInfo.Timestamp,
 				"endpoint":  blockInfoMethod,
@@ -590,7 +622,10 @@ func (h *BeaconChainHandler) PerformArchiveCheck(httpUrl string, headers map[str
 func (h *BeaconChainHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
 	// Use the blocks endpoint with the specific slot number
 	blockEndpoint := fmt.Sprintf("/eth/v2/beacon/blocks/%d", blockNumber)
-	fullURL := fmt.Sprintf("%s%s", httpUrl, blockEndpoint)
+	fullURL, err := url.JoinPath(httpUrl, blockEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct block URL: %w", err)
+	}
 
 	resBytes, statusCode, err := httpClient.Get(fullURL, headers, authClient)
 	if err != nil {
@@ -664,4 +699,34 @@ func (h *BeaconChainHandler) parseSlot(slotStr string) (int64, error) {
 		return 0, fmt.Errorf("failed to parse slot: %w", err)
 	}
 	return slot, nil
+}
+
+// Helper function to safely get int64 value from metadata
+func getInt64FromMetadata(metadata map[string]interface{}, key string) int64 {
+	if metadata == nil {
+		return 0
+	}
+	if val, ok := metadata[key]; ok {
+		// Handle both int64 and int types
+		if intVal, ok := val.(int64); ok {
+			return intVal
+		}
+		if intVal, ok := val.(int); ok {
+			return int64(intVal)
+		}
+	}
+	return 0
+}
+
+// Helper function to safely get bool value from metadata
+func getBoolFromMetadata(metadata map[string]interface{}, key string) bool {
+	if metadata == nil {
+		return false
+	}
+	if val, ok := metadata[key]; ok {
+		if boolVal, ok := val.(bool); ok {
+			return boolVal
+		}
+	}
+	return false
 }

@@ -204,7 +204,7 @@ din {
     networks {
         # EVM Network
         ethereum {
-            type evm
+            handler evm
             chain_id eip155:0x1
             providers {
                 https://mainnet.infura.io/v3/YOUR-KEY {
@@ -215,7 +215,7 @@ din {
         
         # Solana Network
         solana-mainnet {
-            type solana
+            handler solana
             chain_id solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
             providers {
                 https://api.mainnet-beta.solana.com {
@@ -226,7 +226,7 @@ din {
         
         # Beacon Chain (REST API)
         ethereum-beacon {
-            type beacon-chain
+            handler beacon-chain
             chain_id beacon:mainnet
             healthcheck_endpoint "/eth/v1/beacon/headers/head"
             providers {
@@ -359,7 +359,7 @@ solana-mainnet {
 **After**: Handler-based automatic configuration
 ```caddyfile
 solana-mainnet {
-    type solana  # Handler provides all methods
+    handler solana  # Handler provides all methods
 }
 ```
 
