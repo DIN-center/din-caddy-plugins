@@ -831,6 +831,83 @@ func TestBeaconChainHandler_ParseChainIDResponse_RealData(t *testing.T) {
 			t.Error("Expected error when DEPOSIT_CHAIN_ID is missing")
 		}
 	})
+
+	t.Run("Array format response (Chainstack format)", func(t *testing.T) {
+		// Some providers like Chainstack return data as an array
+		responseBody := `{
+			"data": [
+				{
+					"DEPOSIT_CHAIN_ID": "1",
+					"PRESET_BASE": "mainnet"
+				}
+			]
+		}`
+
+		chainID, err := handler.ParseChainIDResponse([]byte(responseBody), 200)
+		if err != nil {
+			t.Fatalf("Failed to parse array format response: %v", err)
+		}
+
+		if chainID != "beacon:1" {
+			t.Errorf("Expected chain_id 'beacon:1', got '%s'", chainID)
+		}
+
+		t.Logf("Successfully parsed array format config data: chain_id=%s", chainID)
+	})
+
+	t.Run("Array format with numeric DEPOSIT_CHAIN_ID", func(t *testing.T) {
+		// Test numeric format in array
+		responseBody := `{
+			"data": [
+				{
+					"DEPOSIT_CHAIN_ID": 1,
+					"PRESET_BASE": "mainnet"
+				}
+			]
+		}`
+
+		chainID, err := handler.ParseChainIDResponse([]byte(responseBody), 200)
+		if err != nil {
+			t.Fatalf("Failed to parse array format with numeric ID: %v", err)
+		}
+
+		if chainID != "beacon:1" {
+			t.Errorf("Expected chain_id 'beacon:1', got '%s'", chainID)
+		}
+	})
+
+	t.Run("Chainstack format with mixed types including BLOB_SCHEDULE", func(t *testing.T) {
+		// Actual Chainstack response format with BLOB_SCHEDULE array
+		responseBody := `{
+			"data": {
+				"DEPOSIT_CHAIN_ID": "1",
+				"PRESET_BASE": "mainnet",
+				"DEPOSIT_CONTRACT_ADDRESS": "0x00000000219ab540356cbb839cbe05303d7705fa",
+				"BLOB_SCHEDULE": [
+					{
+						"EPOCH": "269568",
+						"MAX_BLOBS_PER_BLOCK": "6"
+					},
+					{
+						"EPOCH": "364032",
+						"MAX_BLOBS_PER_BLOCK": "9"
+					}
+				],
+				"SECONDS_PER_SLOT": "12"
+			}
+		}`
+
+		chainID, err := handler.ParseChainIDResponse([]byte(responseBody), 200)
+		if err != nil {
+			t.Fatalf("Failed to parse Chainstack format with mixed types: %v", err)
+		}
+
+		if chainID != "beacon:1" {
+			t.Errorf("Expected chain_id 'beacon:1', got '%s'", chainID)
+		}
+
+		t.Logf("Successfully parsed Chainstack format with BLOB_SCHEDULE: chain_id=%s", chainID)
+	})
 }
 
 func TestBeaconChainHandler_EndpointConfiguration(t *testing.T) {
