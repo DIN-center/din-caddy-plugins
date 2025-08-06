@@ -39,37 +39,42 @@ func TestStarknetHandler_ValidateChainID(t *testing.T) {
 	}{
 		{
 			name:      "valid mainnet chain ID",
-			chainID:   "starknet:0x534e5f4d41494e",
+			chainID:   "0x534e5f4d41494e",
 			shouldErr: false,
 		},
 		{
 			name:      "valid sepolia chain ID",
-			chainID:   "starknet:0x534e5f5345504f4c4941",
+			chainID:   "0x534e5f5345504f4c4941",
 			shouldErr: false,
 		},
 		{
-			name:      "invalid prefix",
+			name:      "invalid - contains colon (old CAIP-2 format)",
+			chainID:   "starknet:0x534e5f4d41494e",
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - contains colon with different prefix",
 			chainID:   "ethereum:0x1",
 			shouldErr: true,
 		},
 		{
 			name:      "missing 0x prefix",
-			chainID:   "starknet:534e5f4d41494e",
+			chainID:   "534e5f4d41494e",
 			shouldErr: true,
 		},
 		{
 			name:      "empty hex part",
-			chainID:   "starknet:0x",
+			chainID:   "0x",
 			shouldErr: true,
 		},
 		{
 			name:      "invalid hex characters",
-			chainID:   "starknet:0xghi",
+			chainID:   "0xghi",
 			shouldErr: true,
 		},
 		{
 			name:      "uppercase hex",
-			chainID:   "starknet:0x534E5F4D41494E",
+			chainID:   "0x534E5F4D41494E",
 			shouldErr: false,
 		},
 	}

@@ -167,37 +167,29 @@ func (h *EVMHandler) GetNamespace() string {
 }
 
 func (h *EVMHandler) ValidateChainID(chainID string) error {
-	if !strings.HasPrefix(chainID, "eip155:") {
-		return fmt.Errorf("invalid EVM chain ID format: %s, expected format: eip155:{chainId}", chainID)
+	// Fail if there's a colon (old CAIP-2 format)
+	if strings.Contains(chainID, ":") {
+		return fmt.Errorf("invalid EVM chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
 	}
 
-	// Extract chain ID number and validate it's numeric
-	parts := strings.Split(chainID, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid EVM chain ID format: %s", chainID)
-	}
-
-	chainIDNum := parts[1]
-	if chainIDNum == "" {
-		return fmt.Errorf("empty chain ID number in: %s", chainID)
+	if chainID == "" {
+		return fmt.Errorf("empty chain ID")
 	}
 
 	// Remove 0x prefix if present and validate hex
+	chainIDNum := chainID
 	if strings.HasPrefix(chainIDNum, "0x") {
 		chainIDNum = strings.TrimPrefix(chainIDNum, "0x")
 	}
 
 	// Convert to ensure it's a valid number
 	if _, err := strconv.ParseInt(chainIDNum, 16, 64); err != nil {
-		return fmt.Errorf("invalid chain ID number in %s: %w", chainID, err)
+		return fmt.Errorf("invalid chain ID number %s: %w", chainID, err)
 	}
 
 	return nil
 }
 
-func (h *EVMHandler) FormatChainID(networkReference string) string {
-	return "eip155:" + networkReference
-}
 
 func (h *EVMHandler) ExtractChainReference(result interface{}) (string, error) {
 	chainRef, ok := result.(string)
@@ -417,13 +409,13 @@ func (h *EVMHandler) ParseChainIDResponse(body []byte, statusCode int) (string, 
 		return "", fmt.Errorf("missing result field in chain ID response")
 	}
 
-	// Extract chain reference and format full chain ID
+	// Extract chain reference (already in correct format without prefix)
 	chainReference, err := h.ExtractChainReference(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract chain reference: %w", err)
 	}
 
-	return h.FormatChainID(chainReference), nil
+	return chainReference, nil
 }
 
 // GetLatestBlockNumber retrieves the latest block number for EVM chains

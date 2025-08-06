@@ -48,11 +48,11 @@ func (h *SolanaHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *SolanaHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
-	
+
 	if config.Logger != nil {
 		h.logger = config.Logger
 	}
-	
+
 	return nil
 }
 
@@ -67,7 +67,7 @@ func (h *SolanaHandler) ProcessRequest(req *http.Request) error {
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
-	
+
 	// Path translation is handled in DinSelect module
 	return nil
 }
@@ -77,16 +77,16 @@ func (h *SolanaHandler) ExtractMethod(req *http.Request, body []byte) (string, e
 	if len(body) == 0 {
 		return "", fmt.Errorf("empty request body")
 	}
-	
+
 	var rpcRequest din_http.JSONRPCRequest
 	if err := json.Unmarshal(body, &rpcRequest); err != nil {
 		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
 	}
-	
+
 	if rpcRequest.Method == "" {
 		return "", fmt.Errorf("missing method in JSON-RPC request")
 	}
-	
+
 	return rpcRequest.Method, nil
 }
 
@@ -129,32 +129,21 @@ func (h *SolanaHandler) GetNamespace() string {
 }
 
 func (h *SolanaHandler) ValidateChainID(chainID string) error {
-	// Solana chain IDs are in format: solana:base58_encoded_genesis_hash
-	if !strings.HasPrefix(chainID, "solana:") {
-		return fmt.Errorf("invalid Solana chain ID format: %s, expected format: solana:{base58_hash}", chainID)
+	// Fail if there's a colon (old CAIP-2 format)
+	if strings.Contains(chainID, ":") {
+		return fmt.Errorf("invalid Solana chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
 	}
 
-	// Extract the genesis hash part
-	parts := strings.Split(chainID, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid Solana chain ID format: %s", chainID)
-	}
-
-	genesisHash := parts[1]
-	if len(genesisHash) == 0 {
-		return fmt.Errorf("empty genesis hash in Solana chain ID: %s", chainID)
+	if len(chainID) == 0 {
+		return fmt.Errorf("empty chain ID")
 	}
 
 	// Basic validation - Solana genesis hashes are base58 encoded, typically 44 characters
-	if len(genesisHash) < 32 || len(genesisHash) > 50 {
-		return fmt.Errorf("invalid Solana genesis hash length: %s", genesisHash)
+	if len(chainID) < 32 || len(chainID) > 50 {
+		return fmt.Errorf("invalid Solana genesis hash length: %s", chainID)
 	}
 
 	return nil
-}
-
-func (h *SolanaHandler) FormatChainID(networkReference string) string {
-	return "solana:" + networkReference
 }
 
 func (h *SolanaHandler) ExtractChainReference(result interface{}) (string, error) {
@@ -369,13 +358,13 @@ func (h *SolanaHandler) ParseChainIDResponse(body []byte, statusCode int) (strin
 		return "", fmt.Errorf("missing result field in chain ID response")
 	}
 
-	// Extract chain reference and format full chain ID
+	// Extract chain reference (already in correct format without prefix)
 	chainReference, err := h.ExtractChainReference(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract chain reference: %w", err)
 	}
 
-	return h.FormatChainID(chainReference), nil
+	return chainReference, nil
 }
 
 // GetLatestBlockNumber retrieves the latest block number for Solana chains

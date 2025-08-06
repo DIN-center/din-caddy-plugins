@@ -193,33 +193,23 @@ func (h *BeaconChainHandler) GetNamespace() string {
 }
 
 func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
-	// Beacon chain uses the same chain ID format as Ethereum mainnet
-	if !strings.HasPrefix(chainID, "beacon:") {
-		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, expected format: beacon:{chainId}", chainID)
+	// Fail if there's a colon (old CAIP-2 format)
+	if strings.Contains(chainID, ":") {
+		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
 	}
 
-	// Extract chain ID number and validate it's numeric
-	parts := strings.Split(chainID, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid Beacon Chain chain ID format: %s", chainID)
-	}
-
-	chainIDNum := parts[1]
-	if chainIDNum == "" {
-		return fmt.Errorf("empty chain ID number in: %s", chainID)
+	if chainID == "" {
+		return fmt.Errorf("empty chain ID")
 	}
 
 	// Convert to ensure it's a valid number
-	if _, err := strconv.ParseInt(chainIDNum, 10, 64); err != nil {
-		return fmt.Errorf("invalid chain ID number in %s: %w", chainID, err)
+	if _, err := strconv.ParseInt(chainID, 10, 64); err != nil {
+		return fmt.Errorf("invalid chain ID number %s: %w", chainID, err)
 	}
 
 	return nil
 }
 
-func (h *BeaconChainHandler) FormatChainID(networkReference string) string {
-	return h.GetNamespace() + ":" + networkReference
-}
 
 func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
 	// For beacon chain, we extract chain reference from genesis response
@@ -449,7 +439,7 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response")
 	}
 
-	return h.FormatChainID(chainID), nil
+	return chainID, nil
 }
 
 // GetChainID retrieves the chain ID for beacon chain

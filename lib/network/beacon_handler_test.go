@@ -50,32 +50,37 @@ func TestBeaconChainHandler_ValidateChainID(t *testing.T) {
 	}{
 		{
 			name:      "valid mainnet chain ID",
-			chainID:   "beacon:1",
+			chainID:   "1",
 			shouldErr: false,
 		},
 		{
 			name:      "valid sepolia chain ID",
-			chainID:   "beacon:11155111",
+			chainID:   "11155111",
 			shouldErr: false,
 		},
 		{
 			name:      "valid goerli chain ID",
-			chainID:   "beacon:5",
+			chainID:   "5",
 			shouldErr: false,
 		},
 		{
-			name:      "invalid prefix",
+			name:      "invalid - contains colon (old CAIP-2 format)",
+			chainID:   "beacon:1",
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - contains colon with different prefix",
 			chainID:   "starknet:0x1",
 			shouldErr: true,
 		},
 		{
-			name:      "missing colon",
-			chainID:   "eip1551",
+			name:      "invalid - not a number",
+			chainID:   "abc",
 			shouldErr: true,
 		},
 		{
-			name:      "empty chain reference",
-			chainID:   "eip155:",
+			name:      "empty chain ID",
+			chainID:   "",
 			shouldErr: true,
 		},
 	}
@@ -93,40 +98,6 @@ func TestBeaconChainHandler_ValidateChainID(t *testing.T) {
 	}
 }
 
-func TestBeaconChainHandler_FormatChainID(t *testing.T) {
-	handler := NewBeaconChainHandler(&NetworkConfig{})
-
-	tests := []struct {
-		name             string
-		networkReference string
-		expected         string
-	}{
-		{
-			name:             "mainnet",
-			networkReference: "1",
-			expected:         "beacon:1",
-		},
-		{
-			name:             "sepolia",
-			networkReference: "11155111",
-			expected:         "beacon:11155111",
-		},
-		{
-			name:             "goerli",
-			networkReference: "5",
-			expected:         "beacon:5",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := handler.FormatChainID(tt.networkReference)
-			if result != tt.expected {
-				t.Errorf("FormatChainID(%s) = %s, expected %s", tt.networkReference, result, tt.expected)
-			}
-		})
-	}
-}
 
 func TestBeaconChainHandler_ExtractChainReference(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
@@ -800,8 +771,8 @@ func TestBeaconChainHandler_ParseChainIDResponse_RealData(t *testing.T) {
 			t.Fatalf("Expected no error parsing real config data, got: %v", err)
 		}
 
-		// Should format as beacon:1 for mainnet
-		expectedChainID := "beacon:1"
+		// Should return just "1" for mainnet (no prefix)
+		expectedChainID := "1"
 		if chainID != expectedChainID {
 			t.Errorf("Expected chain ID %s, got %s", expectedChainID, chainID)
 		}
