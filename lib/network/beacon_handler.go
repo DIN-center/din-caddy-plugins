@@ -424,22 +424,46 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 		return "", fmt.Errorf("HTTP error: %d", statusCode)
 	}
 
-	// Parse the config/spec response
+	// First try to parse as the standard format with data as a map
 	var specResponse struct {
 		Data map[string]string `json:"data"`
 	}
 
-	if err := json.Unmarshal(body, &specResponse); err != nil {
+	if err := json.Unmarshal(body, &specResponse); err == nil && specResponse.Data != nil {
+		// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
+		chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]
+		if exists && chainID != "" {
+			return chainID, nil
+		}
+	}
+
+	// If that fails, try parsing as a generic interface to handle different response formats
+	var genericResponse map[string]interface{}
+	if err := json.Unmarshal(body, &genericResponse); err != nil {
 		return "", fmt.Errorf("failed to parse beacon config response: %w", err)
 	}
 
-	// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
-	chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]
+	// Check if data exists and what type it is
+	dataField, exists := genericResponse["data"]
 	if !exists {
-		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response")
+		return "", fmt.Errorf("data field not found in beacon config response")
 	}
 
-	return chainID, nil
+	// Handle data as a map (standard format)
+	if dataMap, ok := dataField.(map[string]interface{}); ok {
+		if chainIDValue, exists := dataMap["DEPOSIT_CHAIN_ID"]; exists {
+			if chainID, ok := chainIDValue.(string); ok && chainID != "" {
+				return chainID, nil
+			}
+			// Handle case where DEPOSIT_CHAIN_ID might be a number
+			if chainIDNum, ok := chainIDValue.(float64); ok {
+				return fmt.Sprintf("%d", int64(chainIDNum)), nil
+			}
+		}
+	}
+
+	// If data is an array or other format, return a more helpful error
+	return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response (data type: %T)", dataField)
 }
 
 // GetChainID retrieves the chain ID for beacon chain
