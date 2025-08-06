@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
@@ -27,11 +28,11 @@ type provider struct {
 	Methods map[string]struct{}  `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 	
+	// OIDC client for OAuth2/OIDC authentication
+	OIDCClient *oidc.OIDCClient `json:"oidc_client"`
+	
 	// Generic auth client for supporting multiple auth types
 	authClient auth.IAuthClient
-	
-	// OAuth2 configuration flag
-	OAuth2Enabled bool
 
 	consecutiveUnhealthyChecks int
 	blockHistory               *list.List
@@ -84,15 +85,19 @@ func (p *provider) IsAvailableWithWarning() bool {
 }
 
 func (p *provider) AuthClient() auth.IAuthClient {
-	// Return generic auth client if available (OAuth2, etc.)
+	// Return generic auth client if available
 	if p.authClient != nil {
 		return p.authClient
 	}
-	// Fall back to SIWE auth if available
-	if p.Auth == nil {
-		return nil
+	// Return OIDC client if available
+	if p.OIDCClient != nil {
+		return p.OIDCClient
 	}
-	return p.Auth
+	// Fall back to SIWE auth if available
+	if p.Auth != nil {
+		return p.Auth
+	}
+	return nil
 }
 
 // SetAuthClient sets the generic auth client for this provider

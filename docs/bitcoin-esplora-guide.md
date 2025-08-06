@@ -36,9 +36,9 @@ The Bitcoin Esplora handler enables integration with Bitcoin block explorers tha
 }
 ```
 
-### Configuration with OAuth2
+### Configuration with OIDC/OAuth2
 
-For APIs requiring OAuth2 authentication (like Blockstream Enterprise):
+For APIs requiring OIDC/OAuth2 authentication (like Blockstream Enterprise):
 
 ```caddyfile
 :8000 {
@@ -49,18 +49,16 @@ For APIs requiring OAuth2 authentication (like Blockstream Enterprise):
                     type bitcoin-esplora
                     chain_id bitcoin:mainnet
                     
-                    # OAuth2 configuration
-                    custom_config {
-                        oauth2_client_id "your-client-id"
-                        oauth2_client_secret "your-client-secret"
-                        oauth2_token_url "https://auth.provider.com/oauth/token"
-                        oauth2_refresh_interval 180  # seconds (optional, default: 240)
-                    }
-                    
                     providers {
                         https://enterprise.blockstream.info {
                             priority 0
-                            auth_type oauth2  # Enable OAuth2 for this provider
+                            auth {
+                                type oidc
+                                url "https://auth.provider.com/oauth/token"
+                                client_id "your-client-id"
+                                client_secret "your-client-secret"
+                                # duration_seconds 240  # Optional - if not set, uses token's expires_in
+                            }
                         }
                     }
                 }
@@ -77,18 +75,19 @@ For APIs requiring OAuth2 authentication (like Blockstream Enterprise):
 - `type`: Must be `bitcoin-esplora`
 - `chain_id`: Network identifier (e.g., `bitcoin:mainnet`, `bitcoin:testnet`, `bitcoin:regtest`)
 
-#### OAuth2 Parameters (in custom_config)
+#### OIDC/OAuth2 Parameters (in auth block)
 
-- `oauth2_client_id`: OAuth2 client identifier
-- `oauth2_client_secret`: OAuth2 client secret
-- `oauth2_token_url`: Token endpoint URL for obtaining access tokens
-- `oauth2_refresh_interval`: Token refresh interval in seconds (optional, default: 240)
-  - Should be set lower than the token's actual expiration time
-  - Recommended: Set to 60-80% of token lifetime
+- `type`: Must be `oidc` for OAuth2/OIDC authentication
+- `url`: Token endpoint URL for obtaining access tokens
+- `client_id`: OAuth2 client identifier
+- `client_secret`: OAuth2 client secret
+- `duration_seconds`: Token refresh interval in seconds (optional)
+  - If not set, uses the token's `expires_in` value minus 1 minute
+  - If set, must be less than the token's actual expiration time
+  - Minimum refresh interval is 30 seconds
 
 #### Provider Parameters
 
-- `auth_type oauth2`: Enable OAuth2 authentication for the provider
 - Standard provider options (priority, headers, etc.) are also supported
 
 ## Supported Endpoints
@@ -118,9 +117,9 @@ The handler supports standard Esplora API endpoints with **GET requests only**:
 - **Transaction broadcasting is not supported**: The `/api/tx` POST endpoint is blocked
 - Only GET requests are allowed for all endpoints
 
-## OAuth2 Authentication Flow
+## OIDC/OAuth2 Authentication Flow
 
-When OAuth2 is configured:
+When OIDC authentication is configured:
 
 1. **Initial Token Request**: On startup, the handler requests an access token using the client credentials grant:
    ```
@@ -130,7 +129,10 @@ When OAuth2 is configured:
    client_id=<client_id>&client_secret=<client_secret>&grant_type=client_credentials&scope=openid
    ```
 
-2. **Automatic Refresh**: A background goroutine refreshes the token at the configured interval (minus 30 seconds buffer)
+2. **Automatic Refresh**: A background goroutine refreshes the token:
+   - Default: Uses token's `expires_in` value minus 1 minute
+   - Custom: Uses `duration_seconds` if configured and valid
+   - Minimum refresh interval is 30 seconds
 
 3. **Request Authentication**: Every request to the provider automatically includes:
    ```
@@ -200,18 +202,17 @@ Non-retryable errors:
                     type bitcoin-esplora
                     chain_id bitcoin:mainnet
                     
-                    custom_config {
-                        oauth2_client_id "894ea193-13a7-4ec8-9588-42bedea8d952"
-                        oauth2_client_secret "dgLMNJrtxe70gm2OMxOO3RWUjSrk0NCX"
-                        oauth2_token_url "https://login.blockstream.com/realms/blockstream-public/protocol/openid-connect/token"
-                        oauth2_refresh_interval 180
-                    }
-                    
                     providers {
-                        # Primary provider with OAuth2
+                        # Primary provider with OIDC/OAuth2
                         https://enterprise.blockstream.info {
                             priority 0
-                            auth_type oauth2
+                            auth {
+                                type oidc
+                                url "https://login.blockstream.com/realms/blockstream-public/protocol/openid-connect/token"
+                                client_id "894ea193-13a7-4ec8-9588-42bedea8d952"
+                                client_secret "dgLMNJrtxe70gm2OMxOO3RWUjSrk0NCX"
+                                # duration_seconds 180  # Optional
+                            }
                         }
                         
                         # Backup provider without auth
@@ -239,11 +240,11 @@ Non-retryable errors:
 
 ## Monitoring and Troubleshooting
 
-### OAuth2 Logs
+### OIDC/OAuth2 Logs
 
-Monitor OAuth2 token rotation:
-- Success: `"OAuth2 token refreshed successfully"`
-- Failure: `"failed to refresh OAuth2 token"`
+Monitor OIDC token rotation:
+- Success: `"OIDC token refreshed successfully"`
+- Failure: `"failed to refresh OIDC token"`
 
 ### Common Issues
 
@@ -255,13 +256,13 @@ Monitor OAuth2 token rotation:
 
 2. **Authentication Errors (401 Unauthorized)**
    - Check logs for token refresh errors
-   - Verify refresh interval is less than token lifetime
-   - Ensure provider has `auth_type oauth2` set
-   - Verify OAuth2 configuration in `custom_config` block
-   - Check that all required OAuth2 fields are present:
-     - `oauth2_client_id`
-     - `oauth2_client_secret`
-     - `oauth2_token_url`
+   - Verify `duration_seconds` (if set) is less than token lifetime
+   - Ensure provider has `auth` block with `type oidc`
+   - Check that all required OIDC fields are present in auth block:
+     - `type` (must be `oidc`)
+     - `url` (token endpoint)
+     - `client_id`
+     - `client_secret`
 
 3. **Invalid API Paths**
    - All paths must contain `/api/`
@@ -290,9 +291,9 @@ Monitor OAuth2 token rotation:
 
 ## Security Considerations
 
-1. **Credential Storage**: Never commit OAuth2 credentials to version control
+1. **Credential Storage**: Never commit OIDC/OAuth2 credentials to version control
 2. **Network Security**: Ensure all endpoints use HTTPS
-3. **Token Security**: OAuth2 tokens are stored in memory only
+3. **Token Security**: OIDC tokens are stored in memory only
 4. **Minimal Scope**: Request only necessary OAuth2 scopes (default: openid)
 
 ## API Compatibility
@@ -304,7 +305,7 @@ The handler is compatible with:
 
 ## Performance Considerations
 
-- OAuth2 token refresh runs in background (non-blocking)
+- OIDC token refresh runs in background (non-blocking)
 - Minimal request overhead with direct path forwarding
 - Supports connection pooling via the HTTP client
 - Health checks run at configurable intervals
