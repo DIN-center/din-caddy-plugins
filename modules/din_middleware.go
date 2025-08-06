@@ -27,7 +27,6 @@ import (
 
 	"encoding/json"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/oauth2"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
@@ -344,56 +343,6 @@ func (d *DinMiddleware) startBackgroundServices() error {
 	return nil
 }
 
-// initializeOAuth2ForProvider initializes OAuth2 authentication for a provider
-func (d *DinMiddleware) initializeOAuth2ForProvider(provider *provider, networkObj *network, logger *logger.LoggerClient) error {
-	if networkObj.CustomConfig == nil {
-		return fmt.Errorf("OAuth2 enabled but no custom_config found")
-	}
-
-	// Extract OAuth2 configuration from custom_config
-	clientID, ok := networkObj.CustomConfig["oauth2_client_id"].(string)
-	if !ok || clientID == "" {
-		return fmt.Errorf("oauth2_client_id not found in custom_config")
-	}
-
-	clientSecret, ok := networkObj.CustomConfig["oauth2_client_secret"].(string)
-	if !ok || clientSecret == "" {
-		return fmt.Errorf("oauth2_client_secret not found in custom_config")
-	}
-
-	tokenURL, ok := networkObj.CustomConfig["oauth2_token_url"].(string)
-	if !ok || tokenURL == "" {
-		return fmt.Errorf("oauth2_token_url not found in custom_config")
-	}
-
-	// Get optional refresh interval
-	refreshInterval := 240 // default 4 minutes
-	if interval, ok := networkObj.CustomConfig["oauth2_refresh_interval"].(int); ok {
-		refreshInterval = interval
-	}
-
-	// Create OAuth2 client
-	oauth2Config := oauth2.OAuth2Config{
-		ClientID:           clientID,
-		ClientSecret:       clientSecret,
-		TokenURL:           tokenURL,
-		RefreshIntervalSec: refreshInterval,
-		Scope:              "openid", // default scope
-	}
-
-	oauth2Client := oauth2.NewOAuth2Client(oauth2Config)
-
-	// Start the OAuth2 client
-	if err := oauth2Client.Start(logger.Logger); err != nil {
-		return fmt.Errorf("failed to start OAuth2 client: %w", err)
-	}
-
-	// Set the auth client on the provider
-	provider.SetAuthClient(oauth2Client)
-
-	return nil
-}
-
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
 func (d *DinMiddleware) initializeProvider(provider *provider, networkObj *network, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 
@@ -422,10 +371,10 @@ func (d *DinMiddleware) initializeProvider(provider *provider, networkObj *netwo
 	}
 
 	// Initialize authentication
-	if provider.OAuth2Enabled {
-		// Initialize OAuth2 auth from network's custom config
-		if err := d.initializeOAuth2ForProvider(provider, networkObj, logger); err != nil {
-			d.logger.Error("Failed to initialize OAuth2 auth", zap.String("provider", provider.HttpUrl), zap.Error(err))
+	if provider.OIDCClient != nil {
+		// Initialize OIDC client
+		if err := provider.OIDCClient.Start(logger.Logger); err != nil {
+			d.logger.Error("Failed to start OIDC client", zap.String("provider", provider.HttpUrl), zap.Error(err))
 			return err
 		}
 	} else if provider.Auth != nil {
