@@ -56,7 +56,7 @@ type network struct {
 	MaxRequestPayloadSizeKB int64 `json:"max_request_payload_size_kb"`
 	RequestAttemptCount     int   `json:"request_attempt_count"`
 	ArchiveEnabled          bool  `json:"archive_enabled"`
-	
+
 	// Custom configuration passed from Caddyfile
 	CustomConfig map[string]interface{} `json:"custom_config,omitempty"`
 }
@@ -740,8 +740,8 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 
 		// Return safe defaults when request failed (result may be nil)
 		return &getLatestBlockNumberResult{
-			blockNumber:    0,        // Unknown block number since request failed
-			healthStatus:   Unhealthy, // Mark as unhealthy since the request failed
+			blockNumber:    0,          // Unknown block number since request failed
+			healthStatus:   Unhealthy,  // Mark as unhealthy since the request failed
 			responseStatus: statusCode, // Use safe status code (0 if result is nil)
 		}, err
 	}

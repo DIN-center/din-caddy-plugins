@@ -23,5 +23,8 @@ services/.DS_Store
 .DS_Store
 */.DS_Store
 coverage.out
+<<<<<<< HEAD
 Claude.md
 PR_DESCRIPTION.md
+=======
+>>>>>>> origin/develop
