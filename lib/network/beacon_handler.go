@@ -18,19 +18,17 @@ import (
 
 // BeaconChainHandler handles Ethereum Beacon Chain REST API requests
 type BeaconChainHandler struct {
-	config              *NetworkConfig
-	healthCheckEndpoint string
-	version             string
-	logger              *logger.LoggerClient
+	config  *NetworkConfig
+	version string
+	logger  *logger.LoggerClient
 }
 
 // NewBeaconChainHandler creates a new Beacon Chain handler instance
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 	return &BeaconChainHandler{
-		config:              config,
-		healthCheckEndpoint: "/eth/v2/beacon/blocks/head",
-		version:             "1.0.0",
-		logger:              config.Logger,
+		config:  config,
+		version: "1.0.0",
+		logger:  config.Logger,
 	}
 }
 
@@ -350,7 +348,7 @@ func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) 
 
 // Health Check Specifics methods
 func (h *BeaconChainHandler) GetHealthCheckMethod() string {
-	return h.healthCheckEndpoint
+	return "/eth/v2/beacon/blocks/head"
 }
 
 func (h *BeaconChainHandler) GetHealthCheckHTTPMethod() string {

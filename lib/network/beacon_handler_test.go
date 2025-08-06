@@ -297,7 +297,7 @@ func TestBeaconChainHandler_GetSupportedMethods(t *testing.T) {
 func TestBeaconChainHandler_GetHealthCheckMethod(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 
-	expected := "/eth/v1/node/health"
+	expected := "/eth/v2/beacon/blocks/head"
 	if handler.GetHealthCheckMethod() != expected {
 		t.Errorf("Expected health check method '%s', got '%s'", expected, handler.GetHealthCheckMethod())
 	}
