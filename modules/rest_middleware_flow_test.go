@@ -136,7 +136,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 					tt.networkName: {
 						Name:    tt.networkName,
 						HandlerType: HandlerType(tt.networkType),
-						ChainId: "beacon:1",
+						ChainId: "1",
 						Providers: map[string]*provider{
 							"test-provider": {
 								HttpUrl:  "http://test-provider",
@@ -305,7 +305,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 				network := &network{
 					Name:    tt.networkName,
 					HandlerType: HandlerType(tt.networkType),
-					ChainId: "beacon:1",
+					ChainId: "1",
 					Providers: map[string]*provider{
 						"test-provider": {
 							HttpUrl: "http://test-provider",
@@ -390,7 +390,7 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 			"beacon": {
 				Name:    "beacon",
 				HandlerType: BeaconHandler,
-				ChainId: "beacon:1",
+				ChainId: "1",
 				Providers: map[string]*provider{
 					"provider1": {
 						HttpUrl:  "http://provider1",
@@ -469,7 +469,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "ethereum-beacon",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
 			requestPath:        "/ethereum-beacon/eth/v1/beacon/genesis",
@@ -495,7 +495,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "beacon",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
 			requestPath:        "/beacon/eth/v1/beacon/pool/attestations",
@@ -518,7 +518,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "ethereum",
 				HandlerType:             EVMHandler,
-				ChainId:                 "eip155:0x1",
+				ChainId:                 "0x1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
 			requestPath:        "/ethereum",
@@ -542,7 +542,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "beacon",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
 			requestPath:        "/beacon/eth/v1/beacon/states/head/validators?id=1,2,3&status=active",
@@ -560,7 +560,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "unknown",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
 			requestPath:        "/different-network/eth/v1/beacon/genesis",
@@ -573,7 +573,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			network: &network{
 				Name:                    "beacon",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: 0, // 0 means 1KB limit
 			},
 			requestPath:        "/beacon/eth/v1/beacon/pool/attestations",
@@ -793,7 +793,7 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 			"beacon": {
 				Name:                    "beacon",
 				HandlerType:             BeaconHandler,
-				ChainId:                 "beacon:1",
+				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 				Providers: map[string]*provider{
 					"test-provider": {
@@ -850,9 +850,9 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 func getValidChainIDForType(networkType string) string {
 	switch networkType {
 	case string(BeaconHandler):
-		return "beacon:1"
+		return "1"
 	case string(EVMHandler):
-		return "eip155:0x1"
+		return "0x1"
 	default:
 		return "unknown:1"
 	}

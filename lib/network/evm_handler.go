@@ -14,6 +14,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"go.uber.org/zap"
 )
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
@@ -167,36 +168,46 @@ func (h *EVMHandler) GetNamespace() string {
 }
 
 func (h *EVMHandler) ValidateChainID(chainID string) error {
-	if !strings.HasPrefix(chainID, "eip155:") {
-		return fmt.Errorf("invalid EVM chain ID format: %s, expected format: eip155:{chainId}", chainID)
+	if chainID == "" {
+		return fmt.Errorf("empty chain ID")
 	}
 
-	// Extract chain ID number and validate it's numeric
-	parts := strings.Split(chainID, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid EVM chain ID format: %s", chainID)
+	// Support both formats for backwards compatibility
+	actualChainID := chainID
+	
+	// If it contains a colon, it might be CAIP-2 format
+	if strings.Contains(chainID, ":") {
+		parts := strings.Split(chainID, ":")
+		if len(parts) == 2 && parts[0] == "eip155" {
+			// Valid CAIP-2 format for EVM, extract the actual chain ID
+			actualChainID = parts[1]
+			// Log that we're using backwards compatibility
+			if h.logger != nil {
+				h.logger.Debug("Using CAIP-2 format for backwards compatibility",
+					zap.String("original", chainID),
+					zap.String("extracted", actualChainID))
+			}
+		} else {
+			// Invalid format
+			return fmt.Errorf("invalid EVM chain ID format: %s, expected format 'eip155:chainID' or just 'chainID'", chainID)
+		}
 	}
 
-	chainIDNum := parts[1]
-	if chainIDNum == "" {
-		return fmt.Errorf("empty chain ID number in: %s", chainID)
-	}
-
-	// Remove 0x prefix if present and validate hex
+	// Validate the actual chain ID (with or without 0x prefix)
+	chainIDNum := actualChainID
 	if strings.HasPrefix(chainIDNum, "0x") {
 		chainIDNum = strings.TrimPrefix(chainIDNum, "0x")
 	}
 
 	// Convert to ensure it's a valid number
 	if _, err := strconv.ParseInt(chainIDNum, 16, 64); err != nil {
-		return fmt.Errorf("invalid chain ID number in %s: %w", chainID, err)
+		// Try decimal format as well
+		if _, err := strconv.ParseInt(actualChainID, 10, 64); err != nil {
+			return fmt.Errorf("invalid chain ID number %s: must be hex (0x...) or decimal", actualChainID)
+		}
 	}
 
 	return nil
-}
-
-func (h *EVMHandler) FormatChainID(networkReference string) string {
-	return "eip155:" + networkReference
 }
 
 func (h *EVMHandler) ExtractChainReference(result interface{}) (string, error) {
@@ -417,13 +428,13 @@ func (h *EVMHandler) ParseChainIDResponse(body []byte, statusCode int) (string, 
 		return "", fmt.Errorf("missing result field in chain ID response")
 	}
 
-	// Extract chain reference and format full chain ID
+	// Extract chain reference (already in correct format without prefix)
 	chainReference, err := h.ExtractChainReference(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract chain reference: %w", err)
 	}
 
-	return h.FormatChainID(chainReference), nil
+	return chainReference, nil
 }
 
 // GetLatestBlockNumber retrieves the latest block number for EVM chains

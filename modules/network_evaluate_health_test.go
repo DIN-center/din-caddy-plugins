@@ -153,7 +153,7 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Configure network
-			n.ChainId = "eip155:1"
+			n.ChainId = "0x1"
 			n.BlockLagLimit = tt.networkConfig.blockLagLimit
 			n.BlockJumpLimit = tt.networkConfig.blockJumpLimit
 			n.ProviderBlockHistorySize = 5
@@ -192,12 +192,12 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			// Setup mocks for chain ID validation
 			if tt.chainIDValid {
 				mockHandler.EXPECT().GetChainID(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return("eip155:1", nil).AnyTimes()
-				mockHandler.EXPECT().ValidateChainID("eip155:1").Return(nil).AnyTimes()
+					Return("0x1", nil).AnyTimes()
+				mockHandler.EXPECT().ValidateChainID("0x1").Return(nil).AnyTimes()
 			} else {
 				mockHandler.EXPECT().GetChainID(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-					Return("eip155:5", nil).AnyTimes()
-				mockHandler.EXPECT().ValidateChainID("eip155:5").Return(errors.New("invalid chain ID")).AnyTimes()
+					Return("0x5", nil).AnyTimes()
+				mockHandler.EXPECT().ValidateChainID("0x5").Return(errors.New("invalid chain ID")).AnyTimes()
 			}
 
 			// Setup mocks for archive mode

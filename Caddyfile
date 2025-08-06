@@ -42,7 +42,7 @@
 							}
 						}
 					}
-					chain_id eip155:0x1
+					chain_id 0x1
 				}
 				holesky {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -54,7 +54,7 @@
 							priority 1
 						}
 					}
-					chain_id eip155:0x4268
+					chain_id 0x4268
 				}
 				blast-mainnet {
 					providers {
@@ -65,7 +65,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x13e31
+					chain_id 0x13e31
 					archive_enabled true
 				}
 				blast-testnet {
@@ -77,7 +77,7 @@
 							priority 1
 						}
 					}
-					chain_id eip155:0xa0c71fd
+					chain_id 0xa0c71fd
 					archive_enabled true
 				}
 				polygon {
@@ -92,35 +92,35 @@
 						https://polygon-mainnet.blastapi.io/key
 						https://api.infstones.com/polygon/mainnet/key
 					}
-					chain_id eip155:0x89
+					chain_id 0x89
 				}
 				polygon-testnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof bor_getSignersAtHash bor_getSnapshot bor_getRootHash bor_getAuthor bor_getCurrentValidators bor_getCurrentProposer eth_getTransactionReceiptsByBlock eth_getBorBlockReceipt
 					providers {
 						https://polygon-amoy.blastapi.io/key
 					}
-					chain_id eip155:0x13882
+					chain_id 0x13882
 				}
 				optimism-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
 						https://optimism-mainnet.blastapi.io/key
 					}
-					chain_id eip155:0xa
+					chain_id 0xa
 				}
 				arbitrum-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
 						https://infura.liquify.com/api=key/arb
 					}
-					chain_id eip155:0xa4b1
+					chain_id 0xa4b1
 				}
 				arbitrum-archive {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
 					providers {
 						https://infura.liquify.com/api=key/arb
 					}
-					chain_id eip155:0xa4b1
+					chain_id 0xa4b1
 					archive_enabled true
 				}
 				arbitrum-mainnet-archive {
@@ -135,7 +135,7 @@
 					providers {
 						https://infura.liquify.com/api=key/avax
 					}
-					chain_id eip155:0xa86a
+					chain_id 0xa86a
 				}
 				mantle-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -150,7 +150,7 @@
 							priority 1
 						}
 					}
-					chain_id eip155:0x1388
+					chain_id 0x1388
 					archive_enabled true
 				}
 				mantle-sepolia {
@@ -166,7 +166,7 @@
 							priority 1
 						}
 					}
-					chain_id eip155:0x138b
+					chain_id 0x138b
 					archive_enabled true
 				}
 				optimism-sepolia {
@@ -174,7 +174,7 @@
 					providers {
 						https://optimism-sepolia.blastapi.io/key
 					}
-					chain_id eip155:0xaa37dc
+					chain_id 0xaa37dc
 				}
 				zksync-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -192,7 +192,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x144
+					chain_id 0x144
 					archive_enabled true
 				}
 				zksync-sepolia {
@@ -200,7 +200,7 @@
 					providers {
 						https://zksync-sepolia.core.chainstack.com/key
 					}
-					chain_id eip155:0x12c
+					chain_id 0x12c
 				}
 				bsc-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -218,7 +218,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x38
+					chain_id 0x38
 					archive_enabled true
 				}
 				bsc-testnet {
@@ -231,7 +231,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x61
+					chain_id 0x61
 				}
 				starknet-sepolia {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -245,7 +245,7 @@
 					}
 					healthcheck_method starknet_blockNumber
 					chainid_method starknet_chainId
-					chain_id starknet:0x534e5f5345504f4c4941
+					chain_id 0x534e5f5345504f4c4941
 					call_contract_method starknet_call
 					archive_enabled true
 				}
@@ -261,7 +261,7 @@
 					}
 					healthcheck_method starknet_blockNumber
 					chainid_method starknet_chainId
-					chain_id starknet:0x534e5f4d41494e
+					chain_id 0x534e5f4d41494e
 					call_contract_method starknet_call
 					archive_enabled true
 				}
@@ -271,7 +271,7 @@
 						https://api.infstones.com/opbnb/mainnet/key
 						https://mainnet.opbnb.validationcloud.io/v1/key
 					}
-					chain_id eip155:0xcc
+					chain_id 0xcc
 				}
 				opbnb-testnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -279,7 +279,7 @@
 						https://api.infstones.com/opbnb/testnet/key
 						https://testnet.opbnb.validationcloud.io/v1/key
 					}
-					chain_id eip155:0x15eb
+					chain_id 0x15eb
 				}
 				scroll-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -288,7 +288,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x82750
+					chain_id 0x82750
 					archive_enabled true
 				}
 				scroll-sepolia {
@@ -298,7 +298,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x14a34
+					chain_id 0x14a34
 				}
 				swellchain-mainnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -307,7 +307,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x783
+					chain_id 0x783
 					archive_enabled true
 				}
 				swellchain-sepolia {
@@ -317,7 +317,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x784
+					chain_id 0x784
 					archive_enabled true
 				}
 				unichain-mainnet {
@@ -327,7 +327,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x82
+					chain_id 0x82
 					archive_enabled true
 				}
 				unichain-sepolia {
@@ -337,7 +337,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x515
+					chain_id 0x515
 					archive_enabled true
 				}
 				base-mainnet {
@@ -347,7 +347,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x2105
+					chain_id 0x2105
 					archive_enabled true
 				}
 				base-sepolia {
@@ -357,7 +357,7 @@
 							priority 0
 						}
 					}
-					chain_id eip155:0x14a34
+					chain_id 0x14a34
 					archive_enabled true
 				}
 				scroll-mainnet {
@@ -374,7 +374,7 @@
 							}
 						}
 					}
-					chain_id eip155:0x82750
+					chain_id 0x82750
 					archive_enabled true
 				}
 				scroll-sepolia {
@@ -390,7 +390,7 @@
 							}
 						}
 					}
-					chain_id eip155:0x8274f
+					chain_id 0x8274f
 					archive_enabled true
 				}
 				unichain-sepolia {
@@ -452,7 +452,7 @@
 					healthcheck_method getBlockHeight
 					chainid_method getGenesisHash
 					get_block_by_number_method getBlock
-					chain_id solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
+					chain_id 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
 				}
 				solana-devnet {
 					methods web3_sha3 web3_clientVersion net_listening net_peerCount net_version eth_call eth_getBalance eth_estimateGas eth_createAccessList eth_getStorageAt eth_getCode eth_blockNumber eth_protocolVersion eth_syncing eth_sendRawTransaction eth_chainId eth_getLogs eth_getTransactionByHash eth_getTransactionReceipt eth_getTransactionCount eth_feeHistory eth_getBlockByNumber eth_getBlockByHash eth_gasPrice eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getBlockTransactionCountByNumber eth_getBlockTransactionCountByHash eth_getUncleCountByBlockNumber eth_getUncleCountByBlockHash eth_subscribe eth_unsubscribe eth_getUncleByBlockHashAndIndex eth_maxPriorityFeePerGas eth_getProof
@@ -461,7 +461,7 @@
 					}
 					healthcheck_method getBlockHeight
 					chainid_method getGenesisHash
-					chain_id solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+					chain_id EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 				}
 				bitcoin-mainnet {
 					providers {
@@ -469,7 +469,7 @@
 					}
 					healthcheck_method getblockcount
 					chainid_method getblockchaininfo
-					chain_id bip:main
+					chain_id main
 				}
 			}
 			din_registry {

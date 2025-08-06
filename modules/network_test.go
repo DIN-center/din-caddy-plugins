@@ -338,7 +338,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 			config := &networklib.NetworkConfig{
 				Name:    "test",
 				Type:    string(EVMHandler),
-				ChainID: "eip155:1",
+				ChainID: "1",
 			}
 			n.SetHandler(networklib.NewEVMHandler(config))
 			
@@ -645,7 +645,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			assert.NoError(t, err)
 			n.BlockJumpLimit = tt.blockJumpLimit
 			n.Providers = make(map[string]*provider)
-			n.ChainId = "eip155:0x1" // Set expected chain ID to match mock response
+			n.ChainId = "0x1" // Set expected chain ID to match mock response
 
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
@@ -1227,7 +1227,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			config := &networklib.NetworkConfig{
 				Name:    "test",
 				Type:    string(EVMHandler),
-				ChainID: "eip155:1",
+				ChainID: "1",
 			}
 			n.SetHandler(networklib.NewEVMHandler(config))
 
