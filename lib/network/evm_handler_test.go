@@ -48,33 +48,48 @@ func TestEVMHandler_ValidateChainID(t *testing.T) {
 		shouldErr bool
 	}{
 		{
-			name:      "valid mainnet chain ID",
-			chainID:   "eip155:1",
+			name:      "valid mainnet chain ID decimal",
+			chainID:   "1",
+			shouldErr: false,
+		},
+		{
+			name:      "valid mainnet chain ID hex",
+			chainID:   "0x1",
 			shouldErr: false,
 		},
 		{
 			name:      "valid polygon chain ID",
-			chainID:   "eip155:137",
+			chainID:   "0x89",
 			shouldErr: false,
 		},
 		{
 			name:      "valid arbitrum chain ID",
-			chainID:   "eip155:42161",
+			chainID:   "0xa4b1",
 			shouldErr: false,
 		},
 		{
-			name:      "invalid prefix",
+			name:      "valid - CAIP-2 format supported for backwards compatibility",
+			chainID:   "eip155:1",
+			shouldErr: false,
+		},
+		{
+			name:      "valid - CAIP-2 format with hex",
+			chainID:   "eip155:0x1",
+			shouldErr: false,
+		},
+		{
+			name:      "invalid - contains colon with different prefix",
 			chainID:   "starknet:0x1",
 			shouldErr: true,
 		},
 		{
-			name:      "missing colon",
-			chainID:   "eip1551",
+			name:      "invalid - wrong CAIP-2 prefix for EVM",
+			chainID:   "solana:0x1",
 			shouldErr: true,
 		},
 		{
-			name:      "empty chain reference",
-			chainID:   "eip155:",
+			name:      "empty chain ID",
+			chainID:   "",
 			shouldErr: true,
 		},
 	}
@@ -92,40 +107,6 @@ func TestEVMHandler_ValidateChainID(t *testing.T) {
 	}
 }
 
-func TestEVMHandler_FormatChainID(t *testing.T) {
-	handler := NewEVMHandler(&NetworkConfig{})
-
-	tests := []struct {
-		name             string
-		networkReference string
-		expected         string
-	}{
-		{
-			name:             "mainnet",
-			networkReference: "1",
-			expected:         "eip155:1",
-		},
-		{
-			name:             "polygon",
-			networkReference: "137",
-			expected:         "eip155:137",
-		},
-		{
-			name:             "arbitrum",
-			networkReference: "42161",
-			expected:         "eip155:42161",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := handler.FormatChainID(tt.networkReference)
-			if result != tt.expected {
-				t.Errorf("FormatChainID(%s) = %s, expected %s", tt.networkReference, result, tt.expected)
-			}
-		})
-	}
-}
 
 func TestEVMHandler_ExtractChainReference(t *testing.T) {
 	handler := NewEVMHandler(&NetworkConfig{})

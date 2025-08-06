@@ -77,9 +77,6 @@ func (m *MockHandler) GetChainID(httpUrl string, headers map[string]string, http
 	return "mock:1", nil
 }
 
-func (m *MockHandler) FormatChainID(networkReference string) string {
-	return "mock:" + networkReference
-}
 
 func (m *MockHandler) ExtractChainReference(result interface{}) (string, error) {
 	return "mockchain", nil

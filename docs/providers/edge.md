@@ -22,7 +22,7 @@ A minimal Caddyfile for DIN Edge configuration looks like this:
 						http://10.0.0.32:3000/API_KEY
 						http://10.0.0.34:6000/ALTERNATIVE_API_KEY
 					}
-					chain_id eip155:0xNetworkChainID
+					chain_id 0xNetworkChainID
 				}
 				another-network {
 					providers {
@@ -34,7 +34,7 @@ A minimal Caddyfile for DIN Edge configuration looks like this:
 						http://10.0.0.55:8545
 						http://10.0.0.56:8545
 					}
-					chain_id eip155:0xAnotherNetworkChainID
+					chain_id 0xAnotherNetworkChainID
 				}
 			}
 		}
@@ -84,7 +84,7 @@ din {
 				http://10.0.0.32:3000/API_KEY
 				http://10.0.0.34:6000/ALTERNATIVE_API_KEY
 			}
-			chain_id eip155:0xNetworkChainID
+			chain_id 0xNetworkChainID
 		}
 		another-network {
 			providers {
@@ -96,7 +96,7 @@ din {
 				http://10.0.0.55:8545
 				http://10.0.0.56:8545
 			}
-			chain_id eip155:0xAnotherNetworkChainID
+			chain_id 0xAnotherNetworkChainID
 		}
 	}
 }

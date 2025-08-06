@@ -205,7 +205,7 @@ din {
         # EVM Network
         ethereum {
             handler evm
-            chain_id eip155:0x1
+            chain_id 0x1
             providers {
                 https://mainnet.infura.io/v3/YOUR-KEY {
                     priority 0
@@ -216,7 +216,7 @@ din {
         # Solana Network
         solana-mainnet {
             handler solana
-            chain_id solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
+            chain_id 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
             providers {
                 https://api.mainnet-beta.solana.com {
                     priority 0
@@ -227,7 +227,7 @@ din {
         # Beacon Chain (REST API)
         ethereum-beacon {
             handler beacon-chain
-            chain_id beacon:mainnet
+            chain_id mainnet
             healthcheck_endpoint "/eth/v1/beacon/headers/head"
             providers {
                 https://beacon-api.example.com {

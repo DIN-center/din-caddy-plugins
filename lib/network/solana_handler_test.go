@@ -40,32 +40,32 @@ func TestSolanaHandler_ValidateChainID(t *testing.T) {
 	}{
 		{
 			name:    "valid_mainnet",
-			chainID: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+			chainID: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
 			valid:   true,
 		},
 		{
 			name:    "valid_devnet",
-			chainID: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+			chainID: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
 			valid:   true,
 		},
 		{
-			name:    "invalid_prefix",
+			name:    "invalid - contains colon (old CAIP-2 format)",
+			chainID: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+			valid:   false,
+		},
+		{
+			name:    "invalid - contains colon with different prefix",
 			chainID: "ethereum:0x1",
 			valid:   false,
 		},
 		{
-			name:    "invalid_format",
-			chainID: "solana",
-			valid:   false,
-		},
-		{
-			name:    "empty_hash",
-			chainID: "solana:",
+			name:    "empty chain ID",
+			chainID: "",
 			valid:   false,
 		},
 		{
 			name:    "hash_too_short",
-			chainID: "solana:abc123",
+			chainID: "abc123",
 			valid:   false,
 		},
 	}

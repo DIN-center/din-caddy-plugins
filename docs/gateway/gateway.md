@@ -52,7 +52,7 @@ A minimal Caddyfile for DIN Edge configuration looks like this:
 							}
 						}
 					}
-					chain_id eip155:0x1
+					chain_id 0x1
 				}
 				holesky {
 					providers {
@@ -66,7 +66,7 @@ A minimal Caddyfile for DIN Edge configuration looks like this:
 							}
 						}
 					}
-					chain_id eip155:0x4268
+					chain_id 0x4268
 				}
 			}
 			din_registry {
@@ -160,7 +160,7 @@ networks {
 				}
 			}
 		}
-		chain_id eip155:0x1
+		chain_id 0x1
 	}
 ```
 
@@ -184,7 +184,7 @@ Then, we have another network:
 				}
 			}
 		}
-		chain_id eip155:0x4268
+		chain_id 0x4268
 	}
 }
 ```

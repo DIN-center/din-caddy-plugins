@@ -128,22 +128,22 @@ func (h *StarknetHandler) GetNamespace() string {
 }
 
 func (h *StarknetHandler) ValidateChainID(chainID string) error {
-	// Starknet chain IDs have format: starknet:0x{hex}
+	// Starknet chain IDs are now just 0x{hex} without prefix
 	// Examples:
-	// - starknet:0x534e5f4d41494e (mainnet)
-	// - starknet:0x534e5f5345504f4c4941 (sepolia)
+	// - 0x534e5f4d41494e (mainnet)
+	// - 0x534e5f5345504f4c4941 (sepolia)
 
-	if !strings.HasPrefix(chainID, "starknet:") {
-		return fmt.Errorf("invalid Starknet chain ID format: %s, expected format: starknet:0x{hex}", chainID)
+	// Fail if there's a colon (old CAIP-2 format)
+	if strings.Contains(chainID, ":") {
+		return fmt.Errorf("invalid Starknet chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
 	}
 
-	hexPart := strings.TrimPrefix(chainID, "starknet:")
-	if !strings.HasPrefix(hexPart, "0x") {
-		return fmt.Errorf("invalid Starknet chain ID hex format: %s", chainID)
+	if !strings.HasPrefix(chainID, "0x") {
+		return fmt.Errorf("invalid Starknet chain ID format: %s, expected format: 0x{hex}", chainID)
 	}
 
 	// Validate hex format
-	hexDigits := strings.TrimPrefix(hexPart, "0x")
+	hexDigits := strings.TrimPrefix(chainID, "0x")
 	if len(hexDigits) == 0 {
 		return fmt.Errorf("empty hex part in Starknet chain ID: %s", chainID)
 	}
@@ -160,9 +160,6 @@ func (h *StarknetHandler) ValidateChainID(chainID string) error {
 	return nil
 }
 
-func (h *StarknetHandler) FormatChainID(networkReference string) string {
-	return "starknet:" + networkReference
-}
 
 func (h *StarknetHandler) ExtractChainReference(result interface{}) (string, error) {
 	chainRef, ok := result.(string)
@@ -405,13 +402,13 @@ func (h *StarknetHandler) ParseChainIDResponse(body []byte, statusCode int) (str
 		return "", fmt.Errorf("missing result field in chain ID response")
 	}
 
-	// Extract chain reference and format full chain ID
+	// Extract chain reference (already in correct format without prefix)
 	chainReference, err := h.ExtractChainReference(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract chain reference: %w", err)
 	}
 
-	return h.FormatChainID(chainReference), nil
+	return chainReference, nil
 }
 
 // GetLatestBlockNumber retrieves the latest block number for Starknet chains
