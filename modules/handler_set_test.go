@@ -25,7 +25,7 @@ func TestHandlerSetOnce(t *testing.T) {
 	// Simulate Caddyfile parsing
 	caddyfileContent := `networks {
 		ethereum-mainnet {
-			chain_id "eip155:0x1"
+			chain_id "0x1"
 			handler evm
 			providers {
 				http://localhost:8545
@@ -67,7 +67,7 @@ func TestHandlerSetForJSONLoadedConfig(t *testing.T) {
 	network := &network{
 		Name:        "ethereum-mainnet",
 		HandlerType: EVMHandler,
-		ChainId:     "eip155:0x1",
+		ChainId:     "0x1",
 		Providers: map[string]*provider{
 			"localhost:8545": {
 				HttpUrl: "http://localhost:8545",

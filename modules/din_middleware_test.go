@@ -389,7 +389,7 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 							priority 2
 						}
 					}
-					chain_id eip155:0x1
+					chain_id 0x1
 					healthcheck_threshold 2
 					healthcheck_interval 5
 					healthcheck_blocklag_limit 10

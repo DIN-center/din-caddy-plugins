@@ -21,7 +21,7 @@ A minimal Caddyfile for DIN Sidecar configuration looks like this:
 					providers {
 						http://localhost:8545
 					}
-                    chain_id eip155:0xNetworkChainID
+                    chain_id 0xNetworkChainID
 				}
 			}
 		}
@@ -70,7 +70,7 @@ din {
             providers {
                 http://localhost:8545
             }
-            chain_id eip155:0xNetworkChainID
+            chain_id 0xNetworkChainID
         }
     }
 }

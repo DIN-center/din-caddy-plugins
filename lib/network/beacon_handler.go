@@ -187,33 +187,23 @@ func (h *BeaconChainHandler) GetNamespace() string {
 }
 
 func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
-	// Beacon chain uses the same chain ID format as Ethereum mainnet
-	if !strings.HasPrefix(chainID, "beacon:") {
-		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, expected format: beacon:{chainId}", chainID)
+	// Fail if there's a colon (old CAIP-2 format)
+	if strings.Contains(chainID, ":") {
+		return fmt.Errorf("invalid Beacon Chain chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
 	}
 
-	// Extract chain ID number and validate it's numeric
-	parts := strings.Split(chainID, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid Beacon Chain chain ID format: %s", chainID)
-	}
-
-	chainIDNum := parts[1]
-	if chainIDNum == "" {
-		return fmt.Errorf("empty chain ID number in: %s", chainID)
+	if chainID == "" {
+		return fmt.Errorf("empty chain ID")
 	}
 
 	// Convert to ensure it's a valid number
-	if _, err := strconv.ParseInt(chainIDNum, 10, 64); err != nil {
-		return fmt.Errorf("invalid chain ID number in %s: %w", chainID, err)
+	if _, err := strconv.ParseInt(chainID, 10, 64); err != nil {
+		return fmt.Errorf("invalid chain ID number %s: %w", chainID, err)
 	}
 
 	return nil
 }
 
-func (h *BeaconChainHandler) FormatChainID(networkReference string) string {
-	return h.GetNamespace() + ":" + networkReference
-}
 
 func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
 	// For beacon chain, we extract chain reference from genesis response
@@ -424,50 +414,70 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 		return "", fmt.Errorf("HTTP error: %d", statusCode)
 	}
 
-	// First try to parse as standard format (data as object with mixed types)
+	// First try to parse as the standard format with data as a map
 	var specResponse struct {
 		Data map[string]interface{} `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &specResponse); err == nil && specResponse.Data != nil {
-		// Standard format - extract DEPOSIT_CHAIN_ID
-		if chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]; exists {
+		// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
+		if chainIDValue, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]; exists {
 			// Handle as string
-			if chainIDStr, ok := chainID.(string); ok {
-				return h.FormatChainID(chainIDStr), nil
+			if chainIDStr, ok := chainIDValue.(string); ok && chainIDStr != "" {
+				return chainIDStr, nil
 			}
 			// Handle as number
-			if chainIDNum, ok := chainID.(float64); ok {
-				return h.FormatChainID(fmt.Sprintf("%d", int64(chainIDNum))), nil
+			if chainIDNum, ok := chainIDValue.(float64); ok {
+				return fmt.Sprintf("%d", int64(chainIDNum)), nil
 			}
-			return "", fmt.Errorf("DEPOSIT_CHAIN_ID has unexpected type: %T", chainID)
+			return "", fmt.Errorf("DEPOSIT_CHAIN_ID has unexpected type: %T", chainIDValue)
 		}
-		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response")
 	}
 
-	// Try parsing as array format (some providers might return data as array)
-	var arrayResponse struct {
-		Data []map[string]interface{} `json:"data"`
+	// If that fails, try parsing as a generic interface to handle different response formats
+	var genericResponse map[string]interface{}
+	if err := json.Unmarshal(body, &genericResponse); err != nil {
+		return "", fmt.Errorf("failed to parse beacon config response: %w", err)
 	}
 
-	if err := json.Unmarshal(body, &arrayResponse); err == nil && len(arrayResponse.Data) > 0 {
-		// Look for DEPOSIT_CHAIN_ID in the array
-		for _, item := range arrayResponse.Data {
-			if chainID, exists := item["DEPOSIT_CHAIN_ID"]; exists {
-				if chainIDStr, ok := chainID.(string); ok {
-					return h.FormatChainID(chainIDStr), nil
+	// Check if data exists and what type it is
+	dataField, exists := genericResponse["data"]
+	if !exists {
+		return "", fmt.Errorf("data field not found in beacon config response")
+	}
+
+	// Handle data as a map (standard format)
+	if dataMap, ok := dataField.(map[string]interface{}); ok {
+		if chainIDValue, exists := dataMap["DEPOSIT_CHAIN_ID"]; exists {
+			if chainID, ok := chainIDValue.(string); ok && chainID != "" {
+				return chainID, nil
+			}
+			// Handle case where DEPOSIT_CHAIN_ID might be a number
+			if chainIDNum, ok := chainIDValue.(float64); ok {
+				return fmt.Sprintf("%d", int64(chainIDNum)), nil
+			}
+		}
+	}
+
+	// Handle data as an array (some providers return this format)
+	if dataArray, ok := dataField.([]interface{}); ok && len(dataArray) > 0 {
+		// Look for DEPOSIT_CHAIN_ID in the first array element
+		if firstItem, ok := dataArray[0].(map[string]interface{}); ok {
+			if chainIDValue, exists := firstItem["DEPOSIT_CHAIN_ID"]; exists {
+				// Handle as string
+				if chainID, ok := chainIDValue.(string); ok && chainID != "" {
+					return chainID, nil
 				}
-				// Try as number
-				if chainIDNum, ok := chainID.(float64); ok {
-					return h.FormatChainID(fmt.Sprintf("%d", int64(chainIDNum))), nil
+				// Handle as number
+				if chainIDNum, ok := chainIDValue.(float64); ok {
+					return fmt.Sprintf("%d", int64(chainIDNum)), nil
 				}
 			}
 		}
-		return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config array response")
 	}
 
-	// If neither format works, return error
-	return "", fmt.Errorf("failed to parse beacon config response: unexpected format")
+	// If data is another format, return a more helpful error
+	return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response (data type: %T)", dataField)
 }
 
 // GetChainID retrieves the chain ID for beacon chain
