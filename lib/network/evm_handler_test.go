@@ -68,13 +68,23 @@ func TestEVMHandler_ValidateChainID(t *testing.T) {
 			shouldErr: false,
 		},
 		{
-			name:      "invalid - contains colon (old CAIP-2 format)",
+			name:      "valid - CAIP-2 format supported for backwards compatibility",
 			chainID:   "eip155:1",
-			shouldErr: true,
+			shouldErr: false,
+		},
+		{
+			name:      "valid - CAIP-2 format with hex",
+			chainID:   "eip155:0x1",
+			shouldErr: false,
 		},
 		{
 			name:      "invalid - contains colon with different prefix",
 			chainID:   "starknet:0x1",
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - wrong CAIP-2 prefix for EVM",
+			chainID:   "solana:0x1",
 			shouldErr: true,
 		},
 		{

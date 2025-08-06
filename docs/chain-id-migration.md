@@ -4,6 +4,8 @@
 
 As of this update, the DIN Caddy plugins no longer require CAIP-2 format prefixes for chain IDs. This change simplifies configuration and removes redundancy since network types are now determined by explicit handler declarations.
 
+**Note:** EVM networks maintain backwards compatibility and support both formats.
+
 ## What Changed?
 
 ### Before (Old Format)
@@ -15,14 +17,22 @@ starknet:0x534... # Starknet Mainnet
 beacon:1        # Beacon Chain
 ```
 
-### After (New Format)
+### After (New Format - Recommended)
 Chain IDs now use their native format without prefixes:
 ```
-0x1             # Ethereum Mainnet
+0x1             # Ethereum Mainnet (both formats supported)
 5eykt...        # Solana Mainnet
 0x534...        # Starknet Mainnet
 1               # Beacon Chain
 ```
+
+### Backwards Compatibility
+
+**EVM Networks Only:** For backwards compatibility, EVM networks (handler type `evm`) continue to support both formats:
+- ✅ `0x1` (recommended)
+- ✅ `eip155:0x1` (supported for backwards compatibility)
+
+Other network types (Solana, Starknet, Beacon) require the new format without prefixes.
 
 ## Migration Steps
 
@@ -199,20 +209,21 @@ networks {
 ## Validation Changes
 
 ### What's Now Invalid
-The system will now **reject** chain IDs containing colons (`:`):
-- ❌ `eip155:0x1`
-- ❌ `solana:5eykt...`
-- ❌ `starknet:0x534...`
-- ❌ `beacon:1`
+For non-EVM networks, the system will **reject** chain IDs containing colons (`:`):
+- ❌ `solana:5eykt...` (Solana networks)
+- ❌ `starknet:0x534...` (Starknet networks)
+- ❌ `beacon:1` (Beacon Chain)
 
-Error message example:
+Error message examples:
 ```
-invalid EVM chain ID format: eip155:0x1, chain ID should not contain ':' (CAIP-2 prefix no longer required)
+invalid Solana chain ID format: solana:5eykt..., chain ID should not contain ':' (CAIP-2 prefix no longer required)
+invalid Beacon Chain chain ID format: beacon:1, chain ID should not contain ':' (CAIP-2 prefix no longer required)
 ```
 
 ### What's Valid
 - ✅ Hex format for EVM: `0x1`, `0x89`, `0xa4b1`
 - ✅ Decimal format for EVM: `1`, `137`, `42161`
+- ✅ **CAIP-2 format for EVM (backwards compatibility)**: `eip155:0x1`, `eip155:1`
 - ✅ Base58 hashes for Solana: `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`
 - ✅ Hex format for Starknet: `0x534e5f4d41494e`
 - ✅ Numeric format for Beacon: `1`, `5`, `11155111`

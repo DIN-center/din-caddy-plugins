@@ -14,6 +14,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"go.uber.org/zap"
 )
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
@@ -167,29 +168,47 @@ func (h *EVMHandler) GetNamespace() string {
 }
 
 func (h *EVMHandler) ValidateChainID(chainID string) error {
-	// Fail if there's a colon (old CAIP-2 format)
-	if strings.Contains(chainID, ":") {
-		return fmt.Errorf("invalid EVM chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
-	}
-
 	if chainID == "" {
 		return fmt.Errorf("empty chain ID")
 	}
 
-	// Remove 0x prefix if present and validate hex
-	chainIDNum := chainID
+	// Support both formats for backwards compatibility
+	actualChainID := chainID
+	
+	// If it contains a colon, it might be CAIP-2 format
+	if strings.Contains(chainID, ":") {
+		parts := strings.Split(chainID, ":")
+		if len(parts) == 2 && parts[0] == "eip155" {
+			// Valid CAIP-2 format for EVM, extract the actual chain ID
+			actualChainID = parts[1]
+			// Log that we're using backwards compatibility
+			if h.logger != nil {
+				h.logger.Debug("Using CAIP-2 format for backwards compatibility",
+					zap.String("original", chainID),
+					zap.String("extracted", actualChainID))
+			}
+		} else {
+			// Invalid format
+			return fmt.Errorf("invalid EVM chain ID format: %s, expected format 'eip155:chainID' or just 'chainID'", chainID)
+		}
+	}
+
+	// Validate the actual chain ID (with or without 0x prefix)
+	chainIDNum := actualChainID
 	if strings.HasPrefix(chainIDNum, "0x") {
 		chainIDNum = strings.TrimPrefix(chainIDNum, "0x")
 	}
 
 	// Convert to ensure it's a valid number
 	if _, err := strconv.ParseInt(chainIDNum, 16, 64); err != nil {
-		return fmt.Errorf("invalid chain ID number %s: %w", chainID, err)
+		// Try decimal format as well
+		if _, err := strconv.ParseInt(actualChainID, 10, 64); err != nil {
+			return fmt.Errorf("invalid chain ID number %s: must be hex (0x...) or decimal", actualChainID)
+		}
 	}
 
 	return nil
 }
-
 
 func (h *EVMHandler) ExtractChainReference(result interface{}) (string, error) {
 	chainRef, ok := result.(string)
