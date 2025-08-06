@@ -303,7 +303,6 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 			return fmt.Errorf("error initializing provider: %v", err)
 		}
 	}
-
 	return nil
 }
 
@@ -784,7 +783,6 @@ func (d *DinMiddleware) getNetworkNames() []string {
 	}
 	return names
 }
-
 
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {

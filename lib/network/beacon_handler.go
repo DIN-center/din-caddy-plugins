@@ -28,7 +28,7 @@ type BeaconChainHandler struct {
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 	return &BeaconChainHandler{
 		config:              config,
-		healthCheckEndpoint: "/eth/v1/node/health",
+		healthCheckEndpoint: "/eth/v2/beacon/blocks/head",
 		version:             "1.0.0",
 		logger:              config.Logger,
 	}
@@ -350,8 +350,6 @@ func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) 
 
 // Health Check Specifics methods
 func (h *BeaconChainHandler) GetHealthCheckMethod() string {
-	// Use the node health endpoint for health checks
-	// This returns HTTP status codes: 200 (ready), 206 (syncing), 503 (not initialized)
 	return h.healthCheckEndpoint
 }
 
