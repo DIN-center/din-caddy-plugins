@@ -10,12 +10,12 @@ import (
 	"os"
 	"strconv"
 	"testing"
-
-	"github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 )
 
 var dinClient *DinClient
 
+// NOTE: these tests are not run by default, they are intended to be run manually as it requires a local anvil node to be running
+// They are run in CI as part of the monodin workflow
 func setup(t *testing.T) {
 	rpcURL := "http://localhost:8545"
 
@@ -139,8 +139,8 @@ func getContractAddressFromAnvil(dinRegistryDataPath string) (string, error) {
 	return contractAddress, nil
 }
 
-// TestGetRegistryData tests the DinGo library with deployed contracts
-func TestGetRegistryData(t *testing.T) {
+// IntegrationTestGetRegistryData tests the DinGo library with deployed contracts
+func TestIntegrationGetRegistryData(t *testing.T) {
 	setup(t) // Call setup to initialize dinClient
 
 	// get registry data
@@ -204,20 +204,24 @@ func validateNetworkData(t *testing.T, network *Network) {
 		t.Fatalf("Network config is nil")
 	}
 
-	if network.NetworkConfig.HealthcheckMethodBit == 0 {
-		t.Fatalf("Healthcheck method bit is 0")
+	if network.NetworkConfig.HealthcheckMethod == "" {
+		t.Fatalf("Healthcheck method is empty")
+	}
+
+	if network.NetworkConfig.GetBlockByNumberMethod == "" {
+		t.Fatalf("Get block by number method is empty")
 	}
 
 	if network.NetworkConfig.HealthcheckIntervalSec == 0 {
 		t.Fatalf("Healthcheck interval seconds is 0")
 	}
 
-	if network.NetworkConfig.CallContractMethodBit == 0 {
-		t.Fatalf("Call contract method bit is 0")
+	if network.NetworkConfig.CallContractMethod == "" {
+		t.Fatalf("Call contract method is empty")
 	}
 
-	if network.NetworkConfig.ChainIdMethodBit == 0 {
-		t.Fatalf("Chain ID method bit is 0")
+	if network.NetworkConfig.ChainIdMethod == "" {
+		t.Fatalf("Chain ID method is empty")
 	}
 
 	if network.NetworkConfig.ChainId == "" {
@@ -270,8 +274,8 @@ func validateProviderData(t *testing.T, provider *Provider) {
 		t.Fatalf("Provider auth config type is empty")
 	}
 
-	if provider.AuthConfig.Type != dinregistry.None && provider.AuthConfig.Url == "" {
-		t.Fatalf("Provider auth config URL is empty")
+	if provider.AuthConfig.Type == ProviderAuthTypeSIWE && provider.AuthConfig.Url == "" {
+		t.Fatalf("Provider auth is SiWE but auth config URL is empty")
 	}
 
 	if len(provider.NetworkServices) < 1 {
@@ -344,20 +348,24 @@ func TestGetAllNetworks(t *testing.T) {
 			t.Fatalf("Network config is nil")
 		}
 
-		if network.NetworkConfig.HealthcheckMethodBit == 0 {
-			t.Fatalf("Healthcheck method bit is 0")
+		if network.NetworkConfig.HealthcheckMethod == "" {
+			t.Fatalf("Healthcheck method is empty")
+		}
+
+		if network.NetworkConfig.GetBlockByNumberMethod == "" {
+			t.Fatalf("Get block by number method is empty")
 		}
 
 		if network.NetworkConfig.HealthcheckIntervalSec == 0 {
 			t.Fatalf("Healthcheck interval seconds is 0")
 		}
 
-		if network.NetworkConfig.CallContractMethodBit == 0 {
-			t.Fatalf("Call contract method bit is 0")
+		if network.NetworkConfig.CallContractMethod == "" {
+			t.Fatalf("Call contract method is empty")
 		}
 
-		if network.NetworkConfig.ChainIdMethodBit == 0 {
-			t.Fatalf("Chain ID method bit is 0")
+		if network.NetworkConfig.ChainIdMethod == "" {
+			t.Fatalf("Chain ID method is empty")
 		}
 
 		if network.NetworkConfig.ChainId == "" {
