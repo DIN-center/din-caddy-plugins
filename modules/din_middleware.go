@@ -15,6 +15,7 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -62,7 +63,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The dingo client object
-	DingoClient din.IDingoClient
+	DingoClient din.IDinClient
 
 	logger *logger.LoggerClient
 
@@ -195,11 +196,19 @@ func (d *DinMiddleware) initializeDefaults() {
 
 // initializeDinRegistryClient initializes the DIN registry client
 func (d *DinMiddleware) initializeDinRegistryClient() error {
-	client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
-	if err != nil {
-		return fmt.Errorf("error initializing din client: %v", err)
+	if d.RegistryEnabled {
+		// DinClient is only initialized if the registry is enabled
+		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry",
+			zap.String("registry_endpoint_url", d.RegistryEndpointUrl),
+			zap.String("registry_contract_address", d.RegistryContractAddress))
+
+		client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+		if err != nil {
+			return fmt.Errorf("error initializing DIN client: %v", err)
+		}
+		d.DingoClient = client
 	}
-	d.DingoClient = client
+
 	return nil
 }
 
@@ -765,7 +774,7 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock()
+				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
 			}
 		}
 	}()
