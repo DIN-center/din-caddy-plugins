@@ -2,7 +2,6 @@ package modules
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -87,16 +86,10 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 	if networkObj != nil && networkObj.handler != nil {
 		networkName := networkObj.Name
 		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, networkName); err != nil {
-			d.logger.Error("Failed to configure request path", 
+			d.logger.Error("Failed to configure request path",
 				zap.String("network", networkName),
 				zap.String("provider_path", provider.path),
 				zap.Error(err))
-		}
-	} else {
-		// Fallback for cases where handler is not available
-		if provider.path != "" {
-			r.URL.RawPath = provider.path
-			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
 		}
 	}
 

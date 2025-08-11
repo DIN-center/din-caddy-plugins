@@ -14,14 +14,22 @@ import (
 // ConfigureJSONRPCRequestPath configures the request path for JSON-RPC providers
 // This is shared logic for all JSON-RPC handlers (EVM, Starknet, Solana)
 func ConfigureJSONRPCRequestPath(req *http.Request, providerPath string) {
-	if providerPath != "" {
-		req.URL.RawPath = providerPath
-		req.URL.Path, _ = url.PathUnescape(req.URL.RawPath)
-	} else {
-		// For JSON-RPC providers without configured paths, clear RawPath
+	// For JSON-RPC providers, we need to handle three cases:
+	// 1. Provider has a specific path (e.g., "/v1/rpc") - use it
+	// 2. Provider has root path "/" or empty "" - clear the network path
+	// 3. No provider path configured - keep the current path
+
+	if providerPath == "/" || providerPath == "" {
+		// Provider expects requests at root - clear any network path
+		req.URL.Path = "/"
 		req.URL.RawPath = ""
-		// Path already set, no changes needed
+	} else if providerPath != "" {
+		// Provider has a specific path - use it
+		req.URL.Path = providerPath
+		req.URL.RawPath = ""
 	}
+	// If providerPath is not set at all (different from empty string),
+	// the original path is kept (though this shouldn't happen in practice)
 }
 
 // ConfigureRESTRequestPath configures the request path for REST API providers
