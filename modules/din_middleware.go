@@ -366,7 +366,12 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 	}
 
 	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
-	provider.path = url.Path
+	// For providers with no path or root path, we want to send requests to root
+	if url.Path == "" {
+		provider.path = "/"
+	} else {
+		provider.path = url.Path
+	}
 
 	// Note: Authentication credentials from URL (username@host) are preserved in the URL
 	// and handled during request construction, not converted to Authorization headers
