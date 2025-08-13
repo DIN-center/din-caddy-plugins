@@ -52,8 +52,9 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		return
 	}
 	// Lock the middleware object to prevent race condition when updating the networks and providers
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+	// IMPORTANT: Using write lock (Lock/Unlock) because we perform write operations on d.Networks map
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	// Loop through the networks in the din registry
 	for _, regNetwork := range registryData.Networks {
