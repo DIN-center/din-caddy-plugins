@@ -143,6 +143,12 @@ din {
     registry_block_epoch 10                                  # Blocks between syncs
     registry_block_check_interval_sec 60                     # Check frequency
     registry_priority 1                                      # Provider priority
+    
+    # Retry Configuration (Optional)
+    registry_retry_max_attempts 3                            # Maximum retry attempts (default: 3)
+    registry_retry_initial_delay "1s"                        # Initial delay between retries (default: 1s)
+    registry_retry_max_delay "30s"                           # Maximum delay between retries (default: 30s)
+    registry_retry_backoff_factor 2.0                        # Exponential backoff multiplier (default: 2.0)
   }
 }
 ```
@@ -155,6 +161,48 @@ din {
 - **Check Interval**: Balance between responsiveness and resource usage
   - Lower values: Faster update detection
   - Higher values: Reduced API calls
+
+### Retry Mechanism
+The registry sync system includes automatic retry logic with exponential backoff for improved resilience:
+
+#### How Retry Works
+1. **Initial Attempt**: Operations are tried once without delay
+2. **Retry on Failure**: If the operation fails, it waits before retrying
+3. **Exponential Backoff**: Each retry doubles the wait time (configurable multiplier)
+4. **Maximum Delay**: Wait time is capped at the configured maximum
+5. **Jitter**: 10% random jitter prevents thundering herd problems
+
+#### Retry Configuration
+- **Max Attempts**: Total number of tries (initial + retries)
+  - Default: 3 attempts
+  - Range: 1-10 recommended
+  
+- **Initial Delay**: First retry wait time
+  - Default: 1 second
+  - Recommendation: Start small (1-5s)
+  
+- **Max Delay**: Maximum wait between retries
+  - Default: 30 seconds
+  - Recommendation: 30-60s for production
+  
+- **Backoff Factor**: Multiplier for each retry
+  - Default: 2.0 (doubles each time)
+  - Range: 1.5-3.0 recommended
+
+#### Example Retry Timeline
+With default settings (3 attempts, 1s initial, 2.0 factor):
+1. Initial attempt - immediate
+2. First retry - wait ~1s (with jitter: 0.9-1.1s)
+3. Second retry - wait ~2s (with jitter: 1.8-2.2s)
+4. Third retry - wait ~4s (with jitter: 3.6-4.4s)
+
+Total time before failure: ~7-8 seconds
+
+#### Operations with Retry
+The following operations automatically retry on failure:
+- Getting latest block number from the network
+- Fetching registry data from the contract
+- Initial registry sync on startup
 
 ## Troubleshooting Guide
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
@@ -636,6 +637,22 @@ func (p *caddyfileParser) parseDinRegistry() error {
 			if err := p.parseIntField(&p.middleware.RegistryPriority, "registry priority"); err != nil {
 				return err
 			}
+		case "registry_retry_max_attempts":
+			if err := p.parseIntField(&p.middleware.RegistryRetryMaxAttempts, "registry retry max attempts"); err != nil {
+				return err
+			}
+		case "registry_retry_initial_delay":
+			if err := p.parseDurationField(&p.middleware.RegistryRetryInitialDelay, "registry retry initial delay"); err != nil {
+				return err
+			}
+		case "registry_retry_max_delay":
+			if err := p.parseDurationField(&p.middleware.RegistryRetryMaxDelay, "registry retry max delay"); err != nil {
+				return err
+			}
+		case "registry_retry_backoff_factor":
+			if err := p.parseFloat64Field(&p.middleware.RegistryRetryBackoffFactor, "registry retry backoff factor"); err != nil {
+				return err
+			}
 		default:
 			return p.dispenser.Errf("unrecognized registry option: %s", p.dispenser.Val())
 		}
@@ -713,6 +730,26 @@ func (p *caddyfileParser) parseUint64Field(field *uint64, fieldName string) erro
 func (p *caddyfileParser) parseBoolField(field *bool, fieldName string) error {
 	p.dispenser.Next()
 	val, err := strconv.ParseBool(p.dispenser.Val())
+	if err != nil {
+		return fmt.Errorf("invalid %s: %v", fieldName, err)
+	}
+	*field = val
+	return nil
+}
+
+func (p *caddyfileParser) parseDurationField(field *time.Duration, fieldName string) error {
+	p.dispenser.Next()
+	val, err := time.ParseDuration(p.dispenser.Val())
+	if err != nil {
+		return fmt.Errorf("invalid %s: %v", fieldName, err)
+	}
+	*field = val
+	return nil
+}
+
+func (p *caddyfileParser) parseFloat64Field(field *float64, fieldName string) error {
+	p.dispenser.Next()
+	val, err := strconv.ParseFloat(p.dispenser.Val(), 64)
 	if err != nil {
 		return fmt.Errorf("invalid %s: %v", fieldName, err)
 	}

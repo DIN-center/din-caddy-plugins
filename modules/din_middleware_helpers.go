@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"go.uber.org/zap"
@@ -16,10 +18,25 @@ import (
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) {
-	// Get the latest block number from the linea network
-	latestBlockNumber, err := web3Client.LatestBlockNumber()
+	// Create retry config for registry operations
+	retryConfig := &utils.RetryConfig{
+		MaxRetries:        d.RegistryRetryMaxAttempts,
+		InitialDelay:      d.RegistryRetryInitialDelay,
+		MaxDelay:          d.RegistryRetryMaxDelay,
+		BackoffMultiplier: d.RegistryRetryBackoffFactor,
+		JitterFactor:      0.1, // 10% jitter
+	}
+	
+	ctx := context.Background()
+	
+	// Get the latest block number from the linea network with retry
+	latestBlockNumber, err := utils.RetryWithBackoffTyped(ctx, retryConfig, func() (uint64, error) {
+		return web3Client.LatestBlockNumber()
+	})
 	if err != nil {
-		d.logger.Error("Failed to get latest block number", zap.Error(err))
+		d.logger.Error("Failed to get latest block number after retries", 
+			zap.Error(err),
+			zap.Int("max_retries", d.RegistryRetryMaxAttempts))
 		return
 	}
 
@@ -33,9 +50,14 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) 
 
 	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
 	if latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
-		registryData, err := d.DingoClient.GetRegistryData()
+		// Get registry data with retry
+		registryData, err := utils.RetryWithBackoffTyped(ctx, retryConfig, func() (*din.DinRegistryData, error) {
+			return d.DingoClient.GetRegistryData()
+		})
 		if err != nil {
-			d.logger.Error("Failed to get data from registry", zap.Error(err))
+			d.logger.Error("Failed to get data from registry after retries", 
+				zap.Error(err),
+				zap.Int("max_retries", d.RegistryRetryMaxAttempts))
 			return
 		}
 		d.processRegistryData(registryData)

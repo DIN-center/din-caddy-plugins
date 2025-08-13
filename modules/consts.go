@@ -53,6 +53,12 @@ const (
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
 	DefaultPort                          = "8000"
+	
+	// Retry configuration constants
+	DefaultRegistryRetryMaxAttempts   = 3
+	DefaultRegistryRetryInitialDelay  = "1s"
+	DefaultRegistryRetryMaxDelay      = "30s"
+	DefaultRegistryRetryBackoffFactor = 2.0
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 
