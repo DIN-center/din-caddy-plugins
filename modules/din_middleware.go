@@ -40,6 +40,7 @@ var (
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
+	_ caddy.CleanerUpper          = (*DinMiddleware)(nil)
 	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
 )
 
@@ -814,15 +815,48 @@ func (d *DinMiddleware) startRegistrySync() {
 	}()
 }
 
+// Cleanup implements caddy.CleanerUpper and is called when Caddy shuts down or reloads.
+// It ensures all goroutines are properly terminated and resources are cleaned up.
+func (d *DinMiddleware) Cleanup() error {
+	d.logger.Info("Starting graceful shutdown of DIN middleware")
+	
+	// Create a channel to signal completion
+	done := make(chan struct{})
+	
+	// Run cleanup in a goroutine
+	go func() {
+		d.closeAll()
+		close(done)
+	}()
+	
+	// Wait for cleanup to complete or timeout after 10 seconds
+	select {
+	case <-done:
+		d.logger.Info("DIN middleware shutdown complete")
+	case <-time.After(10 * time.Second):
+		d.logger.Warn("DIN middleware shutdown timed out after 10 seconds")
+	}
+	
+	return nil
+}
+
 func (d *DinMiddleware) closeAll() {
-	for _, network := range d.Networks {
+	// Close all network healthcheck goroutines
+	for name, network := range d.Networks {
+		d.logger.Debug("Closing network resources", zap.String("network", name))
 		network.close()
 	}
+	
+	// Close middleware-level goroutines (registry sync)
 	d.close()
 }
 
 func (d *DinMiddleware) close() {
-	close(d.quit)
+	// Signal shutdown to registry sync goroutine
+	if d.quit != nil {
+		d.logger.Debug("Signaling shutdown to registry sync goroutine")
+		close(d.quit)
+	}
 }
 
 func min(a, b int) int {
