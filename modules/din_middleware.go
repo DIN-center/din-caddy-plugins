@@ -772,14 +772,43 @@ func (d *DinMiddleware) startRegistrySync() {
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
 	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
 	go func() {
+		// CRITICAL: Panic recovery to prevent application crash
+		// If registry sync panics, log the error and continue running
+		defer func() {
+			if r := recover(); r != nil {
+				d.logger.Error("CRITICAL: Registry sync goroutine panicked and recovered. Application continues running.",
+					zap.Any("panic", r),
+					zap.Stack("stacktrace"))
+				// Clean up the ticker
+				ticker.Stop()
+				
+				// Optionally restart the sync after a delay to recover from transient issues
+				// This prevents the sync from being permanently dead after a panic
+				time.Sleep(30 * time.Second)
+				d.logger.Info("Attempting to restart registry sync after panic recovery")
+				d.startRegistrySync()
+			}
+		}()
+		
 		// Keep an index for RPC request IDs
 		for i := 0; ; i++ {
 			select {
 			case <-d.quit:
 				ticker.Stop()
+				d.logger.Info("Registry sync goroutine shutting down gracefully")
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				// Wrap the sync call in a function that can recover from panics
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							d.logger.Error("Registry sync operation panicked during sync attempt",
+								zap.Any("panic", r),
+								zap.Int("iteration", i))
+						}
+					}()
+					d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				}()
 			}
 		}
 	}()
