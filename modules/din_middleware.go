@@ -2,6 +2,7 @@ package modules
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,6 +94,12 @@ type DinMiddleware struct {
 	RegistryContractAddress string
 	// The priority of the registry providers
 	RegistryPriority int
+	
+	// Retry configuration for registry operations
+	RegistryRetryMaxAttempts   int
+	RegistryRetryInitialDelay  time.Duration
+	RegistryRetryMaxDelay      time.Duration
+	RegistryRetryBackoffFactor float64
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -192,6 +199,22 @@ func (d *DinMiddleware) initializeDefaults() {
 	}
 	if d.CaddyPort == "" {
 		d.CaddyPort = DefaultPort
+	}
+	
+	// Set retry defaults
+	if d.RegistryRetryMaxAttempts == 0 {
+		d.RegistryRetryMaxAttempts = DefaultRegistryRetryMaxAttempts
+	}
+	if d.RegistryRetryInitialDelay == 0 {
+		duration, _ := time.ParseDuration(DefaultRegistryRetryInitialDelay)
+		d.RegistryRetryInitialDelay = duration
+	}
+	if d.RegistryRetryMaxDelay == 0 {
+		duration, _ := time.ParseDuration(DefaultRegistryRetryMaxDelay)
+		d.RegistryRetryMaxDelay = duration
+	}
+	if d.RegistryRetryBackoffFactor == 0 {
+		d.RegistryRetryBackoffFactor = DefaultRegistryRetryBackoffFactor
 	}
 }
 
@@ -764,10 +787,24 @@ func (d *DinMiddleware) startHealthChecks() error {
 // the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
-	// Get the initial registry data
-	registryData, err := d.DingoClient.GetRegistryData()
+	// Create retry config for registry operations
+	retryConfig := &utils.RetryConfig{
+		MaxRetries:        d.RegistryRetryMaxAttempts,
+		InitialDelay:      d.RegistryRetryInitialDelay,
+		MaxDelay:          d.RegistryRetryMaxDelay,
+		BackoffMultiplier: d.RegistryRetryBackoffFactor,
+		JitterFactor:      0.1, // 10% jitter
+	}
+	
+	// Get the initial registry data with retry
+	ctx := context.Background()
+	registryData, err := utils.RetryWithBackoffTyped(ctx, retryConfig, func() (*din.DinRegistryData, error) {
+		return d.DingoClient.GetRegistryData()
+	})
 	if err != nil {
-		d.logger.Error("Failed to initialize registry sync", zap.Error(err))
+		d.logger.Error("Failed to initialize registry sync after retries", 
+			zap.Error(err),
+			zap.Int("max_retries", d.RegistryRetryMaxAttempts))
 	}
 	d.processRegistryData(registryData)
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
