@@ -3,10 +3,12 @@ package dincli
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -161,8 +163,9 @@ func TestSetNetworkStatusCommand(t *testing.T) {
 		mockTransactor := &bind.TransactOpts{}
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
 
-		// Mock SetNetworkStatus call
-		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusActive).Return(nil).Times(1)
+		// Mock SetNetworkStatus call - returns transaction and error
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusActive).Return(mockTx, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkStatus("keystorePath", "test-password")
@@ -183,8 +186,9 @@ func TestSetNetworkStatusCommand(t *testing.T) {
 		mockTransactor := &bind.TransactOpts{}
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
 
-		// Mock SetNetworkStatus call
-		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusMaintenance).Return(nil).Times(1)
+		// Mock SetNetworkStatus call - returns transaction and error
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusMaintenance).Return(mockTx, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkStatus("keystorePath", "test-password")
@@ -225,7 +229,7 @@ func TestSetNetworkStatusCommand(t *testing.T) {
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
 
 		// Mock SetNetworkStatus failure
-		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusActive).Return(errors.New("network not found")).Times(1)
+		mockDinClient.EXPECT().SetNetworkStatus(mockTransactor, "test://network", din.NetworkStatusActive).Return(nil, errors.New("network not found")).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkStatus("keystorePath", "test-password")
@@ -241,9 +245,11 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 	// Setup mock
 	mockCtrl := gomock.NewController(t)
 	mockDinClient := din.NewMockIDinClient(mockCtrl)
+	mockFeesEstimator := NewMockIFeesEstimator(mockCtrl)
 
 	// set CLI states
 	dinClient = mockDinClient
+	feesEstimator = mockFeesEstimator
 
 	// Helper function to reset global variables
 	resetSetConfigGlobalVariables := func() {
@@ -257,27 +263,36 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// set CLI values
 		networkURI = "test://network"
-		networkConfigJsonAsString = `{"healthcheckMethod": "eth_blockNumber"}`
+		networkConfigJsonAsString = `{"handler": "starknet"}`
 		keystorePath = "keystorePath"
 
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -285,20 +300,22 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// Mock SetNetworkConfig call with updated config
 		expectedConfig := din.NetworkOperationsConfig{
-			HealthcheckMethod:       "eth_blockNumber", // Updated
-			HealthcheckIntervalSec:  30,
-			ChainIdMethod:           "eth_chainId",
-			GetBlockByNumberMethod:  "eth_getBlockByNumber",
-			CallContractMethod:      "eth_call",
-			BlockLagLimit:           5,
-			BlockJumpLimit:          100,
-			RequestAttemptCount:     3,
-			MaxRequestPayloadSizeKb: 512,
-			RegistryBlockEpoch:      2000,
-			ArchiveEnabled:          false,
-			ChainId:                 "0x1",
+			Handler:                  "starknet", // Updated
+			HealthcheckIntervalSec:   30,
+			HealthcheckThreshold:     2,
+			HealthcheckTimeout:       5,
+			BlockLagLimit:            5,
+			BlockJumpLimit:           100,
+			RequestAttemptCount:      3,
+			MaxRequestPayloadSizeKb:  512,
+			RegistryBlockEpoch:       2000,
+			ArchiveEnabled:           false,
+			ProviderBlockHistorySize: 10,
+			NetworkBlockHistorySize:  128,
+			ChainId:                  "0x1",
 		}
-		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(nil).Times(1)
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(mockTx, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkConfig("keystorePath", "test-password")
@@ -313,26 +330,35 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// set CLI values
 		networkURI = "test://network"
-		networkConfigJsonAsString = `{"healthcheckMethod": "eth_blockNumber", "healthcheckIntervalSec": 60, "chainId": "0x5"}`
+		networkConfigJsonAsString = `{"handler": "starknet", "health_check_interval_sec": 60, "chain_id": "0x5"}`
 
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -340,20 +366,22 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// Mock SetNetworkConfig call with updated config
 		expectedConfig := din.NetworkOperationsConfig{
-			HealthcheckMethod:       "eth_blockNumber", // Updated
-			HealthcheckIntervalSec:  60,                // Updated
-			ChainIdMethod:           "eth_chainId",
-			GetBlockByNumberMethod:  "eth_getBlockByNumber",
-			CallContractMethod:      "eth_call",
-			BlockLagLimit:           5,
-			BlockJumpLimit:          100,
-			RequestAttemptCount:     3,
-			MaxRequestPayloadSizeKb: 512,
-			RegistryBlockEpoch:      2000,
-			ArchiveEnabled:          false,
-			ChainId:                 "0x5", // Updated
+			Handler:                  "starknet", // Updated
+			HealthcheckIntervalSec:   60,         // Updated
+			HealthcheckThreshold:     2,
+			HealthcheckTimeout:       5,
+			BlockLagLimit:            5,
+			BlockJumpLimit:           100,
+			RequestAttemptCount:      3,
+			MaxRequestPayloadSizeKb:  512,
+			RegistryBlockEpoch:       2000,
+			ArchiveEnabled:           false,
+			ProviderBlockHistorySize: 10,
+			NetworkBlockHistorySize:  128,
+			ChainId:                  "0x5", // Updated
 		}
-		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(nil).Times(1)
+		mockTx := &types.Transaction{}
+		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(mockTx, nil).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkConfig("keystorePath", "test-password")
@@ -368,7 +396,7 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// set CLI values
 		networkURI = "test://DOES-NOT-EXIST"
-		networkConfigJsonAsString = `{"healthcheckMethod": "eth_blockNumber"}`
+		networkConfigJsonAsString = `{"handler": "starknet"}`
 
 		// Mock GetNetworkByName failure
 		mockDinClient.EXPECT().GetNetworkByName("test://DOES-NOT-EXIST").Return(nil, errors.New("network not found")).Times(1)
@@ -387,23 +415,24 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// set CLI values
 		networkURI = "test://network"
-		networkConfigJsonAsString = `{"healthcheckMethod": "eth_blockNumber"}`
+		networkConfigJsonAsString = `{"handler": "starknet"}`
 
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
@@ -425,26 +454,35 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// set CLI values
 		networkURI = "test://network"
-		networkConfigJsonAsString = `{"healthcheckMethod": "eth_blockNumber"}`
+		networkConfigJsonAsString = `{"handler": "starknet"}`
 
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -452,20 +490,21 @@ func TestSetNetworkConfigCommand(t *testing.T) {
 
 		// Mock SetNetworkConfig failure
 		expectedConfig := din.NetworkOperationsConfig{
-			HealthcheckMethod:       "eth_blockNumber", // Updated
-			HealthcheckIntervalSec:  30,
-			ChainIdMethod:           "eth_chainId",
-			GetBlockByNumberMethod:  "eth_getBlockByNumber",
-			CallContractMethod:      "eth_call",
-			BlockLagLimit:           5,
-			BlockJumpLimit:          100,
-			RequestAttemptCount:     3,
-			MaxRequestPayloadSizeKb: 512,
-			RegistryBlockEpoch:      2000,
-			ArchiveEnabled:          false,
-			ChainId:                 "0x1",
+			Handler:                  "starknet", // Updated
+			HealthcheckIntervalSec:   30,
+			HealthcheckThreshold:     2,
+			HealthcheckTimeout:       5,
+			BlockLagLimit:            5,
+			BlockJumpLimit:           100,
+			RequestAttemptCount:      3,
+			MaxRequestPayloadSizeKb:  512,
+			RegistryBlockEpoch:       2000,
+			ArchiveEnabled:           false,
+			ProviderBlockHistorySize: 10,
+			NetworkBlockHistorySize:  128,
+			ChainId:                  "0x1",
 		}
-		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(errors.New("transaction failed")).Times(1)
+		mockDinClient.EXPECT().SetNetworkConfig(mockTransactor, "test://network", expectedConfig).Return(nil, errors.New("transaction failed")).Times(1)
 
 		// Execute core function being tested
 		tx, err := doSetNetworkConfig("keystorePath", "test-password")
