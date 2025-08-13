@@ -2,7 +2,6 @@ package modules
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -91,12 +90,6 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 				zap.String("network", networkName),
 				zap.String("provider_path", provider.path),
 				zap.Error(err))
-		}
-	} else {
-		// Fallback for cases where handler is not available
-		if provider.path != "" {
-			r.URL.RawPath = provider.path
-			r.URL.Path, _ = url.PathUnescape(r.URL.RawPath)
 		}
 	}
 
