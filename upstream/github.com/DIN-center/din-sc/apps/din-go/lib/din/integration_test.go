@@ -17,7 +17,11 @@ var dinClient *DinClient
 // NOTE: these tests are not run by default, they are intended to be run manually as it requires a local anvil node to be running
 // They are run in CI as part of the monodin workflow
 func setup(t *testing.T) {
-	rpcURL := "http://localhost:8545"
+	// Use environment variable for RPC URL, fallback to localhost
+	rpcURL := os.Getenv("RPC_URL")
+	if rpcURL == "" {
+		rpcURL = "http://127.0.0.1:8545"
+	}
 
 	// Get the chain ID
 	chainID, err := getEthChainId(rpcURL)
@@ -139,7 +143,7 @@ func getContractAddressFromAnvil(dinRegistryDataPath string) (string, error) {
 	return contractAddress, nil
 }
 
-// IntegrationTestGetRegistryData tests the DinGo library with deployed contracts
+// IntegrationTestGetRegistryData tests the Din Go library with deployed contracts
 func TestIntegrationGetRegistryData(t *testing.T) {
 	setup(t) // Call setup to initialize dinClient
 
@@ -204,24 +208,28 @@ func validateNetworkData(t *testing.T, network *Network) {
 		t.Fatalf("Network config is nil")
 	}
 
-	if network.NetworkConfig.HealthcheckMethod == "" {
-		t.Fatalf("Healthcheck method is empty")
+	if network.NetworkConfig.Handler == "" {
+		t.Fatalf("Handler is empty")
 	}
 
-	if network.NetworkConfig.GetBlockByNumberMethod == "" {
-		t.Fatalf("Get block by number method is empty")
+	if network.NetworkConfig.HealthcheckThreshold == 0 {
+		t.Fatalf("Healthcheck threshold is 0")
+	}
+
+	if network.NetworkConfig.HealthcheckTimeout == 0 {
+		t.Fatalf("Healthcheck timeout is 0")
 	}
 
 	if network.NetworkConfig.HealthcheckIntervalSec == 0 {
 		t.Fatalf("Healthcheck interval seconds is 0")
 	}
 
-	if network.NetworkConfig.CallContractMethod == "" {
-		t.Fatalf("Call contract method is empty")
+	if network.NetworkConfig.ProviderBlockHistorySize == 0 {
+		t.Fatalf("Provider block history size is 0")
 	}
 
-	if network.NetworkConfig.ChainIdMethod == "" {
-		t.Fatalf("Chain ID method is empty")
+	if network.NetworkConfig.NetworkBlockHistorySize == 0 {
+		t.Fatalf("Network block history size is 0")
 	}
 
 	if network.NetworkConfig.ChainId == "" {
@@ -348,24 +356,28 @@ func TestGetAllNetworks(t *testing.T) {
 			t.Fatalf("Network config is nil")
 		}
 
-		if network.NetworkConfig.HealthcheckMethod == "" {
-			t.Fatalf("Healthcheck method is empty")
+		if network.NetworkConfig.Handler == "" {
+			t.Fatalf("Handler is empty")
 		}
 
-		if network.NetworkConfig.GetBlockByNumberMethod == "" {
-			t.Fatalf("Get block by number method is empty")
+		if network.NetworkConfig.HealthcheckThreshold == 0 {
+			t.Fatalf("Healthcheck threshold is 0")
+		}
+
+		if network.NetworkConfig.HealthcheckTimeout == 0 {
+			t.Fatalf("Healthcheck timeout is 0")
 		}
 
 		if network.NetworkConfig.HealthcheckIntervalSec == 0 {
 			t.Fatalf("Healthcheck interval seconds is 0")
 		}
 
-		if network.NetworkConfig.CallContractMethod == "" {
-			t.Fatalf("Call contract method is empty")
+		if network.NetworkConfig.ProviderBlockHistorySize == 0 {
+			t.Fatalf("Provider block history size is 0")
 		}
 
-		if network.NetworkConfig.ChainIdMethod == "" {
-			t.Fatalf("Chain ID method is empty")
+		if network.NetworkConfig.NetworkBlockHistorySize == 0 {
+			t.Fatalf("Network block history size is 0")
 		}
 
 		if network.NetworkConfig.ChainId == "" {

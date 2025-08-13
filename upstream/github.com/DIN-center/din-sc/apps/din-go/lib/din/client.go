@@ -124,24 +124,25 @@ func (d *DinClient) GetNetworkByAddress(networkAddress common.Address) (*Network
 		return nil, errors.Wrap(err, "failed call to GetNetworkOperationsConfig")
 	}
 
-	methodsByName, methodsByBit, err := d.getNetworkMethodsMapping(networkName)
+	methodsByName, _, err := d.getNetworkMethodsMapping(networkName)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed call to getNetworkMethodMappings")
 	}
 
 	networkConfig := &NetworkOperationsConfig{
-		HealthcheckMethod:       getMethodNameByBit(methodsByBit, networkConfigSCM.HealthcheckMethodBit),
-		HealthcheckIntervalSec:  networkConfigSCM.HealthcheckIntervalSec,
-		ChainIdMethod:           getMethodNameByBit(methodsByBit, networkConfigSCM.ChainIdMethodBit),
-		GetBlockByNumberMethod:  getMethodNameByBit(methodsByBit, networkConfigSCM.GetBlockByNumberMethodBit),
-		CallContractMethod:      getMethodNameByBit(methodsByBit, networkConfigSCM.CallContractMethodBit),
-		BlockLagLimit:           networkConfigSCM.BlockLagLimit,
-		BlockJumpLimit:          networkConfigSCM.BlockJumpLimit,
-		RequestAttemptCount:     networkConfigSCM.RequestAttemptCount,
-		MaxRequestPayloadSizeKb: networkConfigSCM.MaxRequestPayloadSizeKb,
-		RegistryBlockEpoch:      networkConfigSCM.RegistryBlockEpoch,
-		ArchiveEnabled:          networkConfigSCM.ArchiveEnabled,
-		ChainId:                 networkConfigSCM.ChainId,
+		Handler:                  networkConfigSCM.Handler,
+		HealthcheckIntervalSec:   networkConfigSCM.HealthcheckIntervalSec,
+		HealthcheckThreshold:     networkConfigSCM.HealthcheckThreshold,
+		HealthcheckTimeout:       networkConfigSCM.HealthcheckTimeout,
+		BlockLagLimit:            networkConfigSCM.BlockLagLimit,
+		BlockJumpLimit:           networkConfigSCM.BlockJumpLimit,
+		RequestAttemptCount:      networkConfigSCM.RequestAttemptCount,
+		MaxRequestPayloadSizeKb:  networkConfigSCM.MaxRequestPayloadSizeKb,
+		RegistryBlockEpoch:       networkConfigSCM.RegistryBlockEpoch,
+		ArchiveEnabled:           networkConfigSCM.ArchiveEnabled,
+		ProviderBlockHistorySize: networkConfigSCM.ProviderBlockHistorySize,
+		NetworkBlockHistorySize:  networkConfigSCM.NetworkBlockHistorySize,
+		ChainId:                  networkConfigSCM.ChainId,
 	}
 
 	//Get the providers for the network
@@ -487,39 +488,20 @@ func (d *DinClient) RemoveProvider(auth *bind.TransactOpts, providerAddr common.
 
 func (d *DinClient) SetNetworkConfig(authTransactor *bind.TransactOpts, networkURI string, newConfig NetworkOperationsConfig) (tx *types.Transaction, err error) {
 
-	methodsByName, _, err := d.getNetworkMethodsMapping(networkURI)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed call to getNetworkMethodMappings")
-	}
-	healthcheckMethodBit, err := getMethodBitByName(methodsByName, newConfig.HealthcheckMethod)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed call to getMethodBitByName")
-	}
-	chainIdMethodBit, err := getMethodBitByName(methodsByName, newConfig.ChainIdMethod)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed call to getMethodBitByName")
-	}
-	getBlockByNumberMethodBit, err := getMethodBitByName(methodsByName, newConfig.GetBlockByNumberMethod)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed call to getMethodBitByName")
-	}
-	callContractMethodBit, err := getMethodBitByName(methodsByName, newConfig.CallContractMethod)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed call to getMethodBitByName")
-	}
 	newConfigSCM := scm.NetworkOperationsConfig{
-		HealthcheckMethodBit:      healthcheckMethodBit,
-		HealthcheckIntervalSec:    newConfig.HealthcheckIntervalSec,
-		ChainIdMethodBit:          chainIdMethodBit,
-		GetBlockByNumberMethodBit: getBlockByNumberMethodBit,
-		CallContractMethodBit:     callContractMethodBit,
-		BlockLagLimit:             newConfig.BlockLagLimit,
-		BlockJumpLimit:            newConfig.BlockJumpLimit,
-		RequestAttemptCount:       newConfig.RequestAttemptCount,
-		MaxRequestPayloadSizeKb:   newConfig.MaxRequestPayloadSizeKb,
-		RegistryBlockEpoch:        newConfig.RegistryBlockEpoch,
-		ArchiveEnabled:            newConfig.ArchiveEnabled,
-		ChainId:                   newConfig.ChainId,
+		Handler:                  newConfig.Handler,
+		HealthcheckIntervalSec:   newConfig.HealthcheckIntervalSec,
+		HealthcheckThreshold:     newConfig.HealthcheckThreshold,
+		HealthcheckTimeout:       newConfig.HealthcheckTimeout,
+		BlockLagLimit:            newConfig.BlockLagLimit,
+		BlockJumpLimit:           newConfig.BlockJumpLimit,
+		RequestAttemptCount:      newConfig.RequestAttemptCount,
+		MaxRequestPayloadSizeKb:  newConfig.MaxRequestPayloadSizeKb,
+		RegistryBlockEpoch:       newConfig.RegistryBlockEpoch,
+		ArchiveEnabled:           newConfig.ArchiveEnabled,
+		ProviderBlockHistorySize: newConfig.ProviderBlockHistorySize,
+		NetworkBlockHistorySize:  newConfig.NetworkBlockHistorySize,
+		ChainId:                  newConfig.ChainId,
 	}
 
 	tx, err = d.handler.SetNetworkOperationsConfig(authTransactor, networkURI, newConfigSCM)

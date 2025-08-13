@@ -18,9 +18,9 @@
         "internalType": "struct NetworkOperationsConfig",
         "components": [
           {
-            "name": "healthcheckMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "handler",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "healthcheckIntervalSec",
@@ -28,19 +28,14 @@
             "internalType": "uint8"
           },
           {
-            "name": "chainIdMethodBit",
+            "name": "healthcheckThreshold",
             "type": "uint8",
             "internalType": "uint8"
           },
           {
-            "name": "getBlockByNumberMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "callContractMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "healthcheckTimeout",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "blockLagLimit",
@@ -71,6 +66,16 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "providerBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "networkBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "chainId",
@@ -286,9 +291,9 @@
         "internalType": "struct NetworkOperationsConfig",
         "components": [
           {
-            "name": "healthcheckMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "handler",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "healthcheckIntervalSec",
@@ -296,19 +301,14 @@
             "internalType": "uint8"
           },
           {
-            "name": "chainIdMethodBit",
+            "name": "healthcheckThreshold",
             "type": "uint8",
             "internalType": "uint8"
           },
           {
-            "name": "getBlockByNumberMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "callContractMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "healthcheckTimeout",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "blockLagLimit",
@@ -339,6 +339,16 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "providerBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "networkBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "chainId",
@@ -495,9 +505,9 @@
         "internalType": "struct NetworkOperationsConfig",
         "components": [
           {
-            "name": "healthcheckMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "handler",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "healthcheckIntervalSec",
@@ -505,19 +515,14 @@
             "internalType": "uint8"
           },
           {
-            "name": "chainIdMethodBit",
+            "name": "healthcheckThreshold",
             "type": "uint8",
             "internalType": "uint8"
           },
           {
-            "name": "getBlockByNumberMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "callContractMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "healthcheckTimeout",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "blockLagLimit",
@@ -548,6 +553,16 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "providerBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "networkBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "chainId",
@@ -615,9 +630,9 @@
         "internalType": "struct NetworkOperationsConfig",
         "components": [
           {
-            "name": "healthcheckMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "handler",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "healthcheckIntervalSec",
@@ -625,19 +640,14 @@
             "internalType": "uint8"
           },
           {
-            "name": "chainIdMethodBit",
+            "name": "healthcheckThreshold",
             "type": "uint8",
             "internalType": "uint8"
           },
           {
-            "name": "getBlockByNumberMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "callContractMethodBit",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "healthcheckTimeout",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "blockLagLimit",
@@ -668,6 +678,16 @@
             "name": "archiveEnabled",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "providerBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "networkBlockHistorySize",
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "chainId",
@@ -731,11 +751,6 @@
   {
     "type": "error",
     "name": "NetworkAuthNotOwner",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NetworkInvalidHealthcheckMethod",
     "inputs": []
   },
   {
