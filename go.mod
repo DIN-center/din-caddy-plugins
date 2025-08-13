@@ -2,8 +2,6 @@ module github.com/DIN-center/din-caddy-plugins
 
 go 1.23.0
 
-toolchain go1.24.2
-
 require (
 	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20250724082233-af541b593037
 	github.com/aws/aws-sdk-go v1.53.18
