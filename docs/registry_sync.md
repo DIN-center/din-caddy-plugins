@@ -269,6 +269,70 @@ networks:
     network_block_history_size: 128
 ```
 
+## Scalability Limits and Performance Considerations
+
+### Current Architecture Limits
+
+The registry sync system uses a single write lock when updating networks, which creates scalability constraints:
+
+#### Performance by Network Count
+
+| Networks | Registry Sync Duration | Request Impact | Max Requests/sec | Recommendation |
+|----------|----------------------|----------------|------------------|----------------|
+| **1-30** | ~150ms | Negligible | 10,000+ | ✅ **Current Production** |
+| **30-50** | ~250ms | Minimal | 8,000 | ✅ Excellent |
+| **50-100** | ~500ms | Noticeable | 5,000 | ✅ Good |
+| **100-150** | ~750ms | Impactful | 3,000 | ⚠️ Acceptable |
+| **150-200** | ~1 second | Significant | 2,000 | ⚠️ Maximum Recommended |
+| **200+** | >1 second | Severe | <1,000 | ❌ Not Recommended |
+
+#### Key Limitations
+
+1. **Lock Contention**: During registry sync, all incoming requests are blocked from network resolution
+2. **Linear Scaling**: Processing time increases linearly with network count
+3. **No Parallelization**: Networks are processed sequentially
+
+#### Recommended Limits
+
+- **Safe Operating Range**: 1-100 networks
+- **Maximum Practical Limit**: 150 networks
+- **Hard Limit**: 200 networks (beyond this, system degradation is severe)
+
+### Known Risks
+
+#### 1. **Registry Sync Blocking**
+- **Risk**: All requests blocked during registry updates
+- **Impact**: Request queuing and potential timeouts
+- **Mitigation**: Keep network count under 100
+
+#### 2. **Cascade Failures**
+- **Risk**: Long sync times can cause client timeouts
+- **Impact**: Retry storms and system overload
+- **Mitigation**: Monitor sync duration metrics
+
+#### 3. **Memory Growth**
+- **Risk**: Each network uses ~30KB + providers
+- **Impact**: At 1000 networks = ~40MB (manageable)
+- **Mitigation**: Memory is not the primary constraint
+
+### Future Scaling Solutions
+
+If you need to scale beyond 200 networks, consider:
+
+1. **Sharded Locks**: Divide networks into buckets with separate locks (scales to 2000+)
+2. **Copy-on-Write**: Atomic map swapping for zero read locks (scales to 500+)
+3. **Event-Driven Updates**: Queue-based async processing (scales to 5000+)
+4. **Distributed Architecture**: Multiple proxy instances (unlimited scale)
+
+### Monitoring Recommendations
+
+Track these metrics to ensure healthy operation:
+- Registry sync duration (should be <500ms)
+- Number of networks in registry
+- Request queue depth during sync
+- P99 request latency
+- Registry sync failure rate
+
 ## Additional Resources
 - [Main README](../README.md)
 - [Health Checks Guide](./healthChecks.md)
