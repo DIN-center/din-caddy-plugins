@@ -138,7 +138,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					Handler: "evm",
 				},
 			},
 			expectedNetworkProviders: 1,
@@ -160,7 +160,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					Handler: "evm",
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -262,7 +262,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					Handler: "evm",
 				},
 			},
 			newNetwork: &network{
@@ -290,7 +290,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					Handler: "evm",
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -309,7 +309,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			regNetwork: &din.Network{
 				Name: "test-network",
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					Handler: "evm",
 				},
 				Status: din.NetworkStatusActive,
 			},
@@ -465,6 +465,216 @@ func expectedMethodsMap(m []*string) map[string]struct{} {
 		result[*k] = struct{}{}
 	}
 	return result
+}
+
+// TestCaddyfilePriorityOverRegistry tests that Caddyfile values take priority over registry values
+func TestCaddyfilePriorityOverRegistry(t *testing.T) {
+	logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
+	
+	tests := []struct {
+		name             string
+		existingNetwork  *network
+		regNetworkConfig *din.NetworkOperationsConfig
+		expectedNetwork  *network
+		description      string
+	}{
+		{
+			name: "Caddyfile values not overwritten by registry",
+			existingNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "evm",
+				ChainId:                "0x1",
+				HCInterval:             30,
+				HCThreshold:            3,
+				HCTimeout:              10,
+				BlockLagLimit:          10,
+				BlockJumpLimit:         50,
+				MaxRequestPayloadSizeKB: 2048,
+				RequestAttemptCount:    5,
+				ProviderBlockHistorySize: 20,
+				NetworkBlockHistorySize: 256,
+				ArchiveEnabled:         true,
+				ConfigSource: &networkConfigSource{
+					HandlerTypeSet:              true,
+					ChainIdSet:                 true,
+					HCIntervalSet:              true,
+					HCThresholdSet:             true,
+					HCTimeoutSet:               true,
+					BlockLagLimitSet:           true,
+					BlockJumpLimitSet:          true,
+					MaxRequestPayloadSizeKBSet: true,
+					RequestAttemptCountSet:     true,
+					ProviderBlockHistorySizeSet: true,
+					NetworkBlockHistorySizeSet: true,
+					ArchiveEnabledSet:          true,
+				},
+			},
+			regNetworkConfig: &din.NetworkOperationsConfig{
+				Handler:                  "solana",
+				ChainId:                  "0x2",
+				HealthcheckIntervalSec:   60,
+				HealthcheckThreshold:     5,
+				HealthcheckTimeout:       20,
+				BlockLagLimit:           20,
+				BlockJumpLimit:          100,
+				MaxRequestPayloadSizeKb: 4096,
+				RequestAttemptCount:     10,
+				ProviderBlockHistorySize: 30,
+				NetworkBlockHistorySize:  512,
+				ArchiveEnabled:          false,
+			},
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "evm",     // Should NOT change
+				ChainId:                "0x1",     // Should NOT change
+				HCInterval:             30,        // Should NOT change
+				HCThreshold:            3,         // Should NOT change
+				HCTimeout:              10,        // Should NOT change
+				BlockLagLimit:          10,        // Should NOT change
+				BlockJumpLimit:         50,        // Should NOT change
+				MaxRequestPayloadSizeKB: 2048,     // Should NOT change
+				RequestAttemptCount:    5,         // Should NOT change
+				ProviderBlockHistorySize: 20,      // Should NOT change
+				NetworkBlockHistorySize: 256,      // Should NOT change
+				ArchiveEnabled:         true,      // Should NOT change
+			},
+			description: "All Caddyfile-set values should remain unchanged",
+		},
+		{
+			name: "Registry values applied when not set in Caddyfile",
+			existingNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "",
+				ChainId:                "",
+				HCInterval:             DefaultHCInterval,
+				HCThreshold:            DefaultHCThreshold,
+				HCTimeout:              DefaultHCTimeout,
+				BlockLagLimit:          DefaultBlockLagLimit,
+				BlockJumpLimit:         DefaultBlockJumpLimit,
+				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
+				RequestAttemptCount:    DefaultRequestAttemptCount,
+				ProviderBlockHistorySize: DefaultProviderBlockHistorySize,
+				NetworkBlockHistorySize: DefaultNetworkBlockHistorySize,
+				ArchiveEnabled:         DefaultArchiveEnabled,
+				ConfigSource: &networkConfigSource{
+					// All fields false - nothing set via Caddyfile
+				},
+			},
+			regNetworkConfig: &din.NetworkOperationsConfig{
+				Handler:                  "starknet",
+				ChainId:                  "0x3",
+				HealthcheckIntervalSec:   45,
+				HealthcheckThreshold:     4,
+				HealthcheckTimeout:       15,
+				BlockLagLimit:           15,
+				BlockJumpLimit:          75,
+				MaxRequestPayloadSizeKb: 3072,
+				RequestAttemptCount:     7,
+				ProviderBlockHistorySize: 25,
+				NetworkBlockHistorySize:  384,
+				ArchiveEnabled:          true,
+			},
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "starknet", // Should change
+				ChainId:                "0x3",      // Should change
+				HCInterval:             45,         // Should change
+				HCThreshold:            4,          // Should change
+				HCTimeout:              15,         // Should change
+				BlockLagLimit:          15,         // Should change
+				BlockJumpLimit:         75,         // Should change
+				MaxRequestPayloadSizeKB: 3072,      // Should change
+				RequestAttemptCount:    7,          // Should change
+				ProviderBlockHistorySize: 25,       // Should change
+				NetworkBlockHistorySize: 384,       // Should change
+				ArchiveEnabled:         true,       // Should change
+			},
+			description: "All registry values should be applied when not set in Caddyfile",
+		},
+		{
+			name: "Mixed: some Caddyfile, some registry values",
+			existingNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "evm",
+				ChainId:                "0x4",
+				HCInterval:             25,
+				HCThreshold:            DefaultHCThreshold,
+				HCTimeout:              DefaultHCTimeout,
+				BlockLagLimit:          DefaultBlockLagLimit,
+				BlockJumpLimit:         DefaultBlockJumpLimit,
+				MaxRequestPayloadSizeKB: 1536,
+				RequestAttemptCount:    DefaultRequestAttemptCount,
+				ProviderBlockHistorySize: DefaultProviderBlockHistorySize,
+				NetworkBlockHistorySize: 192,
+				ArchiveEnabled:         false,
+				ConfigSource: &networkConfigSource{
+					HandlerTypeSet:             true,
+					ChainIdSet:                true,
+					HCIntervalSet:             true,
+					MaxRequestPayloadSizeKBSet: true,
+					NetworkBlockHistorySizeSet: true,
+					ArchiveEnabledSet:         true,
+					// Other fields not set
+				},
+			},
+			regNetworkConfig: &din.NetworkOperationsConfig{
+				Handler:                  "beacon-chain",
+				ChainId:                  "0x5",
+				HealthcheckIntervalSec:   50,
+				HealthcheckThreshold:     6,
+				HealthcheckTimeout:       25,
+				BlockLagLimit:           25,
+				BlockJumpLimit:          125,
+				MaxRequestPayloadSizeKb: 5120,
+				RequestAttemptCount:     12,
+				ProviderBlockHistorySize: 35,
+				NetworkBlockHistorySize:  640,
+				ArchiveEnabled:          true,
+			},
+			expectedNetwork: &network{
+				Name:                    "test-network",
+				HandlerType:            "evm",     // Caddyfile value preserved
+				ChainId:                "0x4",     // Caddyfile value preserved
+				HCInterval:             25,        // Caddyfile value preserved
+				HCThreshold:            6,         // Registry value applied
+				HCTimeout:              25,        // Registry value applied
+				BlockLagLimit:          25,        // Registry value applied
+				BlockJumpLimit:         125,       // Registry value applied
+				MaxRequestPayloadSizeKB: 1536,     // Caddyfile value preserved
+				RequestAttemptCount:    12,        // Registry value applied
+				ProviderBlockHistorySize: 35,      // Registry value applied
+				NetworkBlockHistorySize: 192,      // Caddyfile value preserved
+				ArchiveEnabled:         false,     // Caddyfile value preserved
+			},
+			description: "Mixed configuration: Caddyfile values preserved, registry fills gaps",
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinMiddleware := &DinMiddleware{
+				logger:   logger,
+				Networks: map[string]*network{tt.existingNetwork.Name: tt.existingNetwork},
+			}
+			
+			// Update the network with registry data
+			dinMiddleware.updateNetworkFields(tt.existingNetwork, tt.regNetworkConfig)
+			
+			// Verify the expected values
+			assert.Equal(t, tt.expectedNetwork.HandlerType, tt.existingNetwork.HandlerType, "HandlerType: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.ChainId, tt.existingNetwork.ChainId, "ChainId: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.HCInterval, tt.existingNetwork.HCInterval, "HCInterval: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.HCThreshold, tt.existingNetwork.HCThreshold, "HCThreshold: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.HCTimeout, tt.existingNetwork.HCTimeout, "HCTimeout: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.BlockLagLimit, tt.existingNetwork.BlockLagLimit, "BlockLagLimit: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.BlockJumpLimit, tt.existingNetwork.BlockJumpLimit, "BlockJumpLimit: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.MaxRequestPayloadSizeKB, tt.existingNetwork.MaxRequestPayloadSizeKB, "MaxRequestPayloadSizeKB: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.RequestAttemptCount, tt.existingNetwork.RequestAttemptCount, "RequestAttemptCount: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.ProviderBlockHistorySize, tt.existingNetwork.ProviderBlockHistorySize, "ProviderBlockHistorySize: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.NetworkBlockHistorySize, tt.existingNetwork.NetworkBlockHistorySize, "NetworkBlockHistorySize: %s", tt.description)
+			assert.Equal(t, tt.expectedNetwork.ArchiveEnabled, tt.existingNetwork.ArchiveEnabled, "ArchiveEnabled: %s", tt.description)
+		})
+	}
 }
 
 func TestCreateNewProvider(t *testing.T) {

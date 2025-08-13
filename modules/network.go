@@ -18,6 +18,23 @@ import (
 	"go.uber.org/zap"
 )
 
+// networkConfigSource tracks which configuration fields were explicitly set via Caddyfile
+// This allows registry sync to respect Caddyfile values and only update unset fields
+type networkConfigSource struct {
+	HandlerTypeSet              bool
+	ChainIdSet                  bool
+	HCIntervalSet               bool
+	HCThresholdSet              bool
+	HCTimeoutSet                bool
+	BlockLagLimitSet            bool
+	BlockJumpLimitSet           bool
+	MaxRequestPayloadSizeKBSet  bool
+	RequestAttemptCountSet      bool
+	ProviderBlockHistorySizeSet bool
+	NetworkBlockHistorySizeSet  bool
+	ArchiveEnabledSet           bool
+}
+
 type network struct {
 	Name             string
 	HandlerType      HandlerType `json:"handler"` // Network handler type for handler registry
@@ -31,6 +48,9 @@ type network struct {
 
 	// NEW: Handler reference for network-specific operations
 	handler networklib.NetworkHandler
+
+	// Configuration source tracking - tracks which fields were set via Caddyfile
+	ConfigSource *networkConfigSource `json:"-"` // Don't serialize to JSON
 
 	// internal health check values
 	HCThreshold              int
@@ -83,6 +103,11 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 		Environment:              environment,
 		Providers:                make(map[string]*provider),
 		CaddyPort:                caddyPort,
+		// Initialize configuration source tracking
+		ConfigSource: &networkConfigSource{
+			// If handlerType is provided (not empty), mark it as set
+			HandlerTypeSet: handlerType != "",
+		},
 	}
 
 	// Note: Handler initialization is deferred to avoid duplicate initialization.
