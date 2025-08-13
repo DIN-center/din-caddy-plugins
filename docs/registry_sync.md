@@ -47,10 +47,21 @@ Example: With `registry_block_epoch = 10` and current block = 105:
 ### 3. What Gets Synchronized
 
 #### Network Configuration
-- Network names and identifiers
-- Chain IDs
-- RPC methods
-- Health check parameters
+- Network names and identifiers  
+- Handler type (e.g., "evm", "solana", "starknet")
+- Chain IDs (now in simple hex format, e.g., "0x1")
+- Health check parameters:
+  - Interval (seconds)
+  - Threshold
+  - Timeout
+  - Block lag limit
+  - Block jump limit
+- Block history sizes:
+  - Provider block history size
+  - Network block history size
+- Request configuration:
+  - Max request payload size (KB)
+  - Request attempt count
 - Archive mode settings
 
 #### Provider Information
@@ -59,6 +70,14 @@ Example: With `registry_block_epoch = 10` and current block = 105:
 - Status (active/inactive)
 - Priority levels
 - Supported methods
+
+#### Configuration Priority System
+**Important:** Caddyfile configurations always take precedence over registry values. The system follows this priority order:
+1. **Caddyfile (Highest Priority)**: Values explicitly set in your Caddyfile are never overwritten by registry updates
+2. **Registry**: Values from the registry are only applied if not set in Caddyfile
+3. **Defaults (Lowest Priority)**: Built-in default values are used if neither Caddyfile nor registry provides a value
+
+This ensures that your local configurations remain stable and predictable, while still benefiting from registry updates for unspecified values.
 
 ## Sync Process Details
 
@@ -201,6 +220,54 @@ The system provides detailed sync metrics:
 - Provider changes
 - Block progression
 - Error rates and types
+
+## Migration Guide
+
+### Migrating from Old Method Bit Fields to Handler-Based System
+
+The registry sync system has been updated to use a handler-based approach instead of method bit fields:
+
+#### What Changed:
+- **Removed**: `healthcheck_method_bit`, `chain_id_method_bit`, `get_block_by_number_method_bit`, `call_contract_method_bit`
+- **Added**: `handler` field that specifies the network type (e.g., "evm", "solana", "starknet")
+- **New Fields**: 
+  - `healthcheck_threshold`: Number of consecutive failures before marking unhealthy
+  - `healthcheck_timeout`: Timeout for health check requests (seconds)
+  - `provider_block_history_size`: Number of blocks to track per provider
+  - `network_block_history_size`: Number of blocks to track for the network
+
+#### Chain ID Format:
+- **Old Format**: CAIP-2 format (e.g., `eip155:0x1`)
+- **New Format**: Simple hex format (e.g., `0x1`)
+
+#### How Methods Are Determined:
+Methods are now determined by the handler type rather than explicit bit fields. Each handler knows its appropriate methods:
+- **EVM Handler**: Uses `eth_blockNumber`, `eth_chainId`, `eth_getBlockByNumber`, `eth_call`
+- **Solana Handler**: Uses Solana-specific RPC methods
+- **Starknet Handler**: Uses Starknet-specific RPC methods
+
+#### Configuration Examples:
+
+**Old Configuration:**
+```yaml
+networks:
+  ethereum:
+    healthcheck_method_bit: 1
+    chain_id_method_bit: 1
+    chain_id: "eip155:0x1"
+```
+
+**New Configuration:**
+```yaml
+networks:
+  ethereum:
+    handler: "evm"
+    chain_id: "0x1"
+    healthcheck_threshold: 2
+    healthcheck_timeout: 5
+    provider_block_history_size: 10
+    network_block_history_size: 128
+```
 
 ## Additional Resources
 - [Main README](../README.md)

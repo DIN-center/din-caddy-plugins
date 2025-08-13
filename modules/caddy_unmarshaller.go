@@ -200,11 +200,20 @@ func (p *caddyfileParser) parseNetwork(networkName string, parentNesting int) er
 func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) error {
 	network := p.middleware.Networks[networkName]
 
+	// Ensure ConfigSource is initialized
+	if network.ConfigSource == nil {
+		network.ConfigSource = &networkConfigSource{}
+	}
+
 	switch p.dispenser.Val() {
 	case "methods":
 		return p.parseNetworkMethods(network)
 	case "handler":
-		return p.parseNetworkHandler(network)
+		err := p.parseNetworkHandler(network)
+		if err == nil {
+			network.ConfigSource.HandlerTypeSet = true
+		}
+		return err
 	case "routed_methods":
 		return p.parseRoutedMethods(network)
 	case "providers":
@@ -212,27 +221,71 @@ func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) err
 	case "healthcheck_endpoint":
 		return p.parseStringField(&network.HCEndpoint)
 	case "chain_id":
-		return p.parseChainId(network, networkName)
+		err := p.parseChainId(network, networkName)
+		if err == nil {
+			network.ConfigSource.ChainIdSet = true
+		}
+		return err
 	case "healthcheck_threshold":
-		return p.parseIntField(&network.HCThreshold, "healthcheck threshold")
+		err := p.parseIntField(&network.HCThreshold, "healthcheck threshold")
+		if err == nil {
+			network.ConfigSource.HCThresholdSet = true
+		}
+		return err
 	case "healthcheck_timeout":
-		return p.parseIntField(&network.HCTimeout, "healthcheck timeout")
+		err := p.parseIntField(&network.HCTimeout, "healthcheck timeout")
+		if err == nil {
+			network.ConfigSource.HCTimeoutSet = true
+		}
+		return err
 	case "healthcheck_interval":
-		return p.parseIntField(&network.HCInterval, "healthcheck interval")
+		err := p.parseIntField(&network.HCInterval, "healthcheck interval")
+		if err == nil {
+			network.ConfigSource.HCIntervalSet = true
+		}
+		return err
 	case "healthcheck_blocklag_limit":
-		return p.parseInt64Field(&network.BlockLagLimit, "healthcheck blocklag limit")
+		err := p.parseInt64Field(&network.BlockLagLimit, "healthcheck blocklag limit")
+		if err == nil {
+			network.ConfigSource.BlockLagLimitSet = true
+		}
+		return err
 	case "healthcheck_blockjump_limit":
-		return p.parseInt64Field(&network.BlockJumpLimit, "healthcheck blockjump limit")
+		err := p.parseInt64Field(&network.BlockJumpLimit, "healthcheck blockjump limit")
+		if err == nil {
+			network.ConfigSource.BlockJumpLimitSet = true
+		}
+		return err
 	case "healthcheck_provider_block_history_size":
-		return p.parseIntFieldToInt(&network.ProviderBlockHistorySize, "healthcheck provider block history size")
+		err := p.parseIntFieldToInt(&network.ProviderBlockHistorySize, "healthcheck provider block history size")
+		if err == nil {
+			network.ConfigSource.ProviderBlockHistorySizeSet = true
+		}
+		return err
 	case "network_block_history_size":
-		return p.parseIntFieldToInt(&network.NetworkBlockHistorySize, "network block history size")
+		err := p.parseIntFieldToInt(&network.NetworkBlockHistorySize, "network block history size")
+		if err == nil {
+			network.ConfigSource.NetworkBlockHistorySizeSet = true
+		}
+		return err
 	case "max_request_payload_size_kb":
-		return p.parseInt64Field(&network.MaxRequestPayloadSizeKB, "max request payload size")
+		err := p.parseInt64Field(&network.MaxRequestPayloadSizeKB, "max request payload size")
+		if err == nil {
+			network.ConfigSource.MaxRequestPayloadSizeKBSet = true
+		}
+		return err
 	case "request_attempt_count":
-		return p.parseIntField(&network.RequestAttemptCount, "request attempt count")
+		err := p.parseIntField(&network.RequestAttemptCount, "request attempt count")
+		if err == nil {
+			network.ConfigSource.RequestAttemptCountSet = true
+		}
+		return err
 	case "archive_enabled":
-		return p.parseBoolField(&network.ArchiveEnabled, "archive enabled")
+		err := p.parseBoolField(&network.ArchiveEnabled, "archive enabled")
+		if err == nil {
+			network.ConfigSource.ArchiveEnabledSet = true
+		}
+		return err
 	case "custom_config":
 		return p.parseCustomConfig(network, nesting)
 	default:

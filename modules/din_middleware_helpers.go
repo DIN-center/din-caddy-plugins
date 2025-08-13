@@ -96,11 +96,21 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 
 // addNetworkWithRegistryData creates a new network object from the registry network data and adds it to the middleware object
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
-	// Step 2: Create a new network without type - will be set via Caddyfile configuration
-	// Registry networks must have explicit 'type' configuration in Caddyfile like all other networks
-	network, err := NewNetwork(regNetwork.ProxyName, "", d.Env, d.CaddyPort)
+	// Get handler type from registry config, default to empty if not specified
+	handlerType := ""
+	if regNetwork.NetworkConfig != nil && regNetwork.NetworkConfig.Handler != "" {
+		handlerType = regNetwork.NetworkConfig.Handler
+	}
+
+	// Create network with handler type from registry
+	network, err := NewNetwork(regNetwork.ProxyName, HandlerType(handlerType), d.Env, d.CaddyPort)
 	if err != nil {
 		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
+	}
+
+	// Mark handler as not set from Caddyfile (it came from registry)
+	if network.ConfigSource != nil {
+		network.ConfigSource.HandlerTypeSet = false
 	}
 	network = d.syncNetworkConfig(regNetwork, network)
 
@@ -226,56 +236,124 @@ type NetworkConfigFields struct {
 }
 
 // updateNetworkFields applies configuration updates using a streamlined approach
+// Respects Caddyfile configuration priority - only updates fields not explicitly set via Caddyfile
 func (d *DinMiddleware) updateNetworkFields(network *network, regNetworkConfig *din.NetworkOperationsConfig) {
-	// Log available registry methods (handlers provide the actual implementations)
-	d.logRegistryMethods(network.Name, regNetworkConfig)
+	// Ensure ConfigSource exists
+	if network.ConfigSource == nil {
+		network.ConfigSource = &networkConfigSource{}
+	}
 
-	if regNetworkConfig.ChainId != "" && regNetworkConfig.ChainId != network.ChainId {
-		network.ChainId = regNetworkConfig.ChainId
-		d.logger.Debug("Setting network chain ID", zap.String("network", network.Name), zap.String("chain_id", network.ChainId))
+	// Handler type from registry - only if not set via Caddyfile
+	if regNetworkConfig.Handler != "" && !network.ConfigSource.HandlerTypeSet {
+		// Only set handler type if network doesn't have one
+		if network.HandlerType == "" {
+			network.HandlerType = HandlerType(regNetworkConfig.Handler)
+			d.logger.Debug("Setting network handler from registry",
+				zap.String("network", network.Name),
+				zap.String("handler", regNetworkConfig.Handler))
+		}
 	}
-	if regNetworkConfig.HealthcheckIntervalSec != 0 && int(regNetworkConfig.HealthcheckIntervalSec) != network.HCInterval {
-		network.HCInterval = int(regNetworkConfig.HealthcheckIntervalSec)
-		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.Name), zap.Int("healthcheck_interval", network.HCInterval))
-	}
-	if regNetworkConfig.BlockLagLimit != 0 && int64(regNetworkConfig.BlockLagLimit) != network.BlockLagLimit {
-		network.BlockLagLimit = int64(regNetworkConfig.BlockLagLimit)
-		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", network.BlockLagLimit))
-	}
-	if regNetworkConfig.BlockJumpLimit != 0 && int64(regNetworkConfig.BlockJumpLimit) != network.BlockJumpLimit {
-		network.BlockJumpLimit = int64(regNetworkConfig.BlockJumpLimit)
-		d.logger.Debug("Setting network block jump limit", zap.String("network", network.Name), zap.Int64("block_jump_limit", network.BlockJumpLimit))
-	}
-	if regNetworkConfig.MaxRequestPayloadSizeKb != 0 && int64(regNetworkConfig.MaxRequestPayloadSizeKb) != network.MaxRequestPayloadSizeKB {
-		network.MaxRequestPayloadSizeKB = int64(regNetworkConfig.MaxRequestPayloadSizeKb)
-		d.logger.Debug("Setting network max request payload size", zap.String("network", network.Name), zap.Int64("max_request_payload_size_kb", network.MaxRequestPayloadSizeKB))
-	}
-	if regNetworkConfig.RequestAttemptCount != 0 && int(regNetworkConfig.RequestAttemptCount) != network.RequestAttemptCount {
-		network.RequestAttemptCount = int(regNetworkConfig.RequestAttemptCount)
-		d.logger.Debug("Setting network request attempt count", zap.String("network", network.Name), zap.Int("request_attempt_count", network.RequestAttemptCount))
-	}
-	if regNetworkConfig.ArchiveEnabled != network.ArchiveEnabled {
-		network.ArchiveEnabled = regNetworkConfig.ArchiveEnabled
-		d.logger.Debug("Setting network archive enabled", zap.String("network", network.Name), zap.Bool("archive_enabled", network.ArchiveEnabled))
-	}
-}
 
-// logRegistryMethods logs available registry methods in a batch
-func (d *DinMiddleware) logRegistryMethods(networkName string, regNetworkConfig *din.NetworkOperationsConfig) {
-	if regNetworkConfig.HealthcheckMethod != "" {
-		d.logger.Debug("Registry healthcheck method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("healthcheck_method", regNetworkConfig.HealthcheckMethod))
+	// Chain ID - respect Caddyfile priority
+	if regNetworkConfig.ChainId != "" && !network.ConfigSource.ChainIdSet {
+		if regNetworkConfig.ChainId != network.ChainId {
+			network.ChainId = regNetworkConfig.ChainId
+			d.logger.Debug("Setting network chain ID from registry",
+				zap.String("network", network.Name),
+				zap.String("chain_id", network.ChainId))
+		}
 	}
-	if regNetworkConfig.ChainIdMethod != "" {
-		d.logger.Debug("Registry chain ID method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("chain_id_method", regNetworkConfig.ChainIdMethod))
+
+	// Health check threshold (NEW)
+	if regNetworkConfig.HealthcheckThreshold != 0 && !network.ConfigSource.HCThresholdSet {
+		network.HCThreshold = int(regNetworkConfig.HealthcheckThreshold)
+		d.logger.Debug("Setting network healthcheck threshold from registry",
+			zap.String("network", network.Name),
+			zap.Int("threshold", network.HCThreshold))
 	}
-	if regNetworkConfig.CallContractMethod != "" {
-		d.logger.Debug("Registry call contract method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("call_contract_method", regNetworkConfig.CallContractMethod))
+
+	// Health check timeout (NEW)
+	if regNetworkConfig.HealthcheckTimeout != 0 && !network.ConfigSource.HCTimeoutSet {
+		network.HCTimeout = int(regNetworkConfig.HealthcheckTimeout)
+		d.logger.Debug("Setting network healthcheck timeout from registry",
+			zap.String("network", network.Name),
+			zap.Int("timeout", network.HCTimeout))
+	}
+
+	// Health check interval
+	if regNetworkConfig.HealthcheckIntervalSec != 0 && !network.ConfigSource.HCIntervalSet {
+		if int(regNetworkConfig.HealthcheckIntervalSec) != network.HCInterval {
+			network.HCInterval = int(regNetworkConfig.HealthcheckIntervalSec)
+			d.logger.Debug("Setting network healthcheck interval from registry",
+				zap.String("network", network.Name),
+				zap.Int("interval", network.HCInterval))
+		}
+	}
+
+	// Block lag limit
+	if regNetworkConfig.BlockLagLimit != 0 && !network.ConfigSource.BlockLagLimitSet {
+		if int64(regNetworkConfig.BlockLagLimit) != network.BlockLagLimit {
+			network.BlockLagLimit = int64(regNetworkConfig.BlockLagLimit)
+			d.logger.Debug("Setting network block lag limit from registry",
+				zap.String("network", network.Name),
+				zap.Int64("block_lag_limit", network.BlockLagLimit))
+		}
+	}
+
+	// Block jump limit
+	if regNetworkConfig.BlockJumpLimit != 0 && !network.ConfigSource.BlockJumpLimitSet {
+		if int64(regNetworkConfig.BlockJumpLimit) != network.BlockJumpLimit {
+			network.BlockJumpLimit = int64(regNetworkConfig.BlockJumpLimit)
+			d.logger.Debug("Setting network block jump limit from registry",
+				zap.String("network", network.Name),
+				zap.Int64("block_jump_limit", network.BlockJumpLimit))
+		}
+	}
+
+	// Max request payload size
+	if regNetworkConfig.MaxRequestPayloadSizeKb != 0 && !network.ConfigSource.MaxRequestPayloadSizeKBSet {
+		if int64(regNetworkConfig.MaxRequestPayloadSizeKb) != network.MaxRequestPayloadSizeKB {
+			network.MaxRequestPayloadSizeKB = int64(regNetworkConfig.MaxRequestPayloadSizeKb)
+			d.logger.Debug("Setting network max request payload size from registry",
+				zap.String("network", network.Name),
+				zap.Int64("max_request_payload_size_kb", network.MaxRequestPayloadSizeKB))
+		}
+	}
+
+	// Request attempt count
+	if regNetworkConfig.RequestAttemptCount != 0 && !network.ConfigSource.RequestAttemptCountSet {
+		if int(regNetworkConfig.RequestAttemptCount) != network.RequestAttemptCount {
+			network.RequestAttemptCount = int(regNetworkConfig.RequestAttemptCount)
+			d.logger.Debug("Setting network request attempt count from registry",
+				zap.String("network", network.Name),
+				zap.Int("request_attempt_count", network.RequestAttemptCount))
+		}
+	}
+
+	// Provider block history size (NEW)
+	if regNetworkConfig.ProviderBlockHistorySize != 0 && !network.ConfigSource.ProviderBlockHistorySizeSet {
+		network.ProviderBlockHistorySize = int(regNetworkConfig.ProviderBlockHistorySize)
+		d.logger.Debug("Setting provider block history size from registry",
+			zap.String("network", network.Name),
+			zap.Int("size", network.ProviderBlockHistorySize))
+	}
+
+	// Network block history size (NEW)
+	if regNetworkConfig.NetworkBlockHistorySize != 0 && !network.ConfigSource.NetworkBlockHistorySizeSet {
+		network.NetworkBlockHistorySize = int(regNetworkConfig.NetworkBlockHistorySize)
+		d.logger.Debug("Setting network block history size from registry",
+			zap.String("network", network.Name),
+			zap.Int("size", network.NetworkBlockHistorySize))
+	}
+
+	// Archive enabled - special case as it's a boolean
+	if !network.ConfigSource.ArchiveEnabledSet {
+		if regNetworkConfig.ArchiveEnabled != network.ArchiveEnabled {
+			network.ArchiveEnabled = regNetworkConfig.ArchiveEnabled
+			d.logger.Debug("Setting network archive enabled from registry",
+				zap.String("network", network.Name),
+				zap.Bool("archive_enabled", network.ArchiveEnabled))
+		}
 	}
 }
 
