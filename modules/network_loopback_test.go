@@ -48,7 +48,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					BlockNumber:    12345,
 					HealthStatus:   networklib.Healthy,
 					ResponseStatus: 200,
-					Extra:          make(map[string]interface{}),
+					Metadata:       make(map[string]interface{}),
 				}, nil)
 			},
 			mockPrometheusSetup: func(mockProm *prom.MockIPrometheusClient) {
@@ -80,7 +80,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					BlockNumber:    0,
 					HealthStatus:   networklib.Unhealthy,
 					ResponseStatus: 500,
-					Extra:          make(map[string]interface{}),
+					Metadata:       make(map[string]interface{}),
 				}, errors.New("internal server error"))
 			},
 			mockPrometheusSetup: func(mockProm *prom.MockIPrometheusClient) {
@@ -113,7 +113,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					BlockNumber:    0,
 					HealthStatus:   networklib.Unhealthy,
 					ResponseStatus: 0, // No response due to timeout
-					Extra:          make(map[string]interface{}),
+					Metadata:       make(map[string]interface{}),
 				}, errors.New("request timeout"))
 			},
 			mockPrometheusSetup: func(mockProm *prom.MockIPrometheusClient) {

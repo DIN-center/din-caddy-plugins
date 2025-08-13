@@ -134,9 +134,9 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 				handlerRegistry: networklib.DefaultRegistry,
 				Networks: map[string]*network{
 					tt.networkName: {
-						Name:    tt.networkName,
+						Name:        tt.networkName,
 						HandlerType: HandlerType(tt.networkType),
-						ChainId: "1",
+						ChainId:     "1",
 						Providers: map[string]*provider{
 							"test-provider": {
 								HttpUrl:  "http://test-provider",
@@ -303,9 +303,9 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 			// Add network if it's not the "not found" test
 			if tt.name != "Network not found error" {
 				network := &network{
-					Name:    tt.networkName,
+					Name:        tt.networkName,
 					HandlerType: HandlerType(tt.networkType),
-					ChainId: "1",
+					ChainId:     "1",
 					Providers: map[string]*provider{
 						"test-provider": {
 							HttpUrl: "http://test-provider",
@@ -388,9 +388,9 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 		handlerRegistry: networklib.DefaultRegistry,
 		Networks: map[string]*network{
 			"beacon": {
-				Name:    "beacon",
+				Name:        "beacon",
 				HandlerType: BeaconHandler,
-				ChainId: "1",
+				ChainId:     "1",
 				Providers: map[string]*provider{
 					"provider1": {
 						HttpUrl:  "http://provider1",

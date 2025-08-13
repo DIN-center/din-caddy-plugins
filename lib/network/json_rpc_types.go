@@ -58,10 +58,6 @@ func NewJSONRPCErrorClassifier() *JSONRPCErrorClassifier {
 			"already known",      // Transaction already submitted
 			"gas",                // Gas-related errors (insufficient gas, gas estimation failed, etc.)
 			"revert",             // EVM execution reverts
-			"execution reverted", // Explicit execution revert
-			"out of gas",         // Gas limit exceeded
-			"intrinsic gas",      // Intrinsic gas too low
-			"gas limit exceeded", // Gas limit exceeded
 			"vm execution error", // Virtual machine execution errors
 		},
 	}

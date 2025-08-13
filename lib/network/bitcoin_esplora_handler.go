@@ -1,133 +1,104 @@
+// lib/network/bitcoin_esplora_handler.go
 package network
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"go.uber.org/zap"
 )
+
+// BitcoinEsploraBlock represents a Bitcoin block from Esplora API
+type BitcoinEsploraBlock struct {
+	ID                string  `json:"id"`
+	Height            int64   `json:"height"`
+	Version           int64   `json:"version"`
+	Timestamp         int64   `json:"timestamp"`
+	TxCount           int     `json:"tx_count"`
+	Size              int     `json:"size"`
+	Weight            int     `json:"weight"`
+	MerkleRoot        string  `json:"merkle_root"`
+	PreviousBlockHash string  `json:"previousblockhash"`
+	MedianTime        int64   `json:"mediantime"`
+	Nonce             int64   `json:"nonce"`
+	Bits              int64   `json:"bits"`
+	Difficulty        float64 `json:"difficulty"`
+}
 
 // BitcoinEsploraHandler handles Bitcoin Esplora REST API requests
 type BitcoinEsploraHandler struct {
 	config              *NetworkConfig
-	version             string
-	pathNormalizer      *BitcoinPathNormalizer
-	logger              *logger.LoggerClient
 	healthCheckEndpoint string
+	blockInfoEndpoint   string
+	version             string
+	logger              *logger.LoggerClient
 }
 
-// BitcoinPathNormalizer handles normalization of Bitcoin-specific paths
-type BitcoinPathNormalizer struct {
-	patterns []compiledPattern
-}
-
-type compiledPattern struct {
-	regex       *regexp.Regexp
-	replacement string
-}
-
-// NewBitcoinEsploraHandler creates a new Bitcoin Esplora handler
+// NewBitcoinEsploraHandler creates a new Bitcoin Esplora handler instance
 func NewBitcoinEsploraHandler(config *NetworkConfig) *BitcoinEsploraHandler {
-	handler := &BitcoinEsploraHandler{
+	return &BitcoinEsploraHandler{
 		config:              config,
+		healthCheckEndpoint: "/api/blocks/tip/height",
+		blockInfoEndpoint:   "/api/blocks/tip/hash",
 		version:             "1.0.0",
-		pathNormalizer:      NewBitcoinPathNormalizer(),
-		healthCheckEndpoint: "/blocks/tip/height",
+		logger:              config.Logger,
 	}
-
-	if config != nil {
-		handler.logger = config.Logger
-	}
-
-	return handler
 }
 
-// NewBitcoinPathNormalizer creates a new path normalizer for Bitcoin endpoints
-func NewBitcoinPathNormalizer() *BitcoinPathNormalizer {
-	patterns := []compiledPattern{
-		// Transaction patterns
-		{
-			regex:       regexp.MustCompile(`/tx/[a-fA-F0-9]{64}`),
-			replacement: "/tx/{txid}",
-		},
-		{
-			regex:       regexp.MustCompile(`/tx/[a-fA-F0-9]{64}/[a-z]+`),
-			replacement: "/tx/{txid}/{action}",
-		},
-		// Address patterns
-		{
-			regex:       regexp.MustCompile(`/address/[a-zA-Z0-9]{25,}`),
-			replacement: "/address/{address}",
-		},
-		{
-			regex:       regexp.MustCompile(`/address/[a-zA-Z0-9]{25,}/[a-z]+`),
-			replacement: "/address/{address}/{action}",
-		},
-		// Block patterns
-		{
-			regex:       regexp.MustCompile(`/block/[a-fA-F0-9]{64}`),
-			replacement: "/block/{hash}",
-		},
-		{
-			regex:       regexp.MustCompile(`/block-height/\d+`),
-			replacement: "/block-height/{height}",
-		},
-		// Mempool patterns
-		{
-			regex:       regexp.MustCompile(`/mempool/[a-zA-Z0-9]+`),
-			replacement: "/mempool/{txid}",
-		},
-	}
-
-	return &BitcoinPathNormalizer{patterns: patterns}
-}
-
-// NormalizePath normalizes Bitcoin-specific endpoints for metrics
-func (n *BitcoinPathNormalizer) NormalizePath(path string) string {
-	for _, pattern := range n.patterns {
-		if pattern.regex.MatchString(path) {
-			return pattern.regex.ReplaceAllString(path, pattern.replacement)
-		}
-	}
-	return path
-}
-
-// === Core Identification ===
-
+// Metadata methods for registry
 func (h *BitcoinEsploraHandler) GetType() string {
-	return "bitcoin-esplora" // Must match modules.BitcoinEsploraHandler constant value
+	return "bitcoin-esplora"
 }
 
 func (h *BitcoinEsploraHandler) GetName() string {
-	return "Bitcoin Esplora REST API Handler"
+	return "Bitcoin Esplora Handler"
+}
+
+func (h *BitcoinEsploraHandler) GetVersion() string {
+	return h.version
 }
 
 func (h *BitcoinEsploraHandler) GetRequestType() RequestType {
 	return RequestTypeREST
 }
 
-// === Request Processing ===
+// Lifecycle methods
+func (h *BitcoinEsploraHandler) Initialize(config *NetworkConfig) error {
+	h.config = config
 
-func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
-	// For REST APIs, the path is already correct
-	// We might need to add any Bitcoin-specific headers here
+	// Update logger from config if available
+	if config.Logger != nil {
+		h.logger = config.Logger
+	}
 	return nil
 }
 
-// ExtractMethod extracts the method (URL path) for REST APIs
+func (h *BitcoinEsploraHandler) Shutdown() error {
+	// Cleanup resources if needed
+	return nil
+}
+
+// === EXISTING METHODS ===
+
+// Request processing methods
+func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
+	// Validate the request, reject POST requests
+	if err := h.ValidateRequest(req); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ExtractMethod extracts the method name from the request for logging/metrics
 func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
-	// For REST APIs, use the normalized path for better metrics
-	normalizedPath := h.pathNormalizer.NormalizePath(req.URL.Path)
-	return normalizedPath, nil
+	return req.URL.Path, nil
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
@@ -136,18 +107,39 @@ func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, provider
 	return nil
 }
 
-// === Response Handling ===
+func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
+	// For now, return path as-is since we don't have path normalizer
+	// This can be enhanced later if needed
+	return path
+}
 
+func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
+	// Block POST requests and return 405 Method Not Allowed
+	if req.Method == "POST" {
+		return &HTTPError{
+			StatusCode: http.StatusMethodNotAllowed,
+			Message:    "POST method not allowed for Bitcoin Esplora API",
+		}
+	}
+
+	// Check for valid HTTP methods - Bitcoin Esplora REST API now only supports GET
+	if req.Method != "GET" {
+		return fmt.Errorf("unsupported HTTP method for Bitcoin Esplora REST API: %s", req.Method)
+	}
+
+	// Check for valid path format - must contain API pattern
+	path := req.URL.Path
+	if !strings.Contains(path, "/api/") {
+		return fmt.Errorf("invalid Bitcoin Esplora API path: %s", path)
+	}
+
+	return nil
+}
+
+// Response handling methods
 func (h *BitcoinEsploraHandler) ParseResponse(body []byte, statusCode int) error {
 	if statusCode >= 400 {
-		// Try to parse error response
-		var errorResp struct {
-			Error string `json:"error"`
-		}
-		if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Error != "" {
-			return fmt.Errorf("Bitcoin Esplora API error: %s", errorResp.Error)
-		}
-		return fmt.Errorf("HTTP error: %d", statusCode)
+		return fmt.Errorf("HTTP error: %d, body: %s", statusCode, string(body))
 	}
 	return nil
 }
@@ -160,16 +152,16 @@ func (h *BitcoinEsploraHandler) IsRetryableError(err error, statusCode int) bool
 
 	// Network errors are retryable
 	if err != nil {
-		errMsg := strings.ToLower(err.Error())
+		message := strings.ToLower(err.Error())
 		retryablePatterns := []string{
 			"timeout",
 			"connection",
 			"temporary",
 			"rate limit",
-			"service unavailable",
 		}
+
 		for _, pattern := range retryablePatterns {
-			if strings.Contains(errMsg, pattern) {
+			if strings.Contains(message, pattern) {
 				return true
 			}
 		}
@@ -178,58 +170,92 @@ func (h *BitcoinEsploraHandler) IsRetryableError(err error, statusCode int) bool
 	return false
 }
 
-// === Block Operations ===
-
+// Block operations - Bitcoin Esplora doesn't use JSON-RPC
 func (h *BitcoinEsploraHandler) FormatBlockHeight(blockNum int64) string {
 	return strconv.FormatInt(blockNum, 10)
 }
 
 func (h *BitcoinEsploraHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	// For REST APIs, we don't create request payloads
-	return nil, fmt.Errorf("CreateBlockRequest not supported for REST API")
+	return nil, fmt.Errorf("Bitcoin Esplora uses REST API, not JSON-RPC")
 }
 
 func (h *BitcoinEsploraHandler) ParseBlockResponse(body []byte) (interface{}, error) {
-	var block map[string]interface{}
+	var block BitcoinEsploraBlock
 	if err := json.Unmarshal(body, &block); err != nil {
-		return nil, fmt.Errorf("failed to parse block response: %w", err)
+		return nil, fmt.Errorf("failed to parse Bitcoin block response: %w", err)
 	}
 	return block, nil
 }
 
 func (h *BitcoinEsploraHandler) ExtractBlockHash(blockData interface{}) string {
-	if block, ok := blockData.(map[string]interface{}); ok {
-		if hash, ok := block["id"].(string); ok {
-			return hash
-		}
+	if block, ok := blockData.(BitcoinEsploraBlock); ok {
+		return block.ID
 	}
 	return ""
 }
 
 func (h *BitcoinEsploraHandler) SupportsGetBlockByNumber() bool {
-	return true
+	return true // Bitcoin Esplora supports getting blocks by height
 }
 
 func (h *BitcoinEsploraHandler) GetSupportedMethods() []string {
-	// REST endpoints, not RPC methods
+	// These are REST endpoints from Esplora API documentation, not JSON-RPC methods
 	return []string{
-		"/blocks/tip",
-		"/blocks/tip/height",
-		"/block/{hash}",
-		"/block-height/{height}",
-		"/tx/{txid}",
-		"/address/{address}",
-		"/mempool",
-		"/fee-estimates",
+		// Transaction endpoints
+		"/api/tx/{txid}",
+		"/api/tx/{txid}/status",
+		"/api/tx/{txid}/hex",
+		"/api/tx/{txid}/raw",
+		"/api/tx/{txid}/merkleblock-proof",
+		"/api/tx/{txid}/merkle-proof",
+		"/api/tx/{txid}/outspend/{vout}",
+		"/api/tx/{txid}/outspends",
+
+		// Address endpoints
+		"/api/address/{address}",
+		"/api/scripthash/{hash}",
+		"/api/address/{address}/txs",
+		"/api/scripthash/{hash}/txs",
+		"/api/address/{address}/txs/chain",
+		"/api/address/{address}/txs/chain/{last_seen_txid}",
+		"/api/scripthash/{hash}/txs/chain",
+		"/api/scripthash/{hash}/txs/chain/{last_seen_txid}",
+		"/api/address/{address}/txs/mempool",
+		"/api/scripthash/{hash}/txs/mempool",
+		"/api/address/{address}/utxo",
+		"/api/scripthash/{hash}/utxo",
+		"/api/address-prefix/{prefix}",
+
+		// Block endpoints
+		"/api/block/{hash}",
+		"/api/block/{hash}/header",
+		"/api/block/{hash}/status",
+		"/api/block/{hash}/txs",
+		"/api/block/{hash}/txs/{start_index}",
+		"/api/block/{hash}/txids",
+		"/api/block/{hash}/txid/{index}",
+		"/api/block/{hash}/raw",
+		"/api/block-height/{height}",
+		"/api/blocks",
+		"/api/blocks/{start_height}",
+		"/api/blocks/tip/height",
+		"/api/blocks/tip/hash",
+
+		// Mempool endpoints
+		"/api/mempool",
+		"/api/mempool/txids",
+		"/api/mempool/recent",
+
+		// Fee estimate endpoints
+		"/api/fee-estimates",
 	}
 }
 
 func (h *BitcoinEsploraHandler) GetBlockByNumberMethod() string {
-	return "/block-height/{height}"
+	return "/api/blocks/tip/height" // REST endpoint for getting block by height
 }
 
-// === Health Check ===
-
+// Health check methods
 func (h *BitcoinEsploraHandler) GetHealthCheckMethod() string {
 	return h.healthCheckEndpoint
 }
@@ -239,12 +265,12 @@ func (h *BitcoinEsploraHandler) GetHealthCheckHTTPMethod() string {
 }
 
 func (h *BitcoinEsploraHandler) CreateHealthCheckPayload(method string) ([]byte, error) {
-	// REST API doesn't need payloads for GET requests
+	// REST API doesn't need request payload for GET requests
 	return nil, nil
 }
 
 func (h *BitcoinEsploraHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
-	// The /blocks/tip/height endpoint returns just the height as a number
+	// Parse the block height response
 	var height int64
 	if err := json.Unmarshal(body, &height); err != nil {
 		return nil, fmt.Errorf("failed to parse block height: %w", err)
@@ -256,87 +282,65 @@ func (h *BitcoinEsploraHandler) ParseHealthCheckResponse(body []byte) (*BlockInf
 	}, nil
 }
 
-func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+// GetLatestBlockNumber retrieves the latest block number from the provider
+func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	endpoint := httpUrl + h.healthCheckEndpoint
+
+	// Execute request with retries
+	var resp []byte
+	var lastErr error
+	var statusCode int
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
-
 		if err != nil {
-			h.logger.Warn("Bitcoin Esplora health check request failed",
-				zap.String("endpoint", endpoint),
-				zap.Int("attempt", attempt+1),
-				zap.Int("max_attempts", requestAttempts),
-				zap.Error(err))
-
-			if attempt < requestAttempts-1 && h.IsRetryableError(err, 0) {
-				time.Sleep(time.Duration(attempt+1) * time.Second)
-				continue
+			lastErr = err
+			if status != nil {
+				statusCode = *status
 			}
-
-			return &LatestBlockResult{
-				BlockNumber:    0,
-				HealthStatus:   Unhealthy,
-				ResponseStatus: 0,
-			}, err
-		}
-
-		if status != nil && *status >= 200 && *status < 300 {
-			blockInfo, err := h.ParseHealthCheckResponse(respBytes)
-			if err != nil {
-				return &LatestBlockResult{
-					BlockNumber:    0,
-					HealthStatus:   Unhealthy,
-					ResponseStatus: *status,
-				}, err
-			}
-
-			return &LatestBlockResult{
-				BlockNumber:    blockInfo.Number,
-				HealthStatus:   Healthy,
-				ResponseStatus: *status,
-			}, nil
-		}
-
-		// Handle non-200 status codes
-		healthStatus := Unhealthy
-		if status != nil && *status == 429 {
-			healthStatus = Warning
-		}
-
-		if attempt < requestAttempts-1 && h.IsRetryableError(nil, *status) {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
 			continue
 		}
+		if status != nil {
+			statusCode = *status
+		}
+		if statusCode >= 200 && statusCode < 300 {
+			resp = respBytes
+			break
+		}
+		lastErr = fmt.Errorf("HTTP error %d", statusCode)
+	}
 
-		return &LatestBlockResult{
-			BlockNumber:    0,
-			HealthStatus:   healthStatus,
-			ResponseStatus: *status,
-		}, fmt.Errorf("health check failed with status %d", *status)
+	if resp == nil {
+		return nil, lastErr
+	}
+
+	// Parse response
+	blockInfo, err := h.ParseHealthCheckResponse(resp)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LatestBlockResult{
-		BlockNumber:    0,
-		HealthStatus:   Unhealthy,
-		ResponseStatus: 0,
-	}, fmt.Errorf("health check failed after %d attempts", requestAttempts)
+		BlockNumber:    blockInfo.Number,
+		HealthStatus:   Healthy,
+		ResponseStatus: 200,
+		Metadata:       make(map[string]interface{}),
+	}, nil
 }
 
-// === Separate Block Info Call ===
-
+// RequiresSeparateBlockInfoCall returns true since we need separate calls for height and hash
 func (h *BitcoinEsploraHandler) RequiresSeparateBlockInfoCall() bool {
-	return false // /blocks/tip/height provides the info we need
+	return true
 }
 
+// GetBlockInfoMethod returns the endpoint to get block hash
 func (h *BitcoinEsploraHandler) GetBlockInfoMethod() string {
-	return "/blocks/tip"
+	return h.blockInfoEndpoint
 }
 
-// === Block Number Parsing ===
-
+// ParseBlockNumberResponse parses the raw response from a block number query
 func (h *BitcoinEsploraHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
-	if statusCode != http.StatusOK {
+	if statusCode != 200 {
 		return 0, fmt.Errorf("unexpected status code: %d", statusCode)
 	}
 
@@ -348,124 +352,114 @@ func (h *BitcoinEsploraHandler) ParseBlockNumberResponse(body []byte, statusCode
 	return height, nil
 }
 
-// === Chain ID Operations ===
-
+// Chain ID operations - Bitcoin doesn't have chain ID like EVM
 func (h *BitcoinEsploraHandler) GetChainIDMethod() string {
-	// Bitcoin doesn't have a chain ID method like Ethereum
-	// We use the network identifier from config
-	return ""
+	return "" // Bitcoin doesn't have chain ID concept
 }
 
 func (h *BitcoinEsploraHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
-	// Bitcoin doesn't have dynamic chain IDs
+	// Bitcoin doesn't have chain ID, return the configured chain ID
 	return h.config.ChainID, nil
 }
 
 func (h *BitcoinEsploraHandler) ValidateChainID(chainID string) error {
-	if h.config.ChainID == "" {
-		return nil // No validation if not configured
-	}
-
-	if chainID != h.config.ChainID {
-		return fmt.Errorf("chain ID mismatch: expected %s, got %s", h.config.ChainID, chainID)
-	}
-
+	// Accept any chain ID for Bitcoin (mainnet, testnet, regtest, etc.)
 	return nil
 }
 
-func (h *BitcoinEsploraHandler) GetChainID(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
-	// Bitcoin doesn't have a chain ID endpoint, return configured value
+func (h *BitcoinEsploraHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	// Bitcoin doesn't have dynamic chain ID, return configured value
 	return h.config.ChainID, nil
 }
 
-// === Archive Mode ===
-
+// Archive mode - not applicable for REST API
 func (h *BitcoinEsploraHandler) SupportsArchiveMode() bool {
-	return true // Esplora typically provides full blockchain history
+	return false
 }
 
 func (h *BitcoinEsploraHandler) GetArchiveMethod() string {
-	return "/block-height/{height}"
+	return ""
 }
 
 func (h *BitcoinEsploraHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
-	// REST API doesn't need payloads
-	return nil, nil
+	return nil, fmt.Errorf("archive mode not supported for Bitcoin Esplora")
 }
 
 func (h *BitcoinEsploraHandler) ParseArchiveResponse(body []byte) error {
-	// If we can parse the block, archive mode is working
-	var block map[string]interface{}
-	return json.Unmarshal(body, &block)
+	return fmt.Errorf("archive mode not supported for Bitcoin Esplora")
 }
 
-func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
-	endpoint, err := url.JoinPath(httpUrl, "block-height", blockHeight)
-	if err != nil {
-		return fmt.Errorf("failed to construct archive check URL: %w", err)
-	}
-
-	respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
-	if err != nil {
-		return fmt.Errorf("archive check request failed: %w", err)
-	}
-
-	if status == nil || *status != http.StatusOK {
-		return fmt.Errorf("archive check failed with status %d", *status)
-	}
-
-	return h.ParseArchiveResponse(respBytes)
+func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	return fmt.Errorf("archive mode not supported for Bitcoin Esplora")
 }
 
-// === Get Block By Number ===
+// PerformGetBlockByNumber performs the complete get block by number operation
+func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// First get block hash by height
+	endpoint := fmt.Sprintf("%s/api/block-height/%d", httpUrl, blockNumber)
 
-func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient dinHttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	endpoint, err := url.JoinPath(httpUrl, "block-height", strconv.FormatInt(blockNumber, 10))
-	if err != nil {
-		return nil, fmt.Errorf("failed to construct block by number URL: %w", err)
-	}
+	// Execute request to get block hash
+	var resp []byte
+	var lastErr error
+	var statusCode int
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
-
 		if err != nil {
-			if attempt < requestAttempts-1 && h.IsRetryableError(err, 0) {
-				time.Sleep(time.Duration(attempt+1) * time.Second)
-				continue
+			lastErr = err
+			if status != nil {
+				statusCode = *status
 			}
-			return nil, err
-		}
-
-		if status != nil && *status == http.StatusOK {
-			return h.ParseBlockResponse(respBytes)
-		}
-
-		if attempt < requestAttempts-1 && h.IsRetryableError(nil, *status) {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
 			continue
 		}
-
-		return nil, fmt.Errorf("failed to get block with status %d", *status)
-	}
-
-	return nil, fmt.Errorf("failed to get block after %d attempts", requestAttempts)
-}
-
-// === Lifecycle ===
-
-func (h *BitcoinEsploraHandler) Initialize(config *NetworkConfig) error {
-	h.config = config
-
-	if config.Logger != nil {
-		h.logger = config.Logger
-	}
-
-	// Parse custom configuration if provided
-	if config.Custom != nil {
-		if endpoint, ok := config.Custom["health_endpoint"].(string); ok {
-			h.healthCheckEndpoint = endpoint
+		if status != nil {
+			statusCode = *status
 		}
+		if statusCode >= 200 && statusCode < 300 {
+			resp = respBytes
+			break
+		}
+		lastErr = fmt.Errorf("HTTP error %d", statusCode)
 	}
 
-	return nil
+	if resp == nil {
+		return nil, fmt.Errorf("failed to get block hash: %w", lastErr)
+	}
+
+	var blockHash string
+	if err := json.Unmarshal(resp, &blockHash); err != nil {
+		return nil, fmt.Errorf("failed to parse block hash: %w", err)
+	}
+
+	// Now get full block data using the hash
+	blockEndpoint := fmt.Sprintf("%s/api/block/%s", httpUrl, blockHash)
+
+	// Execute request to get block data
+	var blockResp []byte
+	lastErr = nil
+
+	for attempt := 0; attempt < requestAttempts; attempt++ {
+		respBytes, status, err := httpClient.Get(blockEndpoint, headers, authClient)
+		if err != nil {
+			lastErr = err
+			if status != nil {
+				statusCode = *status
+			}
+			continue
+		}
+		if status != nil {
+			statusCode = *status
+		}
+		if statusCode >= 200 && statusCode < 300 {
+			blockResp = respBytes
+			break
+		}
+		lastErr = fmt.Errorf("HTTP error %d", statusCode)
+	}
+
+	if blockResp == nil {
+		return nil, fmt.Errorf("failed to get block data: %w", lastErr)
+	}
+
+	return h.ParseBlockResponse(blockResp)
 }

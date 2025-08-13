@@ -98,7 +98,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					Name: "eth",
+					Name:    "eth",
 					handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
@@ -124,7 +124,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			provider: "localhost:8000",
 			networks: map[string]*network{
 				"eth": {
-					Name: "eth",
+					Name:    "eth",
 					handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
@@ -294,7 +294,12 @@ func TestInitializeProvider(t *testing.T) {
 			dinMiddleware := &DinMiddleware{
 				logger: logger,
 			}
-			err := dinMiddleware.initializeProvider(tt.provider, tt.httpClient, logger)
+			// Create test network for initializeProvider
+			network, err := NewNetwork("test-network", "evm", utils.Environment("test"), "8080")
+			if err != nil {
+				t.Fatalf("Failed to create test network: %v", err)
+			}
+			err = dinMiddleware.initializeProvider(tt.provider, network, tt.httpClient, logger)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -304,11 +309,12 @@ func TestInitializeProvider(t *testing.T) {
 
 func TestDinMiddlewareProvision(t *testing.T) {
 	tests := []struct {
-		name            string
-		networks        map[string]*network
-		registryEnabled bool
-		initializeErr   error
-		expectedError   error
+		name                string
+		networks            map[string]*network
+		registryEnabled     bool
+		registryEndpointUrl string
+		initializeErr       error
+		expectedError       error
 	}{
 		{
 			name: "Successful provision in test mode",
@@ -318,10 +324,11 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:            "network not found but registry is enabled",
-			registryEnabled: true,
-			networks:        map[string]*network{},
-			expectedError:   nil,
+			name:                "network not found but registry is enabled",
+			registryEnabled:     true,
+			registryEndpointUrl: "http://example1.com",
+			networks:            map[string]*network{},
+			expectedError:       nil,
 		},
 		{
 			name:          "minimum of 1 network not found",
@@ -334,12 +341,11 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
-				testMode: true, // Ensure test mode is enabled
-				logger:   logger,
-				Networks: tt.networks,
-			}
-			if tt.registryEnabled {
-				dinMiddleware.RegistryEnabled = tt.registryEnabled
+				testMode:            true, // Ensure test mode is enabled
+				logger:              logger,
+				Networks:            tt.networks,
+				RegistryEndpointUrl: tt.registryEndpointUrl,
+				RegistryEnabled:     tt.registryEnabled,
 			}
 
 			// Call the Provision method

@@ -8,13 +8,16 @@
         "commands": [
           "mkdir -p pkg/dinregistry/abi",
           "cp ../../dist/apps/din-sc/*.abi pkg/dinregistry/abi",
+          "mkdir -p pkg/dinregistry/sc_models",
+          "cp ../../dist/apps/din-sc/go-bindings/*.go pkg/dinregistry/sc_models",
+          "make generate-mocks",
           "mkdir -p ../../dist/apps/din-go/bin",
-          "go build -o ../../dist/apps/din-go/bin/dingo ./cmd/main.go"
+          "go build -o ../../dist/apps/din-go/bin/din-cli ./cli/main.go"
         ],
         "parallel": false,
         "cwd": "apps/din-go",
         "outputs": [
-          "{workspaceRoot}/dist/apps/din-go/bin/dingo"
+          "{workspaceRoot}/dist/apps/din-go/bin/din-cli"
         ]
       },
       "dependsOn": [
@@ -31,7 +34,7 @@
       "executor": "nx:run-commands",
       "options": {
         "commands": [
-          "rm -rf pkg/dinregistry/abi",
+          "rm -rf pkg/dinregistry",
           "rm -rf ../../dist/apps/din-go"
         ],
         "cwd": "apps/din-go"
@@ -41,6 +44,34 @@
       "executor": "nx:run-commands",
       "options": {
         "commands": ["go test -v ./lib/watcher/..."],
+        "cwd": "apps/din-go"
+      }
+    },
+    "test-cli": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["go test -v ./cli/..."],
+        "cwd": "apps/din-go"
+      }
+    },
+    "test-din-client": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["go test -v ./lib/din/... --list \"~Integration*\""],
+        "cwd": "apps/din-go"
+      }
+    },
+    "test-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["go test -v ./... --list \"~Integration*\""],
+        "cwd": "apps/din-go"
+      }
+    },
+    "test-e2e-integration": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["go test -timeout 30s -run ^TestIntegrationGetRegistryData$ github.com/DIN-center/din-sc/apps/din-go/lib/din"],
         "cwd": "apps/din-go"
       }
     }
