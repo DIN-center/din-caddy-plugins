@@ -146,7 +146,8 @@ func (n *network) healthCheck() {
 	// Add handler status logging at the start of health check
 
 	// Self loopback health check (run asynchronously)
-	go n.LoopbackHealthCheck()
+	// TODO: Make this configurable before merging
+	//LoopbackHealthCheck()
 
 	// Get latest network block for comparison
 	latestNetworkBlock := n.getLatestHealthyBlock()

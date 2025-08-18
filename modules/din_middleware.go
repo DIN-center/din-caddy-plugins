@@ -14,6 +14,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -64,6 +65,9 @@ type DinMiddleware struct {
 
 	// The dingo client object
 	DingoClient din.IDinClient
+
+
+	NFTManager nftoptions.Config
 
 	logger *logger.LoggerClient
 

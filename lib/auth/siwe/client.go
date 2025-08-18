@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -137,7 +137,7 @@ func NewSIWEClient(url string, sessionCount int, signer *SigningConfig) *SIWECli
 		ProviderURL:  url,
 		Signer:       signer,
 		SessionCount: sessionCount,
-		nftSelector:  func(tokens []*nftoptions.NFTMetadata) *nftoptions.NFTMetadata {
+		nftSelector:  func(tokens []*superfluid.NFTMetadata) *superfluid.NFTMetadata {
 			// Naive selection strategy - Take the first unexpired option
 			for _, token := range tokens {
 				if token.Expiration > uint64(time.Now().Unix()) {
@@ -168,7 +168,7 @@ func (c *SIWEClientAuth) Start(logger *zap.Logger) error {
 			ExpectContinueTimeout: 1 * time.Second,
 		}}
 	}
-	if c.Signer.NFTManager != nil {
+	if c.Signer!= nil && c.Signer.NFTManager != nil {
 		if err := c.Signer.NFTManager.Start(logger); err != nil {
 			c.logger.Warn("Error starting nft manager", zap.String("error", err.Error()))
 			return err
@@ -301,6 +301,9 @@ func (c *SIWEClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error
 	if tok.Error != "" {
 		err = errors.New(tok.Error)
 	}
+	if len(tok.Headers) == 0 {
+		c.logger.Warn("Token generated with no headers", zap.String("body", string(body)))
+	}
 
 	return tok, err
 }
@@ -332,7 +335,15 @@ func hashStringToIndex(s string, listSize int) int {
 
 func (c *SIWEClientAuth) selectAuthToken(r *http.Request) auth.AuthToken {
 	if sessionId := r.Header.Get("Din-Session-Id"); sessionId != "" {
-		return c.SessionTokens[hashStringToIndex(sessionId, c.SessionCount)]
+		tok := c.SessionTokens[hashStringToIndex(sessionId, c.SessionCount)]
+		if tok.Peek() == nil {
+			return tok
+		}
+	}
+	for _, tok := range c.SessionTokens {
+		if tok.Peek() == nil {
+			return tok
+		}
 	}
 	return c.SessionTokens[0]
 }

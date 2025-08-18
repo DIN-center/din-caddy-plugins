@@ -1,8 +1,9 @@
 package siwe
 
 import (
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
-	"github.com/umbracle/ethgo"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -10,13 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
-type NFTSelector func([]*nftoptions.NFTMetadata) *nftoptions.NFTMetadata
+type NFTSelector func([]*superfluid.NFTMetadata) *superfluid.NFTMetadata
 
 
 type NFTManager struct {
 	OptionsManager *nftoptions.Config
-	Owner ethgo.Address
-	nftsByProvider map[string][]*nftoptions.NFTMetadata
+	Owner common.Address
+	nftsByProvider map[string][]*superfluid.NFTMetadata
 	mutex sync.RWMutex
 	stopChan chan struct{}
 	once sync.Once
@@ -26,13 +27,13 @@ type NFTManager struct {
 func NewNFTManager(optionsManager *nftoptions.Config, owner string) *NFTManager {
 	return &NFTManager{
 		OptionsManager: optionsManager,
-		Owner: ethgo.HexToAddress(owner),
-		nftsByProvider: make(map[string][]*nftoptions.NFTMetadata),
+		Owner: common.HexToAddress(owner),
+		nftsByProvider: make(map[string][]*superfluid.NFTMetadata),
 		stopChan: make(chan struct{}),
 	}
 }
 
-func (m *NFTManager) GetNFTForProvider(providerID *big.Int, selector NFTSelector) *nftoptions.NFTMetadata {
+func (m *NFTManager) GetNFTForProvider(providerID *big.Int, selector NFTSelector) *superfluid.NFTMetadata {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -60,7 +61,7 @@ func (m *NFTManager) Refresh() error {
 	now := uint64(time.Now().Unix())
 	bufferTime := now + 60
 
-	nftsByProvider := make(map[string][]*nftoptions.NFTMetadata) // Clear old data
+	nftsByProvider := make(map[string][]*superfluid.NFTMetadata) // Clear old data
 
 	for _, tokenId := range tokenIds {
 		metadata, err := m.OptionsManager.GetTokenMetadata(tokenId)

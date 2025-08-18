@@ -13,13 +13,14 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/umbracle/ethgo"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
@@ -49,7 +50,7 @@ type SIWEAuthMiddleware struct {
 	Secret    string                  `json:"secret"`
 	ProviderID *big.Int               `json:"provider_id"`
 	NftEndpoint string                `json:"nft_endpoint"`
-	NftAddresses map[ethgo.Address]struct{}  `json:"nft_addresses"`
+	NftAddresses map[common.Address]struct{}  `json:"nft_addresses"`
 	logger    *zap.Logger
 }
 
@@ -107,13 +108,18 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 			handleError(err, rw, 400)
 			return err
 		}
-		address := ethgo.HexToAddress(resources[0].Host)
+		address := common.HexToAddress(resources[0].Host)
 		if _, ok := d.NftAddresses[address]; !ok {
 			err := errors.New("nft address not recognized")
 			handleError(err, rw, 400)
 			return err
 		}
-		oc, err := nftoptions.NewNftOptionsContract(resources[0].Host, d.NftEndpoint)
+		client, err := ethclient.Dial(d.NftEndpoint)
+
+		if err != nil {
+			return err
+		}
+		oc, err := superfluid.NewSuperfluidNFTClient(common.HexToAddress(resources[0].Host), client, d.logger)
 		if err != nil {
 			err := errors.New("could not construct contract endpoint")
 			handleError(err, rw, 500)
@@ -136,7 +142,7 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 			handleError(err, rw, 500)
 			return err
 		}
-		if owner != ethgo.Address(crypto.PubkeyToAddress(*publicKey)) {
+		if owner != common.Address(crypto.PubkeyToAddress(*publicKey)) {
 			err := errors.New("signer does not own specified")
 			handleError(err, rw, 401)
 			return err
@@ -215,7 +221,7 @@ func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, 
 // UnmarshalCaddyfile sets up reverse proxy upstreamWrapper and method data on the serve based on the configuration of the Caddyfile
 func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	d.Whitelist = make(map[string]struct{})
-	d.NftAddresses = make(map[ethgo.Address]struct{})
+	d.NftAddresses = make(map[common.Address]struct{})
 	for dispenser.Next() {
 		for dispenser.NextBlock(0) {
 			switch dispenser.Val() {
@@ -244,7 +250,7 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 				d.NftEndpoint = dispenser.Val()
 			case "nft_addresses":
 				for _, v := range dispenser.RemainingArgs() {
-					d.NftAddresses[ethgo.HexToAddress(v)] = struct{}{}
+					d.NftAddresses[common.HexToAddress(v)] = struct{}{}
 				}
 
 			default:

@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"math/big"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
@@ -25,6 +27,7 @@ type caddyfileParser struct {
 	middleware       *DinMiddleware
 	dispenser        *caddyfile.Dispenser
 	siweSignerClient siwe.ISIWESignerClient
+	nftConfig        *nftoptions.Config
 	caddyPort        string
 }
 
@@ -100,6 +103,8 @@ func (p *caddyfileParser) parseDirective() error {
 		return p.parsePort()
 	case "siwe-signer":
 		return p.parseSiweSigner()
+	case "nft-manager":
+		return p.parseNftManager()
 	case "networks":
 		return p.parseNetworks()
 	case "din_registry":
@@ -153,6 +158,45 @@ func (p *caddyfileParser) parseSiweSigner() error {
 
 	if err := p.siweSignerClient.GenPrivKey(p.middleware.DefaultSiweSigner); err != nil {
 		return err
+	}
+
+	if p.nftConfig != nil {
+		p.middleware.DefaultSiweSigner.NFTManager = siwe.NewNFTManager(p.nftConfig, p.middleware.DefaultSiweSigner.Address)
+	}
+
+
+	return nil
+}
+
+// parseNftManager handles NFT Manager configuration
+func (p *caddyfileParser) parseNftManager() error {
+	var address, endpoint string
+	for n1 := p.dispenser.Nesting(); p.dispenser.NextBlock(n1); {
+		switch p.dispenser.Val() {
+		case "address":
+				p.dispenser.NextBlock(n1)
+				address = p.dispenser.Val()
+		case "endpoint":
+				p.dispenser.NextBlock(n1)
+				endpoint = p.dispenser.Val()
+		}
+	}
+	if address == "" || endpoint == "" {
+			return p.dispenser.Errf("nft-manager erquires address and endpoint")
+	}
+	p.nftConfig = &nftoptions.Config{
+			Type: "dinsc",
+			Options: map[string]string{
+					"contract_address": address,
+					"endpoint": endpoint,
+			},
+	}
+	err := p.nftConfig.Init()
+	if err != nil {
+			return p.dispenser.Errf("failed to initialize NFT contract: %v", err)
+	}
+	if p.middleware.DefaultSiweSigner != nil {
+		p.middleware.DefaultSiweSigner.NFTManager = siwe.NewNFTManager(p.nftConfig, p.middleware.DefaultSiweSigner.Address)
 	}
 
 	return nil
@@ -436,6 +480,17 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 			if err := p.siweSignerClient.GenPrivKey(siweAuth.Signer); err != nil {
 				return fmt.Errorf("failed to generate private key: %v", err)
 			}
+		case "provider_id":
+			p.dispenser.NextBlock(parentNesting + 1)
+			var ok bool
+			hexval := p.dispenser.Val()
+			providerID, ok := new(big.Int).SetString(hexval, 16)
+			if !ok {
+				return p.dispenser.Errf("failed to parse provider_id. Should be hex, got: %v", hexval)
+			}
+			siweAuth.ProviderID = providerID
+			// TODO: We need to figure out how to calculate this if not explicitly provided
+
 		default:
 			return p.dispenser.Errf("unrecognized auth option: %s", p.dispenser.Val())
 		}

@@ -17,6 +17,7 @@ var (
 	ErrSessionExpired    = errors.New("session expired")
 	ErrSessionClosed     = errors.New("session closed")
 	ErrNoTokensAvailable = errors.New("no tokens available")
+	ErrNoHeadersOnToken  = errors.New("no headers on token")
 )
 
 func (t UnixTime) MarshalJSON() ([]byte, error) {
@@ -54,11 +55,17 @@ func (at *AuthToken) Use() error {
 
 // Peek indicates whether an auth token is available for use, but does not decrement counters.
 func (at *AuthToken) Peek() error {
+	if at.Error != "" {
+		return errors.New(at.Error)
+	}
 	if at.Uses != nil && atomic.LoadInt64(at.Uses) <= 0 {
 		return ErrRequestLimit
 	}
 	if at.Expiration != nil && time.Since(time.Time(*at.Expiration)) > 0 {
 		return ErrSessionExpired
+	}
+	if len(at.Headers) == 0 {
+		return ErrNoHeadersOnToken
 	}
 	return nil
 }
