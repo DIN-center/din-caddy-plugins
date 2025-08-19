@@ -377,7 +377,11 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	// and handled during request construction, not converted to Authorization headers
 
 	// Only set host if it hasn't been set already
+	// This should have been set in UnmarshalCaddyfile, but set it here as a fallback
 	if provider.host == "" {
+		d.logger.Warn("Provider host was empty in initializeProvider, setting it now",
+			zap.String("network", networkName),
+			zap.String("url", provider.HttpUrl))
 		provider.host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
 	}
 
@@ -944,6 +948,14 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							// Initialize provider with a unique host
 							providerObj.host = d.ensureUniqueProviderHost(networkName, parsedUrl, providerObj.Headers)
 							d.Networks[networkName].Providers[providerObj.host] = providerObj
+							
+							// Debug logging
+							if d.logger != nil {
+								d.logger.Debug("Added provider to network map",
+									zap.String("network", networkName),
+									zap.String("providerHost", providerObj.host),
+									zap.String("providerUrl", providerObj.HttpUrl))
+							}
 						}
 					case "healthcheck_endpoint":
 						dispenser.Next()

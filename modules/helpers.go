@@ -384,7 +384,15 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 			}
 		} else {
 			// Log a warning if the provider from the replacer is not found in the network's map.
-			params.DinMiddleware.logger.Warn("Provider from replacer not found in network's providers map for metrics.", zap.String("provider", params.Provider), zap.String("network", params.NetworkPath))
+			// Debug: log all providers in the map
+			var availableProviders []string
+			for host := range params.NetworkObj.Providers {
+				availableProviders = append(availableProviders, host)
+			}
+			params.DinMiddleware.logger.Warn("Provider from replacer not found in network's providers map for metrics.", 
+				zap.String("provider", params.Provider), 
+				zap.String("network", params.NetworkPath),
+				zap.Strings("availableProviders", availableProviders))
 		}
 	} else if params.NetworkObj == nil {
 		// Log a warning if NetworkObj is nil during health status retrieval.

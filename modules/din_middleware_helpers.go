@@ -178,6 +178,14 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 			// Add the provider to the network object
 			network.Providers[provider.host] = provider
+			
+			// Debug logging
+			if d.logger != nil {
+				d.logger.Debug("Registry: Added provider to network map",
+					zap.String("network", network.Name),
+					zap.String("providerHost", provider.host),
+					zap.String("providerUrl", provider.HttpUrl))
+			}
 		}
 	}
 	if len(network.Providers) == 0 {
@@ -463,39 +471,12 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	}
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host identifier
-// by appending API key suffix when multiple providers share the same base host.
-// It first tries to extract a suffix from the URL path (e.g., validation cloud API keys),
-// then from X-API-Key header (e.g., nodefleet), and falls back to a counter if neither is available.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *url.URL, headers map[string]string) string {
-	if parsedUrl == nil {
-		return ""
-	}
-	
-	baseHost := parsedUrl.Host
-	if baseHost == "" {
-		return ""
-	}
-	
-	// Check if any existing provider has the same base host
-	existingProviders := []string{}
-	for existingHost := range d.Networks[networkName].Providers {
-		// Check for exact match or host with suffix pattern
-		if existingHost == baseHost || strings.HasPrefix(existingHost, baseHost+"-") {
-			existingProviders = append(existingProviders, existingHost)
-		}
-	}
-	
-	// If this is the first provider with this host, use as-is
-	if len(existingProviders) == 0 {
-		return baseHost
-	}
-	
-	// Multiple providers with same base host - need differentiation
+// extractProviderSuffix extracts a unique suffix from URL path or headers
+func (d *DinMiddleware) extractProviderSuffix(parsedUrl *url.URL, headers map[string]string) string {
 	var suffix string
 	
 	// Try to extract suffix from URL path (e.g., validation cloud API keys)
-	if parsedUrl.Path != "" {
+	if parsedUrl != nil && parsedUrl.Path != "" {
 		// Remove leading slash and any path segments
 		path := strings.TrimPrefix(parsedUrl.Path, "/")
 		// Get the last segment which typically contains the API key
@@ -523,22 +504,169 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *
 		}
 	}
 	
+	return suffix
+}
+
+// ensureUniqueProviderHost ensures the provider has a unique host identifier
+// by appending API key suffix when multiple providers share the same base host.
+// It first tries to extract a suffix from the URL path (e.g., validation cloud API keys),
+// then from X-API-Key header (e.g., nodefleet), and falls back to a counter if neither is available.
+// When a second provider with the same base host is detected, it retroactively updates the first provider
+// to also have a suffix for consistency.
+func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *url.URL, headers map[string]string) string {
+	if parsedUrl == nil {
+		return ""
+	}
+	
+	baseHost := parsedUrl.Host
+	if baseHost == "" {
+		return ""
+	}
+	
+	// Check if a provider with this exact URL already exists
+	// This handles the case where the same provider is being added multiple times
+	for existingHost, existingProvider := range d.Networks[networkName].Providers {
+		if existingProvider != nil && existingProvider.HttpUrl == parsedUrl.String() {
+			if d.logger != nil {
+				d.logger.Debug("Provider with same URL already exists, returning existing host",
+					zap.String("network", networkName),
+					zap.String("existingHost", existingHost),
+					zap.String("url", parsedUrl.String()))
+			}
+			return existingHost
+		}
+	}
+	
+	// Extract suffix for current provider
+	suffix := d.extractProviderSuffix(parsedUrl, headers)
+	
+	// Check if there's exactly one existing provider with just the base host (no suffix)
+	// This means we need to retroactively update it
+	var firstProviderNeedsSuffix *provider
+	if existingProvider, exists := d.Networks[networkName].Providers[baseHost]; exists {
+		firstProviderNeedsSuffix = existingProvider
+	}
+	
+	// Check if any existing provider has the same base host
+	existingProviders := []string{}
+	for existingHost := range d.Networks[networkName].Providers {
+		// Check for exact match or host with suffix pattern
+		if existingHost == baseHost || strings.HasPrefix(existingHost, baseHost+"-") {
+			existingProviders = append(existingProviders, existingHost)
+		}
+	}
+	
+	// Debug logging
+	if d.logger != nil {
+		d.logger.Debug("ensureUniqueProviderHost checking existing providers",
+			zap.String("network", networkName),
+			zap.String("baseHost", baseHost),
+			zap.String("url", parsedUrl.String()),
+			zap.Int("existingCount", len(existingProviders)),
+			zap.Strings("existing", existingProviders))
+	}
+	
+	// If this is the first provider with this host, check if we should use suffix anyway
+	if len(existingProviders) == 0 {
+		// For now, use base name for first provider
+		// It will be updated retroactively when second provider is added
+		if d.logger != nil {
+			d.logger.Debug("First provider with this host, using base name (may be updated later)",
+				zap.String("network", networkName),
+				zap.String("host", baseHost))
+		}
+		return baseHost
+	}
+	
+	// If we have a first provider that needs retroactive update
+	// This should only happen when we're adding the SECOND provider with the same base host
+	// (existingProviders has exactly 1 entry which is the base host without suffix)
+	if firstProviderNeedsSuffix != nil && suffix != "" && len(existingProviders) == 1 && existingProviders[0] == baseHost {
+		// Extract suffix for the first provider
+		firstProviderUrl, err := url.Parse(firstProviderNeedsSuffix.HttpUrl)
+		if err == nil {
+			firstProviderSuffix := d.extractProviderSuffix(firstProviderUrl, firstProviderNeedsSuffix.Headers)
+			if firstProviderSuffix != "" {
+				// Create new host name for first provider
+				newFirstProviderHost := fmt.Sprintf("%s-%s", baseHost, firstProviderSuffix)
+				
+				// Check if this new name would conflict with existing providers
+				if !d.providerHostExists(networkName, newFirstProviderHost) {
+					// Update the first provider's host and move it in the map
+					firstProviderNeedsSuffix.host = newFirstProviderHost
+					delete(d.Networks[networkName].Providers, baseHost)
+					d.Networks[networkName].Providers[newFirstProviderHost] = firstProviderNeedsSuffix
+					
+					if d.logger != nil {
+						d.logger.Info("Retroactively updated first provider with suffix for consistency",
+							zap.String("network", networkName),
+							zap.String("oldHost", baseHost),
+							zap.String("newHost", newFirstProviderHost),
+							zap.String("url", firstProviderNeedsSuffix.HttpUrl))
+					}
+					
+					// Need to update our existingProviders list since we just changed the map
+					existingProviders = []string{}
+					for existingHost := range d.Networks[networkName].Providers {
+						if existingHost == baseHost || strings.HasPrefix(existingHost, baseHost+"-") {
+							existingProviders = append(existingProviders, existingHost)
+						}
+					}
+				} else {
+					if d.logger != nil {
+						d.logger.Warn("Cannot retroactively update first provider - name conflict",
+							zap.String("network", networkName),
+							zap.String("proposedHost", newFirstProviderHost))
+					}
+				}
+			}
+		}
+	}
+	
+	// The suffix was already extracted above, no need to extract again
+	
 	// Build the unique host identifier
 	if suffix != "" {
 		proposedHost := fmt.Sprintf("%s-%s", baseHost, suffix)
-		// Check if this host already exists (collision handling)
-		for _, existing := range existingProviders {
-			if existing == proposedHost {
-				// Collision detected, append counter
-				counter := 1
-				for {
-					alternativeHost := fmt.Sprintf("%s-%s-%d", baseHost, suffix, counter)
-					if !d.providerHostExists(networkName, alternativeHost) {
-						return alternativeHost
-					}
-					counter++
-				}
+		
+		// Debug logging for suffix
+		if d.logger != nil {
+			d.logger.Debug("Generated suffix for provider",
+				zap.String("network", networkName),
+				zap.String("baseHost", baseHost),
+				zap.String("suffix", suffix),
+				zap.String("proposedHost", proposedHost),
+				zap.String("fullUrl", parsedUrl.String()))
+		}
+		
+		// Check if this exact host already exists in the providers map
+		if d.providerHostExists(networkName, proposedHost) {
+			// Collision detected, append counter
+			if d.logger != nil {
+				d.logger.Debug("Collision detected, adding counter",
+					zap.String("network", networkName),
+					zap.String("proposedHost", proposedHost))
 			}
+			
+			counter := 1
+			for {
+				alternativeHost := fmt.Sprintf("%s-%s-%d", baseHost, suffix, counter)
+				if !d.providerHostExists(networkName, alternativeHost) {
+					if d.logger != nil {
+						d.logger.Debug("Using alternative host with counter",
+							zap.String("network", networkName),
+							zap.String("alternativeHost", alternativeHost))
+					}
+					return alternativeHost
+				}
+				counter++
+			}
+		}
+		
+		if d.logger != nil {
+			d.logger.Debug("No collision, using proposed host",
+				zap.String("network", networkName),
+				zap.String("finalHost", proposedHost))
 		}
 		return proposedHost
 	}
