@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -169,7 +170,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				continue
 			}
 
-			provider, err = d.createNewProvider(provider, regProvider.AuthConfig, networkService.Address)
+			provider, err = d.createNewProvider(regNetwork.ProxyName, provider, regProvider.AuthConfig, networkService.Address)
 			if err != nil {
 				d.logger.Error("Failed to create new provider", zap.Error(err))
 				continue
@@ -226,7 +227,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 					continue
 				}
 				// create a new provider object and add it to the copied network object
-				newProvider, err := d.createNewProvider(newProvider, regProvider.AuthConfig, networkService.Address)
+				newProvider, err := d.createNewProvider(regNetwork.ProxyName, newProvider, regProvider.AuthConfig, networkService.Address)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
@@ -392,7 +393,7 @@ func (d *DinMiddleware) updateField(fieldName, networkName string, target interf
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
-func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
+func (d *DinMiddleware) createNewProvider(networkName string, provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
 	httpClient := din_http.NewHTTPClient(time.Duration(DefaultHCTimeout) * time.Second)
 
 	// Set the provider auth config based on the auth type
@@ -404,7 +405,7 @@ func (d *DinMiddleware) createNewProvider(provider *provider, authConfig *dinreg
 		}
 	}
 
-	err := d.initializeProvider(provider, httpClient, d.logger)
+	err := d.initializeProvider(networkName, provider, httpClient, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}
@@ -462,26 +463,98 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	}
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
-// by appending a counter if necessary. Returns the unique host value.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
-	// Get existing hosts with the same base name
-	baseHosts := []string{}
-
+// ensureUniqueProviderHost ensures the provider has a unique host identifier
+// by appending API key suffix when multiple providers share the same base host.
+// It first tries to extract a suffix from the URL path (e.g., validation cloud API keys),
+// then from X-API-Key header (e.g., nodefleet), and falls back to a counter if neither is available.
+func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *url.URL, headers map[string]string) string {
+	if parsedUrl == nil {
+		return ""
+	}
+	
+	baseHost := parsedUrl.Host
+	if baseHost == "" {
+		return ""
+	}
+	
+	// Check if any existing provider has the same base host
+	existingProviders := []string{}
 	for existingHost := range d.Networks[networkName].Providers {
-		// We need to match exact host or host-N pattern
-		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
-			baseHosts = append(baseHosts, existingHost)
+		// Check for exact match or host with suffix pattern
+		if existingHost == baseHost || strings.HasPrefix(existingHost, baseHost+"-") {
+			existingProviders = append(existingProviders, existingHost)
 		}
 	}
-
-	// If no hosts with this base exist yet, use base host without suffix
-	if len(baseHosts) == 0 {
-		return host
+	
+	// If this is the first provider with this host, use as-is
+	if len(existingProviders) == 0 {
+		return baseHost
 	}
+	
+	// Multiple providers with same base host - need differentiation
+	var suffix string
+	
+	// Try to extract suffix from URL path (e.g., validation cloud API keys)
+	if parsedUrl.Path != "" {
+		// Remove leading slash and any path segments
+		path := strings.TrimPrefix(parsedUrl.Path, "/")
+		// Get the last segment which typically contains the API key
+		segments := strings.Split(path, "/")
+		if len(segments) > 0 {
+			lastSegment := segments[len(segments)-1]
+			// Use last 4 chars if segment is long enough (likely an API key)
+			if len(lastSegment) >= 4 {
+				suffix = lastSegment[len(lastSegment)-4:]
+			}
+		}
+	}
+	
+	// If no path suffix, try headers (case-insensitive check for X-API-Key)
+	if suffix == "" && headers != nil {
+		for key, value := range headers {
+			if strings.EqualFold(key, "X-API-Key") {
+				// Remove any whitespace and use last 4 chars
+				value = strings.TrimSpace(value)
+				if len(value) >= 4 {
+					suffix = value[len(value)-4:]
+					break
+				}
+			}
+		}
+	}
+	
+	// Build the unique host identifier
+	if suffix != "" {
+		proposedHost := fmt.Sprintf("%s-%s", baseHost, suffix)
+		// Check if this host already exists (collision handling)
+		for _, existing := range existingProviders {
+			if existing == proposedHost {
+				// Collision detected, append counter
+				counter := 1
+				for {
+					alternativeHost := fmt.Sprintf("%s-%s-%d", baseHost, suffix, counter)
+					if !d.providerHostExists(networkName, alternativeHost) {
+						return alternativeHost
+					}
+					counter++
+				}
+			}
+		}
+		return proposedHost
+	}
+	
+	// Fallback: use incrementing counter
+	counter := len(existingProviders)
+	return fmt.Sprintf("%s-%d", baseHost, counter)
+}
 
-	// For subsequent hosts, use host-1, host-2, etc.
-	return fmt.Sprintf("%s-%d", host, len(baseHosts))
+// providerHostExists checks if a provider host already exists in the network
+func (d *DinMiddleware) providerHostExists(networkName string, host string) bool {
+	if network, exists := d.Networks[networkName]; exists {
+		_, exists := network.Providers[host]
+		return exists
+	}
+	return false
 }
 
 // processHCMethodResponseAsync asynchronously processes responses for health check method requests.

@@ -293,8 +293,13 @@ func TestInitializeProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dinMiddleware := &DinMiddleware{
 				logger: logger,
+				Networks: map[string]*network{
+					"test-network": {
+						Providers: make(map[string]*provider),
+					},
+				},
 			}
-			err := dinMiddleware.initializeProvider(tt.provider, tt.httpClient, logger)
+			err := dinMiddleware.initializeProvider("test-network", tt.provider, tt.httpClient, logger)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}

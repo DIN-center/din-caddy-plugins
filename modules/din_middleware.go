@@ -303,7 +303,7 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 
 	// Initialize providers
 	for _, provider := range networkObj.Providers {
-		if err := d.initializeProvider(provider, httpClient, d.logger); err != nil {
+		if err := d.initializeProvider(networkName, provider, httpClient, d.logger); err != nil {
 			return fmt.Errorf("error initializing provider: %v", err)
 		}
 	}
@@ -350,9 +350,9 @@ func (d *DinMiddleware) startBackgroundServices() error {
 }
 
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
-func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
+func (d *DinMiddleware) initializeProvider(networkName string, provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 
-	url, err := url.Parse(provider.HttpUrl)
+	parsedUrl, err := url.Parse(provider.HttpUrl)
 	if err != nil {
 		d.logger.Error("Error parsing provider URL",
 			zap.String("http_url", provider.HttpUrl),
@@ -360,17 +360,17 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 		return fmt.Errorf("error parsing provider URL: %v", err)
 	}
 
-	dialHost := url.Host
-	if url.Scheme == "https" && url.Port() == "" {
-		dialHost = url.Host + ":443"
+	dialHost := parsedUrl.Host
+	if parsedUrl.Scheme == "https" && parsedUrl.Port() == "" {
+		dialHost = parsedUrl.Host + ":443"
 	}
 
 	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
 	// For providers with no path or root path, we want to send requests to root
-	if url.Path == "" {
+	if parsedUrl.Path == "" {
 		provider.path = "/"
 	} else {
-		provider.path = url.Path
+		provider.path = parsedUrl.Path
 	}
 
 	// Note: Authentication credentials from URL (username@host) are preserved in the URL
@@ -378,7 +378,7 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 
 	// Only set host if it hasn't been set already
 	if provider.host == "" {
-		provider.host = url.Host
+		provider.host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
 	}
 
 	if provider.Auth != nil {
@@ -942,7 +942,7 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 							}
 
 							// Initialize provider with a unique host
-							providerObj.host = d.ensureUniqueProviderHost(networkName, parsedUrl.Host)
+							providerObj.host = d.ensureUniqueProviderHost(networkName, parsedUrl, providerObj.Headers)
 							d.Networks[networkName].Providers[providerObj.host] = providerObj
 						}
 					case "healthcheck_endpoint":

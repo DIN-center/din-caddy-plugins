@@ -719,6 +719,11 @@ func TestCreateNewProvider(t *testing.T) {
 				logger:            logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 				testMode:          true,
 				DefaultSiweSigner: defaultSigner,
+				Networks: map[string]*network{
+					"test-network": {
+						Providers: make(map[string]*provider),
+					},
+				},
 			}
 
 			// Mock GetNetworkServiceMethods
@@ -728,7 +733,7 @@ func TestCreateNewProvider(t *testing.T) {
 				Times(1)
 
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, tt.authConfig, tt.networkServiceAddress)
+			createdProvider, err := dinMiddleware.createNewProvider("test-network", tt.provider, tt.authConfig, tt.networkServiceAddress)
 
 			// Assert results
 			if tt.expectedError != nil {
