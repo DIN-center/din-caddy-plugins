@@ -34,7 +34,7 @@ func (ut *UnixTime) UnmarshalJSON(data []byte) error {
 }
 
 type AuthToken struct {
-	Headers    map[string]string `json:"headers`
+	Headers    map[string]string `json:"headers"`
 	Expiration *UnixTime         `json:"exp,omitempty"`
 	Uses       *int64            `json:"uses,omitempty"`
 	Error      string            `json:"error,omitempty"`

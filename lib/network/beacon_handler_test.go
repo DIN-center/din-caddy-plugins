@@ -98,7 +98,6 @@ func TestBeaconChainHandler_ValidateChainID(t *testing.T) {
 	}
 }
 
-
 func TestBeaconChainHandler_ExtractChainReference(t *testing.T) {
 	handler := NewBeaconChainHandler(&NetworkConfig{})
 

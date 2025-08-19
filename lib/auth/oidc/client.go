@@ -205,30 +205,52 @@ func (c *OIDCClient) refreshTokenLoop() {
 		currentExpiry := c.tokenExpiry
 		c.tokenMu.RUnlock()
 
-		// Calculate sleep duration based on expires_in
-		var sleepDuration time.Duration
+		// Determine effective lifetime to use (configured duration or token expiry)
+		effectiveLifetime := expiresIn
+		usingConfiguredDuration := false
 		if c.DurationSeconds > 0 && c.DurationSeconds < expiresIn {
-			// Use configured duration if it's within token expiry window
-			sleepDuration = time.Duration(c.DurationSeconds-60) * time.Second
-			if sleepDuration < 30*time.Second {
-				sleepDuration = 30 * time.Second
-			}
+			effectiveLifetime = c.DurationSeconds
+			usingConfiguredDuration = true
+		}
+
+		// Simple refresh strategy:
+		// - For lifetimes >= 2 minutes: refresh 1 minute before expiry
+		// - For shorter lifetimes: refresh at 50% of lifetime
+		var refreshBuffer int
+		if effectiveLifetime >= 120 {
+			refreshBuffer = 60
+		} else {
+			refreshBuffer = effectiveLifetime / 2
+		}
+
+		// Calculate sleep duration
+		var sleepDuration time.Duration
+		if usingConfiguredDuration {
+			// For configured duration, calculate from now
+			sleepDuration = time.Duration(effectiveLifetime-refreshBuffer) * time.Second
 			if c.logger != nil {
 				c.logger.Debug("using configured duration for token refresh",
 					zap.Int("duration_seconds", c.DurationSeconds),
 					zap.Duration("sleep_duration", sleepDuration))
 			}
 		} else {
-			// Use token expiry minus 1 minute (existing logic)
-			sleepDuration = time.Until(currentExpiry.Add(-1 * time.Minute))
-			if sleepDuration < 30*time.Second {
-				sleepDuration = 30 * time.Second
+			// For token expiry, calculate from actual expiry time
+			sleepDuration = time.Until(currentExpiry.Add(-time.Duration(refreshBuffer) * time.Second))
+			if sleepDuration <= 0 {
+				sleepDuration = 0 // Refresh immediately if already expired
 			}
-			if c.DurationSeconds > 0 && c.logger != nil {
-				c.logger.Warn("configured duration_seconds exceeds token expiry, using token expiry",
-					zap.Int("configured", c.DurationSeconds),
-					zap.Int("token_expires_in", expiresIn))
-			}
+		}
+
+		// Ensure minimum refresh interval
+		if sleepDuration > 0 && sleepDuration < 5*time.Second {
+			sleepDuration = 5 * time.Second
+		}
+
+		// Log warning if configured duration exceeds token lifetime
+		if c.DurationSeconds > 0 && c.DurationSeconds >= expiresIn && c.logger != nil {
+			c.logger.Warn("configured duration_seconds exceeds token expiry, using token expiry",
+				zap.Int("configured", c.DurationSeconds),
+				zap.Int("token_expires_in", expiresIn))
 		}
 
 		// Wait until refresh time

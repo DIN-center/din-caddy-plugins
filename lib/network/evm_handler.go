@@ -174,7 +174,7 @@ func (h *EVMHandler) ValidateChainID(chainID string) error {
 
 	// Support both formats for backwards compatibility
 	actualChainID := chainID
-	
+
 	// If it contains a colon, it might be CAIP-2 format
 	if strings.Contains(chainID, ":") {
 		parts := strings.Split(chainID, ":")

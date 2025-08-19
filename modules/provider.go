@@ -27,10 +27,10 @@ type provider struct {
 	// Registry Configuration Values
 	Methods map[string]struct{}  `json:"methods"`
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
-	
+
 	// OIDC client for OAuth2/OIDC authentication
 	OIDCClient *oidc.OIDCClient `json:"oidc_client"`
-	
+
 	// Generic auth client for supporting multiple auth types
 	authClient auth.IAuthClient
 

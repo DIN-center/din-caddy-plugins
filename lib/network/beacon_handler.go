@@ -204,7 +204,6 @@ func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
 	return nil
 }
 
-
 func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
 	// For beacon chain, we extract chain reference from genesis response
 	// The result should be the parsed response bytes

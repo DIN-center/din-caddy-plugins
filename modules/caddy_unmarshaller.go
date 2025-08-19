@@ -352,7 +352,6 @@ func (p *caddyfileParser) parseProviderMethods(provider *provider) error {
 	return nil
 }
 
-
 // parseProviderAuth parses authentication configuration (SIWE or OIDC)
 func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting int) error {
 	var authType string

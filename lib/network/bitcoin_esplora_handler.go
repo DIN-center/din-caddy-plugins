@@ -44,8 +44,8 @@ type BitcoinEsploraHandler struct {
 func NewBitcoinEsploraHandler(config *NetworkConfig) *BitcoinEsploraHandler {
 	return &BitcoinEsploraHandler{
 		config:              config,
-		healthCheckEndpoint: "/api/blocks/tip/height",
-		blockInfoEndpoint:   "/api/blocks/tip/hash",
+		healthCheckEndpoint: "/blocks/tip/height",
+		blockInfoEndpoint:   "/blocks/tip/hash",
 		version:             "1.0.0",
 		logger:              config.Logger,
 	}
@@ -127,12 +127,6 @@ func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
 		return fmt.Errorf("unsupported HTTP method for Bitcoin Esplora REST API: %s", req.Method)
 	}
 
-	// Check for valid path format - must contain API pattern
-	path := req.URL.Path
-	if !strings.Contains(path, "/api/") {
-		return fmt.Errorf("invalid Bitcoin Esplora API path: %s", path)
-	}
-
 	return nil
 }
 
@@ -202,57 +196,57 @@ func (h *BitcoinEsploraHandler) GetSupportedMethods() []string {
 	// These are REST endpoints from Esplora API documentation, not JSON-RPC methods
 	return []string{
 		// Transaction endpoints
-		"/api/tx/{txid}",
-		"/api/tx/{txid}/status",
-		"/api/tx/{txid}/hex",
-		"/api/tx/{txid}/raw",
-		"/api/tx/{txid}/merkleblock-proof",
-		"/api/tx/{txid}/merkle-proof",
-		"/api/tx/{txid}/outspend/{vout}",
-		"/api/tx/{txid}/outspends",
+		"/tx/{txid}",
+		"/tx/{txid}/status",
+		"/tx/{txid}/hex",
+		"/tx/{txid}/raw",
+		"/tx/{txid}/merkleblock-proof",
+		"/tx/{txid}/merkle-proof",
+		"/tx/{txid}/outspend/{vout}",
+		"/tx/{txid}/outspends",
 
 		// Address endpoints
-		"/api/address/{address}",
-		"/api/scripthash/{hash}",
-		"/api/address/{address}/txs",
-		"/api/scripthash/{hash}/txs",
-		"/api/address/{address}/txs/chain",
-		"/api/address/{address}/txs/chain/{last_seen_txid}",
-		"/api/scripthash/{hash}/txs/chain",
-		"/api/scripthash/{hash}/txs/chain/{last_seen_txid}",
-		"/api/address/{address}/txs/mempool",
-		"/api/scripthash/{hash}/txs/mempool",
-		"/api/address/{address}/utxo",
-		"/api/scripthash/{hash}/utxo",
-		"/api/address-prefix/{prefix}",
+		"/address/{address}",
+		"/scripthash/{hash}",
+		"/address/{address}/txs",
+		"/scripthash/{hash}/txs",
+		"/address/{address}/txs/chain",
+		"/address/{address}/txs/chain/{last_seen_txid}",
+		"/scripthash/{hash}/txs/chain",
+		"/scripthash/{hash}/txs/chain/{last_seen_txid}",
+		"/address/{address}/txs/mempool",
+		"/scripthash/{hash}/txs/mempool",
+		"/address/{address}/utxo",
+		"/scripthash/{hash}/utxo",
+		"/address-prefix/{prefix}",
 
 		// Block endpoints
-		"/api/block/{hash}",
-		"/api/block/{hash}/header",
-		"/api/block/{hash}/status",
-		"/api/block/{hash}/txs",
-		"/api/block/{hash}/txs/{start_index}",
-		"/api/block/{hash}/txids",
-		"/api/block/{hash}/txid/{index}",
-		"/api/block/{hash}/raw",
-		"/api/block-height/{height}",
-		"/api/blocks",
-		"/api/blocks/{start_height}",
-		"/api/blocks/tip/height",
-		"/api/blocks/tip/hash",
+		"/block/{hash}",
+		"/block/{hash}/header",
+		"/block/{hash}/status",
+		"/block/{hash}/txs",
+		"/block/{hash}/txs/{start_index}",
+		"/block/{hash}/txids",
+		"/block/{hash}/txid/{index}",
+		"/block/{hash}/raw",
+		"/block-height/{height}",
+		"/blocks",
+		"/blocks/{start_height}",
+		"/blocks/tip/height",
+		"/blocks/tip/hash",
 
 		// Mempool endpoints
-		"/api/mempool",
-		"/api/mempool/txids",
-		"/api/mempool/recent",
+		"/mempool",
+		"/mempool/txids",
+		"/mempool/recent",
 
 		// Fee estimate endpoints
-		"/api/fee-estimates",
+		"/fee-estimates",
 	}
 }
 
 func (h *BitcoinEsploraHandler) GetBlockByNumberMethod() string {
-	return "/api/blocks/tip/height" // REST endpoint for getting block by height
+	return "/blocks/tip/height" // REST endpoint for getting block by height
 }
 
 // Health check methods
@@ -396,7 +390,7 @@ func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[
 // PerformGetBlockByNumber performs the complete get block by number operation
 func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
 	// First get block hash by height
-	endpoint := fmt.Sprintf("%s/api/block-height/%d", httpUrl, blockNumber)
+	endpoint := fmt.Sprintf("%s/block-height/%d", httpUrl, blockNumber)
 
 	// Execute request to get block hash
 	var resp []byte
@@ -432,7 +426,7 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 	}
 
 	// Now get full block data using the hash
-	blockEndpoint := fmt.Sprintf("%s/api/block/%s", httpUrl, blockHash)
+	blockEndpoint := fmt.Sprintf("%s/block/%s", httpUrl, blockHash)
 
 	// Execute request to get block data
 	var blockResp []byte

@@ -95,26 +95,26 @@ For APIs requiring OIDC/OAuth2 authentication (like Blockstream Enterprise):
 The handler supports standard Esplora API endpoints with **GET requests only**:
 
 ### Block Endpoints
-- `/api/blocks/tip/height` - Latest block height (used for health checks)
-- `/api/blocks/tip/hash` - Latest block hash
-- `/api/block/{hash}` - Block details by hash
-- `/api/block-height/{height}` - Block hash at specific height
+- `/blocks/tip/height` - Latest block height (used for health checks)
+- `/blocks/tip/hash` - Latest block hash
+- `/block/{hash}` - Block details by hash
+- `/block-height/{height}` - Block hash at specific height
 
 ### Transaction Endpoints
-- `/api/tx/{txid}` - Transaction details (GET only)
+- `/tx/{txid}` - Transaction details (GET only)
 
 ### Address Endpoints
-- `/api/address/{address}` - Address information
-- `/api/address/{address}/txs` - Address transactions
-- `/api/address/{address}/utxo` - Unspent outputs
+- `/address/{address}` - Address information
+- `/address/{address}/txs` - Address transactions
+- `/address/{address}/utxo` - Unspent outputs
 
 ### Other Endpoints
-- `/api/mempool` - Mempool statistics
-- `/api/fee-estimates` - Fee estimates
+- `/mempool` - Mempool statistics
+- `/fee-estimates` - Fee estimates
 
 ### HTTP Method Restrictions
 - **POST requests are blocked**: All POST requests return `405 Method Not Allowed`
-- **Transaction broadcasting is not supported**: The `/api/tx` POST endpoint is blocked
+- **Transaction broadcasting is not supported**: The `/tx` POST endpoint is blocked
 - Only GET requests are allowed for all endpoints
 
 ## OIDC/OAuth2 Authentication Flow
@@ -145,13 +145,13 @@ When OIDC authentication is configured:
 
 The handler uses REST API routing with automatic path stripping:
 
-- Client request: `https://localhost:8000/bitcoin-esplora-mainnet/api/blocks/tip/hash`
-- After path stripping: `/api/blocks/tip/hash`
+- Client request: `https://localhost:8000/bitcoin-esplora-mainnet/blocks/tip/hash`
+- After path stripping: `/blocks/tip/hash`
 - Provider request: `https://enterprise.blockstream.info/api/blocks/tip/hash`
 
 ## Health Checks
 
-The handler uses the `/api/blocks/tip/height` endpoint for health checks:
+The handler uses the `/blocks/tip/height` endpoint for health checks:
 
 - Returns the current block height
 - Used to monitor provider availability
@@ -209,8 +209,8 @@ Non-retryable errors:
                             auth {
                                 type oidc
                                 url "https://login.blockstream.com/realms/blockstream-public/protocol/openid-connect/token"
-                                client_id "***REMOVED***"
-                                client_secret "***REMOVED***"
+                                client_id "client_id"
+                                client_secret "secret"
                                 # duration_seconds 180  # Optional
                             }
                         }
@@ -264,16 +264,12 @@ Monitor OIDC token rotation:
      - `client_id`
      - `client_secret`
 
-3. **Invalid API Paths**
-   - All paths must contain `/api/`
-   - Use correct endpoint format per Esplora API specification
-
-4. **405 Method Not Allowed Errors**
+3. **405 Method Not Allowed Errors**
    - Only GET requests are supported
    - POST requests (including transaction broadcasting) are blocked
    - Use alternative services for transaction broadcasting
 
-5. **Nil Pointer Errors in Health Checks**
+4. **Nil Pointer Errors in Health Checks**
    - Usually indicates network connectivity issues
    - Check provider URL is accessible
    - Verify network configuration
@@ -282,7 +278,7 @@ Monitor OIDC token rotation:
 
 1. Check provider configuration:
    ```bash
-   curl http://localhost:8000/bitcoin-esplora-mainnet/api/blocks/tip/height
+   curl http://localhost:8000/bitcoin-esplora-mainnet/blocks/tip/height
    ```
 
 2. Verify OAuth2 headers are being added (check provider logs)

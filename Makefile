@@ -32,15 +32,15 @@ help: ## Show this help message
 ## Development Commands
 run: ## Run Caddy with private config (main development command)
 	@echo "$(GREEN)Starting Caddy with private configuration...$(NC)"
-	xcaddy run --config Caddyfile.private --adapter caddyfile
+	xcaddy run -- --config Caddyfile.private --adapter caddyfile
 
 run-dev: ## Run Caddy with development config
 	@echo "$(GREEN)Starting Caddy with development configuration...$(NC)"
-	xcaddy run --config Caddyfile.dev --adapter caddyfile
+	xcaddy run -- --config Caddyfile.dev --adapter caddyfile
 
 run-prod: ## Run Caddy with production config
 	@echo "$(GREEN)Starting Caddy with production configuration...$(NC)"
-	xcaddy run --config Caddyfile --adapter caddyfile
+	xcaddy run -- --config Caddyfile --adapter caddyfile
 
 ## Build Commands
 build: ## Build Caddy with DIN plugins
@@ -170,14 +170,14 @@ clean: ## Clean build artifacts and test files
 validate-config: ## Validate Caddyfile configuration
 	@echo "$(GREEN)Validating Caddyfile configuration...$(NC)"
 	@if [ -f "Caddyfile.private" ]; then \
-		xcaddy validate --config Caddyfile.private --adapter caddyfile; \
+		xcaddy validate -- --config Caddyfile.private --adapter caddyfile; \
 	else \
 		echo "$(RED)Caddyfile.private not found$(NC)"; \
 	fi
 
 debug: ## Run with debug logging
 	@echo "$(GREEN)Running with debug logging...$(NC)"
-	xcaddy run --config Caddyfile.private --adapter caddyfile --debug
+	xcaddy run -- --config Caddyfile.private --adapter caddyfile --debug
 
 reload: ## Reload Caddy configuration
 	@echo "$(GREEN)Reloading Caddy configuration...$(NC)"

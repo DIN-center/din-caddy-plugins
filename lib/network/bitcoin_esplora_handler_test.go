@@ -27,7 +27,7 @@ func TestBitcoinEsploraHandler_Initialize(t *testing.T) {
 	config := &NetworkConfig{
 		Name:    "bitcoin-test",
 		Type:    "bitcoin-esplora",
-		ChainID: "bitcoin:mainnet",
+		ChainID: "mainnet",
 	}
 
 	handler := NewBitcoinEsploraHandler(config)
@@ -49,32 +49,26 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 		{
 			name:      "valid GET request",
 			method:    "GET",
-			path:      "/api/blocks/tip/height",
+			path:      "/blocks/tip/height",
 			expectErr: false,
 		},
 		{
 			name:      "blocked POST request for tx broadcast",
 			method:    "POST",
-			path:      "/api/tx",
+			path:      "/tx",
 			headers:   map[string]string{"Content-Type": "text/plain"},
 			expectErr: true,
 		},
 		{
 			name:      "invalid method PUT",
 			method:    "PUT",
-			path:      "/api/blocks/tip/height",
-			expectErr: true,
-		},
-		{
-			name:      "invalid path without /api/",
-			method:    "GET",
 			path:      "/blocks/tip/height",
 			expectErr: true,
 		},
 		{
 			name:      "blocked POST request with invalid content type",
 			method:    "POST",
-			path:      "/api/tx",
+			path:      "/tx",
 			headers:   map[string]string{"Content-Type": "application/json"},
 			expectErr: true,
 		},
@@ -103,7 +97,7 @@ func TestBitcoinEsploraHandler_ValidateRequest_HTTPError(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
 	// Test that POST requests return HTTPError with 405 status code
-	req, err := http.NewRequest("POST", "https://example.com/api/tx", nil)
+	req, err := http.NewRequest("POST", "https://example.com/tx", nil)
 	require.NoError(t, err)
 
 	err = handler.ValidateRequest(req)
@@ -124,24 +118,24 @@ func TestBitcoinEsploraHandler_NormalizeEndpoint(t *testing.T) {
 		expected string
 	}{
 		{
-			path:     "/api/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-			expected: "/api/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+			path:     "/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+			expected: "/tx/1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 		},
 		{
-			path:     "/api/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-			expected: "/api/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			path:     "/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 		},
 		{
-			path:     "/api/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
-			expected: "/api/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
+			path:     "/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
+			expected: "/block/00000000000000000007878ec04bb2b2e12317804810f4c26033585b3f81ffaa",
 		},
 		{
-			path:     "/api/block-height/123456",
-			expected: "/api/block-height/123456",
+			path:     "/block-height/123456",
+			expected: "/block-height/123456",
 		},
 		{
-			path:     "/api/blocks/tip/height",
-			expected: "/api/blocks/tip/height",
+			path:     "/blocks/tip/height",
+			expected: "/blocks/tip/height",
 		},
 	}
 
@@ -199,10 +193,10 @@ func TestBitcoinEsploraHandler_IsRetryableError(t *testing.T) {
 func TestBitcoinEsploraHandler_HealthCheckMethods(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
-	assert.Equal(t, "/api/blocks/tip/height", handler.GetHealthCheckMethod())
+	assert.Equal(t, "/blocks/tip/height", handler.GetHealthCheckMethod())
 	assert.Equal(t, "GET", handler.GetHealthCheckHTTPMethod())
 	assert.True(t, handler.RequiresSeparateBlockInfoCall())
-	assert.Equal(t, "/api/blocks/tip/hash", handler.GetBlockInfoMethod())
+	assert.Equal(t, "/blocks/tip/hash", handler.GetBlockInfoMethod())
 }
 
 func TestBitcoinEsploraHandler_ParseHealthCheckResponse(t *testing.T) {
