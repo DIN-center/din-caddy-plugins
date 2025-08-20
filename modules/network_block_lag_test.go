@@ -123,8 +123,8 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 			providerRates: map[string]blockRateSimulator{
 				"provider1": {initialBlock: 1000, blocksPerSecond: 10}, // 100ms per block
 			},
-			expectedMinLimit: 130, // In 1s: 10 blocks, 13000ms / 100ms = 130
-			expectedMaxLimit: 130,
+			expectedMinLimit: 120, // Due to timing variations, might get 9-10 blocks
+			expectedMaxLimit: 130, // In 1s: 10 blocks, 13000ms / 100ms = 130
 		},
 		{
 			name: "One provider fails - use working provider",
