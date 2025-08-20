@@ -40,6 +40,7 @@ type network struct {
 	NetworkBlockHistorySize  int
 	blockHistory             *list.List
 	blockHistoryMu           sync.RWMutex
+	blockLagLimitMu          sync.RWMutex // Protects BlockLagLimit during dynamic calculation
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
@@ -122,6 +123,9 @@ func (n *network) SetHandler(handler networklib.NetworkHandler) error {
 }
 
 func (n *network) startHealthcheck() {
+	// Start dynamic block lag limit calculation (runs once asynchronously)
+	go n.calculateDynamicBlockLagLimit(DefaultBlockMeasurementSeconds)
+	
 	n.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
 	go func() {
@@ -266,17 +270,23 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Check for block lag
 	var isLagged bool
 	var blockLag int64
+	
+	// Get block lag limit with mutex protection (used in multiple places below)
+	n.blockLagLimitMu.RLock()
+	blockLagLimit := n.BlockLagLimit
+	n.blockLagLimitMu.RUnlock()
 
 	if latestNetworkBlock > 0 {
 		blockLag = int64(latestNetworkBlock) - currentBlock
+		
 		// If block lag is greater than limit, mark as warning and set isLagged flag
-		if blockLag > n.BlockLagLimit {
+		if blockLag > blockLagLimit {
 			isLagged = true
 			if Warning > worstStatus {
 				worstStatus = Warning
 			}
 			n.logProviderWarning("Provider is lagging behind network", provider,
-				zap.Int64("block_lag_limit", n.BlockLagLimit),
+				zap.Int64("block_lag_limit", blockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
@@ -322,7 +332,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
 			n.logProviderWarning("Provider is stalled and lagged", provider,
-				zap.Int64("block_lag_limit", n.BlockLagLimit),
+				zap.Int64("block_lag_limit", blockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
