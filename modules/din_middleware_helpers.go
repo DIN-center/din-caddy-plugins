@@ -3,7 +3,6 @@ package modules
 import (
 	"fmt"
 	"net/url"
-	"reflect"
 	"strings"
 	"time"
 
@@ -11,56 +10,15 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
-	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"go.uber.org/zap"
 )
 
-// Helper functions for backward compatibility with different NetworkConfig struct versions
-
-// getNetworkConfigUint8Field safely gets a uint8 field from NetworkConfig using reflection
-func getNetworkConfigUint8Field(config *dinreg.NetworkConfig, fieldName string) uint8 {
-	if config == nil {
-		return 0
-	}
-	v := reflect.ValueOf(config).Elem()
-	field := v.FieldByName(fieldName)
-	if !field.IsValid() || field.Kind() != reflect.Uint8 {
-		return 0
-	}
-	return uint8(field.Uint())
-}
-
-// getNetworkConfigStringField safely gets a string field from NetworkConfig using reflection
-func getNetworkConfigStringField(config *dinreg.NetworkConfig, fieldName string) string {
-	if config == nil {
-		return ""
-	}
-	v := reflect.ValueOf(config).Elem()
-	field := v.FieldByName(fieldName)
-	if !field.IsValid() || field.Kind() != reflect.String {
-		return ""
-	}
-	return field.String()
-}
-
-// getNetworkConfigBoolField safely gets a bool field from NetworkConfig using reflection
-func getNetworkConfigBoolField(config *dinreg.NetworkConfig, fieldName string) bool {
-	if config == nil {
-		return false
-	}
-	v := reflect.ValueOf(config).Elem()
-	field := v.FieldByName(fieldName)
-	if !field.IsValid() || field.Kind() != reflect.Bool {
-		return false
-	}
-	return field.Bool()
-}
-
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
-func (d *DinMiddleware) syncRegistryWithLatestBlock() {
+func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) {
 	// Get the latest block number from the linea network
-	latestBlockNumber, err := d.DingoClient.GetLatestBlockNumber()
+	latestBlockNumber, err := web3Client.LatestBlockNumber()
 	if err != nil {
 		d.logger.Error("Failed to get latest block number", zap.Error(err))
 		return
@@ -108,7 +66,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 		// Check if the network exists in the local network list within the middleware object
 		network, ok := d.Networks[regNetwork.ProxyName]
 		if !ok {
-			if regNetwork.Status != dinreg.Active {
+			if regNetwork.Status != din.NetworkStatusActive {
 				d.logger.Debug("Network is not active, skipping", zap.String("network", regNetwork.ProxyName))
 				continue
 			}
@@ -121,7 +79,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 			}
 		} else {
 			// If the network exists in the middleware object, check to see if the registry version is active or not,
-			if regNetwork.Status != dinreg.Active {
+			if regNetwork.Status != din.NetworkStatusActive {
 				// Delete the network for now if it is not active
 				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
 				delete(d.Networks, regNetwork.ProxyName)
@@ -145,11 +103,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	if err != nil {
 		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
 	}
-	network, err = d.syncNetworkConfig(regNetwork, network)
-	if err != nil {
-		d.logger.Error("Failed to sync network config", zap.Error(err))
-		return err
-	}
+	network = d.syncNetworkConfig(regNetwork, network)
 
 	httpClient := din_http.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
 	network.HttpClient = httpClient
@@ -159,7 +113,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
-			if networkService.Status != dinreg.Active {
+			if networkService.Status != din.NetworkServiceStatusActive {
 				d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 				continue
 			}
@@ -170,7 +124,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				continue
 			}
 
-			provider, err = d.createNewProvider(regNetwork.ProxyName, provider, regProvider.AuthConfig, networkService.Address)
+			provider, err = d.createNewProvider(regNetwork.ProxyName, provider, regProvider.AuthConfig, networkService)
 			if err != nil {
 				d.logger.Error("Failed to create new provider", zap.Error(err))
 				continue
@@ -178,7 +132,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 			// Add the provider to the network object
 			network.Providers[provider.host] = provider
-			
+
 			// Debug logging
 			if d.logger != nil {
 				d.logger.Debug("Registry: Added provider to network map",
@@ -209,11 +163,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 // updateNetworkWithRegistryData updates the network object in the middleware object with the latest registry network data
 func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, newNetwork *network) error {
 	// Sync the network config data from the registry network to the copied network object
-	newNetwork, err := d.syncNetworkConfig(regNetwork, newNetwork)
-	if err != nil {
-		d.logger.Error("Failed to sync network config", zap.Error(err))
-		return err
-	}
+	newNetwork = d.syncNetworkConfig(regNetwork, newNetwork)
 
 	// Loop through the providers/network services in the registry network and update the copied network.providers map with the registry provider data
 	for _, regProvider := range regNetwork.Providers {
@@ -230,12 +180,12 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			if !ok {
 				// if the provider doesn't exist
 				// check if the network service is active, if not, skip the provider
-				if networkService.Status != dinreg.Active {
+				if networkService.Status != din.NetworkServiceStatusActive {
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
 				}
 				// create a new provider object and add it to the copied network object
-				newProvider, err := d.createNewProvider(regNetwork.ProxyName, newProvider, regProvider.AuthConfig, networkService.Address)
+				newProvider, err := d.createNewProvider(regNetwork.ProxyName, newProvider, regProvider.AuthConfig, networkService)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
@@ -246,7 +196,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			} else {
 				// if the provider exists in the copied network object,
 				// check if the network service is active, if not, don't update the provider data and remove the provider from the copied network object
-				if networkService.Status != dinreg.Active {
+				if networkService.Status != din.NetworkServiceStatusActive {
 					delete(newNetwork.Providers, newProvider.host)
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
@@ -266,27 +216,11 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 }
 
 // syncNetworkConfig updates the network object with the registry network config data
-func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) (*network, error) {
-	// Extract all required method names in a single batch to minimize registry calls
-	methodNames, err := d.extractNetworkMethods(regNetwork)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract all config fields once to minimize reflection calls
-	config := extractNetworkConfigFields(regNetwork.NetworkConfig)
-
+func (d *DinMiddleware) syncNetworkConfig(regNetwork *din.Network, network *network) *network {
 	// Update network configuration using extracted values
-	d.updateNetworkFields(network, config, methodNames)
+	d.updateNetworkFields(network, regNetwork.NetworkConfig)
 
-	return network, nil
-}
-
-// NetworkMethodNames holds extracted method names
-type NetworkMethodNames struct {
-	HealthCheck  string
-	ChainID      string
-	CallContract string
+	return network
 }
 
 // NetworkConfigFields holds extracted configuration values
@@ -300,108 +234,62 @@ type NetworkConfigFields struct {
 	ArchiveEnabled      bool
 }
 
-// extractNetworkMethods gets all required method names in a single batch
-func (d *DinMiddleware) extractNetworkMethods(regNetwork *din.Network) (*NetworkMethodNames, error) {
-	methods := &NetworkMethodNames{}
-
-	// Get healthcheck method (required)
-	if hcMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, regNetwork.NetworkConfig.HealthcheckMethodBit); err != nil {
-		d.logger.Error("Failed to get network healthcheck method name", zap.String("network", regNetwork.Name), zap.Error(err))
-		return nil, err
-	} else {
-		methods.HealthCheck = hcMethod
-	}
-
-	// Get chain ID method (optional)
-	if chainIdBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "ChainIdMethodBit"); chainIdBit > 0 {
-		if chainIdMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, chainIdBit); err != nil {
-			d.logger.Error("Failed to get network chain ID method name", zap.String("network", regNetwork.Name), zap.Error(err))
-			return nil, fmt.Errorf("failed to get network chain ID method: %w", err)
-		} else {
-			methods.ChainID = chainIdMethod
-		}
-	}
-
-	// Get call contract method (optional)
-	if callContractBit := getNetworkConfigUint8Field(regNetwork.NetworkConfig, "CallContractMethodBit"); callContractBit > 0 {
-		if callMethod, err := d.DingoClient.GetNetworkMethodNameByBit(regNetwork.Name, callContractBit); err != nil {
-			d.logger.Error("Failed to get network call contract method name", zap.String("network", regNetwork.Name), zap.Error(err))
-			return nil, fmt.Errorf("failed to get network call contract method: %w", err)
-		} else {
-			methods.CallContract = callMethod
-		}
-	}
-
-	return methods, nil
-}
-
-// extractNetworkConfigFields extracts all config fields in a single pass
-func extractNetworkConfigFields(config *dinreg.NetworkConfig) *NetworkConfigFields {
-	return &NetworkConfigFields{
-		ChainID:             getNetworkConfigStringField(config, "ChainId"),
-		HealthCheckInterval: int(config.HealthcheckIntervalSec),
-		BlockLagLimit:       int64(config.BlockLagLimit),
-		BlockJumpLimit:      int64(getNetworkConfigUint8Field(config, "BlockJumpLimit")),
-		MaxPayloadSizeKB:    int64(config.MaxRequestPayloadSizeKb),
-		RequestAttemptCount: int(config.RequestAttemptCount),
-		ArchiveEnabled:      getNetworkConfigBoolField(config, "ArchiveEnabled"),
-	}
-}
-
 // updateNetworkFields applies configuration updates using a streamlined approach
-func (d *DinMiddleware) updateNetworkFields(network *network, config *NetworkConfigFields, methods *NetworkMethodNames) {
+func (d *DinMiddleware) updateNetworkFields(network *network, regNetworkConfig *din.NetworkOperationsConfig) {
 	// Log available registry methods (handlers provide the actual implementations)
-	d.logRegistryMethods(network.Name, methods)
+	d.logRegistryMethods(network.Name, regNetworkConfig)
 
-	// Update fields using helper function to reduce duplication
-	d.updateField("chain Id", network.Name, &network.ChainId, config.ChainID, config.ChainID != "" && config.ChainID != network.ChainId)
-	d.updateField("healthcheck interval", network.Name, &network.HCInterval, config.HealthCheckInterval, config.HealthCheckInterval != 0 && config.HealthCheckInterval != network.HCInterval)
-	d.updateField("block lag limit", network.Name, &network.BlockLagLimit, config.BlockLagLimit, config.BlockLagLimit != 0 && config.BlockLagLimit != network.BlockLagLimit)
-	d.updateField("block jump limit", network.Name, &network.BlockJumpLimit, config.BlockJumpLimit, config.BlockJumpLimit != 0 && config.BlockJumpLimit != network.BlockJumpLimit)
-	d.updateField("max request payload size", network.Name, &network.MaxRequestPayloadSizeKB, config.MaxPayloadSizeKB, config.MaxPayloadSizeKB != 0 && config.MaxPayloadSizeKB != network.MaxRequestPayloadSizeKB)
-	d.updateField("request attempt count", network.Name, &network.RequestAttemptCount, config.RequestAttemptCount, config.RequestAttemptCount != 0 && config.RequestAttemptCount != network.RequestAttemptCount)
-	d.updateField("archive enabled", network.Name, &network.ArchiveEnabled, config.ArchiveEnabled, config.ArchiveEnabled != network.ArchiveEnabled)
+	if regNetworkConfig.ChainId != "" && regNetworkConfig.ChainId != network.ChainId {
+		network.ChainId = regNetworkConfig.ChainId
+		d.logger.Debug("Setting network chain ID", zap.String("network", network.Name), zap.String("chain_id", network.ChainId))
+	}
+	if regNetworkConfig.HealthcheckIntervalSec != 0 && int(regNetworkConfig.HealthcheckIntervalSec) != network.HCInterval {
+		network.HCInterval = int(regNetworkConfig.HealthcheckIntervalSec)
+		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.Name), zap.Int("healthcheck_interval", network.HCInterval))
+	}
+	if regNetworkConfig.BlockLagLimit != 0 && int64(regNetworkConfig.BlockLagLimit) != network.BlockLagLimit {
+		network.BlockLagLimit = int64(regNetworkConfig.BlockLagLimit)
+		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", network.BlockLagLimit))
+	}
+	if regNetworkConfig.BlockJumpLimit != 0 && int64(regNetworkConfig.BlockJumpLimit) != network.BlockJumpLimit {
+		network.BlockJumpLimit = int64(regNetworkConfig.BlockJumpLimit)
+		d.logger.Debug("Setting network block jump limit", zap.String("network", network.Name), zap.Int64("block_jump_limit", network.BlockJumpLimit))
+	}
+	if regNetworkConfig.MaxRequestPayloadSizeKb != 0 && int64(regNetworkConfig.MaxRequestPayloadSizeKb) != network.MaxRequestPayloadSizeKB {
+		network.MaxRequestPayloadSizeKB = int64(regNetworkConfig.MaxRequestPayloadSizeKb)
+		d.logger.Debug("Setting network max request payload size", zap.String("network", network.Name), zap.Int64("max_request_payload_size_kb", network.MaxRequestPayloadSizeKB))
+	}
+	if regNetworkConfig.RequestAttemptCount != 0 && int(regNetworkConfig.RequestAttemptCount) != network.RequestAttemptCount {
+		network.RequestAttemptCount = int(regNetworkConfig.RequestAttemptCount)
+		d.logger.Debug("Setting network request attempt count", zap.String("network", network.Name), zap.Int("request_attempt_count", network.RequestAttemptCount))
+	}
+	if regNetworkConfig.ArchiveEnabled != network.ArchiveEnabled {
+		network.ArchiveEnabled = regNetworkConfig.ArchiveEnabled
+		d.logger.Debug("Setting network archive enabled", zap.String("network", network.Name), zap.Bool("archive_enabled", network.ArchiveEnabled))
+	}
 }
 
 // logRegistryMethods logs available registry methods in a batch
-func (d *DinMiddleware) logRegistryMethods(networkName string, methods *NetworkMethodNames) {
-	if methods.HealthCheck != "" {
+func (d *DinMiddleware) logRegistryMethods(networkName string, regNetworkConfig *din.NetworkOperationsConfig) {
+	if regNetworkConfig.HealthcheckMethod != "" {
 		d.logger.Debug("Registry healthcheck method available (provided by handler)",
 			zap.String("network", networkName),
-			zap.String("healthcheck_method", methods.HealthCheck))
+			zap.String("healthcheck_method", regNetworkConfig.HealthcheckMethod))
 	}
-	if methods.ChainID != "" {
+	if regNetworkConfig.ChainIdMethod != "" {
 		d.logger.Debug("Registry chain ID method available (provided by handler)",
 			zap.String("network", networkName),
-			zap.String("chain_id_method", methods.ChainID))
+			zap.String("chain_id_method", regNetworkConfig.ChainIdMethod))
 	}
-	if methods.CallContract != "" {
+	if regNetworkConfig.CallContractMethod != "" {
 		d.logger.Debug("Registry call contract method available (provided by handler)",
 			zap.String("network", networkName),
-			zap.String("call_contract_method", methods.CallContract))
-	}
-}
-
-// updateField is a generic helper that updates a field and logs the change
-func (d *DinMiddleware) updateField(fieldName, networkName string, target interface{}, newValue interface{}, shouldUpdate bool) {
-	if !shouldUpdate {
-		return
-	}
-
-	// Use reflection to set the value generically
-	targetVal := reflect.ValueOf(target).Elem()
-	newVal := reflect.ValueOf(newValue)
-
-	if targetVal.CanSet() && targetVal.Type() == newVal.Type() {
-		targetVal.Set(newVal)
-		d.logger.Debug(fmt.Sprintf("Setting network %s", fieldName),
-			zap.String("network", networkName),
-			zap.Any(strings.ReplaceAll(fieldName, " ", "_"), newValue))
+			zap.String("call_contract_method", regNetworkConfig.CallContractMethod))
 	}
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
-func (d *DinMiddleware) createNewProvider(networkName string, provider *provider, authConfig *dinreg.NetworkServiceAuthConfig, networkServiceAddress string) (*provider, error) {
+func (d *DinMiddleware) createNewProvider(networkName string, provider *provider, authConfig *din.ProviderAuthConfig, regNetworkService *din.NetworkService) (*provider, error) {
 	httpClient := din_http.NewHTTPClient(time.Duration(DefaultHCTimeout) * time.Second)
 
 	// Set the provider auth config based on the auth type
@@ -418,24 +306,18 @@ func (d *DinMiddleware) createNewProvider(networkName string, provider *provider
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}
 	provider.Priority = d.RegistryPriority
+
 	// Get the network service methods from the din registry
-	networkServiceMethods, err := d.DingoClient.GetNetworkServiceMethods(networkServiceAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get network service methods: %w", err)
-	}
-
-	// TODO: Figure out how to customize this per provider via registry
 	provider.Methods = make(map[string]struct{})
-	for _, method := range networkServiceMethods {
-		provider.Methods[*method] = struct{}{}
+	for _, method := range regNetworkService.Methods {
+		provider.Methods[method.Name] = struct{}{}
 	}
-
 	return provider, nil
 }
 
-func (d *DinMiddleware) createProviderSIWEAuth(authConfig *dinreg.NetworkServiceAuthConfig) (*siwe.SIWEClientAuth, error) {
+func (d *DinMiddleware) createProviderSIWEAuth(authConfig *din.ProviderAuthConfig) (*siwe.SIWEClientAuth, error) {
 	switch authConfig.Type {
-	case dinreg.SIWE:
+	case din.ProviderAuthTypeSIWE:
 		// Create a new SIWE auth object
 		auth := d.SiweSignerClient.CreateNewSIWEAuth(authConfig.Url, 16)
 		// Set the signer for the provider to the default signer. The default signer is set on proxy startup.
@@ -447,7 +329,7 @@ func (d *DinMiddleware) createProviderSIWEAuth(authConfig *dinreg.NetworkService
 			auth.Signer = d.DefaultSiweSigner
 		}
 		return auth, nil
-	case dinreg.None:
+	case din.ProviderAuthTypeNone:
 		return nil, nil
 	default:
 		return nil, nil
@@ -474,7 +356,7 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 // extractProviderSuffix extracts a unique suffix from URL path or headers
 func (d *DinMiddleware) extractProviderSuffix(parsedUrl *url.URL, headers map[string]string) string {
 	var suffix string
-	
+
 	// Try to extract suffix from URL path (e.g., validation cloud API keys)
 	if parsedUrl != nil && parsedUrl.Path != "" {
 		// Remove leading slash and any path segments
@@ -489,7 +371,7 @@ func (d *DinMiddleware) extractProviderSuffix(parsedUrl *url.URL, headers map[st
 			}
 		}
 	}
-	
+
 	// If no path suffix, try headers (case-insensitive check for X-API-Key)
 	if suffix == "" && headers != nil {
 		for key, value := range headers {
@@ -503,7 +385,7 @@ func (d *DinMiddleware) extractProviderSuffix(parsedUrl *url.URL, headers map[st
 			}
 		}
 	}
-	
+
 	return suffix
 }
 
@@ -517,10 +399,10 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *
 	if parsedUrl == nil || parsedUrl.Host == "" {
 		return ""
 	}
-	
+
 	baseHost := parsedUrl.Host
 	providers := d.Networks[networkName].Providers
-	
+
 	// Check if this exact URL already exists (duplicate provider)
 	for existingHost, existingProvider := range providers {
 		if existingProvider != nil && existingProvider.HttpUrl == parsedUrl.String() {
@@ -533,11 +415,11 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *
 			return existingHost
 		}
 	}
-	
+
 	// Find all providers with the same base host
 	var sameBaseProviders []string
 	var firstProvider *provider
-	
+
 	for host, provider := range providers {
 		if host == baseHost {
 			firstProvider = provider
@@ -546,7 +428,7 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *
 			sameBaseProviders = append(sameBaseProviders, host)
 		}
 	}
-	
+
 	// First provider with this host - use base name
 	if len(sameBaseProviders) == 0 {
 		if d.logger != nil {
@@ -556,15 +438,15 @@ func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *
 		}
 		return baseHost
 	}
-	
+
 	// Extract suffix for current provider
 	suffix := d.extractProviderSuffix(parsedUrl, headers)
-	
+
 	// Handle retroactive update for first provider (only when adding second provider)
 	if firstProvider != nil && len(sameBaseProviders) == 1 && sameBaseProviders[0] == baseHost {
 		d.retroactivelyUpdateFirstProvider(networkName, baseHost, firstProvider)
 	}
-	
+
 	// Generate unique host name
 	return d.generateUniqueHostName(networkName, baseHost, suffix, len(sameBaseProviders))
 }
@@ -575,14 +457,14 @@ func (d *DinMiddleware) retroactivelyUpdateFirstProvider(networkName, baseHost s
 	if err != nil {
 		return
 	}
-	
+
 	firstSuffix := d.extractProviderSuffix(firstProviderUrl, firstProvider.Headers)
 	if firstSuffix == "" {
 		return
 	}
-	
+
 	newHost := fmt.Sprintf("%s-%s", baseHost, firstSuffix)
-	
+
 	// Check for conflicts
 	if d.providerHostExists(networkName, newHost) {
 		if d.logger != nil {
@@ -592,12 +474,12 @@ func (d *DinMiddleware) retroactivelyUpdateFirstProvider(networkName, baseHost s
 		}
 		return
 	}
-	
+
 	// Update the provider
 	firstProvider.host = newHost
 	delete(d.Networks[networkName].Providers, baseHost)
 	d.Networks[networkName].Providers[newHost] = firstProvider
-	
+
 	if d.logger != nil {
 		d.logger.Info("Retroactively updated first provider with suffix",
 			zap.String("network", networkName),
@@ -612,14 +494,14 @@ func (d *DinMiddleware) generateUniqueHostName(networkName, baseHost, suffix str
 	if suffix == "" {
 		return fmt.Sprintf("%s-%d", baseHost, existingCount)
 	}
-	
+
 	proposedHost := fmt.Sprintf("%s-%s", baseHost, suffix)
-	
+
 	// Check for collision
 	if !d.providerHostExists(networkName, proposedHost) {
 		return proposedHost
 	}
-	
+
 	// Handle collision with counter
 	counter := 1
 	for {

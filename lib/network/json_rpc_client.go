@@ -116,7 +116,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 			BlockNumber:    blockNumber,
 			HealthStatus:   Healthy,
 			ResponseStatus: lastResponseStatus,
-			Extra:          make(map[string]interface{}),
+			Metadata:       make(map[string]interface{}),
 		}, nil
 	}
 
@@ -125,7 +125,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		BlockNumber:    0,
 		HealthStatus:   lastHealthStatus,
 		ResponseStatus: lastResponseStatus,
-		Extra:          make(map[string]interface{}),
+		Metadata:       make(map[string]interface{}),
 	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 

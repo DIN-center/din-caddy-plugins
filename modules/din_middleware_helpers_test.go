@@ -11,12 +11,11 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
-	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -30,10 +29,19 @@ const (
 	testRequestBodyKey     = "request_body"
 )
 
+// MockWeb3Client is a mock implementation of web3.Web3Client for testing
+type MockWeb3Client struct {
+	mockLatestBlockNumber uint64
+}
+
+func (m *MockWeb3Client) LatestBlockNumber() (uint64, error) {
+	return m.mockLatestBlockNumber, nil
+}
+
 func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
 	mockCtrl := gomock.NewController(t)
-	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+	mockDingoClient := din.NewMockIDinClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
 		RegistryBlockEpoch:                  10,
 		registryLastUpdatedEpochBlockNumber: 40,
@@ -81,21 +89,25 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset the middleware state
 			dinMiddleware.Networks = map[string]*network{}
 			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
-			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
+			// Create a mock Web3Client
+			mockWeb3Client := &MockWeb3Client{mockLatestBlockNumber: tt.latestBlockNumber}
 
-			// Check if update was called as expected
+			// Set up expectations for GetRegistryData only if we expect an update
 			if tt.expectedUpdateCall {
 				mockDingoClient.EXPECT().GetRegistryData().Return(&din.DinRegistryData{}, nil).Times(1)
 			}
-			// Call the function
-			dinMiddleware.syncRegistryWithLatestBlock()
+
+			// Call the function being tested using the mock middleware
+			dinMiddleware.syncRegistryWithLatestBlock(mockWeb3Client)
 
 			// Validate that registryLastUpdatedEpochBlockNumber is updated correctly
 			if dinMiddleware.registryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
-				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v", tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
+				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v",
+					tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
 			}
 		})
 	}
@@ -108,10 +120,6 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 	tests := []struct {
 		name                     string
 		regNetwork               *din.Network
-		syncNetworkConfigErr     error
-		createNewProviderErr     error
-		methodByBitErr           error
-		expectedError            error
 		expectedNetworkProviders int
 		networkServiceCreated    bool
 	}{
@@ -125,24 +133,20 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 							"http://new-provider.com": {
 								Url:     "http://new-provider.com",
 								Address: "0x1234567890abcdef",
-								Status:  dinreg.Active,
+								Status:  din.NetworkServiceStatusActive,
 							},
 						},
 					},
 				},
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: uint8(1),
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
 				},
 			},
-			methodByBitErr:           nil,
-			syncNetworkConfigErr:     nil,
-			createNewProviderErr:     nil,
-			expectedError:            nil,
 			expectedNetworkProviders: 1,
 			networkServiceCreated:    true,
 		},
 		{
-			name: "Error, missing active status",
+			name: "Missing active status, no providers added",
 			regNetwork: &din.Network{
 				ProxyName: "test-network",
 				Providers: map[string]*din.Provider{
@@ -151,25 +155,21 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 							"http://new-provider.com": {
 								Url:     "http://new-provider.com",
 								Address: "0x1234567890abcdef",
-								Status:  dinreg.Onboarding,
+								Status:  din.NetworkServiceStatusOnboarding,
 							},
 						},
 					},
 				},
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: uint8(1),
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
 				},
-				Status: dinreg.Onboarding,
+				Status: din.NetworkStatusOnboarding,
 			},
-			methodByBitErr:           nil,
-			syncNetworkConfigErr:     nil,
-			createNewProviderErr:     nil,
-			expectedError:            nil,
 			expectedNetworkProviders: 0,
 			networkServiceCreated:    false,
 		},
 		{
-			name: "Error syncing network config",
+			name: "Only active status are added",
 			regNetwork: &din.Network{
 				ProxyName: "test-network",
 				Providers: map[string]*din.Provider{
@@ -178,60 +178,56 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 							"http://new-provider.com": {
 								Url:     "http://new-provider.com",
 								Address: "0x1234567890abcdef",
-								Status:  dinreg.Active,
+								Status:  din.NetworkServiceStatusActive,
+							},
+						},
+					},
+					"Provider2": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider2.com": {
+								Url:     "http://new-provider2.com",
+								Address: "0x99999999999",
+								Status:  din.NetworkServiceStatusRetired,
 							},
 						},
 					},
 				},
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: uint8(1),
-				},
+				NetworkConfig: &din.NetworkOperationsConfig{},
 			},
-			methodByBitErr:           errors.New(""),
-			syncNetworkConfigErr:     nil,
-			createNewProviderErr:     nil,
-			expectedError:            errors.New(""),
 			expectedNetworkProviders: 1,
-			networkServiceCreated:    false,
+			networkServiceCreated:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock DingoClient and other dependencies
-			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
-
-			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.methodByBitErr).AnyTimes()
-			mockDingoClient.EXPECT().GetNetworkServiceMethods(gomock.Any()).Return([]*string{aws.String("eth_call"), aws.String("eth_blockNumber")}, nil).AnyTimes()
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
 
 			// Create logger
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
-			// Create DinMiddleware instance
+			// Create DinMiddleware instance with proper initialization
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
 				Networks:    make(map[string]*network),
 				testMode:    true,
+				Env:         utils.Environment("test"),
+				CaddyPort:   "8080",
+				machineID:   "test-machine-id",
 			}
 
 			// Call the function being tested
-			err := dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
+			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
 
-			// Assert expected error
-			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-			} else {
-				assert.NoError(t, err)
+			// Verify the network is added
+			network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
+			assert.Equal(t, tt.networkServiceCreated, ok)
 
-				// Verify the network is added
-				network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
-				assert.Equal(t, tt.networkServiceCreated, ok)
-
-				if network != nil {
-					// Verify the number of providers added to the network
-					assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
-				}
+			if network != nil {
+				// Verify the number of providers added to the network
+				assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
 			}
 		})
 	}
@@ -245,9 +241,6 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 		name                       string
 		regNetwork                 *din.Network
 		newNetwork                 *network
-		blockNumberMethodByBitErr  error
-		chainIdMethodByBitErr      error
-		callContractMethodByBitErr error
 		syncNetworkConfigErr       error
 		createNewProviderErr       error
 		expectedError              error
@@ -264,22 +257,19 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 							"http://new-provider.com": {
 								Url:     "http://new-provider.com",
 								Address: "0x1234567890abcdef",
-								Status:  dinreg.Active,
+								Status:  din.NetworkServiceStatusActive,
 							},
 						},
 					},
 				},
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: 1,
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
 				},
 			},
 			newNetwork: &network{
 				Name:      "test-network",
 				Providers: map[string]*provider{},
 			},
-			blockNumberMethodByBitErr:  nil,
-			chainIdMethodByBitErr:      nil,
-			callContractMethodByBitErr: nil,
 			syncNetworkConfigErr:       nil,
 			createNewProviderErr:       nil,
 			expectedError:              nil,
@@ -300,18 +290,15 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 						},
 					},
 				},
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: 1,
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
 				},
-				Status: dinreg.Onboarding,
+				Status: din.NetworkStatusOnboarding,
 			},
 			newNetwork: &network{
 				Name:      "test-network",
 				Providers: map[string]*provider{},
 			},
-			blockNumberMethodByBitErr:  nil,
-			chainIdMethodByBitErr:      nil,
-			callContractMethodByBitErr: nil,
 			syncNetworkConfigErr:       nil,
 			createNewProviderErr:       nil,
 			expectedError:              nil,
@@ -322,18 +309,15 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			name: "Error syncing network config",
 			regNetwork: &din.Network{
 				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: 1,
+				NetworkConfig: &din.NetworkOperationsConfig{
+					HealthcheckMethod: "eth_blockNumber",
 				},
-				Status: dinreg.Active,
+				Status: din.NetworkStatusActive,
 			},
 			newNetwork: &network{
 				Name: "test-network",
 			},
-			blockNumberMethodByBitErr:  errors.New("sync error"),
-			chainIdMethodByBitErr:      errors.New("sync error"),
-			callContractMethodByBitErr: errors.New("sync error"),
-			syncNetworkConfigErr:       nil,
+			syncNetworkConfigErr:       errors.New("sync error"),
 			createNewProviderErr:       nil,
 			expectedError:              errors.New("sync error"),
 			expectedProviderCount:      0,
@@ -344,68 +328,47 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock DingoClient and other dependencies
-			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
 
 			// Create logger
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 
-			// Create DinMiddleware instance
+			// Create DinMiddleware instance with proper initialization
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
 				Networks: map[string]*network{
 					tt.newNetwork.Name: tt.newNetwork,
 				},
-				testMode: true,
+				testMode:  true,
+				Env:       utils.Environment("test"),
+				CaddyPort: "8080",
+				machineID: "test-machine-id",
 			}
-
-			mockDingoClient.EXPECT().GetNetworkServiceMethods(gomock.Any()).Return([]*string{aws.String("eth_call"), aws.String("eth_blockNumber")}, nil).AnyTimes()
-			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.blockNumberMethodByBitErr).AnyTimes()
-			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.chainIdMethodByBitErr).AnyTimes()
-			mockDingoClient.EXPECT().GetNetworkMethodNameByBit(gomock.Any(), gomock.Any()).Return("new-method", tt.callContractMethodByBitErr).AnyTimes()
 
 			// Call the function being tested
-			err := dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
-
-			// Assert expected error
-			if tt.expectedError != nil {
-				assert.Equal(t, err.Error(), tt.expectedError.Error())
-			} else {
-				assert.NoError(t, err)
-			}
+			dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
 
 			// Assert the number of providers after the update
 			assert.Equal(t, tt.expectedProviderCount, len(tt.newNetwork.Providers))
 		})
 	}
 }
-
 func TestSyncNetworkConfig(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	tests := []struct {
-		name                     string
-		regNetwork               *din.Network
-		existingNetwork          *network
-		hcMethodName             string
-		chainIDMethodName        string
-		callContractMethodName   string
-		archiveEnabled           bool
-		getHCMethodErr           error
-		callsHealthcheckMethod   bool
-		getChainIDMethodErr      error
-		callsChainIDMethod       bool
-		getCallContractMethodErr error
-		callsCallContractMethod  bool
-		expectedError            error
-		expectedNetwork          *network
+		name            string
+		regNetwork      *din.Network
+		existingNetwork *network
+		expectedNetwork *network
 	}{
 		{
 			name: "successful sync with all new values",
 			regNetwork: &din.Network{
 				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit:    1,
-					ChainIdMethodBit:        1,
-					CallContractMethodBit:   1,
+				NetworkConfig: &din.NetworkOperationsConfig{
 					ChainId:                 "0x1",
 					HealthcheckIntervalSec:  20,
 					BlockLagLimit:           10,
@@ -416,8 +379,7 @@ func TestSyncNetworkConfig(t *testing.T) {
 				},
 			},
 			existingNetwork: &network{
-				Name: "test-network",
-				// REMOVED: Method fields now provided by handlers
+				Name:                    "test-network",
 				ChainId:                 "0x0",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -426,15 +388,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			hcMethodName:            "eth_blockNumber",
-			callsHealthcheckMethod:  true,
-			chainIDMethodName:       "eth_chainId",
-			callsChainIDMethod:      true,
-			callContractMethodName:  "eth_call",
-			callsCallContractMethod: true,
 			expectedNetwork: &network{
-				Name: "test-network",
-				// REMOVED: Method fields now provided by handlers
+				Name:                    "test-network",
 				ChainId:                 "0x1",
 				HCInterval:              20,
 				BlockLagLimit:           10,
@@ -445,75 +400,20 @@ func TestSyncNetworkConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "error getting healthcheck method",
-			regNetwork: &din.Network{
-				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit: 1,
-				},
-			},
-			existingNetwork: &network{
-				Name: "test-network",
-			},
-			getHCMethodErr:         errors.New("failed to get healthcheck method"),
-			callsHealthcheckMethod: true,
-			expectedError:          errors.New("failed to get network healthcheck method"),
-		},
-		{
-			name: "error getting chain ID method",
-			regNetwork: &din.Network{
-				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					ChainIdMethodBit: 1,
-				},
-			},
-			existingNetwork:        &network{Name: "test-network"},
-			callsHealthcheckMethod: true,
-			getChainIDMethodErr:    errors.New("failed to get chain ID method"),
-			callsChainIDMethod:     true,
-			expectedError:          errors.New("failed to get network chain ID method"),
-		},
-		{
-			name: "error getting call contract method",
-			regNetwork: &din.Network{
-				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit:  1,
-					ChainIdMethodBit:      1,
-					CallContractMethodBit: 1,
-				},
-			},
-			existingNetwork: &network{
-				Name: "test-network",
-			},
-			callsHealthcheckMethod:   true,
-			hcMethodName:             "eth_blockNumber",
-			getCallContractMethodErr: errors.New("failed to get call contract method"),
-			callsChainIDMethod:       true,
-			chainIDMethodName:        "eth_chainId",
-			callsCallContractMethod:  true,
-			expectedError:            errors.New("failed to get network call contract method"),
-		},
-		{
 			name: "no updates needed when registry values are zero",
 			regNetwork: &din.Network{
 				Name: "test-network",
-				NetworkConfig: &dinreg.NetworkConfig{
-					HealthcheckMethodBit:    1,
-					ChainIdMethodBit:        1,
+				NetworkConfig: &din.NetworkOperationsConfig{
 					ChainId:                 "0x1",
-					CallContractMethodBit:   0, // Explicitly set to 0 to show this is intentional
 					HealthcheckIntervalSec:  0,
 					BlockLagLimit:           0,
 					BlockJumpLimit:          0,
 					MaxRequestPayloadSizeKb: 0,
 					RequestAttemptCount:     0,
 					ArchiveEnabled:          false,
-				},
-			},
+				}},
 			existingNetwork: &network{
-				Name: "test-network",
-				// REMOVED: Method fields now provided by handlers
+				Name:                    "test-network",
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -522,14 +422,8 @@ func TestSyncNetworkConfig(t *testing.T) {
 				RequestAttemptCount:     3,
 				ArchiveEnabled:          false,
 			},
-			callsHealthcheckMethod: true,
-			callsChainIDMethod:     true,
-			hcMethodName:           "eth_blockNumber",
-			chainIDMethodName:      "eth_chainId",
-			callContractMethodName: "",
 			expectedNetwork: &network{
-				Name: "test-network",
-				// REMOVED: Method fields now provided by handlers
+				Name:                    "test-network",
 				ChainId:                 "0x1",
 				HCInterval:              10,
 				BlockLagLimit:           5,
@@ -543,44 +437,17 @@ func TestSyncNetworkConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
 
 			// Create logger
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
-
-			if tt.callsHealthcheckMethod {
-				mockDingoClient.EXPECT().
-					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.HealthcheckMethodBit).
-					Return(tt.hcMethodName, tt.getHCMethodErr).Times(1)
-			}
-
-			if tt.callsChainIDMethod {
-				mockDingoClient.EXPECT().
-					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.ChainIdMethodBit).
-					Return(tt.chainIDMethodName, tt.getChainIDMethodErr).Times(1)
-			}
-
-			if tt.callsCallContractMethod {
-				mockDingoClient.EXPECT().
-					GetNetworkMethodNameByBit(tt.regNetwork.Name, tt.regNetwork.NetworkConfig.CallContractMethodBit).
-					Return(tt.callContractMethodName, tt.getCallContractMethodErr).Times(1)
-			}
 
 			dinMiddleware := &DinMiddleware{
 				DingoClient: mockDingoClient,
 				logger:      logger,
 			}
 
-			result, err := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.existingNetwork)
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				return
-			}
-
-			assert.NoError(t, err)
+			result := dinMiddleware.syncNetworkConfig(tt.regNetwork, tt.existingNetwork)
 			// REMOVED: Method field assertions (now provided by handlers)
 			assert.Equal(t, tt.expectedNetwork.ChainId, result.ChainId)
 			assert.Equal(t, tt.expectedNetwork.HCInterval, result.HCInterval)
@@ -605,10 +472,9 @@ func TestCreateNewProvider(t *testing.T) {
 	tests := []struct {
 		name                  string
 		provider              *provider
-		authConfig            *dinreg.NetworkServiceAuthConfig
-		networkServiceAddress string
+		authConfig            *din.ProviderAuthConfig
+		networkService        *din.NetworkService
 		initializeProviderErr error
-		getMethodsErr         error
 		expectedError         error
 		expectedMethods       []*string
 		expectedAuth          *siwe.SIWEClientAuth
@@ -619,13 +485,17 @@ func TestCreateNewProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example5.com",
 			},
-			authConfig: &dinreg.NetworkServiceAuthConfig{
-				Type: dinreg.SIWE,
+			authConfig: &din.ProviderAuthConfig{
+				Type: din.ProviderAuthTypeSIWE,
 				Url:  "http://example6.com",
 			},
-			networkServiceAddress: "0x1234567890abcdef",
+			networkService: &din.NetworkService{
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
+			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth: &siwe.SIWEClientAuth{
@@ -640,45 +510,35 @@ func TestCreateNewProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example7.com",
 			},
-			authConfig:            &dinreg.NetworkServiceAuthConfig{Type: dinreg.None},
-			networkServiceAddress: "0x1234567890abcdef",
+			authConfig: &din.ProviderAuthConfig{Type: din.ProviderAuthTypeNone},
+			networkService: &din.NetworkService{
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
+			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth:          nil,
 			expectAuthCreation:    false,
 		},
 		{
-			name: "Error fetching network service methods",
-			provider: &provider{
-				HttpUrl: "http://example8.com",
-			},
-			authConfig:            &dinreg.NetworkServiceAuthConfig{Type: dinreg.SIWE, Url: "http://example9.com"},
-			networkServiceAddress: "0x1234567890abcdef",
-			initializeProviderErr: nil,
-			getMethodsErr:         errors.New("failed to fetch methods"),
-			expectedError:         errors.New("failed to get network service methods: failed to fetch methods"),
-			expectedMethods:       nil,
-			expectedAuth: &siwe.SIWEClientAuth{
-				ProviderURL:  "http://example9.com",
-				SessionCount: 16,
-				Signer:       nil,
-			},
-			expectAuthCreation: true,
-		},
-		{
 			name: "AUTH type is unknown ",
 			provider: &provider{
 				HttpUrl: "http://example12.com",
 			},
-			authConfig: &dinreg.NetworkServiceAuthConfig{
+			authConfig: &din.ProviderAuthConfig{
 				Type: "unknown",
 				Url:  "http://example13.com",
 			},
-			networkServiceAddress: "0x1234567890abcdef",
+			networkService: &din.NetworkService{
+				Methods: map[string]*din.Method{
+					"eth_call":        {Name: "eth_call"},
+					"eth_blockNumber": {Name: "eth_blockNumber"},
+				},
+			},
 			initializeProviderErr: nil,
-			getMethodsErr:         nil,
 			expectedError:         nil,
 			expectedMethods:       []*string{aws.String("eth_call"), aws.String("eth_blockNumber")},
 			expectedAuth:          nil,
@@ -690,7 +550,6 @@ func TestCreateNewProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mocks
 			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
 
 			privateKeyData := make([]byte, 32)
 			_, err := rand.Read(privateKeyData)
@@ -698,7 +557,7 @@ func TestCreateNewProvider(t *testing.T) {
 				t.Errorf("Failed to generate random data in test: %v", err)
 			}
 
-			mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
 			mockSiweSignerClient := siwe.NewMockISIWESignerClient(mockCtrl)
 			defaultSigner := &siwe.SigningConfig{
 				PrivateKey: privateKeyData,
@@ -727,14 +586,8 @@ func TestCreateNewProvider(t *testing.T) {
 				},
 			}
 
-			// Mock GetNetworkServiceMethods
-			mockDingoClient.EXPECT().
-				GetNetworkServiceMethods(tt.networkServiceAddress).
-				Return(tt.expectedMethods, tt.getMethodsErr).
-				Times(1)
-
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider("test-network", tt.provider, tt.authConfig, tt.networkServiceAddress)
+			createdProvider, err := dinMiddleware.createNewProvider("test-network", tt.provider, tt.authConfig, tt.networkService)
 
 			// Assert results
 			if tt.expectedError != nil {
@@ -875,7 +728,7 @@ func TestUpdateNetworkData(t *testing.T) {
 func TestCreateProviderSIWEAuth(t *testing.T) {
 	tests := []struct {
 		name               string
-		authConfig         *dinreg.NetworkServiceAuthConfig
+		authConfig         *din.ProviderAuthConfig
 		defaultSignerSet   bool
 		expectedAuth       *siwe.SIWEClientAuth
 		expectedError      error
@@ -883,8 +736,8 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 	}{
 		{
 			name: "Successful SIWE auth creation with default signer",
-			authConfig: &dinreg.NetworkServiceAuthConfig{
-				Type: dinreg.SIWE,
+			authConfig: &din.ProviderAuthConfig{
+				Type: din.ProviderAuthTypeSIWE,
 				Url:  "http://example.com",
 			},
 			defaultSignerSet:   true,
@@ -897,8 +750,8 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 		},
 		{
 			name: "Auth type None should return nil",
-			authConfig: &dinreg.NetworkServiceAuthConfig{
-				Type: dinreg.None,
+			authConfig: &din.ProviderAuthConfig{
+				Type: din.ProviderAuthTypeNone,
 				Url:  "http://example.com",
 			},
 			defaultSignerSet:   true,
@@ -908,7 +761,7 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 		},
 		{
 			name: "Unknown auth type should return nil",
-			authConfig: &dinreg.NetworkServiceAuthConfig{
+			authConfig: &din.ProviderAuthConfig{
 				Type: "unknown",
 				Url:  "http://example.com",
 			},

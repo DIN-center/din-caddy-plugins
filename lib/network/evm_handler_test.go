@@ -107,7 +107,6 @@ func TestEVMHandler_ValidateChainID(t *testing.T) {
 	}
 }
 
-
 func TestEVMHandler_ExtractChainReference(t *testing.T) {
 	handler := NewEVMHandler(&NetworkConfig{})
 

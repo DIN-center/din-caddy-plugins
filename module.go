@@ -1,8 +1,8 @@
 package din
 
 import (
+	_ "github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	_ "github.com/DIN-center/din-caddy-plugins/lib/openidconnectproxy"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	mod "github.com/DIN-center/din-caddy-plugins/modules"
 	"github.com/caddyserver/caddy/v2"

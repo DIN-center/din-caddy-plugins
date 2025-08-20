@@ -18,7 +18,7 @@ func TestConfigureJSONRPCRequestPath(t *testing.T) {
 			name:         "empty provider path",
 			originalPath: "/ethereum",
 			providerPath: "",
-			expectedPath: "/",  // Empty provider path should set to root
+			expectedPath: "/", // Empty provider path should set to root
 			expectedRaw:  "",
 		},
 		{
@@ -26,14 +26,14 @@ func TestConfigureJSONRPCRequestPath(t *testing.T) {
 			originalPath: "/ethereum",
 			providerPath: "/rpc/v1",
 			expectedPath: "/rpc/v1",
-			expectedRaw:  "",  // RawPath should be cleared
+			expectedRaw:  "", // RawPath should be cleared
 		},
 		{
 			name:         "provider path with special characters",
 			originalPath: "/ethereum",
 			providerPath: "/rpc/v1/key%20test",
-			expectedPath: "/rpc/v1/key%20test",  // Path should be kept as-is
-			expectedRaw:  "",  // RawPath should be cleared
+			expectedPath: "/rpc/v1/key%20test", // Path should be kept as-is
+			expectedRaw:  "",                   // RawPath should be cleared
 		},
 	}
 

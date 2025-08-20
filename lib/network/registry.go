@@ -4,7 +4,7 @@ package network
 import (
 	"fmt"
 	"sync"
-	
+
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"go.uber.org/zap"
 )
@@ -49,7 +49,7 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 		// Validate that the cached handler matches the requested type
 		if handler.GetType() != networkType {
 			r.mu.RUnlock()
-			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'", 
+			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'",
 				config.Name, handler.GetType(), networkType)
 		}
 		if config.Logger != nil {
@@ -70,7 +70,7 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	if handler, exists := r.handlers[config.Name]; exists {
 		// Validate that the cached handler matches the requested type
 		if handler.GetType() != networkType {
-			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'", 
+			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'",
 				config.Name, handler.GetType(), networkType)
 		}
 		if config.Logger != nil {
@@ -111,14 +111,14 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	}
 
 	r.handlers[config.Name] = handler
-	
+
 	if config.Logger != nil {
 		config.Logger.Debug("Created and cached new handler in registry",
 			zap.String("network", config.Name),
 			zap.String("type", networkType),
 			zap.String("handler_type", handler.GetType()))
 	}
-	
+
 	return handler, nil
 }
 
