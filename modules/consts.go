@@ -11,6 +11,7 @@ const (
 	BeaconHandler         HandlerType = "beacon-chain"
 	StarknetHandler       HandlerType = "starknet"
 	SolanaHandler         HandlerType = "solana"
+	BitcoinHandler        HandlerType = "bitcoin"
 	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
 )
 

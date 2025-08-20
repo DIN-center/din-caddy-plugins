@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -123,7 +124,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				continue
 			}
 
-			provider, err = d.createNewProvider(provider, network, regProvider.AuthConfig, networkService)
+			provider, err = d.createNewProvider(regNetwork.ProxyName, provider, regProvider.AuthConfig, networkService)
 			if err != nil {
 				d.logger.Error("Failed to create new provider", zap.Error(err))
 				continue
@@ -131,6 +132,14 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 			// Add the provider to the network object
 			network.Providers[provider.host] = provider
+
+			// Debug logging
+			if d.logger != nil {
+				d.logger.Debug("Registry: Added provider to network map",
+					zap.String("network", network.Name),
+					zap.String("providerHost", provider.host),
+					zap.String("providerUrl", provider.HttpUrl))
+			}
 		}
 	}
 	if len(network.Providers) == 0 {
@@ -176,7 +185,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 					continue
 				}
 				// create a new provider object and add it to the copied network object
-				newProvider, err := d.createNewProvider(newProvider, newNetwork, regProvider.AuthConfig, networkService)
+				newProvider, err := d.createNewProvider(regNetwork.ProxyName, newProvider, regProvider.AuthConfig, networkService)
 				if err != nil {
 					d.logger.Error("Failed to create new provider", zap.Error(err))
 					continue
@@ -280,7 +289,7 @@ func (d *DinMiddleware) logRegistryMethods(networkName string, regNetworkConfig 
 }
 
 // createNewProvider creates a new provider object and initializes the provider with the network service address
-func (d *DinMiddleware) createNewProvider(provider *provider, network *network, authConfig *din.ProviderAuthConfig, regNetworkService *din.NetworkService) (*provider, error) {
+func (d *DinMiddleware) createNewProvider(networkName string, provider *provider, authConfig *din.ProviderAuthConfig, regNetworkService *din.NetworkService) (*provider, error) {
 	httpClient := din_http.NewHTTPClient(time.Duration(DefaultHCTimeout) * time.Second)
 
 	// Set the provider auth config based on the auth type
@@ -292,7 +301,7 @@ func (d *DinMiddleware) createNewProvider(provider *provider, network *network, 
 		}
 	}
 
-	err := d.initializeProvider(provider, network, httpClient, d.logger)
+	err := d.initializeProvider(networkName, provider, httpClient, d.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}
@@ -344,26 +353,178 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	}
 }
 
-// ensureUniqueProviderHost ensures the provider has a unique host in the network's providers map
-// by appending a counter if necessary. Returns the unique host value.
-func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, host string) string {
-	// Get existing hosts with the same base name
-	baseHosts := []string{}
+// extractProviderSuffix extracts a unique suffix from URL path or headers
+func (d *DinMiddleware) extractProviderSuffix(parsedUrl *url.URL, headers map[string]string) string {
+	var suffix string
 
-	for existingHost := range d.Networks[networkName].Providers {
-		// We need to match exact host or host-N pattern
-		if existingHost == host || strings.HasPrefix(existingHost, host+"-") {
-			baseHosts = append(baseHosts, existingHost)
+	// Try to extract suffix from URL path (e.g., validation cloud API keys)
+	if parsedUrl != nil && parsedUrl.Path != "" {
+		// Remove leading slash and any path segments
+		path := strings.TrimPrefix(parsedUrl.Path, "/")
+		// Get the last segment which typically contains the API key
+		segments := strings.Split(path, "/")
+		if len(segments) > 0 {
+			lastSegment := segments[len(segments)-1]
+			// Use last 4 chars if segment is long enough (likely an API key)
+			if len(lastSegment) >= 4 {
+				suffix = lastSegment[len(lastSegment)-4:]
+			}
 		}
 	}
 
-	// If no hosts with this base exist yet, use base host without suffix
-	if len(baseHosts) == 0 {
-		return host
+	// If no path suffix, try headers (case-insensitive check for X-API-Key)
+	if suffix == "" && headers != nil {
+		for key, value := range headers {
+			if strings.EqualFold(key, "X-API-Key") {
+				// Remove any whitespace and use last 4 chars
+				value = strings.TrimSpace(value)
+				if len(value) >= 4 {
+					suffix = value[len(value)-4:]
+					break
+				}
+			}
+		}
 	}
 
-	// For subsequent hosts, use host-1, host-2, etc.
-	return fmt.Sprintf("%s-%d", host, len(baseHosts))
+	return suffix
+}
+
+// ensureUniqueProviderHost ensures the provider has a unique host identifier
+// by appending API key suffix when multiple providers share the same base host.
+// It first tries to extract a suffix from the URL path (e.g., validation cloud API keys),
+// then from X-API-Key header (e.g., nodefleet), and falls back to a counter if neither is available.
+// When a second provider with the same base host is detected, it retroactively updates the first provider
+// to also have a suffix for consistency.
+func (d *DinMiddleware) ensureUniqueProviderHost(networkName string, parsedUrl *url.URL, headers map[string]string) string {
+	if parsedUrl == nil || parsedUrl.Host == "" {
+		return ""
+	}
+
+	baseHost := parsedUrl.Host
+	providers := d.Networks[networkName].Providers
+
+	// Check if this exact URL already exists (duplicate provider)
+	for existingHost, existingProvider := range providers {
+		if existingProvider != nil && existingProvider.HttpUrl == parsedUrl.String() {
+			if d.logger != nil {
+				d.logger.Debug("Provider with same URL already exists",
+					zap.String("network", networkName),
+					zap.String("existingHost", existingHost),
+					zap.String("url", parsedUrl.String()))
+			}
+			return existingHost
+		}
+	}
+
+	// Find all providers with the same base host
+	var sameBaseProviders []string
+	var firstProvider *provider
+
+	for host, provider := range providers {
+		if host == baseHost {
+			firstProvider = provider
+			sameBaseProviders = append(sameBaseProviders, host)
+		} else if strings.HasPrefix(host, baseHost+"-") {
+			sameBaseProviders = append(sameBaseProviders, host)
+		}
+	}
+
+	// First provider with this host - use base name
+	if len(sameBaseProviders) == 0 {
+		if d.logger != nil {
+			d.logger.Debug("First provider with this host",
+				zap.String("network", networkName),
+				zap.String("host", baseHost))
+		}
+		return baseHost
+	}
+
+	// Extract suffix for current provider
+	suffix := d.extractProviderSuffix(parsedUrl, headers)
+
+	// Handle retroactive update for first provider (only when adding second provider)
+	if firstProvider != nil && len(sameBaseProviders) == 1 && sameBaseProviders[0] == baseHost {
+		d.retroactivelyUpdateFirstProvider(networkName, baseHost, firstProvider)
+	}
+
+	// Generate unique host name
+	return d.generateUniqueHostName(networkName, baseHost, suffix, len(sameBaseProviders))
+}
+
+// retroactivelyUpdateFirstProvider updates the first provider with a suffix for consistency
+func (d *DinMiddleware) retroactivelyUpdateFirstProvider(networkName, baseHost string, firstProvider *provider) {
+	firstProviderUrl, err := url.Parse(firstProvider.HttpUrl)
+	if err != nil {
+		return
+	}
+
+	firstSuffix := d.extractProviderSuffix(firstProviderUrl, firstProvider.Headers)
+	if firstSuffix == "" {
+		return
+	}
+
+	newHost := fmt.Sprintf("%s-%s", baseHost, firstSuffix)
+
+	// Check for conflicts
+	if d.providerHostExists(networkName, newHost) {
+		if d.logger != nil {
+			d.logger.Warn("Cannot retroactively update first provider - name conflict",
+				zap.String("network", networkName),
+				zap.String("proposedHost", newHost))
+		}
+		return
+	}
+
+	// Update the provider
+	firstProvider.host = newHost
+	delete(d.Networks[networkName].Providers, baseHost)
+	d.Networks[networkName].Providers[newHost] = firstProvider
+
+	if d.logger != nil {
+		d.logger.Info("Retroactively updated first provider with suffix",
+			zap.String("network", networkName),
+			zap.String("oldHost", baseHost),
+			zap.String("newHost", newHost))
+	}
+}
+
+// generateUniqueHostName creates a unique host name with suffix and handles collisions
+func (d *DinMiddleware) generateUniqueHostName(networkName, baseHost, suffix string, existingCount int) string {
+	// No suffix available - use counter
+	if suffix == "" {
+		return fmt.Sprintf("%s-%d", baseHost, existingCount)
+	}
+
+	proposedHost := fmt.Sprintf("%s-%s", baseHost, suffix)
+
+	// Check for collision
+	if !d.providerHostExists(networkName, proposedHost) {
+		return proposedHost
+	}
+
+	// Handle collision with counter
+	counter := 1
+	for {
+		alternativeHost := fmt.Sprintf("%s-%s-%d", baseHost, suffix, counter)
+		if !d.providerHostExists(networkName, alternativeHost) {
+			if d.logger != nil {
+				d.logger.Debug("Using alternative host due to collision",
+					zap.String("network", networkName),
+					zap.String("host", alternativeHost))
+			}
+			return alternativeHost
+		}
+		counter++
+	}
+}
+
+// providerHostExists checks if a provider host already exists in the network
+func (d *DinMiddleware) providerHostExists(networkName string, host string) bool {
+	if network, exists := d.Networks[networkName]; exists {
+		_, exists := network.Providers[host]
+		return exists
+	}
+	return false
 }
 
 // processHCMethodResponseAsync asynchronously processes responses for health check method requests.

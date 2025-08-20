@@ -199,6 +199,13 @@ func RegisterBuiltinHandlers() {
 		panic(fmt.Sprintf("Failed to register Beacon Chain handler: %v", err))
 	}
 
+	// Register Bitcoin handler - matches modules.BitcoinHandler constant
+	if err := DefaultRegistry.RegisterHandler("bitcoin", func(config *NetworkConfig) (NetworkHandler, error) {
+		return NewBitcoinHandler(config), nil
+	}); err != nil {
+		panic(fmt.Sprintf("Failed to register Bitcoin handler: %v", err))
+	}
+
 	// Register Bitcoin Esplora handler - matches modules.BitcoinEsploraHandler constant
 	if err := DefaultRegistry.RegisterHandler("bitcoin-esplora", func(config *NetworkConfig) (NetworkHandler, error) {
 		return NewBitcoinEsploraHandler(config), nil
