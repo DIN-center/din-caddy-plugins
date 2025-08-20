@@ -30,4 +30,3 @@ type ProviderAuthConfig struct {
 	ApiKeyPlaceholder string
 	UseHeader         bool
 }
-

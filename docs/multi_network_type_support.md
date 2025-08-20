@@ -235,9 +235,69 @@ din {
                 }
             }
         }
+        
+        # Bitcoin with OIDC Authentication
+        bitcoin-esplora {
+            handler bitcoin-esplora
+            chain_id bitcoin-esplora:mainnet
+            providers {
+                https://enterprise.blockstream.info {
+                    priority 0
+                    auth {
+                        type oidc
+                        url "https://login.blockstream.com/token"
+                        client_id "your-client-id"
+                        client_secret "your-client-secret"
+                        # duration_seconds 240  # Optional
+                    }
+                }
+            }
+        }
     }
 }
 ```
+
+### Provider Authentication
+
+The gateway supports multiple authentication mechanisms for providers:
+
+#### SIWE (Sign-In With Ethereum)
+Used for Web3-native authentication with Ethereum signatures:
+```caddyfile
+providers {
+    https://din.rivet.cloud/polygon {
+        auth {
+            type siwe
+            url https://din.rivet.cloud/auth
+            signer {
+                secret_file /run/secrets/din-secret-key
+            }
+        }
+    }
+}
+```
+
+#### OIDC/OAuth2
+Used for traditional OAuth2/OpenID Connect authentication:
+```caddyfile
+providers {
+    https://enterprise.api.example.com {
+        auth {
+            type oidc
+            url "https://auth.example.com/token"
+            client_id "client-id"
+            client_secret "client-secret"
+            duration_seconds 240  # Optional refresh interval
+        }
+    }
+}
+```
+
+Authentication features:
+- **Automatic token management**: Tokens are fetched on startup and refreshed automatically
+- **Smart refresh timing**: Uses token's `expires_in` minus 1 minute, or configured `duration_seconds`
+- **Error recovery**: Automatic retry on token refresh failures
+- **Thread-safe**: Concurrent request handling with proper token synchronization
 
 ### Network Type Auto-Detection
 

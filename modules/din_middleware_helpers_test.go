@@ -580,8 +580,12 @@ func TestCreateNewProvider(t *testing.T) {
 				DefaultSiweSigner: defaultSigner,
 			}
 
+			// Create test network
+			network, err := NewNetwork("test-network", "evm", utils.Environment("test"), "8080")
+			assert.NoError(t, err)
+
 			// Call the function being tested
-			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, tt.authConfig, tt.networkService)
+			createdProvider, err := dinMiddleware.createNewProvider(tt.provider, network, tt.authConfig, tt.networkService)
 
 			// Assert results
 			if tt.expectedError != nil {

@@ -2,14 +2,10 @@ package modules
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +19,6 @@ import (
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/pkg/errors"
@@ -312,11 +307,10 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 
 	// Initialize providers
 	for _, provider := range networkObj.Providers {
-		if err := d.initializeProvider(provider, httpClient, d.logger); err != nil {
+		if err := d.initializeProvider(provider, networkObj, httpClient, d.logger); err != nil {
 			return fmt.Errorf("error initializing provider: %v", err)
 		}
 	}
-
 	return nil
 }
 
@@ -359,7 +353,7 @@ func (d *DinMiddleware) startBackgroundServices() error {
 }
 
 // initializeProvider initializes the provider's upstream, path, logger and HTTP client
-func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
+func (d *DinMiddleware) initializeProvider(provider *provider, networkObj *network, httpClient *dinHttp.HTTPClient, logger *logger.LoggerClient) error {
 
 	url, err := url.Parse(provider.HttpUrl)
 	if err != nil {
@@ -390,7 +384,15 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *dinHt
 		provider.host = url.Host
 	}
 
-	if provider.Auth != nil {
+	// Initialize authentication
+	if provider.OIDCClient != nil {
+		// Initialize OIDC client
+		if err := provider.OIDCClient.Start(logger.Logger); err != nil {
+			d.logger.Error("Failed to start OIDC client", zap.String("provider", provider.HttpUrl), zap.Error(err))
+			return err
+		}
+	} else if provider.Auth != nil {
+		// Initialize SIWE auth
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 		}
@@ -452,8 +454,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Process the request using the handler for validation only
 	if err := networkObj.handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
-		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte("Bad Request\n"))
+
+		// Check if it's an HTTPError with specific status code
+		if httpErr, ok := err.(*networklib.HTTPError); ok {
+			rw.WriteHeader(httpErr.StatusCode)
+			rw.Write([]byte(httpErr.Message + "\n"))
+		} else {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write([]byte("Bad Request\n"))
+		}
 		return fmt.Errorf("handler failed to process request: %w", err)
 	}
 
@@ -736,379 +745,6 @@ func (d *DinMiddleware) getNetworkNames() []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-// UnmarshalCaddyfile sets up reverse proxy provider and method data on the serve based on the configuration of the Caddyfile
-func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
-	var err error
-	var caddyPort string
-	if d.Networks == nil {
-		d.Networks = make(map[string]*network)
-	}
-	d.Env = utils.GetEnv()
-	siweSignerClient := siwe.NewSIWESignerClient()
-
-	// Initialize basic logger early for deprecation warnings during parsing
-	if d.logger == nil {
-		d.logger = logger.NewLoggerClient(zap.NewNop(), d.Env)
-	}
-
-	// Initialize handler registry early for validation during parsing
-	if d.handlerRegistry == nil {
-		d.handlerRegistry = networklib.DefaultRegistry
-		networklib.RegisterBuiltinHandlers()
-	}
-	for dispenser.Next() { // Skip the directive name
-		switch dispenser.Val() {
-		case "port":
-			dispenser.Next()
-			caddyPort = dispenser.Val()
-			if caddyPort == "" {
-				caddyPort = DefaultPort
-			}
-			d.CaddyPort = caddyPort
-		case "siwe-signer":
-			var key []byte
-			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
-				switch dispenser.Val() {
-				case "secret_file":
-					dispenser.NextBlock(n1)
-					hexKeyBytes, err := ioutil.ReadFile(dispenser.Val())
-					if err != nil {
-						return dispenser.Errf("failed to read secret file: %v", err)
-					}
-					hexKey := string(hexKeyBytes)
-					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
-					key, err = hex.DecodeString(hexKey)
-					if err != nil {
-						return err
-					}
-				case "secret":
-					dispenser.NextBlock(n1)
-					hexKey := dispenser.Val()
-					hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
-					key, err = hex.DecodeString(hexKey)
-					if err != nil {
-						return dispenser.Errf("error parsing %v: %v", hexKey, err.Error())
-					}
-				}
-			}
-			if len(key) == 0 {
-				return dispenser.Errf("no key material in siwe-signer definition")
-			}
-			d.DefaultSiweSigner = &siwe.SigningConfig{
-				PrivateKey: key,
-			}
-			if err := siweSignerClient.GenPrivKey(d.DefaultSiweSigner); err != nil {
-				return err
-			}
-		case "networks":
-			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
-				networkName := dispenser.Val()
-				if caddyPort == "" {
-					caddyPort = DefaultPort
-				}
-				// Create a new network if it doesn't exist
-				if _, exists := d.Networks[networkName]; !exists {
-					// Create network without type - will be set explicitly via 'type' field
-					newNetwork, err := NewNetwork(networkName, "", d.Env, caddyPort)
-					if err != nil {
-						return fmt.Errorf("failed to create network '%s': %w", networkName, err)
-					}
-					d.Networks[networkName] = newNetwork // Create a new network object
-				}
-				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
-					switch dispenser.Val() {
-					case "methods":
-						d.Networks[networkName].Methods = make([]*string, dispenser.CountRemainingArgs())
-						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
-							d.Networks[networkName].Methods[i] = new(string)
-						}
-						if !dispenser.Args(d.Networks[networkName].Methods...) {
-							return dispenser.Errf("invalid 'methods' argument for network %s", networkName)
-						}
-					case "handler":
-						dispenser.Next()
-						explicitType := dispenser.Val()
-						d.Networks[networkName].HandlerType = HandlerType(explicitType)
-						// Handler creation deferred to Provision phase for proper logger initialization
-					case "routed_methods":
-						methods := make([]*string, dispenser.CountRemainingArgs())
-						for i := 0; i < dispenser.CountRemainingArgs(); i++ {
-							methods[i] = new(string)
-						}
-						if !dispenser.Args(methods...) {
-							return dispenser.Errf("invalid 'routed_methods' argument for network %s", networkName)
-						}
-						methodMap := make(map[string]struct{})
-						for _, method := range methods {
-							methodMap[*method] = struct{}{}
-						}
-						d.Networks[networkName].MethodFilter = &methodFilter{
-							FilteredMethods: methodMap,
-						}
-					case "providers":
-						for dispenser.NextBlock(nesting + 1) {
-							providerObj, err := NewProvider(dispenser.Val())
-							if err != nil {
-								return fmt.Errorf("error creating provider: %v", err)
-							}
-							for dispenser.NextBlock(nesting + 2) {
-								switch dispenser.Val() {
-								case "methods":
-									methods := make([]*string, dispenser.CountRemainingArgs())
-									for i := 0; i < dispenser.CountRemainingArgs(); i++ {
-										methods[i] = new(string)
-									}
-									if !dispenser.Args(methods...) {
-										return dispenser.Errf("invalid 'methods' argument for provider %s", providerObj.HttpUrl)
-									}
-									providerObj.Methods = make(map[string]struct{})
-									for _, method := range methods {
-										providerObj.Methods[*method] = struct{}{}
-									}
-								case "auth":
-									auth := siweSignerClient.CreateNewSIWEAuth(strings.TrimSuffix(providerObj.HttpUrl, "/")+"/auth", 16)
-									for dispenser.NextBlock(nesting + 3) {
-										switch dispenser.Val() {
-										case "type":
-											dispenser.NextBlock(nesting + 3)
-											if dispenser.Val() != "siwe" {
-												return fmt.Errorf("unknown auth type")
-											}
-										case "url":
-											dispenser.NextBlock(nesting + 3)
-											auth.ProviderURL = dispenser.Val()
-										case "sessions":
-											dispenser.NextBlock(nesting + 3)
-											auth.SessionCount, err = strconv.Atoi(dispenser.Val())
-											if err != nil {
-												return fmt.Errorf("invalid session count: %v", err)
-											}
-										case "signer":
-											var key []byte
-											for dispenser.NextBlock(nesting + 4) {
-												switch dispenser.Val() {
-												case "secret_file":
-													dispenser.NextBlock(nesting + 4)
-													hexKeyBytes, err := os.ReadFile(dispenser.Val())
-													if err != nil {
-														return dispenser.Errf("failed to read secret file: %v", err)
-													}
-													hexKey := string(hexKeyBytes)
-													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
-													key, err = hex.DecodeString(hexKey)
-													if err != nil {
-														return fmt.Errorf("failed to decode secret file: %v", err)
-													}
-												case "secret":
-													dispenser.NextBlock(nesting + 4)
-													hexKey := dispenser.Val()
-													hexKey = strings.TrimSpace(strings.TrimPrefix(hexKey, "0x"))
-													key, err = hex.DecodeString(hexKey)
-													if err != nil {
-														return fmt.Errorf("failed to decode secret: %v", err)
-													}
-												}
-											}
-											auth.Signer = &siwe.SigningConfig{
-												PrivateKey: key,
-											}
-											if err := siweSignerClient.GenPrivKey(auth.Signer); err != nil {
-												return fmt.Errorf("failed to generate private key: %v", err)
-											}
-										}
-									}
-									if auth.Signer == nil {
-										if d.DefaultSiweSigner == nil {
-											return dispenser.Errf("signer must be set")
-										}
-										auth.Signer = d.DefaultSiweSigner
-									}
-									providerObj.Auth = auth
-								case "headers":
-									for dispenser.NextBlock(nesting + 3) {
-										k := dispenser.Val()
-										var v string
-										if dispenser.Args(&v) {
-											providerObj.Headers[k] = v
-										} else {
-											return dispenser.Errf("header should have key and value")
-										}
-									}
-								case "priority":
-									dispenser.NextBlock(nesting + 2)
-									providerObj.Priority, err = strconv.Atoi(dispenser.Val())
-									if err != nil {
-										return fmt.Errorf("invalid priority: %v", err)
-									}
-								}
-							}
-							// Parse the URL to get the host
-							parsedUrl, err := url.Parse(providerObj.HttpUrl)
-							if err != nil {
-								return fmt.Errorf("error parsing provider URL: %v", err)
-							}
-
-							// Initialize provider with a unique host
-							providerObj.host = d.ensureUniqueProviderHost(networkName, parsedUrl.Host)
-							d.Networks[networkName].Providers[providerObj.host] = providerObj
-						}
-					case "healthcheck_endpoint":
-						dispenser.Next()
-						d.Networks[networkName].HCEndpoint = dispenser.Val()
-					case "chain_id":
-						dispenser.Next()
-						chainId := dispenser.Val()
-						if chainId == "" {
-							return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
-						}
-						d.Networks[networkName].ChainId = chainId
-					case "healthcheck_threshold":
-						dispenser.Next()
-						d.Networks[networkName].HCThreshold, err = strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck threshold: %v", err)
-						}
-					case "healthcheck_timeout":
-						dispenser.Next()
-						d.Networks[networkName].HCTimeout, err = strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck timeout: %v", err)
-						}
-					case "healthcheck_interval":
-						dispenser.Next()
-						d.Networks[networkName].HCInterval, err = strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck interval: %v", err)
-						}
-					case "healthcheck_blocklag_limit":
-						dispenser.Next()
-						limit, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck blocklag limit: %v", err)
-						}
-						d.Networks[networkName].BlockLagLimit = int64(limit)
-					case "healthcheck_blockjump_limit":
-						dispenser.Next()
-						limit, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck blockjump limit: %v", err)
-						}
-						d.Networks[networkName].BlockJumpLimit = int64(limit)
-					case "healthcheck_provider_block_history_size":
-						dispenser.Next()
-						size, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid healthcheck provider block history size: %v", err)
-						}
-						d.Networks[networkName].ProviderBlockHistorySize = int(size)
-					case "network_block_history_size":
-						dispenser.Next()
-						size, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid network block history size: %v", err)
-						}
-						d.Networks[networkName].NetworkBlockHistorySize = int(size)
-					case "max_request_payload_size_kb":
-						dispenser.Next()
-						size, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid max request payload size: %v", err)
-						}
-						d.Networks[networkName].MaxRequestPayloadSizeKB = int64(size)
-					case "request_attempt_count":
-						dispenser.Next()
-						requestAttemptCount, err := strconv.Atoi(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid request attempt count: %v", err)
-						}
-						d.Networks[networkName].RequestAttemptCount = requestAttemptCount
-					case "archive_enabled":
-						dispenser.Next()
-						archiveEnabled, err := strconv.ParseBool(dispenser.Val())
-						if err != nil {
-							return fmt.Errorf("invalid archive enabled: %v", err)
-						}
-						d.Networks[networkName].ArchiveEnabled = archiveEnabled
-					default:
-						return dispenser.Errf("unrecognized option: %s", dispenser.Val())
-					}
-				}
-				// Validate that required fields are set
-				if d.Networks[networkName].ChainId == "" {
-					return fmt.Errorf("chain ID is not set for network %s", networkName)
-				}
-				if d.Networks[networkName].HandlerType == "" {
-					// DEFAULT to EVM for unspecified handler types (most common blockchain type)
-					d.logger.Info("No explicit handler type specified, defaulting to EVM",
-						zap.String("network", networkName))
-					d.Networks[networkName].HandlerType = EVMHandler
-					// Handler creation deferred to Provision phase for proper logger initialization
-				}
-			}
-		case "din_registry":
-			for n1 := dispenser.Nesting(); dispenser.NextBlock(n1); {
-				switch dispenser.Val() {
-				case "registry_enabled":
-					dispenser.Next()
-					registryEnabledVal := dispenser.Val()
-					// Convert string to bool
-					boolValue, err := strconv.ParseBool(registryEnabledVal)
-					if err != nil {
-						return dispenser.Errf("Error converting string to bool: %v", err)
-					}
-					d.RegistryEnabled = boolValue
-				case "registry_block_epoch":
-					dispenser.Next()
-					registryBlockEpochlVal := dispenser.Val()
-					// Convert string to int64
-					intValue, err := strconv.Atoi(registryBlockEpochlVal)
-					if err != nil {
-						return dispenser.Errf("Error converting string to int: %v", err)
-					}
-					d.RegistryBlockEpoch = uint64(intValue)
-				case "registry_block_check_interval_sec":
-					dispenser.Next()
-					registryBlockCheckIntervalSecVal := dispenser.Val()
-					// Convert string to int64
-					intValue, err := strconv.Atoi(registryBlockCheckIntervalSecVal)
-					if err != nil {
-						return dispenser.Errf("Error converting string to int: %v", err)
-					}
-					d.RegistryBlockCheckIntervalSec = uint64(intValue)
-				case "registry_endpoint_url":
-					dispenser.Next()
-					registryEndpointUrl := dispenser.Val()
-					d.RegistryEndpointUrl = registryEndpointUrl
-				case "registry_contract_address":
-					dispenser.Next()
-					registryContractAddress := dispenser.Val()
-					d.RegistryContractAddress = registryContractAddress
-				case "registry_priority":
-					dispenser.Next()
-					registryPriorityVal := dispenser.Val()
-					intValue, err := strconv.Atoi(registryPriorityVal)
-					if err != nil {
-						return dispenser.Errf("Error converting string to int: %v", err)
-					}
-					d.RegistryPriority = intValue
-				}
-			}
-		}
-
-	}
-
-	return nil
-}
-
-func (d *DinMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	err := d.UnmarshalCaddyfile(h.Dispenser)
-	if err != nil {
-		return nil, err
-	}
-
-	return d, nil
 }
 
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers

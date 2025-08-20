@@ -47,11 +47,11 @@ func (h *StarknetHandler) GetRequestType() RequestType {
 // Lifecycle methods
 func (h *StarknetHandler) Initialize(config *NetworkConfig) error {
 	h.config = config
-	
+
 	if config.Logger != nil {
 		h.logger = config.Logger
 	}
-	
+
 	return nil
 }
 
@@ -66,7 +66,7 @@ func (h *StarknetHandler) ProcessRequest(req *http.Request) error {
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
-	
+
 	// Path translation is handled in DinSelect module
 	return nil
 }
@@ -76,16 +76,16 @@ func (h *StarknetHandler) ExtractMethod(req *http.Request, body []byte) (string,
 	if len(body) == 0 {
 		return "", fmt.Errorf("empty request body")
 	}
-	
+
 	var rpcRequest din_http.JSONRPCRequest
 	if err := json.Unmarshal(body, &rpcRequest); err != nil {
 		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
 	}
-	
+
 	if rpcRequest.Method == "" {
 		return "", fmt.Errorf("missing method in JSON-RPC request")
 	}
-	
+
 	return rpcRequest.Method, nil
 }
 
@@ -159,7 +159,6 @@ func (h *StarknetHandler) ValidateChainID(chainID string) error {
 
 	return nil
 }
-
 
 func (h *StarknetHandler) ExtractChainReference(result interface{}) (string, error) {
 	chainRef, ok := result.(string)

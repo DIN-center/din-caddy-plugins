@@ -341,7 +341,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 				ChainID: "1",
 			}
 			n.SetHandler(networklib.NewEVMHandler(config))
-			
+
 			var sc *int
 			if !tt.passNilStatusCode {
 				statusCodeVal := tt.statusCode
@@ -464,7 +464,7 @@ func TestArchiveModeCheck(t *testing.T) {
 
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-			
+
 			// Set the handler
 			config := &networklib.NetworkConfig{
 				Name:    tt.networkName,
@@ -768,11 +768,11 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			n.HttpClient = mockHTTPClient
 			n.logger = mockLogger
 			n.RequestAttemptCount = 1
-			
+
 			// Create and set handler for test since it's not created in NewNetwork anymore
 			config := &networklib.NetworkConfig{
-				Name: tt.networkName,
-				Type: string(EVMHandler),
+				Name:   tt.networkName,
+				Type:   string(EVMHandler),
 				Logger: mockLogger,
 			}
 			handler := networklib.NewEVMHandler(config)
@@ -798,11 +798,11 @@ func newTestNetwork(name string, historySize int) *network {
 	n.NetworkBlockHistorySize = historySize
 	// Initialize logger to prevent panic
 	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-	
+
 	// Create and set handler for test since it's not created in NewNetwork anymore
 	config := &networklib.NetworkConfig{
-		Name: name,
-		Type: string(EVMHandler),
+		Name:   name,
+		Type:   string(EVMHandler),
 		Logger: n.logger,
 	}
 	handler := networklib.NewEVMHandler(config)
@@ -1053,11 +1053,11 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 
 			// Initialize logger to prevent panic
 			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-			
+
 			// Create and set handler for test since it's not created in NewNetwork anymore
 			config := &networklib.NetworkConfig{
-				Name: tt.networkName,
-				Type: string(EVMHandler),
+				Name:   tt.networkName,
+				Type:   string(EVMHandler),
 				Logger: n.logger,
 			}
 			handler := networklib.NewEVMHandler(config)

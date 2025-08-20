@@ -294,7 +294,12 @@ func TestInitializeProvider(t *testing.T) {
 			dinMiddleware := &DinMiddleware{
 				logger: logger,
 			}
-			err := dinMiddleware.initializeProvider(tt.provider, tt.httpClient, logger)
+			// Create test network for initializeProvider
+			network, err := NewNetwork("test-network", "evm", utils.Environment("test"), "8080")
+			if err != nil {
+				t.Fatalf("Failed to create test network: %v", err)
+			}
+			err = dinMiddleware.initializeProvider(tt.provider, network, tt.httpClient, logger)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}

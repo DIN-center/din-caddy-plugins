@@ -77,7 +77,6 @@ func (m *MockHandler) GetChainID(httpUrl string, headers map[string]string, http
 	return "mock:1", nil
 }
 
-
 func (m *MockHandler) ExtractChainReference(result interface{}) (string, error) {
 	return "mockchain", nil
 }
@@ -160,7 +159,7 @@ func (m *MockHandler) GetLatestBlockNumber(httpUrl string, headers map[string]st
 		BlockNumber:    12345,
 		HealthStatus:   Healthy,
 		ResponseStatus: 200,
-		Extra:          make(map[string]interface{}),
+		Metadata:       make(map[string]interface{}),
 	}, nil
 }
 

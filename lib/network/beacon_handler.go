@@ -18,19 +18,17 @@ import (
 
 // BeaconChainHandler handles Ethereum Beacon Chain REST API requests
 type BeaconChainHandler struct {
-	config              *NetworkConfig
-	healthCheckEndpoint string
-	version             string
-	logger              *logger.LoggerClient
+	config  *NetworkConfig
+	version string
+	logger  *logger.LoggerClient
 }
 
 // NewBeaconChainHandler creates a new Beacon Chain handler instance
 func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 	return &BeaconChainHandler{
-		config:              config,
-		healthCheckEndpoint: "/eth/v1/beacon/headers/head",
-		version:             "1.0.0",
-		logger:              config.Logger,
+		config:  config,
+		version: "1.0.0",
+		logger:  config.Logger,
 	}
 }
 
@@ -76,10 +74,6 @@ func (h *BeaconChainHandler) ProcessRequest(req *http.Request) error {
 	if err := h.ValidateRequest(req); err != nil {
 		return err
 	}
-
-	// For Beacon Chain, path translation is handled by DinSelect for REST APIs
-	// This maintains consistency with the generic REST API processing approach
-	// Unlike EVM which uses JSON-RPC and needs provider-specific path handling
 
 	return nil
 }
@@ -209,7 +203,6 @@ func (h *BeaconChainHandler) ValidateChainID(chainID string) error {
 
 	return nil
 }
-
 
 func (h *BeaconChainHandler) ExtractChainReference(result interface{}) (string, error) {
 	// For beacon chain, we extract chain reference from genesis response
@@ -344,9 +337,7 @@ func (h *BeaconChainHandler) ExtractBlockNumber(response []byte) (int64, error) 
 
 // Health Check Specifics methods
 func (h *BeaconChainHandler) GetHealthCheckMethod() string {
-	// Use the node health endpoint for health checks
-	// This returns HTTP status codes: 200 (ready), 206 (syncing), 503 (not initialized)
-	return "/eth/v1/node/health"
+	return "/eth/v2/beacon/blocks/head"
 }
 
 func (h *BeaconChainHandler) GetHealthCheckHTTPMethod() string {
@@ -375,23 +366,21 @@ func (h *BeaconChainHandler) CreateHealthCheckPayload(method string) ([]byte, er
 }
 
 func (h *BeaconChainHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) {
-	// The /eth/v1/node/health endpoint returns only status codes, no body
-	// If we have an empty body, it means the health check passed but we need
-	// to make a separate call to get block info
+	// Handle empty response (node health endpoint returns empty body for 200 OK)
 	if len(body) == 0 {
-		// Return a placeholder indicating health check passed but no block info
 		return &BlockInfo{
-			Number:    -1, // Special value to indicate we need a separate call
+			Number:    -1,
 			Hash:      "",
 			Timestamp: time.Now(),
 			Metadata: map[string]interface{}{
-				"slot":  int64(-1),
-				"epoch": int64(-1),
+				"health": "ready",
+				"slot":   int64(-1),
+				"epoch":  int64(-1),
 			},
 		}, nil
 	}
 
-	// If we have a body, it's from the block info endpoint (/eth/v2/beacon/blocks/head)
+	// from the block info endpoint (/eth/v2/beacon/blocks/head)
 	var blockResponse BeaconBlockResponse
 	if err := json.Unmarshal(body, &blockResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse beacon block response: %w", err)
@@ -426,14 +415,21 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 
 	// First try to parse as the standard format with data as a map
 	var specResponse struct {
-		Data map[string]string `json:"data"`
+		Data map[string]interface{} `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &specResponse); err == nil && specResponse.Data != nil {
 		// Extract DEPOSIT_CHAIN_ID which is the actual Ethereum chain ID
-		chainID, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]
-		if exists && chainID != "" {
-			return chainID, nil
+		if chainIDValue, exists := specResponse.Data["DEPOSIT_CHAIN_ID"]; exists {
+			// Handle as string
+			if chainIDStr, ok := chainIDValue.(string); ok && chainIDStr != "" {
+				return chainIDStr, nil
+			}
+			// Handle as number
+			if chainIDNum, ok := chainIDValue.(float64); ok {
+				return fmt.Sprintf("%d", int64(chainIDNum)), nil
+			}
+			return "", fmt.Errorf("DEPOSIT_CHAIN_ID has unexpected type: %T", chainIDValue)
 		}
 	}
 
@@ -462,7 +458,24 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 		}
 	}
 
-	// If data is an array or other format, return a more helpful error
+	// Handle data as an array (some providers return this format)
+	if dataArray, ok := dataField.([]interface{}); ok && len(dataArray) > 0 {
+		// Look for DEPOSIT_CHAIN_ID in the first array element
+		if firstItem, ok := dataArray[0].(map[string]interface{}); ok {
+			if chainIDValue, exists := firstItem["DEPOSIT_CHAIN_ID"]; exists {
+				// Handle as string
+				if chainID, ok := chainIDValue.(string); ok && chainID != "" {
+					return chainID, nil
+				}
+				// Handle as number
+				if chainIDNum, ok := chainIDValue.(float64); ok {
+					return fmt.Sprintf("%d", int64(chainIDNum)), nil
+				}
+			}
+		}
+	}
+
+	// If data is another format, return a more helpful error
 	return "", fmt.Errorf("DEPOSIT_CHAIN_ID not found in beacon config response (data type: %T)", dataField)
 }
 
@@ -601,7 +614,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 			BlockNumber:    blockInfo.Number, // This will be the slot number
 			HealthStatus:   Healthy,
 			ResponseStatus: lastResponseStatus,
-			Extra: map[string]interface{}{
+			Metadata: map[string]interface{}{
 				"slot":      blockInfo.Number, // Number field contains slot for beacon chain
 				"epoch":     getInt64FromMetadata(blockInfo.Metadata, "epoch"),
 				"hash":      blockInfo.Hash,
@@ -622,7 +635,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 		BlockNumber:    0,
 		HealthStatus:   lastHealthStatus,
 		ResponseStatus: lastResponseStatus,
-		Extra:          make(map[string]interface{}),
+		Metadata:       make(map[string]interface{}),
 	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 

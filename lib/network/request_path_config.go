@@ -34,6 +34,19 @@ func ConfigureJSONRPCRequestPath(req *http.Request, providerPath string) {
 
 // ConfigureRESTRequestPath configures the request path for REST API providers
 // This is shared logic for all REST handlers (Beacon Chain, Bitcoin Esplora)
+//
+// Simple example of Bitcoin Esplora path combination:
+//
+// Customer request: GET /bitcoin/api/blocks/tip/height
+// Provider configured with base path: "/esplora"
+// Final upstream request: GET /esplora/api/blocks/tip/height
+//
+// Step by step:
+// 1. currentPath = "/bitcoin/api/blocks/tip/height" (original customer request)
+// 2. Strip network prefix: "/api/blocks/tip/height" (networkName = "bitcoin")
+// 3. providerPath = "/esplora" (configured provider base path)
+// 4. url.JoinPath("/esplora", "/api/blocks/tip/height") = "/esplora/api/blocks/tip/height"
+// 5. Request sent to provider at: https://provider.com/esplora/api/blocks/tip/height
 func ConfigureRESTRequestPath(req *http.Request, providerPath string, networkName string) {
 	currentPath := req.URL.Path
 
