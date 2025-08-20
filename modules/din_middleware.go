@@ -19,6 +19,7 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -67,7 +68,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The dingo client object
-	DingoClient din.IDingoClient
+	DingoClient din.IDinClient
 
 	logger *logger.LoggerClient
 
@@ -164,21 +165,21 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 // initializeCoreServices initializes core services like logger, prometheus, and SIWE
 func (d *DinMiddleware) initializeCoreServices(context caddy.Context) error {
 	d.machineID = utils.GetMachineId()
-	
+
 	// Initialize logger
 	loggerClient := logger.NewLoggerClient(context.Logger(d), d.Env)
 	d.logger = loggerClient
-	
+
 	// Initialize prometheus client
 	promClient := prom.NewPrometheusClient(loggerClient, d.machineID)
 	d.PrometheusClient = promClient
-	
+
 	// Initialize SIWE signer client
 	d.SiweSignerClient = siwe.NewSIWESignerClient()
-	
+
 	// Initialize quit channel
 	d.quit = make(chan struct{})
-	
+
 	return nil
 }
 
@@ -200,11 +201,19 @@ func (d *DinMiddleware) initializeDefaults() {
 
 // initializeDinRegistryClient initializes the DIN registry client
 func (d *DinMiddleware) initializeDinRegistryClient() error {
-	client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
-	if err != nil {
-		return fmt.Errorf("error initializing din client: %v", err)
+	if d.RegistryEnabled {
+		// DinClient is only initialized if the registry is enabled
+		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry",
+			zap.String("registry_endpoint_url", d.RegistryEndpointUrl),
+			zap.String("registry_contract_address", d.RegistryContractAddress))
+
+		client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+		if err != nil {
+			return fmt.Errorf("error initializing DIN client: %v", err)
+		}
+		d.DingoClient = client
 	}
-	d.DingoClient = client
+
 	return nil
 }
 
@@ -294,7 +303,7 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 	// Initialize the HTTP client for the network
 	httpClient := dinHttp.NewHTTPClient(time.Duration(networkObj.HCTimeout) * time.Second)
 	d.logger.Debug("Registered network", zap.String("name", networkName))
-	
+
 	// Set network dependencies
 	networkObj.HttpClient = httpClient
 	networkObj.logger = d.logger
@@ -324,8 +333,8 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 				}
 			}
 			if !match {
-				d.logger.Warn("Method marked as routed, but not offered by any providers", 
-					zap.String("network", networkName), 
+				d.logger.Warn("Method marked as routed, but not offered by any providers",
+					zap.String("network", networkName),
 					zap.String("method", method))
 			}
 		}
@@ -1134,7 +1143,7 @@ func (d *DinMiddleware) startRegistrySync() {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock()
+				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
 			}
 		}
 	}()

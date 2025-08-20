@@ -133,12 +133,14 @@ dev-deps: ## Install development dependencies
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+	go install go.uber.org/mock/mockgen@v0.5.2
 
 check-deps: ## Check if development dependencies are installed
 	@echo "$(GREEN)Checking dependencies...$(NC)"
 	@command -v golangci-lint >/dev/null || (echo "$(RED)golangci-lint not found. Run 'make dev-deps'$(NC)" && exit 1)
 	@command -v goimports >/dev/null || (echo "$(RED)goimports not found. Run 'make dev-deps'$(NC)" && exit 1)
 	@command -v xcaddy >/dev/null || (echo "$(RED)xcaddy not found. Run 'make dev-deps'$(NC)" && exit 1)
+	@command -v mockgen >/dev/null || (echo "$(RED)mockgen not found. Run 'make dev-deps'$(NC)" && exit 1)
 	@echo "$(GREEN)All dependencies are installed$(NC)"
 
 update-deps: ## Update Go dependencies
@@ -229,5 +231,11 @@ status: ## Show project status
 	@echo "Go modules: $(shell [ -f go.mod ] && echo 'Enabled' || echo 'Disabled')"
 	@echo "Build artifacts: $(shell [ -d $(BUILD_DIR) ] && echo 'Present' || echo 'None')"
 	@echo "Test coverage: $(shell [ -f $(COVERAGE_OUT) ] && echo 'Available' || echo 'Not generated')"
+
+
+# To download mockgen, run: ``
+generate-mocks: ## Generate Mock interface
+	mockgen -source=./lib/auth/interface.go -package=auth -destination=./lib/auth/interface_mock.go
+	mockgen -source=./lib/auth/siwe/client.go -package=siwe -destination=./lib/auth/siwe/interface_mock.go
 
 .PHONY: tag quick-test dev ci status

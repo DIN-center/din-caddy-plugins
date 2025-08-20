@@ -26,6 +26,16 @@
             "name": "url",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "apiKeyPlaceholder",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "useHeader",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -90,6 +100,16 @@
         "name": "url",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "apiKeyPlaceholder",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "useHeader",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
