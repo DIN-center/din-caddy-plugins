@@ -256,13 +256,12 @@ func TestCalculateDynamicBlockLagLimitIntegration(t *testing.T) {
 	// Store initial limit
 	initialLimit := n.BlockLagLimit
 
-	// Start health checking which triggers the calculation
-	// Override the calculation with shorter duration for testing
-	go n.calculateDynamicBlockLagLimit(1)
-	n.healthCheck()
+	// Run the calculation synchronously with shorter duration for testing
+	// This ensures it completes before we check the result
+	n.calculateDynamicBlockLagLimit(1)
 	
-	// Wait for the dynamic calculation to complete (it takes ~1 second)
-	time.Sleep(2 * time.Second)
+	// Run health check after calculation is complete
+	n.healthCheck()
 
 	// Verify the result
 	n.blockLagLimitMu.RLock()
