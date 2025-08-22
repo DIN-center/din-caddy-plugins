@@ -25,3 +25,14 @@ services/.DS_Store
 coverage.out
 Claude.md
 PR_DESCRIPTION.md
+
+# Claude service specific
+services/claude/.env
+services/claude/dist/
+services/claude/node_modules/
+services/claude/*.log
+services/claude/test-*.js
+services/claude/demo-*.js
+services/claude/verify-*.js
+services/claude/.env.local
+services/claude/.env.*.local

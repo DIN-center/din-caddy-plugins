@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIN Metrics Query</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .query-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        #queryInput {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            transition: border-color 0.3s;
+        }
+        
+        #queryInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        #queryButton {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        #queryButton:hover {
+            transform: translateY(-2px);
+        }
+        
+        #queryButton:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .examples {
+            margin-bottom: 30px;
+        }
+        
+        .examples h3 {
+            color: #555;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .example-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .chip {
+            padding: 8px 15px;
+            background: #f5f5f5;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .chip:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .results.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .result-section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .result-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .summary {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #444;
+        }
+        
+        .insight-item, .recommendation-item {
+            padding: 10px 15px;
+            margin: 8px 0;
+            background: white;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .recommendation-item {
+            border-left-color: #f39c12;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .details {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .detail-item code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 DIN Metrics Query</h1>
+            <p>Ask questions about your infrastructure in plain English</p>
+        </div>
+        
+        <div class="query-card">
+            <div class="examples">
+                <h3>Quick Examples</h3>
+                <div class="example-chips">
+                    <span class="chip" onclick="setQuery('Which providers have the most errors?')">Error Analysis</span>
+                    <span class="chip" onclick="setQuery('Show me latency trends for the last hour')">Latency Trends</span>
+                    <span class="chip" onclick="setQuery('What is the current health status?')">Health Status</span>
+                    <span class="chip" onclick="setQuery('Show error rate for BSC network')">Network Errors</span>
+                    <span class="chip" onclick="setQuery('Which methods are failing the most?')">Method Failures</span>
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="queryInput" 
+                    placeholder="Ask a question about your metrics..."
+                    onkeypress="if(event.key === 'Enter') executeQuery()"
+                />
+                <button id="queryButton" onclick="executeQuery()">
+                    Query
+                </button>
+            </div>
+            
+            <div id="results" class="results"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Replace with your Lambda function URL
+        const API_ENDPOINT = 'LAMBDA_FUNCTION_URL_PLACEHOLDER';
+        
+        function setQuery(text) {
+            document.getElementById('queryInput').value = text;
+            document.getElementById('queryInput').focus();
+        }
+        
+        async function executeQuery() {
+            const queryInput = document.getElementById('queryInput');
+            const queryButton = document.getElementById('queryButton');
+            const resultsDiv = document.getElementById('results');
+            
+            const query = queryInput.value.trim();
+            if (!query) {
+                alert('Please enter a query');
+                return;
+            }
+            
+            // Disable button and show loading
+            queryButton.disabled = true;
+            queryButton.textContent = 'Processing...';
+            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Analyzing metrics...</div>';
+            resultsDiv.classList.add('show');
+            
+            try {
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    displayError(data.error || 'Query failed');
+                }
+            } catch (error) {
+                displayError('Failed to connect to the service. Please check if the Lambda URL is configured correctly.');
+                console.error('Query error:', error);
+            } finally {
+                queryButton.disabled = false;
+                queryButton.textContent = 'Query';
+            }
+        }
+        
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="result-section">
+                    <h3>📊 Summary</h3>
+                    <div class="summary">${escapeHtml(data.answer)}</div>
+                </div>
+            `;
+            
+            if (data.insights && data.insights.length > 0) {
+                html += `
+                    <div class="result-section">
+                        <h3>💡 Insights</h3>
+                        ${data.insights.map(insight => 
+                            `<div class="insight-item">${escapeHtml(insight)}</div>`
+                        ).join('')}
+                    </div>
+                `;
+            }
+            
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += `
+                    <div class="result-section">
+                        <h3>🎯 Recommendations</h3>
+                        ${data.recommendations.map(rec => 
+                            `<div class="recommendation-item">${escapeHtml(rec)}</div>`
+                        ).join('')}
+                    </div>
+                `;
+            }
+            
+            if (data.details) {
+                html += `
+                    <div class="details">
+                        <div class="detail-item">
+                            <span>Time Range:</span>
+                            <code>${new Date(data.details.timeRange.start).toLocaleString()} - ${new Date(data.details.timeRange.end).toLocaleString()}</code>
+                        </div>
+                        <div class="detail-item">
+                            <span>Data Series:</span>
+                            <code>${data.details.seriesCount} series</code>
+                        </div>
+                        <div class="detail-item">
+                            <span>PromQL:</span>
+                            <code>${escapeHtml(data.details.promql)}</code>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        function displayError(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `<div class="error">❌ ${escapeHtml(message)}</div>`;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // API endpoint will be replaced during deployment
+    </script>
+</body>
+</html>

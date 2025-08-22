@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# DIN Query System Launcher
+# Ensures the system is built and starts the CLI
+
+echo "Starting DIN Query System..."
+
+# Check if node_modules exists
+if [ ! -d "node_modules" ]; then
+    echo "Installing dependencies..."
+    npm install
+fi
+
+# Check if dist exists
+if [ ! -d "dist" ]; then
+    echo "Building application..."
+    npm run build
+fi
+
+# Start the CLI
+node dist/cli.js
