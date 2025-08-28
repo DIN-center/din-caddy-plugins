@@ -1,7 +1,7 @@
 // lib/network/handlers.go
 package network
 
-//go:generate mockgen -source=handlers.go -destination=interface_mock.go -package=network NetworkHandler
+//go:generate go tool mockgen -source=handlers.go -destination=interface_mock.go -package=network NetworkHandler
 
 import (
 	"fmt"

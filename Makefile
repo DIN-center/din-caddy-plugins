@@ -4,7 +4,7 @@
 # Ensure bash is used for all shell commands to guarantee cross-environment reproducibility
 SHELL := /bin/bash
 
-.PHONY: help build run test test-verbose test-coverage test-race clean install dev-deps lint format check-deps benchmark profile docker-build docker-run
+.PHONY: help build run test test-verbose test-coverage test-race clean secure dev-deps lint format check-deps benchmark profile docker-build docker-run
 
 # Default target
 .DEFAULT_GOAL := help
@@ -32,33 +32,29 @@ help: ## Show this help message
 ## Development Commands
 run: ## Run Caddy with private config (main development command)
 	@echo "$(GREEN)Starting Caddy with private configuration...$(NC)"
-	xcaddy run -- --config Caddyfile.private --adapter caddyfile
+	go tool xcaddy run -- --config Caddyfile.private --adapter caddyfile
 
 run-dev: ## Run Caddy with development config
 	@echo "$(GREEN)Starting Caddy with development configuration...$(NC)"
-	xcaddy run -- --config Caddyfile.dev --adapter caddyfile
+	go tool xcaddy run -- --config Caddyfile.dev --adapter caddyfile
 
 run-prod: ## Run Caddy with production config
 	@echo "$(GREEN)Starting Caddy with production configuration...$(NC)"
-	xcaddy run -- --config Caddyfile --adapter caddyfile
+	go tool xcaddy run -- --config Caddyfile --adapter caddyfile
 
 ## Build Commands
 build: ## Build Caddy with DIN plugins
 	@echo "$(GREEN)Building Caddy with DIN plugins...$(NC)"
 	@mkdir -p $(BUILD_DIR)
-	xcaddy build --output $(BUILD_DIR)/$(BINARY_NAME) --with github.com/DIN-center/din-caddy-plugins=.
+	go tool xcaddy build --output $(BUILD_DIR)/$(BINARY_NAME) --with github.com/DIN-center/din-caddy-plugins=.
 
 build-version: ## Build with version info
 	@echo "$(GREEN)Building Caddy with version info...$(NC)"
 	@mkdir -p $(BUILD_DIR)
-	xcaddy build \
+	go tool xcaddy build \
 		--output $(BUILD_DIR)/$(BINARY_NAME) \
 		--with github.com/DIN-center/din-caddy-plugins=. \
 		--with github.com/caddyserver/caddy/v2=$(shell go list -m -versions github.com/caddyserver/caddy/v2 | awk '{print $$NF}')
-
-install: ## Install xcaddy if not present
-	@echo "$(GREEN)Installing xcaddy...$(NC)"
-	go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
 ## Testing Commands
 test: ## Run all tests
@@ -107,13 +103,17 @@ lint: check-deps ## Run linter
 format: ## Format Go code
 	@echo "$(GREEN)Formatting Go code...$(NC)"
 	gofmt -s -w $(GO_FILES)
-	goimports -w $(GO_FILES)
+	go tool goimports -w $(GO_FILES)
 
 vet: ## Run go vet
 	@echo "$(GREEN)Running go vet...$(NC)"
 	go vet ./...
 
-check: format vet lint test ## Run all checks (format, vet, lint, test)
+secure: ## Run govulncheck
+	@echo "$(GREEN)Running govulncheck...$(NC)"
+	go tool govulncheck
+
+check: format vet lint test secure ## Run all checks (format, vet, lint, test, secure)
 
 ## Performance Commands
 profile: ## Run CPU profiling
@@ -128,19 +128,22 @@ mem-profile: ## Run memory profiling
 	@echo "$(YELLOW)Memory profile saved to: mem.prof$(NC)"
 
 ## Dependency Commands
+##
+## Note that installing golangci-lint using `go install` is NOT recommended
+## per the installation instructions. Instead, prefer installing tools using
+## asdf according to the provided .tool-versions file.
+##
+## See: https://golangci-lint.run/docs/welcome/install/#install-from-sources
 dev-deps: ## Install development dependencies
 	@echo "$(GREEN)Installing development dependencies...$(NC)"
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-	go install go.uber.org/mock/mockgen@v0.5.2
 
 check-deps: ## Check if development dependencies are installed
 	@echo "$(GREEN)Checking dependencies...$(NC)"
 	@command -v golangci-lint >/dev/null || (echo "$(RED)golangci-lint not found. Run 'make dev-deps'$(NC)" && exit 1)
-	@command -v goimports >/dev/null || (echo "$(RED)goimports not found. Run 'make dev-deps'$(NC)" && exit 1)
-	@command -v xcaddy >/dev/null || (echo "$(RED)xcaddy not found. Run 'make dev-deps'$(NC)" && exit 1)
-	@command -v mockgen >/dev/null || (echo "$(RED)mockgen not found. Run 'make dev-deps'$(NC)" && exit 1)
+	@command -v go tool goimports >/dev/null || (echo "$(RED)goimports not found. Run 'make dev-deps'$(NC)" && exit 1)
+	@command -v go tool xcaddy >/dev/null || (echo "$(RED)xcaddy not found. Run 'make dev-deps'$(NC)" && exit 1)
+	@command -v go tool mockgen >/dev/null || (echo "$(RED)mockgen not found. Run 'make dev-deps'$(NC)" && exit 1)
 	@echo "$(GREEN)All dependencies are installed$(NC)"
 
 update-deps: ## Update Go dependencies
@@ -235,7 +238,7 @@ status: ## Show project status
 
 # To download mockgen, run: ``
 generate-mocks: ## Generate Mock interface
-	mockgen -source=./lib/auth/interface.go -package=auth -destination=./lib/auth/interface_mock.go
-	mockgen -source=./lib/auth/siwe/client.go -package=siwe -destination=./lib/auth/siwe/interface_mock.go
+	go tool mockgen -source=./lib/auth/interface.go -package=auth -destination=./lib/auth/interface_mock.go
+	go tool mockgen -source=./lib/auth/siwe/client.go -package=siwe -destination=./lib/auth/siwe/interface_mock.go
 
 .PHONY: tag quick-test dev ci status
