@@ -209,8 +209,13 @@ Non-retryable errors:
                             auth {
                                 type oidc
                                 url "https://login.blockstream.com/realms/blockstream-public/protocol/openid-connect/token"
+<<<<<<< HEAD
                                 client_id "***REMOVED***"
                                 client_secret "***REMOVED***"
+=======
+                                client_id "894ea193-13a7-4ec8-9588-42bedea8d952"
+                                client_secret "dgLMNJrtxe70gm2OMxOO3RWUjSrk0NCX"
+>>>>>>> 0e93e445baab539dd999c09f6677b6ef525561c9
                                 # duration_seconds 180  # Optional
                             }
                         }
