@@ -31,6 +31,8 @@ type BitcoinEsploraBlock struct {
 	Difficulty        float64 `json:"difficulty"`
 }
 
+var _ NetworkHandler = (*BitcoinEsploraHandler)(nil)
+
 // BitcoinEsploraHandler handles Bitcoin Esplora REST API requests
 type BitcoinEsploraHandler struct {
 	config              *NetworkConfig

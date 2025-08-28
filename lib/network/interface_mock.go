@@ -13,6 +13,8 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
+var _ NetworkHandler = (*MockNetworkHandler)(nil)
+
 // MockNetworkHandler is a mock of NetworkHandler interface.
 type MockNetworkHandler struct {
 	ctrl     *gomock.Controller

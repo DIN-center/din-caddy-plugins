@@ -13,6 +13,8 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
+var _ NetworkHandler = (*StarknetHandler)(nil)
+
 type StarknetHandler struct {
 	config  *NetworkConfig
 	version string

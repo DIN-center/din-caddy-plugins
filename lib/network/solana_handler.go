@@ -14,6 +14,8 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
+var _ NetworkHandler = (*SolanaHandler)(nil)
+
 type SolanaHandler struct {
 	config  *NetworkConfig
 	version string
