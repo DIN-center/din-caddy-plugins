@@ -6,7 +6,6 @@ caddy
 caddy.log
 din-plugins/
 coverage.out.DS_Store
-.tool-versions
 Caddyfile.private2
 Caddyfile_registry.private3
 bsc_loop.sh

@@ -77,7 +77,7 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		if networkName == "" {
 			return nil, fmt.Errorf("no network name found in path")
 		}
-	
+
 		// Get network configuration from global registry
 		networkConfig, exists := GetNetwork(networkName)
 		if !exists {
