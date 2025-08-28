@@ -16,6 +16,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var _ NetworkHandler = (*BeaconChainHandler)(nil)
+
 // BeaconChainHandler handles Ethereum Beacon Chain REST API requests
 type BeaconChainHandler struct {
 	config  *NetworkConfig

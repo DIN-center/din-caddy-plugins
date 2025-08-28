@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var _ NetworkHandler = (*EVMHandler)(nil)
+
 // EVMHandler handles EVM-compatible JSON-RPC networks
 type EVMHandler struct {
 	config  *NetworkConfig

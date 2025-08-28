@@ -13,6 +13,8 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
+var _ NetworkHandler = (*BitcoinHandler)(nil)
+
 type BitcoinHandler struct {
 	config  *NetworkConfig
 	version string

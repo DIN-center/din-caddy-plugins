@@ -25,6 +25,8 @@ func (m *MockProvider) GetPath() string               { return m.path }
 func (m *MockProvider) GetHost() string               { return m.host }
 func (m *MockProvider) GetPriority() int              { return m.priority }
 
+var _ NetworkHandler = (*MockHandler)(nil)
+
 // Mock handler for testing
 type MockHandler struct {
 	handlerType string
