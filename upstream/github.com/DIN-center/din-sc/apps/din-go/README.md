@@ -9,7 +9,7 @@ DIN go client to interact with DIN Smart contracts
 ### Build & Run
 
 ```console
-go build -o dingo ./cmd/dingo && ./dingo
+go build -o din-cli ./cli/main.go && ./din-cli
 
 ```
 

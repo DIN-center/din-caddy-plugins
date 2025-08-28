@@ -36,19 +36,3 @@ func mapRawLocationsCodeToName(locationsCode []uint8) ([]NetworkServiceLocation,
 	}
 	return locationsName, nil
 }
-
-func getMethodNameByBit(methodsByBit map[uint8]*Method, bit uint8) string {
-	method, ok := methodsByBit[bit]
-	if !ok {
-		return ""
-	}
-	return method.Name
-}
-
-func getMethodBitByName(methodsByName map[string]*Method, name string) (uint8, error) {
-	method, ok := methodsByName[name]
-	if !ok {
-		return 0, errors.New("method not found: " + name)
-	}
-	return method.Bit, nil
-}
