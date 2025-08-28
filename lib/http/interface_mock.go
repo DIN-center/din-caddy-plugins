@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	auth "github.com/DIN-center/din-caddy-plugins/lib/auth"
-	gomock "github.com/golang/mock/gomock"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockIHTTPClient is a mock of IHTTPClient interface.

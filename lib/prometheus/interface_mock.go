@@ -9,7 +9,7 @@ import (
 	time "time"
 
 	http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	gomock "github.com/golang/mock/gomock"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockIPrometheusClient is a mock of IPrometheusClient interface.
