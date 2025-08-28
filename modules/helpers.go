@@ -389,8 +389,8 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 			for host := range params.NetworkObj.Providers {
 				availableProviders = append(availableProviders, host)
 			}
-			params.DinMiddleware.logger.Warn("Provider from replacer not found in network's providers map for metrics.", 
-				zap.String("provider", params.Provider), 
+			params.DinMiddleware.logger.Warn("Provider from replacer not found in network's providers map for metrics.",
+				zap.String("provider", params.Provider),
 				zap.String("network", params.NetworkPath),
 				zap.Strings("availableProviders", availableProviders))
 		}
