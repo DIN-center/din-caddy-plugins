@@ -46,7 +46,10 @@ run-prod: ## Run Caddy with production config
 build: ## Build Caddy with DIN plugins
 	@echo "$(GREEN)Building Caddy with DIN plugins...$(NC)"
 	@mkdir -p $(BUILD_DIR)
-	go tool xcaddy build --output $(BUILD_DIR)/$(BINARY_NAME) --with github.com/DIN-center/din-caddy-plugins=.
+	go tool xcaddy build \
+		--output $(BUILD_DIR)/$(BINARY_NAME) \
+		--with github.com/DIN-center/din-caddy-plugins=. \
+		--replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go
 
 build-version: ## Build with version info
 	@echo "$(GREEN)Building Caddy with version info...$(NC)"

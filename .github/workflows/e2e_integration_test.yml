@@ -59,14 +59,11 @@ jobs:
         id: build
         run: |
           echo "Building Caddy with DIN plugins..."
-          # First ensure go.mod has the correct replace directive
-          echo "Ensuring replace directive for din-sc..."
-          if ! grep -q "replace github.com/DIN-center/din-sc/apps/din-go" go.mod; then
-            echo "replace github.com/DIN-center/din-sc/apps/din-go => ./upstream/github.com/DIN-center/din-sc/apps/din-go" >> go.mod
-          fi
-          
-          # Build with xcaddy
-          if xcaddy build --with github.com/DIN-center/din-caddy-plugins=. --output ./caddy-din; then
+          # Build with xcaddy using --replace flag to use local din-sc
+          if xcaddy build \
+            --with github.com/DIN-center/din-caddy-plugins=. \
+            --replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go \
+            --output ./caddy-din; then
             echo "success=true" >> $GITHUB_OUTPUT
             echo "Build successful"
             ./caddy-din version
