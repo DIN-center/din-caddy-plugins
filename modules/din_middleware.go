@@ -98,7 +98,7 @@ type DinMiddleware struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
+func (*DinMiddleware) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.din",
 		New: func() caddy.Module { return new(DinMiddleware) },

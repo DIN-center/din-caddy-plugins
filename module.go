@@ -12,7 +12,7 @@ import (
 func init() {
 	caddy.RegisterModule(mod.DinUpstreams{})
 	caddy.RegisterModule(mod.DinSelect{})
-	caddy.RegisterModule(mod.DinMiddleware{})
+	caddy.RegisterModule(&mod.DinMiddleware{})
 	caddy.RegisterModule(siwe.SIWEAuthMiddleware{})
 
 	m := new(mod.DinMiddleware)
