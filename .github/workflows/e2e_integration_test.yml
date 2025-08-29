@@ -60,10 +60,10 @@ jobs:
         run: |
           echo "Building Caddy with DIN plugins..."
           # Build with xcaddy using --replace flag to use local din-sc
-          if xcaddy build \
-            --output ./caddy-din \
+          if xcaddy build latest \
             --with github.com/DIN-center/din-caddy-plugins=. \
-            --replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go; then
+            --replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go \
+            --output ./caddy-din; then
             echo "success=true" >> $GITHUB_OUTPUT
             echo "Build successful"
             ./caddy-din version
