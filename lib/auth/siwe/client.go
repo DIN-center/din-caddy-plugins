@@ -7,18 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 type ISIWESignerClient interface {
@@ -41,9 +42,16 @@ func NewSIWESignerClient() *SIWESignerClient {
 }
 
 func (s *SIWESignerClient) Sign(msg string, sc *SigningConfig) ([]byte, error) {
+	var err error
+
 	if sc.privateKey == nil && len(sc.PrivateKey) > 0 {
-		s.GenPrivKey(sc)
+		err = s.GenPrivKey(sc)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
 	if sc.privateKey != nil {
 		// Sign Locally
 		return signMessage(msg, sc.privateKey)
@@ -244,7 +252,7 @@ func (c *SIWEClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error
 	}
 
 	var tok auth.AuthToken
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return tok, err
 	}
@@ -276,10 +284,10 @@ func (c *SIWEClientAuth) Sign(r *http.Request) error {
 }
 
 func hashStringToIndex(s string, listSize int) int {
-	hasher := fnv.New32a()        // Initialize a new 32-bit FNV-1a hash
-	hasher.Write([]byte(s))       // Hash the string
-	hash := hasher.Sum32()        // Get the hash as a 32-bit unsigned integer
-	index := int(hash) % listSize // Use modulo to ensure the index is within the bounds of the list
+	hasher := fnv.New32a()         // Initialize a new 32-bit FNV-1a hash
+	_, _ = hasher.Write([]byte(s)) // Hash the string
+	hash := hasher.Sum32()         // Get the hash as a 32-bit unsigned integer
+	index := int(hash) % listSize  // Use modulo to ensure the index is within the bounds of the list
 	return index
 }
 

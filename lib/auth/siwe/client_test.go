@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	// "github.com/DIN-center/din-caddy-plugins/auth"
 )
@@ -22,7 +23,8 @@ func TestClientBasic(t *testing.T) {
 			t.Errorf("Expected to request '/auth', got: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf(`{"headers": {"x-api-key": "%v"}}`, counter)))
+		_, err := fmt.Fprintf(w, `{"headers": {"x-api-key": "%v"}}`, counter)
+		require.NoError(t, err)
 		counter++
 	}))
 	defer server.Close()
@@ -32,11 +34,11 @@ func TestClientBasic(t *testing.T) {
 		PrivateKey: keyBytes,
 	}
 	signerClient := NewSIWESignerClient()
-	signerClient.GenPrivKey(signer)
+	require.NoError(t, signerClient.GenPrivKey(signer))
 	fmt.Printf("Key: %#x\nAddress: %v", keyBytes, signer.Address)
 	client := NewSIWEClient(server.URL+"/auth", 16, signer)
 	if err := client.Start(zap.NewNop()); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err.Error())
 	}
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Add("Din-Session-Id", "foo")

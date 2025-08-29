@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"go.uber.org/zap"
 )

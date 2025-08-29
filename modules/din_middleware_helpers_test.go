@@ -7,14 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/pkg/errors"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"go.uber.org/zap"
@@ -219,7 +221,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
+			require.NoError(t, dinMiddleware.addNetworkWithRegistryData(tt.regNetwork))
 
 			// Verify the network is added
 			network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
@@ -347,7 +349,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
+			require.NoError(t, dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork))
 
 			// Assert the number of providers after the update
 			assert.Equal(t, tt.expectedProviderCount, len(tt.newNetwork.Providers))

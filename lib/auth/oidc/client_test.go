@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 func TestOIDCClientStart(t *testing.T) {
@@ -30,10 +31,10 @@ func TestOIDCClientStart(t *testing.T) {
 		assert.Equal(t, "openid", r.Form.Get("scope"))
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": "test-token-123",
 			"expires_in":   3600,
-		})
+		}))
 	}))
 	defer server.Close()
 
@@ -163,9 +164,10 @@ func TestOIDCClientFetchToken(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.responseCode)
 				if str, ok := tt.responseBody.(string); ok {
-					w.Write([]byte(str))
+					_, err := w.Write([]byte(str))
+					require.NoError(t, err)
 				} else {
-					json.NewEncoder(w).Encode(tt.responseBody)
+					require.NoError(t, json.NewEncoder(w).Encode(tt.responseBody))
 				}
 			}))
 			defer server.Close()
@@ -287,10 +289,10 @@ func TestOIDCClientCalculateRefreshTime(t *testing.T) {
 func TestOIDCClientStop(t *testing.T) {
 	// Create a mock test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": "test-token",
 			"expires_in":   300, // Short expiry for testing
-		})
+		}))
 	}))
 	defer server.Close()
 
@@ -328,10 +330,10 @@ func TestOIDCClientRefreshLoop(t *testing.T) {
 	// Create a mock test server that returns different tokens
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCount++
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": "token-" + string(rune(tokenCount)),
 			"expires_in":   2, // Very short expiry for quick testing
-		})
+		}))
 	}))
 	defer server.Close()
 
@@ -366,16 +368,18 @@ func TestOIDCClientRefreshLoopWithError(t *testing.T) {
 		if callCount >= errorOnCall {
 			// Return error response
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal Server Error"))
+			_, err := w.Write([]byte("Internal Server Error"))
+			require.NoError(t, err)
+
 			return
 		}
 
 		// Return successful response with very short expiry
 		// Using 90 seconds so refresh happens at 30 seconds (minimum)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": fmt.Sprintf("token-%d", callCount),
 			"expires_in":   90,
-		})
+		}))
 	}))
 	defer server.Close()
 
@@ -427,10 +431,10 @@ func TestOIDCClientSimpleRefreshLoop(t *testing.T) {
 	tokenCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCount++
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": fmt.Sprintf("token-%d", tokenCount),
 			"expires_in":   3600, // 1 hour
-		})
+		}))
 	}))
 	defer server.Close()
 
@@ -590,10 +594,10 @@ func TestOIDCClientShortTokenExpiration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a test server that returns tokens with specific expiry
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 					"access_token": "test-token",
 					"expires_in":   tt.expiresIn,
-				})
+				}))
 			}))
 			defer server.Close()
 
@@ -691,10 +695,10 @@ func TestOIDCClientShortConfiguredDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 					"access_token": "test-token",
 					"expires_in":   tt.tokenExpiresIn,
-				})
+				}))
 			}))
 			defer server.Close()
 

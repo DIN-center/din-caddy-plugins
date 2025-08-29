@@ -14,21 +14,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -115,7 +117,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			hasErr: false,
 		},
 		{
-			name: "unsuccesful request, payload too large",
+			name: "unsuccessful request, payload too large",
 			request: func() *http.Request {
 				req := httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(largePayload))
 				req.Header.Set("Content-Type", "application/json")
@@ -498,10 +500,12 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 
 		f()
 
-		w.Close()
+		require.NoError(t, w.Close())
 		os.Stdout = oldStdout
 		var buf bytes.Buffer
-		io.Copy(&buf, r)
+		_, err := io.Copy(&buf, r)
+		require.NoError(t, err)
+
 		return buf.String()
 	}
 
@@ -692,9 +696,10 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			} else {
 				assert.Contains(t, actualLogOutput, "Goroutine: Processing response for HCMethod", "Expected 'Processing response for HCMethod' log for case: "+tt.name+"; Log: "+actualLogOutput)
 
-				if tt.name == "Successful processing" {
+				switch tt.name {
+				case "Successful processing":
 					assert.Contains(t, actualLogOutput, "successfully processed block number and added to network history", "Expected 'successfully processed block number' log for successful case; Log: "+actualLogOutput)
-				} else if tt.name == "Error from processBlockNumberResponse - malformed respBody" || tt.name == "Error from processBlockNumberResponse - http error status" {
+				case "Error from processBlockNumberResponse - malformed respBody", "Error from processBlockNumberResponse - http error status":
 					assert.Contains(t, actualLogOutput, "error processing block number from response using processBlockNumberResponse", "Expected 'error processing block number' log for error cases; Log: "+actualLogOutput)
 				}
 			}

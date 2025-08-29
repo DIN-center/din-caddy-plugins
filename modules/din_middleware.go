@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/list"
 	"encoding/json"
+	stdliberrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -413,8 +414,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
-func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-
+func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error { //nolint:gocyclo
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -426,26 +426,30 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	pathSegments := strings.Split(fullPath, "/")
 	networkPath := pathSegments[0] // Get the first segment as network name
 
+	// If the network path is empty, return an empty JSON object with a 200.
+	if networkPath == "" {
+		rw.WriteHeader(http.StatusOK)
+		_, err := rw.Write([]byte("{}"))
+
+		return err
+	}
+
 	networkObj, ok := d.Networks[networkPath]
 	if !ok {
-		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
-		if networkPath == "" {
-			rw.WriteHeader(200)
-			rw.Write([]byte("{}"))
-			return nil
-		}
+		// If the network is not defined, return a 404.
+		rw.WriteHeader(http.StatusNotFound)
+		_, err := rw.Write([]byte("Not Found\n"))
 
-		rw.WriteHeader(404)
-		rw.Write([]byte("Not Found\n"))
-		return fmt.Errorf("network undefined")
+		return fmt.Errorf("network undefined: %w", err)
 	}
 
 	// Ensure handler is available
 	if networkObj.handler == nil {
 		d.logger.Error("No handler available for network", zap.String("network", networkPath))
 		rw.WriteHeader(http.StatusInternalServerError)
-		rw.Write([]byte("Internal Server Error\n"))
-		return fmt.Errorf("no handler available for network %s", networkPath)
+		_, err := rw.Write([]byte("Internal Server Error\n"))
+
+		return fmt.Errorf("no handler available for network %s: %w", networkPath, err)
 	}
 
 	// Store network object in replacer for later use
@@ -458,16 +462,25 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if err := networkObj.handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 
+		var (
+			statusCode int
+			body       string
+		)
+
 		// Check if it's an HTTPError with specific status code
 		httpErr := &networklib.HTTPError{}
 		if errors.As(err, &httpErr) {
-			rw.WriteHeader(httpErr.StatusCode)
-			rw.Write([]byte(httpErr.Message + "\n"))
+			statusCode = httpErr.StatusCode
+			body = httpErr.Message + "\n"
 		} else {
-			rw.WriteHeader(http.StatusBadRequest)
-			rw.Write([]byte("Bad Request\n"))
+			statusCode = http.StatusBadRequest
+			body = "Bad Request\n"
 		}
-		return fmt.Errorf("handler failed to process request: %w", err)
+
+		rw.WriteHeader(statusCode)
+		_, writeErr := rw.Write([]byte(body))
+
+		return stdliberrors.Join(fmt.Errorf("handler failed to process request: %w", err), writeErr)
 	}
 
 	// Read request body and save in context
@@ -483,7 +496,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if (len(bodyBytes) / 1024) > int(networkObj.MaxRequestPayloadSizeKB) {
 		// If the request payload is too large, return an error
 		rw.WriteHeader(http.StatusRequestEntityTooLarge)
-		rw.Write([]byte("Request payload too large\n"))
+		_, err := rw.Write([]byte("Request payload too large\n"))
+		if err != nil {
+			return errors.Wrap(err, "request payload too large")
+		}
+
 		return fmt.Errorf("request payload too large")
 	}
 
@@ -493,7 +510,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// if the request body is empty for JSON-RPC, do not increment the prometheus metric, return an error
 		// this is specifically for OPTIONS requests and invalid JSON-RPC payload bodies
 		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte("Request body is empty\n"))
+		_, err := rw.Write([]byte("Request body is empty\n"))
+		if err != nil {
+			return fmt.Errorf("error writing response: %w", err)
+		}
 		return fmt.Errorf("request body is empty")
 	}
 
@@ -742,15 +762,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	return nil
 }
 
-// getNetworkNames returns a slice of available network names for debugging
-func (d *DinMiddleware) getNetworkNames() []string {
-	names := make([]string, 0, len(d.Networks))
-	for name := range d.Networks {
-		names = append(names, name)
-	}
-	return names
-}
-
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks")
@@ -804,11 +815,4 @@ func (d *DinMiddleware) Cleanup() error {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

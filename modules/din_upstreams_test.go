@@ -314,7 +314,7 @@ func TestGetDinUpstreams(t *testing.T) {
 			output: []*reverseproxy.Upstream{},
 		},
 		{
-			name: "TestGetDinUpstreams succesful, no priorities",
+			name: "TestGetDinUpstreams successful, no priorities",
 			request: &http.Request{
 				URL: &url.URL{Path: "/ethereum/eth_blockNumber"},
 			},

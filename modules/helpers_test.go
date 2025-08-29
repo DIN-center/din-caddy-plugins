@@ -444,7 +444,7 @@ func TestCheckRequestContext(t *testing.T) {
 			expectMsg:   "",
 		},
 		{
-			name: "Cancelled context should return client cancellation error",
+			name: "Canceled context should return client cancellation error",
 			setupCtx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel() // Cancel immediately
@@ -453,7 +453,7 @@ func TestCheckRequestContext(t *testing.T) {
 			networkPath: "ethereum-mainnet",
 			attempt:     1,
 			expectError: true,
-			expectMsg:   "request cancelled by client",
+			expectMsg:   "request canceled by client",
 		},
 		{
 			name: "Deadline exceeded context should return timeout error",
@@ -527,7 +527,7 @@ func TestHandleContextCancellation(t *testing.T) {
 	}{
 		{
 			name:        "Client cancellation should return 408",
-			errorMsg:    "request cancelled by client",
+			errorMsg:    "request canceled by client",
 			networkPath: "ethereum-mainnet",
 			attempt:     1,
 			setupReplacer: func(repl *caddy.Replacer) {
@@ -537,7 +537,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.ErrorLevel,
 			expectedLogMsg:     "Request attempt failed",
-			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+			expectedResponse:   `{"error": "Request canceled by client", "code": 408}`,
 		},
 		{
 			name:        "Deadline exceeded should return 504",
@@ -569,7 +569,7 @@ func TestHandleContextCancellation(t *testing.T) {
 		},
 		{
 			name:        "Long request body should be truncated in logs",
-			errorMsg:    "request cancelled by client",
+			errorMsg:    "request canceled by client",
 			networkPath: "ethereum-mainnet",
 			attempt:     0,
 			setupReplacer: func(repl *caddy.Replacer) {
@@ -582,7 +582,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.ErrorLevel,
 			expectedLogMsg:     "Request attempt failed",
-			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+			expectedResponse:   `{"error": "Request canceled by client", "code": 408}`,
 		},
 		{
 			name:        "Missing request body and provider should handle gracefully",
@@ -865,7 +865,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			}
 
 			// Extract method and params directly from JSONRPCRequest for the new logging structure
-			var method string = "unknown"
+			var method = "unknown"
 			var params json.RawMessage
 			if tt.parsedReqBody != nil {
 				method = tt.parsedReqBody.Method

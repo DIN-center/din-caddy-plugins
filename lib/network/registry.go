@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
 
 // HandlerConstructor is a function that creates a new handler instance

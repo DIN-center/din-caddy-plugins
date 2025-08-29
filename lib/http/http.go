@@ -11,8 +11,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/pkg/errors"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 type HTTPClient struct {
@@ -21,12 +22,17 @@ type HTTPClient struct {
 
 // decompressGzipIfNecessary decompresses gzip content if the Content-Encoding header indicates gzip
 func decompressGzipIfNecessary(resp *http.Response, body []byte) ([]byte, error) {
+	var err error
+
 	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		gzipReader, err := gzip.NewReader(bytes.NewReader(body))
 		if err != nil {
 			return body, err // Return original body if decompression fails
 		}
-		defer gzipReader.Close()
+
+		defer func() {
+			err = gzipReader.Close()
+		}()
 
 		decompressed, err := io.ReadAll(gzipReader)
 		if err != nil {
@@ -34,7 +40,8 @@ func decompressGzipIfNecessary(resp *http.Response, body []byte) ([]byte, error)
 		}
 		return decompressed, nil
 	}
-	return body, nil
+
+	return body, err
 }
 
 func NewHTTPClient(timeout time.Duration) *HTTPClient {
@@ -58,6 +65,8 @@ func NewHTTPClient(timeout time.Duration) *HTTPClient {
 }
 
 func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte, auth auth.IAuthClient) ([]byte, *int, error) {
+	var err error
+
 	// Send the POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
@@ -77,7 +86,10 @@ func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte,
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "Error sending POST request")
 	}
-	defer res.Body.Close()
+
+	defer func() {
+		err = res.Body.Close()
+	}()
 
 	// Read the response body
 	body, err := io.ReadAll(res.Body)
@@ -91,10 +103,12 @@ func (h *HTTPClient) Post(url string, headers map[string]string, payload []byte,
 		return nil, nil, errors.Wrap(err, "Error decompressing gzip response")
 	}
 
-	return body, aws.Int(res.StatusCode), nil
+	return body, aws.Int(res.StatusCode), err
 }
 
 func (h *HTTPClient) Get(url string, headers map[string]string, auth auth.IAuthClient) ([]byte, *int, error) {
+	var err error
+
 	// Send the GET request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -114,7 +128,10 @@ func (h *HTTPClient) Get(url string, headers map[string]string, auth auth.IAuthC
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "Error sending GET request")
 	}
-	defer res.Body.Close()
+
+	defer func() {
+		err = res.Body.Close()
+	}()
 
 	// Read the response body
 	body, err := io.ReadAll(res.Body)
@@ -128,5 +145,5 @@ func (h *HTTPClient) Get(url string, headers map[string]string, auth auth.IAuthC
 		return nil, nil, errors.Wrap(err, "Error decompressing gzip response")
 	}
 
-	return body, aws.Int(res.StatusCode), nil
+	return body, aws.Int(res.StatusCode), err
 }
