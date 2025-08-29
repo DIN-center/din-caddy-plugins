@@ -15,34 +15,78 @@ import (
 	"go.uber.org/zap"
 )
 
+// getRegistryData retrieves registry data with retry logic
+func (d *DinMiddleware) getRegistryData() (*din.DinRegistryData, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= d.Registry.RetryMaxAttempts; attempt++ {
+		data, err := d.DingoClient.GetRegistryData()
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+
+		if attempt < d.Registry.RetryMaxAttempts {
+			d.logger.Warn("Registry call failed, retrying",
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", d.Registry.RetryMaxAttempts),
+				zap.Error(err))
+			time.Sleep(d.Registry.RetryDelay) // Fixed delay, no backoff
+		}
+	}
+
+	return nil, fmt.Errorf("registry call failed after %d attempts: %w",
+		d.Registry.RetryMaxAttempts, lastErr)
+}
+
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) {
-	// Get the latest block number from the linea network
-	latestBlockNumber, err := web3Client.LatestBlockNumber()
+	// Get latest block number with retry
+	var latestBlockNumber uint64
+	var err error
+
+	for attempt := 0; attempt <= d.Registry.RetryMaxAttempts; attempt++ {
+		latestBlockNumber, err = web3Client.LatestBlockNumber()
+		if err == nil {
+			break
+		}
+		if attempt < d.Registry.RetryMaxAttempts {
+			d.logger.Warn("Failed to get latest block number, retrying",
+				zap.Int("attempt", attempt+1),
+				zap.Error(err))
+			time.Sleep(d.Registry.RetryDelay)
+		}
+	}
+
 	if err != nil {
-		d.logger.Error("Failed to get latest block number", zap.Error(err))
+		d.logger.Error("Failed to get latest block number after retries",
+			zap.Error(err),
+			zap.Int("max_retries", d.Registry.RetryMaxAttempts))
 		return
 	}
 
 	// Calculate the latest block floor by epoch. for example if the current block number is 55 and the epoch is 10, then the latest block floor by epoch is 50.
-	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.RegistryBlockEpoch)
+	latestBlockFloorByEpoch := latestBlockNumber - (latestBlockNumber % d.Registry.BlockEpoch)
 
-	d.logger.Debug("Checking block number for registry sync", zap.Uint64("block_epoch", d.RegistryBlockEpoch),
+	d.logger.Debug("Checking block number for registry sync", zap.Uint64("block_epoch", d.Registry.BlockEpoch),
 		zap.Uint64("latest_linea_block_number", latestBlockNumber), zap.Uint64("latest_block_floor_by_epoch", latestBlockFloorByEpoch),
-		zap.Uint64("last_updated_block_number", d.registryLastUpdatedEpochBlockNumber), zap.Uint64("difference", latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber),
+		zap.Uint64("last_updated_block_number", d.Registry.lastUpdatedEpochBlockNumber), zap.Uint64("difference", latestBlockFloorByEpoch-d.Registry.lastUpdatedEpochBlockNumber),
 	)
 
 	// If the difference between the latest block floor by epoch and the last updated block number is greater than or equal to the epoch, then update the networks and providers.
-	if latestBlockFloorByEpoch-d.registryLastUpdatedEpochBlockNumber >= d.RegistryBlockEpoch {
-		registryData, err := d.DingoClient.GetRegistryData()
+	if latestBlockFloorByEpoch-d.Registry.lastUpdatedEpochBlockNumber >= d.Registry.BlockEpoch {
+		// Get registry data with retry
+		registryData, err := d.getRegistryData()
 		if err != nil {
-			d.logger.Error("Failed to get data from registry", zap.Error(err))
+			d.logger.Error("Failed to get data from registry after retries",
+				zap.Error(err),
+				zap.Int("max_retries", d.Registry.RetryMaxAttempts))
 			return
 		}
 		d.processRegistryData(registryData)
 
 		// Update the last updated block number
-		d.registryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
+		d.Registry.lastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
 	}
 }
 
@@ -235,56 +279,124 @@ type NetworkConfigFields struct {
 }
 
 // updateNetworkFields applies configuration updates using a streamlined approach
+// Respects Caddyfile configuration priority - only updates fields not explicitly set via Caddyfile
 func (d *DinMiddleware) updateNetworkFields(network *network, regNetworkConfig *din.NetworkOperationsConfig) {
-	// Log available registry methods (handlers provide the actual implementations)
-	d.logRegistryMethods(network.Name, regNetworkConfig)
+	// Ensure CaddyfileFlags exists
+	if network.CaddyfileFlags == nil {
+		network.CaddyfileFlags = &caddyfileConfigFlags{}
+	}
 
-	if regNetworkConfig.ChainId != "" && regNetworkConfig.ChainId != network.ChainId {
-		network.ChainId = regNetworkConfig.ChainId
-		d.logger.Debug("Setting network chain ID", zap.String("network", network.Name), zap.String("chain_id", network.ChainId))
+	// Handler type from registry - only if not set via Caddyfile
+	if regNetworkConfig.Handler != "" && !network.CaddyfileFlags.HandlerTypeSetInCaddyfile {
+		// Only set handler type if network doesn't have one
+		if network.HandlerType == "" {
+			network.HandlerType = HandlerType(regNetworkConfig.Handler)
+			d.logger.Debug("Setting network handler from registry",
+				zap.String("network", network.Name),
+				zap.String("handler", regNetworkConfig.Handler))
+		}
 	}
-	if regNetworkConfig.HealthcheckIntervalSec != 0 && int(regNetworkConfig.HealthcheckIntervalSec) != network.HCInterval {
-		network.HCInterval = int(regNetworkConfig.HealthcheckIntervalSec)
-		d.logger.Debug("Setting network healthcheck interval", zap.String("network", network.Name), zap.Int("healthcheck_interval", network.HCInterval))
-	}
-	if regNetworkConfig.BlockLagLimit != 0 && int64(regNetworkConfig.BlockLagLimit) != network.BlockLagLimit {
-		network.BlockLagLimit = int64(regNetworkConfig.BlockLagLimit)
-		d.logger.Debug("Setting network block lag limit", zap.String("network", network.Name), zap.Int64("block_lag_limit", network.BlockLagLimit))
-	}
-	if regNetworkConfig.BlockJumpLimit != 0 && int64(regNetworkConfig.BlockJumpLimit) != network.BlockJumpLimit {
-		network.BlockJumpLimit = int64(regNetworkConfig.BlockJumpLimit)
-		d.logger.Debug("Setting network block jump limit", zap.String("network", network.Name), zap.Int64("block_jump_limit", network.BlockJumpLimit))
-	}
-	if regNetworkConfig.MaxRequestPayloadSizeKb != 0 && int64(regNetworkConfig.MaxRequestPayloadSizeKb) != network.MaxRequestPayloadSizeKB {
-		network.MaxRequestPayloadSizeKB = int64(regNetworkConfig.MaxRequestPayloadSizeKb)
-		d.logger.Debug("Setting network max request payload size", zap.String("network", network.Name), zap.Int64("max_request_payload_size_kb", network.MaxRequestPayloadSizeKB))
-	}
-	if regNetworkConfig.RequestAttemptCount != 0 && int(regNetworkConfig.RequestAttemptCount) != network.RequestAttemptCount {
-		network.RequestAttemptCount = int(regNetworkConfig.RequestAttemptCount)
-		d.logger.Debug("Setting network request attempt count", zap.String("network", network.Name), zap.Int("request_attempt_count", network.RequestAttemptCount))
-	}
-	if regNetworkConfig.ArchiveEnabled != network.ArchiveEnabled {
-		network.ArchiveEnabled = regNetworkConfig.ArchiveEnabled
-		d.logger.Debug("Setting network archive enabled", zap.String("network", network.Name), zap.Bool("archive_enabled", network.ArchiveEnabled))
-	}
-}
 
-// logRegistryMethods logs available registry methods in a batch
-func (d *DinMiddleware) logRegistryMethods(networkName string, regNetworkConfig *din.NetworkOperationsConfig) {
-	if regNetworkConfig.HealthcheckMethod != "" {
-		d.logger.Debug("Registry healthcheck method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("healthcheck_method", regNetworkConfig.HealthcheckMethod))
+	// Chain ID - respect Caddyfile priority
+	if regNetworkConfig.ChainId != "" && !network.CaddyfileFlags.ChainIdSetInCaddyfile {
+		if regNetworkConfig.ChainId != network.ChainId {
+			network.ChainId = regNetworkConfig.ChainId
+			d.logger.Debug("Setting network chain ID from registry",
+				zap.String("network", network.Name),
+				zap.String("chain_id", network.ChainId))
+		}
 	}
-	if regNetworkConfig.ChainIdMethod != "" {
-		d.logger.Debug("Registry chain ID method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("chain_id_method", regNetworkConfig.ChainIdMethod))
+
+	// Health check threshold
+	if regNetworkConfig.HealthcheckThreshold != 0 && !network.CaddyfileFlags.HCThresholdSetInCaddyfile {
+		network.HCThreshold = int(regNetworkConfig.HealthcheckThreshold)
+		d.logger.Debug("Setting network healthcheck threshold from registry",
+			zap.String("network", network.Name),
+			zap.Int("threshold", network.HCThreshold))
 	}
-	if regNetworkConfig.CallContractMethod != "" {
-		d.logger.Debug("Registry call contract method available (provided by handler)",
-			zap.String("network", networkName),
-			zap.String("call_contract_method", regNetworkConfig.CallContractMethod))
+
+	// Health check timeout
+	if regNetworkConfig.HealthcheckTimeout != 0 && !network.CaddyfileFlags.HCTimeoutSetInCaddyfile {
+		network.HCTimeout = int(regNetworkConfig.HealthcheckTimeout)
+		d.logger.Debug("Setting network healthcheck timeout from registry",
+			zap.String("network", network.Name),
+			zap.Int("timeout", network.HCTimeout))
+	}
+
+	// Health check interval
+	if regNetworkConfig.HealthcheckIntervalSec != 0 && !network.CaddyfileFlags.HCIntervalSetInCaddyfile {
+		if int(regNetworkConfig.HealthcheckIntervalSec) != network.HCInterval {
+			network.HCInterval = int(regNetworkConfig.HealthcheckIntervalSec)
+			d.logger.Debug("Setting network healthcheck interval from registry",
+				zap.String("network", network.Name),
+				zap.Int("interval", network.HCInterval))
+		}
+	}
+
+	// Block lag limit
+	if regNetworkConfig.BlockLagLimit != 0 && !network.CaddyfileFlags.BlockLagLimitSetInCaddyfile {
+		if int64(regNetworkConfig.BlockLagLimit) != network.BlockLagLimit {
+			network.BlockLagLimit = int64(regNetworkConfig.BlockLagLimit)
+			d.logger.Debug("Setting network block lag limit from registry",
+				zap.String("network", network.Name),
+				zap.Int64("block_lag_limit", network.BlockLagLimit))
+		}
+	}
+
+	// Block jump limit
+	if regNetworkConfig.BlockJumpLimit != 0 && !network.CaddyfileFlags.BlockJumpLimitSetInCaddyfile {
+		if int64(regNetworkConfig.BlockJumpLimit) != network.BlockJumpLimit {
+			network.BlockJumpLimit = int64(regNetworkConfig.BlockJumpLimit)
+			d.logger.Debug("Setting network block jump limit from registry",
+				zap.String("network", network.Name),
+				zap.Int64("block_jump_limit", network.BlockJumpLimit))
+		}
+	}
+
+	// Max request payload size
+	if regNetworkConfig.MaxRequestPayloadSizeKb != 0 && !network.CaddyfileFlags.MaxRequestPayloadSizeKBSetInCaddyfile {
+		if int64(regNetworkConfig.MaxRequestPayloadSizeKb) != network.MaxRequestPayloadSizeKB {
+			network.MaxRequestPayloadSizeKB = int64(regNetworkConfig.MaxRequestPayloadSizeKb)
+			d.logger.Debug("Setting network max request payload size from registry",
+				zap.String("network", network.Name),
+				zap.Int64("max_request_payload_size_kb", network.MaxRequestPayloadSizeKB))
+		}
+	}
+
+	// Request attempt count
+	if regNetworkConfig.RequestAttemptCount != 0 && !network.CaddyfileFlags.RequestAttemptCountSetInCaddyfile {
+		if int(regNetworkConfig.RequestAttemptCount) != network.RequestAttemptCount {
+			network.RequestAttemptCount = int(regNetworkConfig.RequestAttemptCount)
+			d.logger.Debug("Setting network request attempt count from registry",
+				zap.String("network", network.Name),
+				zap.Int("request_attempt_count", network.RequestAttemptCount))
+		}
+	}
+
+	// Provider block history size
+	if regNetworkConfig.ProviderBlockHistorySize != 0 && !network.CaddyfileFlags.ProviderBlockHistorySizeSetInCaddyfile {
+		network.ProviderBlockHistorySize = int(regNetworkConfig.ProviderBlockHistorySize)
+		d.logger.Debug("Setting provider block history size from registry",
+			zap.String("network", network.Name),
+			zap.Int("size", network.ProviderBlockHistorySize))
+	}
+
+	// Network block history size
+	if regNetworkConfig.NetworkBlockHistorySize != 0 && !network.CaddyfileFlags.NetworkBlockHistorySizeSetInCaddyfile {
+		network.NetworkBlockHistorySize = int(regNetworkConfig.NetworkBlockHistorySize)
+		d.logger.Debug("Setting network block history size from registry",
+			zap.String("network", network.Name),
+			zap.Int("size", network.NetworkBlockHistorySize))
+	}
+
+	// Archive enabled - special case as it's a boolean
+	if !network.CaddyfileFlags.ArchiveEnabledSetInCaddyfile {
+		if regNetworkConfig.ArchiveEnabled != network.ArchiveEnabled {
+			network.ArchiveEnabled = regNetworkConfig.ArchiveEnabled
+			d.logger.Debug("Setting network archive enabled from registry",
+				zap.String("network", network.Name),
+				zap.Bool("archive_enabled", network.ArchiveEnabled))
+		}
 	}
 }
 
@@ -305,7 +417,7 @@ func (d *DinMiddleware) createNewProvider(networkName string, provider *provider
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize provider: %w", err)
 	}
-	provider.Priority = d.RegistryPriority
+	provider.Priority = d.Registry.Priority
 
 	// Get the network service methods from the din registry
 	provider.Methods = make(map[string]struct{})

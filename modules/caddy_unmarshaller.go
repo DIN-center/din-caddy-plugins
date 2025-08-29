@@ -214,25 +214,85 @@ func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) err
 	case "chain_id":
 		return p.parseChainId(network, networkName)
 	case "healthcheck_threshold":
-		return p.parseIntField(&network.HCThreshold, "healthcheck threshold")
+		if err := p.parseIntField(&network.HCThreshold, "healthcheck threshold"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.HCThresholdSetInCaddyfile = true
+		}
+		return nil
 	case "healthcheck_timeout":
-		return p.parseIntField(&network.HCTimeout, "healthcheck timeout")
+		if err := p.parseIntField(&network.HCTimeout, "healthcheck timeout"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.HCTimeoutSetInCaddyfile = true
+		}
+		return nil
 	case "healthcheck_interval":
-		return p.parseIntField(&network.HCInterval, "healthcheck interval")
+		if err := p.parseIntField(&network.HCInterval, "healthcheck interval"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.HCIntervalSetInCaddyfile = true
+		}
+		return nil
 	case "healthcheck_blocklag_limit":
-		return p.parseInt64Field(&network.BlockLagLimit, "healthcheck blocklag limit")
+		if err := p.parseInt64Field(&network.BlockLagLimit, "healthcheck blocklag limit"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.BlockLagLimitSetInCaddyfile = true
+		}
+		return nil
 	case "healthcheck_blockjump_limit":
-		return p.parseInt64Field(&network.BlockJumpLimit, "healthcheck blockjump limit")
+		if err := p.parseInt64Field(&network.BlockJumpLimit, "healthcheck blockjump limit"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.BlockJumpLimitSetInCaddyfile = true
+		}
+		return nil
 	case "healthcheck_provider_block_history_size":
-		return p.parseIntFieldToInt(&network.ProviderBlockHistorySize, "healthcheck provider block history size")
+		if err := p.parseIntFieldToInt(&network.ProviderBlockHistorySize, "healthcheck provider block history size"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.ProviderBlockHistorySizeSetInCaddyfile = true
+		}
+		return nil
 	case "network_block_history_size":
-		return p.parseIntFieldToInt(&network.NetworkBlockHistorySize, "network block history size")
+		if err := p.parseIntFieldToInt(&network.NetworkBlockHistorySize, "network block history size"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.NetworkBlockHistorySizeSetInCaddyfile = true
+		}
+		return nil
 	case "max_request_payload_size_kb":
-		return p.parseInt64Field(&network.MaxRequestPayloadSizeKB, "max request payload size")
+		if err := p.parseInt64Field(&network.MaxRequestPayloadSizeKB, "max request payload size"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.MaxRequestPayloadSizeKBSetInCaddyfile = true
+		}
+		return nil
 	case "request_attempt_count":
-		return p.parseIntField(&network.RequestAttemptCount, "request attempt count")
+		if err := p.parseIntField(&network.RequestAttemptCount, "request attempt count"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.RequestAttemptCountSetInCaddyfile = true
+		}
+		return nil
 	case "archive_enabled":
-		return p.parseBoolField(&network.ArchiveEnabled, "archive enabled")
+		if err := p.parseBoolField(&network.ArchiveEnabled, "archive enabled"); err != nil {
+			return err
+		}
+		if network.CaddyfileFlags != nil {
+			network.CaddyfileFlags.ArchiveEnabledSetInCaddyfile = true
+		}
+		return nil
 	case "custom_config":
 		return p.parseCustomConfig(network, nesting)
 	default:
@@ -257,6 +317,9 @@ func (p *caddyfileParser) parseNetworkHandler(network *network) error {
 	p.dispenser.Next()
 	explicitType := p.dispenser.Val()
 	network.HandlerType = HandlerType(explicitType)
+	if network.CaddyfileFlags != nil {
+		network.CaddyfileFlags.HandlerTypeSetInCaddyfile = true
+	}
 	// Handler creation is deferred to Provision phase for proper logger initialization
 	return nil
 }
@@ -533,6 +596,9 @@ func (p *caddyfileParser) parseChainId(network *network, networkName string) err
 		return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
 	}
 	network.ChainId = chainId
+	if network.CaddyfileFlags != nil {
+		network.CaddyfileFlags.ChainIdSetInCaddyfile = true
+	}
 	return nil
 }
 
@@ -567,27 +633,27 @@ func (p *caddyfileParser) parseDinRegistry() error {
 	for n1 := p.dispenser.Nesting(); p.dispenser.NextBlock(n1); {
 		switch p.dispenser.Val() {
 		case "registry_enabled":
-			if err := p.parseBoolField(&p.middleware.RegistryEnabled, "registry enabled"); err != nil {
+			if err := p.parseBoolField(&p.middleware.Registry.Enabled, "registry enabled"); err != nil {
 				return err
 			}
 		case "registry_block_epoch":
-			if err := p.parseUint64Field(&p.middleware.RegistryBlockEpoch, "registry block epoch"); err != nil {
+			if err := p.parseUint64Field(&p.middleware.Registry.BlockEpoch, "registry block epoch"); err != nil {
 				return err
 			}
 		case "registry_block_check_interval_sec":
-			if err := p.parseUint64Field(&p.middleware.RegistryBlockCheckIntervalSec, "registry block check interval"); err != nil {
+			if err := p.parseUint64Field(&p.middleware.Registry.BlockCheckIntervalSec, "registry block check interval"); err != nil {
 				return err
 			}
 		case "registry_endpoint_url":
-			if err := p.parseStringField(&p.middleware.RegistryEndpointUrl); err != nil {
+			if err := p.parseStringField(&p.middleware.Registry.EndpointUrl); err != nil {
 				return err
 			}
 		case "registry_contract_address":
-			if err := p.parseStringField(&p.middleware.RegistryContractAddress); err != nil {
+			if err := p.parseStringField(&p.middleware.Registry.ContractAddress); err != nil {
 				return err
 			}
 		case "registry_priority":
-			if err := p.parseIntField(&p.middleware.RegistryPriority, "registry priority"); err != nil {
+			if err := p.parseIntField(&p.middleware.Registry.Priority, "registry priority"); err != nil {
 				return err
 			}
 		default:

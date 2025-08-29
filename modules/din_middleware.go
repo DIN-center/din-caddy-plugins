@@ -40,8 +40,30 @@ var (
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
-	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
+	_ caddy.CleanerUpper          = (*DinMiddleware)(nil)
+	// _ caddy.Validator            = (*mod.DinMiddleware)(nil)
 )
+
+// RegistryConfig contains all DIN Registry configuration settings
+type RegistryConfig struct {
+	// Core configuration
+	Enabled         bool   `json:"enabled"`
+	EndpointUrl     string `json:"endpoint_url"`
+	ContractAddress string `json:"contract_address"`
+
+	// Sync configuration
+	BlockCheckIntervalSec uint64 `json:"block_check_interval_sec"`
+	BlockEpoch            uint64 `json:"block_epoch"`
+	Priority              int    `json:"priority"`
+
+	// Retry and recovery configuration
+	RetryMaxAttempts   int           `json:"retry_max_attempts"`
+	RetryDelay         time.Duration `json:"retry_delay"`
+	PanicRecoveryDelay time.Duration `json:"panic_recovery_delay"`
+
+	// Internal state (not exposed in JSON)
+	lastUpdatedEpochBlockNumber uint64
+}
 
 type DinMiddleware struct {
 	// A map of network paths to network objects
@@ -49,6 +71,9 @@ type DinMiddleware struct {
 	mu       sync.RWMutex
 	// The current environment (prod, beta, dev)
 	Env utils.Environment
+
+	// cleanupOnce ensures Cleanup is only executed once
+	cleanupOnce sync.Once
 
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
@@ -77,21 +102,7 @@ type DinMiddleware struct {
 	handlerRegistry *networklib.HandlerRegistry
 
 	// DIN Registry configuration
-	// The flag to enable or disable the din registry
-	RegistryEnabled bool
-	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckIntervalSec uint64
-	// The epoch in blocks to check the latest block number from the registry.
-	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
-	RegistryBlockEpoch uint64
-	// The block number in which the registry was updated last
-	registryLastUpdatedEpochBlockNumber uint64
-	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
-	RegistryEndpointUrl string
-	// The contract address of the registry contract
-	RegistryContractAddress string
-	// The priority of the registry providers
-	RegistryPriority int
+	Registry RegistryConfig `json:"registry"`
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -108,7 +119,7 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
 func (d *DinMiddleware) Provision(context caddy.Context) error {
-	if len(d.Networks) == 0 && !d.RegistryEnabled {
+	if len(d.Networks) == 0 && !d.Registry.Enabled {
 		return fmt.Errorf("expected at least 1 network or registry to be defined")
 	}
 
@@ -180,29 +191,39 @@ func (d *DinMiddleware) initializeCoreServices(context caddy.Context) error {
 
 // initializeDefaults sets default values for configuration
 func (d *DinMiddleware) initializeDefaults() {
-	if d.RegistryBlockCheckIntervalSec == 0 {
-		d.RegistryBlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
+	if d.Registry.BlockCheckIntervalSec == 0 {
+		d.Registry.BlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
 	}
-	if d.RegistryBlockEpoch == 0 {
-		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
+	if d.Registry.BlockEpoch == 0 {
+		d.Registry.BlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.RegistryPriority == 0 {
-		d.RegistryPriority = DefaultRegistryPriority
+	if d.Registry.Priority == 0 {
+		d.Registry.Priority = DefaultRegistryPriority
 	}
 	if d.CaddyPort == "" {
 		d.CaddyPort = DefaultPort
+	}
+	// Set retry defaults
+	if d.Registry.RetryMaxAttempts == 0 {
+		d.Registry.RetryMaxAttempts = DefaultRegistryRetryMaxAttempts
+	}
+	if d.Registry.RetryDelay == 0 {
+		d.Registry.RetryDelay = DefaultRegistryRetryDelay
+	}
+	if d.Registry.PanicRecoveryDelay == 0 {
+		d.Registry.PanicRecoveryDelay = DefaultRegistryPanicRecoveryDelay
 	}
 }
 
 // initializeDinRegistryClient initializes the DIN registry client
 func (d *DinMiddleware) initializeDinRegistryClient() error {
-	if d.RegistryEnabled {
+	if d.Registry.Enabled {
 		// DinClient is only initialized if the registry is enabled
 		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry",
-			zap.String("registry_endpoint_url", d.RegistryEndpointUrl),
-			zap.String("registry_contract_address", d.RegistryContractAddress))
+			zap.String("registry_endpoint_url", d.Registry.EndpointUrl),
+			zap.String("registry_contract_address", d.Registry.ContractAddress))
 
-		client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+		client, err := din.NewDinClient(d.logger.Logger, d.Registry.EndpointUrl, d.Registry.ContractAddress)
 		if err != nil {
 			return fmt.Errorf("error initializing DIN client: %v", err)
 		}
@@ -344,7 +365,7 @@ func (d *DinMiddleware) startBackgroundServices() error {
 	}
 
 	// Start registry sync if enabled
-	if d.RegistryEnabled {
+	if d.Registry.Enabled {
 		d.logger.Info("Din registry is enabled, pulling data from the registry")
 		d.startRegistrySync()
 	}
@@ -767,37 +788,85 @@ func (d *DinMiddleware) startHealthChecks() error {
 // the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
-	// Get the initial registry data
-	registryData, err := d.DingoClient.GetRegistryData()
+	// Get the initial registry data with retry
+	registryData, err := d.getRegistryData()
 	if err != nil {
-		d.logger.Error("Failed to initialize registry sync", zap.Error(err))
+		d.logger.Error("Failed to initialize registry sync after retries",
+			zap.Error(err),
+			zap.Int("max_retries", d.Registry.RetryMaxAttempts))
 	}
 	d.processRegistryData(registryData)
+
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
+	ticker := time.NewTicker(time.Second * time.Duration(d.Registry.BlockCheckIntervalSec))
 	go func() {
-		// Keep an index for RPC request IDs
-		for i := 0; ; i++ {
+		// CRITICAL: Panic recovery to prevent application crash
+		// If registry sync panics, log the error and continue running
+		defer func() {
+			if r := recover(); r != nil {
+				d.logger.Error("CRITICAL: Registry sync goroutine panicked and recovered. Application continues running.",
+					zap.Any("panic", r),
+					zap.Stack("stacktrace"))
+				// Clean up the ticker
+				ticker.Stop()
+
+				// Restart the sync after a configurable delay to recover from transient issues
+				// This prevents the sync from being permanently dead after a panic
+				time.Sleep(d.Registry.PanicRecoveryDelay)
+				d.logger.Info("Attempting to restart registry sync after panic recovery",
+					zap.Duration("recovery_delay", d.Registry.PanicRecoveryDelay))
+				d.startRegistrySync()
+			}
+		}()
+
+		for {
 			select {
 			case <-d.quit:
 				ticker.Stop()
+				d.logger.Info("Registry sync goroutine shutting down gracefully")
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				// Wrap the sync call in a function that can recover from panics
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							d.logger.Error("Registry sync operation panicked during sync attempt",
+								zap.Any("panic", r))
+						}
+					}()
+					d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				}()
 			}
 		}
 	}()
 }
 
-func (d *DinMiddleware) closeAll() {
-	for _, network := range d.Networks {
-		network.close()
-	}
-	d.close()
-}
+// Cleanup implements caddy.CleanerUpper and is called when Caddy shuts down or reloads.
+// It ensures all goroutines are properly terminated and resources are cleaned up.
+func (d *DinMiddleware) Cleanup() error {
+	var cleanupErr error
 
-func (d *DinMiddleware) close() {
-	close(d.quit)
+	d.cleanupOnce.Do(func() {
+		d.logger.Info("Starting graceful shutdown of DIN middleware")
+
+		// Close all network healthcheck goroutines
+		for name, network := range d.Networks {
+			d.logger.Debug("Closing network resources", zap.String("network", name))
+			if network.quit != nil {
+				close(network.quit)
+			}
+		}
+
+		// Close middleware-level goroutines (registry sync)
+		if d.quit != nil {
+			d.logger.Debug("Signaling shutdown to registry sync goroutine")
+			close(d.quit)
+		}
+
+		d.logger.Info("DIN middleware shutdown complete")
+	})
+
+	return cleanupErr
 }
 
 func min(a, b int) int {

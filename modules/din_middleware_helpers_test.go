@@ -43,11 +43,13 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDinClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
-		RegistryBlockEpoch:                  10,
-		registryLastUpdatedEpochBlockNumber: 40,
-		logger:                              logger,
-		DingoClient:                         mockDingoClient,
-		testMode:                            true,
+		Registry: RegistryConfig{
+			BlockEpoch:                  10,
+			lastUpdatedEpochBlockNumber: 40,
+		},
+		logger:      logger,
+		DingoClient: mockDingoClient,
+		testMode:    true,
 	}
 
 	tests := []struct {
@@ -91,7 +93,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset the middleware state
 			dinMiddleware.Networks = map[string]*network{}
-			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
+			dinMiddleware.Registry.lastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
 			// Create a mock Web3Client
 			mockWeb3Client := &MockWeb3Client{mockLatestBlockNumber: tt.latestBlockNumber}
@@ -105,9 +107,9 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			dinMiddleware.syncRegistryWithLatestBlock(mockWeb3Client)
 
 			// Validate that registryLastUpdatedEpochBlockNumber is updated correctly
-			if dinMiddleware.registryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
+			if dinMiddleware.Registry.lastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
 				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v",
-					tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
+					tt.expectedBlockFloorByEpoch, dinMiddleware.Registry.lastUpdatedEpochBlockNumber)
 			}
 		})
 	}
@@ -139,7 +141,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 			},
 			expectedNetworkProviders: 1,
@@ -161,7 +163,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -263,7 +265,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 			},
 			newNetwork: &network{
@@ -291,7 +293,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -308,9 +310,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 		{
 			name: "Error syncing network config",
 			regNetwork: &din.Network{
-				Name: "test-network",
+				Name:          "test-network",
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusActive,
 			},
@@ -573,9 +575,11 @@ func TestCreateNewProvider(t *testing.T) {
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
-				DingoClient:       mockDingoClient,
-				SiweSignerClient:  mockSiweSignerClient,
-				RegistryPriority:  10,
+				DingoClient:      mockDingoClient,
+				SiweSignerClient: mockSiweSignerClient,
+				Registry: RegistryConfig{
+					Priority: 10,
+				},
 				logger:            logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 				testMode:          true,
 				DefaultSiweSigner: defaultSigner,
@@ -599,7 +603,7 @@ func TestCreateNewProvider(t *testing.T) {
 
 				// Verify that the provider was updated correctly
 				assert.Equal(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
-				assert.Equal(t, dinMiddleware.RegistryPriority, createdProvider.Priority)
+				assert.Equal(t, dinMiddleware.Registry.Priority, createdProvider.Priority)
 				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
 			}
 		})
