@@ -2,6 +2,8 @@ package modules
 
 import (
 	"bytes"
+	"container/list"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,12 +12,6 @@ import (
 	"sync"
 	"time"
 
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
-	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -24,11 +20,13 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
-	"container/list"
-
-	"encoding/json"
-
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
 var (
@@ -38,6 +36,7 @@ var (
 	// Din Middleware Module
 	_ caddy.Module                = (*DinMiddleware)(nil)
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
+	_ caddy.CleanerUpper          = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
 	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
@@ -80,7 +79,7 @@ type DinMiddleware struct {
 	// The flag to enable or disable the din registry
 	RegistryEnabled bool
 	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckIntervalSec uint64
+	RegistryBlockCheckIntervalSec int64
 	// The epoch in blocks to check the latest block number from the registry.
 	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
 	RegistryBlockEpoch uint64
@@ -107,15 +106,15 @@ func (*DinMiddleware) CaddyModule() caddy.ModuleInfo {
 
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
-func (d *DinMiddleware) Provision(context caddy.Context) error {
+func (d *DinMiddleware) Provision(ctx caddy.Context) error {
 	if len(d.Networks) == 0 && !d.RegistryEnabled {
 		return fmt.Errorf("expected at least 1 network or registry to be defined")
 	}
 
 	// set the initialize the dinMiddlewareObject
-	err := d.initialize(context)
+	err := d.initialize(ctx)
 	if err != nil {
-		return fmt.Errorf("error initializing middleware: %v", err)
+		return fmt.Errorf("error initializing middleware: %w", err)
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -204,7 +203,7 @@ func (d *DinMiddleware) initializeDinRegistryClient() error {
 
 		client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
 		if err != nil {
-			return fmt.Errorf("error initializing DIN client: %v", err)
+			return fmt.Errorf("error initializing DIN client: %w", err)
 		}
 		d.DingoClient = client
 	}
@@ -308,7 +307,7 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 	// Initialize providers
 	for _, provider := range networkObj.Providers {
 		if err := d.initializeProvider(networkName, provider, httpClient, d.logger); err != nil {
-			return fmt.Errorf("error initializing provider: %v", err)
+			return fmt.Errorf("error initializing provider: %w", err)
 		}
 	}
 	return nil
@@ -340,7 +339,7 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 func (d *DinMiddleware) startBackgroundServices() error {
 	// Start health checks
 	if err := d.startHealthChecks(); err != nil {
-		return fmt.Errorf("error starting healthchecks: %v", err)
+		return fmt.Errorf("error starting healthchecks: %w", err)
 	}
 
 	// Start registry sync if enabled
@@ -360,7 +359,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		d.logger.Error("Error parsing provider URL",
 			zap.String("http_url", provider.HttpUrl),
 			zap.Error(err))
-		return fmt.Errorf("error parsing provider URL: %v", err)
+		return fmt.Errorf("error parsing provider URL: %w", err)
 	}
 
 	dialHost := parsedUrl.Host
@@ -460,7 +459,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 
 		// Check if it's an HTTPError with specific status code
-		if httpErr, ok := err.(*networklib.HTTPError); ok {
+		httpErr := &networklib.HTTPError{}
+		if errors.As(err, &httpErr) {
 			rw.WriteHeader(httpErr.StatusCode)
 			rw.Write([]byte(httpErr.Message + "\n"))
 		} else {
@@ -789,11 +789,17 @@ func (d *DinMiddleware) startRegistrySync() {
 	}()
 }
 
-func (d *DinMiddleware) closeAll() {
+// Cleanup implements caddy.CleanerUpper.
+func (d *DinMiddleware) Cleanup() error {
 	for _, network := range d.Networks {
 		network.close()
+		d.logger.Logger.Sugar().Infof("DIN nework closed: %s", network.Name)
 	}
+
 	d.close()
+	d.logger.Info("DIN middleware deprovisioned")
+
+	return nil
 }
 
 func (d *DinMiddleware) close() {
