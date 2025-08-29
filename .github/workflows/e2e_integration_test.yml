@@ -44,6 +44,9 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone https://github.com/DIN-center/din-sc.git
+          cd din-sc && git checkout develop && cd ..
+          mkdir -p upstream/github.com/DIN-center/
+          cp -r din-sc upstream/github.com/DIN-center/din-sc
           
       - name: Install xcaddy
         run: |
@@ -56,6 +59,13 @@ jobs:
         id: build
         run: |
           echo "Building Caddy with DIN plugins..."
+          # First ensure go.mod has the correct replace directive
+          echo "Ensuring replace directive for din-sc..."
+          if ! grep -q "replace github.com/DIN-center/din-sc/apps/din-go" go.mod; then
+            echo "replace github.com/DIN-center/din-sc/apps/din-go => ./upstream/github.com/DIN-center/din-sc/apps/din-go" >> go.mod
+          fi
+          
+          # Build with xcaddy
           if xcaddy build --with github.com/DIN-center/din-caddy-plugins=. --output ./caddy-din; then
             echo "success=true" >> $GITHUB_OUTPUT
             echo "Build successful"
