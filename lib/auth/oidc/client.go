@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 // OIDCClient implements the IAuthClient interface for OIDC/OAuth2 authentication
@@ -297,6 +298,8 @@ func (c *OIDCClient) refreshTokenLoop() {
 
 // fetchToken fetches a new access token using client credentials
 func (c *OIDCClient) fetchToken() (string, time.Time, int, error) {
+	var err error
+
 	// Prepare request body
 	data := url.Values{}
 	data.Set("client_id", c.ClientID)
@@ -316,10 +319,13 @@ func (c *OIDCClient) fetchToken() (string, time.Time, int, error) {
 	if err != nil {
 		return "", time.Time{}, 0, fmt.Errorf("failed to execute token request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err = resp.Body.Close()
+	}()
 
 	// Read response body
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", time.Time{}, 0, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -343,7 +349,7 @@ func (c *OIDCClient) fetchToken() (string, time.Time, int, error) {
 	// Calculate expiry time using the expires_in from response
 	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 
-	return tokenResp.AccessToken, expiry, tokenResp.ExpiresIn, nil
+	return tokenResp.AccessToken, expiry, tokenResp.ExpiresIn, err
 }
 
 // Ensure OIDCClient implements IAuthClient interface

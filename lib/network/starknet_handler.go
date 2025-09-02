@@ -1,6 +1,7 @@
 package network
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -106,7 +107,7 @@ func (h *StarknetHandler) ValidateRequest(req *http.Request) error {
 
 	// Check method
 	if req.Method != "POST" {
-		return fmt.Errorf("Starknet JSON-RPC requires POST method, got %s", req.Method)
+		return fmt.Errorf("the Starknet JSON-RPC requires POST method, got %s", req.Method)
 	}
 
 	return nil
@@ -150,16 +151,9 @@ func (h *StarknetHandler) ValidateChainID(chainID string) error {
 		return fmt.Errorf("empty hex part in Starknet chain ID: %s", chainID)
 	}
 
-	// Check if all characters are valid hex
-	for _, char := range hexDigits {
-		if !((char >= '0' && char <= '9') ||
-			(char >= 'a' && char <= 'f') ||
-			(char >= 'A' && char <= 'F')) {
-			return fmt.Errorf("invalid hex character in Starknet chain ID: %s", chainID)
-		}
-	}
+	_, err := hex.DecodeString(hexDigits)
 
-	return nil
+	return err
 }
 
 func (h *StarknetHandler) ExtractChainReference(result interface{}) (string, error) {

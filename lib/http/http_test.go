@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 func TestHTTPClientPost(t *testing.T) {
@@ -88,9 +90,11 @@ func TestHTTPClientPost(t *testing.T) {
 				w.WriteHeader(tc.serverStatus)
 
 				// Write the response body
-				w.Write([]byte(tc.serverResponse))
+				_, err := w.Write([]byte(tc.serverResponse))
+				require.NoError(t, err)
 			}))
-			defer server.Close()
+
+			t.Cleanup(server.Close)
 
 			// Make the POST request
 			body, status, err := client.Post(server.URL, tc.headers, tc.payload, tc.authClient)

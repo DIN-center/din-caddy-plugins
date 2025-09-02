@@ -1,6 +1,7 @@
 package network
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -104,7 +105,8 @@ func TestBitcoinEsploraHandler_ValidateRequest_HTTPError(t *testing.T) {
 	require.Error(t, err)
 
 	// Check that it's an HTTPError with the correct status code
-	httpErr, ok := err.(*HTTPError)
+	httpErr := &HTTPError{}
+	ok := errors.As(err, &httpErr)
 	require.True(t, ok, "Expected HTTPError type")
 	assert.Equal(t, http.StatusMethodNotAllowed, httpErr.StatusCode)
 	assert.Equal(t, "POST method not allowed for Bitcoin Esplora API", httpErr.Message)

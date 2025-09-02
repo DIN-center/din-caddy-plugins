@@ -2,11 +2,15 @@ package modules
 
 import (
 	"container/list"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -14,9 +18,9 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
+
+var _ json.Unmarshaler = (*network)(nil)
 
 type network struct {
 	Name             string
@@ -68,6 +72,7 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
+		quit:        make(chan struct{}),
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
@@ -121,6 +126,23 @@ func (n *network) SetHandler(handler networklib.NetworkHandler) error {
 	return nil
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
+func (n *network) UnmarshalJSON(data []byte) error {
+	type Alias network
+	alias := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(n),
+	}
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	n.quit = make(chan struct{})
+
+	return nil
+}
+
 func (n *network) startHealthcheck() {
 	n.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
@@ -154,7 +176,7 @@ func (n *network) healthCheck() {
 	for _, provider := range n.Providers {
 
 		// Get latest block and initial health status
-		var healthStatus HealthStatus = Healthy
+		var healthStatus = Healthy
 		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient(), provider.host)
 		if err != nil {
 			n.logProviderWarning("Health check failed after all attempts for provider", provider,
@@ -712,13 +734,13 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	result, err := n.handler.GetLatestBlockNumber(loopbackURL, headers, n.HttpClient, nil, 1)
 	if err != nil {
 		// Extract method directly from GenericRequestContext - completely generic
-		var method string = "unknown"
+		var method = "unknown"
 		if genericContext != nil {
 			method = genericContext.Method
 		}
 
 		// Set default values for when result is nil
-		var statusCode int = 0
+		var statusCode = 0
 		if result != nil {
 			statusCode = result.ResponseStatus
 		}

@@ -50,7 +50,7 @@ const (
 	DefaultRequestAttemptCount     = 5
 	DefaultArchiveEnabled          = false
 	// Registry constants
-	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockCheckIntervalSec = int64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
 	DefaultPort                          = "8000"

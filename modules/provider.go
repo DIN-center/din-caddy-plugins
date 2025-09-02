@@ -8,11 +8,12 @@ import (
 
 	"errors"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
 type provider struct {

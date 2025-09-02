@@ -8,11 +8,12 @@ import (
 
 	"encoding/json"
 
+	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/web3"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
-	"go.uber.org/zap"
 )
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
@@ -568,7 +569,7 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
 		// Extract method directly from GenericRequestContext - completely generic
-		var method string = "unknown"
+		var method = "unknown"
 		if genericContext != nil {
 			method = genericContext.Method
 		}
@@ -613,7 +614,7 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 		}
 
 		// Extract method and params directly from getBlockByNumber GenericRequestContext for logging
-		var getBlockMethodName string = "unknown"
+		var getBlockMethodName = "unknown"
 		var getBlockParams json.RawMessage
 		if getBlockGenericContext != nil {
 			getBlockMethodName = getBlockGenericContext.Method

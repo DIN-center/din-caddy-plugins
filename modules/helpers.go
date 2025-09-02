@@ -11,12 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
+
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/caddyserver/caddy/v2"
-	"go.uber.org/zap"
 )
 
 // checkForJSONRPCError checks if a response body contains a JSON-RPC error
@@ -517,17 +518,17 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	return repl, genericContext, payload
 }
 
-// checkRequestContext checks if the request context has been cancelled or exceeded deadline
+// checkRequestContext checks if the request context has been canceled or exceeded deadline
 // Returns an error if the context is done, nil if the context is still active
 func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath string, attempt int) error {
 	select {
 	case <-r.Context().Done():
 		switch r.Context().Err() {
 		case context.Canceled:
-			l.Debug("Request cancelled by client",
+			l.Debug("Request canceled by client",
 				zap.String("network", networkPath),
 				zap.Int("attempt", attempt+1))
-			return fmt.Errorf("request cancelled by client")
+			return fmt.Errorf("request canceled by client")
 		case context.DeadlineExceeded:
 			l.Debug("Request deadline exceeded",
 				zap.String("network", networkPath),
@@ -556,9 +557,9 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 	var responseBody string
 
 	switch {
-	case strings.Contains(err.Error(), "cancelled by client"):
+	case strings.Contains(err.Error(), "canceled by client"):
 		statusCode = http.StatusRequestTimeout // 408
-		responseBody = `{"error": "Request cancelled by client", "code": 408}`
+		responseBody = `{"error": "Request canceled by client", "code": 408}`
 	case strings.Contains(err.Error(), "deadline exceeded"):
 		statusCode = http.StatusGatewayTimeout // 504
 		responseBody = `{"error": "Request timeout exceeded", "code": 504}`
@@ -594,7 +595,9 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 	// Set appropriate headers and write response
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(statusCode)
-	rw.Write([]byte(responseBody))
+	if _, err := rw.Write([]byte(responseBody)); err != nil {
+		l.Error("Failed to write response", zap.Error(err), zap.String("network", networkPath))
+	}
 
 	// Collect Prometheus metrics for context cancellation
 	if promClient != nil {

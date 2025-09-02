@@ -2,13 +2,17 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 )
 
 func main() {
@@ -28,7 +32,7 @@ func main() {
 	privateKeyFile := flag.Arg(1)
 
 	// Read the private key file
-	hexKeyBytes, err := os.ReadFile(privateKeyFile)
+	hexKeyBytes, err := os.ReadFile(filepath.Clean(privateKeyFile))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to read private key file: %v", err.Error()))
 	}
@@ -47,18 +51,26 @@ func main() {
 	}
 
 	// Generate a new keypair
-	(&siwe.SIWESignerClient{}).GenPrivKey(signer)
+	if err := (&siwe.SIWESignerClient{}).GenPrivKey(signer); err != nil {
+		panic(fmt.Sprintf("Failed to generate private key: %v", err.Error()))
+	}
 
 	// Print the address
-	os.Stderr.WriteString("Your signing address: ")
-	os.Stderr.WriteString(signer.Address)
-	os.Stderr.WriteString("\n")
+	if err := errors.Join(
+		fWriteString(os.Stderr, "Your signing address: "),
+		fWriteString(os.Stderr, signer.Address),
+		fWriteString(os.Stderr, "\n"),
+	); err != nil {
+		panic(fmt.Sprintf("Failed to display signer address on stder: %v", err.Error()))
+	}
 
 	// Create a new SIWE client
 	client := siwe.NewSIWEClient(url, 0, signer)
 
 	// Start the client
-	client.Start(zap.NewNop())
+	if err := client.Start(zap.NewNop()); err != nil {
+		panic(fmt.Sprintf("Failed to start SIWE client: %v", err.Error()))
+	}
 
 	// Get a token from the client
 	token, err := client.GetToken(nil)
@@ -69,7 +81,18 @@ func main() {
 	for k, v := range token.Headers {
 		result = append(result, fmt.Sprintf("%v: %v", k, v))
 	}
-	os.Stderr.WriteString("Add to CURL:\n-H '")
-	os.Stdout.WriteString(strings.Join(result, " "))
-	os.Stderr.WriteString("'\n")
+
+	if err := errors.Join(
+		fWriteString(os.Stderr, "Add to CURL:\n-H '"),
+		fWriteString(os.Stdout, strings.Join(result, " ")),
+		fWriteString(os.Stderr, "'\n"),
+	); err != nil {
+		panic(fmt.Sprintf("Failed to display cURL headers on stderr: %v", err.Error()))
+	}
+}
+
+func fWriteString(w io.Writer, s string) error {
+	_, err := w.Write([]byte(s))
+
+	return err
 }
