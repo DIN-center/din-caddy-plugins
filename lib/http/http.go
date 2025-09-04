@@ -19,7 +19,7 @@ type HTTPClient struct {
 	httpClient *http.Client
 }
 
-// decompressGzipIfNecessary decompresses gzip content if the Content-Encoding header indicates gzip
+// decompressGzipIfNecessary decompresses gzip content  if the Content-Encoding header indicates gzip
 func decompressGzipIfNecessary(resp *http.Response, body []byte) ([]byte, error) {
 	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		gzipReader, err := gzip.NewReader(bytes.NewReader(body))
