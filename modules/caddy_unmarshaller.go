@@ -652,21 +652,21 @@ func (p *caddyfileParser) parseConfigField(network *network, directive string) e
 	case reflect.Int:
 		val, err := strconv.Atoi(value)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %v", directive, err)
+			return fmt.Errorf("invalid %s: %w", directive, err)
 		}
 		fieldValue.SetInt(int64(val))
 
 	case reflect.Int64:
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %v", directive, err)
+			return fmt.Errorf("invalid %s: %w", directive, err)
 		}
 		fieldValue.SetInt(val)
 
 	case reflect.Bool:
 		val, err := strconv.ParseBool(value)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %v", directive, err)
+			return fmt.Errorf("invalid %s: %w", directive, err)
 		}
 		fieldValue.SetBool(val)
 
