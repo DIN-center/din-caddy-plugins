@@ -1129,4 +1129,3 @@ func TestRegistryConfigCustomValues(t *testing.T) {
 	assert.Equal(t, 5*time.Second, d.Registry.RetryDelay)
 	assert.Equal(t, 60*time.Second, d.Registry.PanicRecoveryDelay)
 }
-

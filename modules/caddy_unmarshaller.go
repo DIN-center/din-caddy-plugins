@@ -215,10 +215,10 @@ func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) err
 		return p.parseStringField(&network.HCEndpoint)
 	case "chain_id":
 		return p.parseChainId(network, networkName)
-	case "healthcheck_threshold", "healthcheck_timeout", "healthcheck_interval", 
-	     "healthcheck_blocklag_limit", "healthcheck_blockjump_limit",
-	     "healthcheck_provider_block_history_size", "network_block_history_size",
-	     "max_request_payload_size_kb", "request_attempt_count", "archive_enabled":
+	case "healthcheck_threshold", "healthcheck_timeout", "healthcheck_interval",
+		"healthcheck_blocklag_limit", "healthcheck_blockjump_limit",
+		"healthcheck_provider_block_history_size", "network_block_history_size",
+		"max_request_payload_size_kb", "request_attempt_count", "archive_enabled":
 		return p.parseConfigField(network, p.dispenser.Val())
 	case "custom_config":
 		return p.parseCustomConfig(network, nesting)
@@ -616,16 +616,16 @@ var configFieldMapping = map[string]struct {
 	fieldName string
 	flagName  string
 }{
-	"healthcheck_threshold":                    {"HCThreshold", "HCThresholdSetInCaddyfile"},
-	"healthcheck_timeout":                      {"HCTimeout", "HCTimeoutSetInCaddyfile"},
-	"healthcheck_interval":                     {"HCInterval", "HCIntervalSetInCaddyfile"},
-	"healthcheck_blocklag_limit":               {"BlockLagLimit", "BlockLagLimitSetInCaddyfile"},
-	"healthcheck_blockjump_limit":              {"BlockJumpLimit", "BlockJumpLimitSetInCaddyfile"},
-	"healthcheck_provider_block_history_size":  {"ProviderBlockHistorySize", "ProviderBlockHistorySizeSetInCaddyfile"},
-	"network_block_history_size":                {"NetworkBlockHistorySize", "NetworkBlockHistorySizeSetInCaddyfile"},
-	"max_request_payload_size_kb":              {"MaxRequestPayloadSizeKB", "MaxRequestPayloadSizeKBSetInCaddyfile"},
-	"request_attempt_count":                     {"RequestAttemptCount", "RequestAttemptCountSetInCaddyfile"},
-	"archive_enabled":                           {"ArchiveEnabled", "ArchiveEnabledSetInCaddyfile"},
+	"healthcheck_threshold":                   {"HCThreshold", "HCThresholdSetInCaddyfile"},
+	"healthcheck_timeout":                     {"HCTimeout", "HCTimeoutSetInCaddyfile"},
+	"healthcheck_interval":                    {"HCInterval", "HCIntervalSetInCaddyfile"},
+	"healthcheck_blocklag_limit":              {"BlockLagLimit", "BlockLagLimitSetInCaddyfile"},
+	"healthcheck_blockjump_limit":             {"BlockJumpLimit", "BlockJumpLimitSetInCaddyfile"},
+	"healthcheck_provider_block_history_size": {"ProviderBlockHistorySize", "ProviderBlockHistorySizeSetInCaddyfile"},
+	"network_block_history_size":              {"NetworkBlockHistorySize", "NetworkBlockHistorySizeSetInCaddyfile"},
+	"max_request_payload_size_kb":             {"MaxRequestPayloadSizeKB", "MaxRequestPayloadSizeKBSetInCaddyfile"},
+	"request_attempt_count":                   {"RequestAttemptCount", "RequestAttemptCountSetInCaddyfile"},
+	"archive_enabled":                         {"ArchiveEnabled", "ArchiveEnabledSetInCaddyfile"},
 }
 
 // parseConfigField uses reflection to parse a configuration field and automatically set the corresponding flag
@@ -642,7 +642,7 @@ func (p *caddyfileParser) parseConfigField(network *network, directive string) e
 	// Use reflection to access the network struct fields
 	networkValue := reflect.ValueOf(network).Elem()
 	fieldValue := networkValue.FieldByName(mapping.fieldName)
-	
+
 	if !fieldValue.IsValid() {
 		return fmt.Errorf("field %s not found in network struct", mapping.fieldName)
 	}
@@ -655,21 +655,21 @@ func (p *caddyfileParser) parseConfigField(network *network, directive string) e
 			return fmt.Errorf("invalid %s: %v", directive, err)
 		}
 		fieldValue.SetInt(int64(val))
-		
+
 	case reflect.Int64:
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid %s: %v", directive, err)
 		}
 		fieldValue.SetInt(val)
-		
+
 	case reflect.Bool:
 		val, err := strconv.ParseBool(value)
 		if err != nil {
 			return fmt.Errorf("invalid %s: %v", directive, err)
 		}
 		fieldValue.SetBool(val)
-		
+
 	default:
 		return fmt.Errorf("unsupported field type %v for %s", fieldValue.Kind(), mapping.fieldName)
 	}

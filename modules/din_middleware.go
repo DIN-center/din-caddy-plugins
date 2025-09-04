@@ -103,7 +103,7 @@ type DinMiddleware struct {
 
 	// DIN Registry configuration
 	Registry RegistryConfig `json:"registry"`
-	
+
 	// Internal registry tracking - this is not exposed in config
 	registryLastUpdatedEpochBlockNumber uint64
 
