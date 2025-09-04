@@ -3,6 +3,7 @@ package dincli
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -152,10 +153,11 @@ func TestSetProviderStatusCommand(t *testing.T) {
 	// Setup mock
 	mockCtrl := gomock.NewController(t)
 	mockDinClient := din.NewMockIDinClient(mockCtrl)
+	mockFeesEstimator := NewMockIFeesEstimator(mockCtrl)
 
 	// set CLI states
 	dinClient = mockDinClient
-	feesEstimator = &MockFeesEstimator{}
+	feesEstimator = mockFeesEstimator
 
 	// Helper function to reset global variables
 	resetSetStatusGlobalVariables := func() {
@@ -169,6 +171,14 @@ func TestSetProviderStatusCommand(t *testing.T) {
 		// set CLI values
 		providerAddr = "0x1234567890123456789012345678901234567890"
 		providerStatus = din.ProviderStatusActive
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -192,6 +202,14 @@ func TestSetProviderStatusCommand(t *testing.T) {
 		// set CLI values
 		providerAddr = "0x1234567890123456789012345678901234567890"
 		providerStatus = din.ProviderStatusMaintenance
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -237,6 +255,14 @@ func TestSetProviderStatusCommand(t *testing.T) {
 		providerAddr = "0x1234567890123456789012345678901234567890"
 		providerStatus = din.ProviderStatusActive
 
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
+
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
@@ -259,10 +285,11 @@ func TestRemoveProviderCommand(t *testing.T) {
 	// Setup mock
 	mockCtrl := gomock.NewController(t)
 	mockDinClient := din.NewMockIDinClient(mockCtrl)
+	mockFeesEstimator := NewMockIFeesEstimator(mockCtrl)
 
 	// set CLI states
 	dinClient = mockDinClient
-	feesEstimator = &MockFeesEstimator{}
+	feesEstimator = mockFeesEstimator
 	// Helper function to reset global variables
 	resetRemoveGlobalVariables := func() {
 		providerAddr = ""
@@ -273,6 +300,14 @@ func TestRemoveProviderCommand(t *testing.T) {
 
 		// set CLI values
 		providerAddr = "0x1234567890123456789012345678901234567890"
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -315,6 +350,14 @@ func TestRemoveProviderCommand(t *testing.T) {
 		// set CLI values
 		providerAddr = "0x1234567890123456789012345678901234567890"
 
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
+
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
@@ -337,10 +380,11 @@ func TestRemoveNetworkServiceCommand(t *testing.T) {
 	// Setup mock
 	mockCtrl := gomock.NewController(t)
 	mockDinClient := din.NewMockIDinClient(mockCtrl)
+	mockFeesEstimator := NewMockIFeesEstimator(mockCtrl)
 
 	// set CLI states
 	dinClient = mockDinClient
-	feesEstimator = &MockFeesEstimator{}
+	feesEstimator = mockFeesEstimator
 	// Helper function to reset global variables
 	resetRemoveServiceGlobalVariables := func() {
 		providerAddr = ""
@@ -352,7 +396,15 @@ func TestRemoveNetworkServiceCommand(t *testing.T) {
 
 		// set CLI values
 		providerAddr = "0x1234567890123456789012345678901234567890"
-		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -400,6 +452,14 @@ func TestRemoveNetworkServiceCommand(t *testing.T) {
 		providerAddr = "0x1234567890123456789012345678901234567890"
 		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
 
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
+
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
 		mockDinClient.EXPECT().CreateAuthorizedTransactor("keystorePath", gomock.Any()).Return(mockTransactor, nil).Times(1)
@@ -423,9 +483,11 @@ func TestSetNetworkServiceStatusCommand(t *testing.T) {
 	// Setup mock
 	mockCtrl := gomock.NewController(t)
 	mockDinClient := din.NewMockIDinClient(mockCtrl)
+	mockFeesEstimator := NewMockIFeesEstimator(mockCtrl)
 
 	// set CLI states
 	dinClient = mockDinClient
+	feesEstimator = mockFeesEstimator
 
 	// Helper function to reset global variables
 	resetSetServiceStatusGlobalVariables := func() {
@@ -439,6 +501,14 @@ func TestSetNetworkServiceStatusCommand(t *testing.T) {
 		// set CLI values
 		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
 		networkServiceStatus = din.NetworkServiceStatusActive
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
@@ -483,6 +553,14 @@ func TestSetNetworkServiceStatusCommand(t *testing.T) {
 		// set CLI values
 		networkServiceAddr = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
 		networkServiceStatus = din.NetworkServiceStatusActive
+
+		// Mock fees estimator to return proper fee data
+		mockFeeData := FeeData{
+			GasPrice:  big.NewInt(1000000000), // 1 gwei
+			GasFeeCap: big.NewInt(2000000000), // 2 gwei
+			GasTipCap: big.NewInt(1000000000), // 1 gwei
+		}
+		mockFeesEstimator.EXPECT().EstimateFees().Return(mockFeeData, nil).Times(1)
 
 		// Mock transactor creation
 		mockTransactor := &bind.TransactOpts{}
