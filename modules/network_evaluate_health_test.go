@@ -3,13 +3,14 @@ package modules
 import (
 	"testing"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
 // TestEvaluateProviderHealth tests the provider health evaluation logic

@@ -3,22 +3,23 @@ package modules
 import (
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.uber.org/zap"
 )
 
 // caddyfileParser encapsulates the parsing logic for Caddyfile
@@ -285,7 +286,7 @@ func (p *caddyfileParser) parseProviders(network *network, parentNesting int) er
 func (p *caddyfileParser) parseProvider(network *network, providerUrl string, parentNesting int) error {
 	providerObj, err := NewProvider(providerUrl)
 	if err != nil {
-		return fmt.Errorf("error creating provider: %v", err)
+		return fmt.Errorf("error creating provider: %w", err)
 	}
 
 	// Parse provider fields
@@ -298,7 +299,7 @@ func (p *caddyfileParser) parseProvider(network *network, providerUrl string, pa
 	// Parse URL and set host
 	parsedUrl, err := url.Parse(providerObj.HttpUrl)
 	if err != nil {
-		return fmt.Errorf("error parsing provider URL: %v", err)
+		return fmt.Errorf("error parsing provider URL: %w", err)
 	}
 
 	// Initialize provider with a unique host
@@ -405,7 +406,7 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 			p.dispenser.NextBlock(parentNesting + 1)
 			duration, err := strconv.Atoi(p.dispenser.Val())
 			if err != nil {
-				return fmt.Errorf("invalid duration_seconds: %v", err)
+				return fmt.Errorf("invalid duration_seconds: %w", err)
 			}
 			oidcClient.DurationSeconds = duration
 		case "sessions":
@@ -415,7 +416,7 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 			p.dispenser.NextBlock(parentNesting + 1)
 			sessionCount, err := strconv.Atoi(p.dispenser.Val())
 			if err != nil {
-				return fmt.Errorf("invalid session count: %v", err)
+				return fmt.Errorf("invalid session count: %w", err)
 			}
 			siweAuth.SessionCount = sessionCount
 		case "signer":
@@ -430,7 +431,7 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 				PrivateKey: signerKey,
 			}
 			if err := p.siweSignerClient.GenPrivKey(siweAuth.Signer); err != nil {
-				return fmt.Errorf("failed to generate private key: %v", err)
+				return fmt.Errorf("failed to generate private key: %w", err)
 			}
 		default:
 			return p.dispenser.Errf("unrecognized auth option: %s", p.dispenser.Val())
@@ -481,7 +482,7 @@ func (p *caddyfileParser) parseProviderSigner(parentNesting int) ([]byte, error)
 			p.dispenser.NextBlock(parentNesting)
 			key, err = p.parseSecretKey(p.dispenser.Val())
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode secret: %v", err)
+				return nil, fmt.Errorf("failed to decode secret: %w", err)
 			}
 		}
 	}
@@ -508,7 +509,7 @@ func (p *caddyfileParser) parseProviderPriority(provider *provider, nesting int)
 	p.dispenser.NextBlock(nesting)
 	priority, err := strconv.Atoi(p.dispenser.Val())
 	if err != nil {
-		return fmt.Errorf("invalid priority: %v", err)
+		return fmt.Errorf("invalid priority: %w", err)
 	}
 	provider.Priority = priority
 	return nil
@@ -695,7 +696,7 @@ func (p *caddyfileParser) parseIntField(field *int, fieldName string) error {
 	p.dispenser.Next()
 	val, err := strconv.Atoi(p.dispenser.Val())
 	if err != nil {
-		return fmt.Errorf("invalid %s: %v", fieldName, err)
+		return fmt.Errorf("invalid %s: %w", fieldName, err)
 	}
 	*field = val
 	return nil
@@ -705,7 +706,7 @@ func (p *caddyfileParser) parseIntFieldToInt(field *int, fieldName string) error
 	p.dispenser.Next()
 	val, err := strconv.Atoi(p.dispenser.Val())
 	if err != nil {
-		return fmt.Errorf("invalid %s: %v", fieldName, err)
+		return fmt.Errorf("invalid %s: %w", fieldName, err)
 	}
 	*field = val
 	return nil
@@ -715,7 +716,7 @@ func (p *caddyfileParser) parseInt64Field(field *int64, fieldName string) error 
 	p.dispenser.Next()
 	val, err := strconv.Atoi(p.dispenser.Val())
 	if err != nil {
-		return fmt.Errorf("invalid %s: %v", fieldName, err)
+		return fmt.Errorf("invalid %s: %w", fieldName, err)
 	}
 	*field = int64(val)
 	return nil
@@ -723,11 +724,12 @@ func (p *caddyfileParser) parseInt64Field(field *int64, fieldName string) error 
 
 func (p *caddyfileParser) parseUint64Field(field *uint64, fieldName string) error {
 	p.dispenser.Next()
-	val, err := strconv.Atoi(p.dispenser.Val())
+	val, err := strconv.ParseUint(p.dispenser.Val(), 10, 64)
 	if err != nil {
 		return p.dispenser.Errf("Error converting string to int: %v", err)
 	}
-	*field = uint64(val)
+	*field = val
+
 	return nil
 }
 
@@ -735,7 +737,7 @@ func (p *caddyfileParser) parseBoolField(field *bool, fieldName string) error {
 	p.dispenser.Next()
 	val, err := strconv.ParseBool(p.dispenser.Val())
 	if err != nil {
-		return fmt.Errorf("invalid %s: %v", fieldName, err)
+		return fmt.Errorf("invalid %s: %w", fieldName, err)
 	}
 	*field = val
 	return nil
@@ -747,14 +749,10 @@ func (p *caddyfileParser) parseSecretKey(hexKey string) ([]byte, error) {
 }
 
 func (p *caddyfileParser) parseSecretKeyFromFile(filename string) ([]byte, error) {
-	// Try os.ReadFile first (modern Go), fall back to ioutil if needed
-	hexKeyBytes, err := os.ReadFile(filename)
+
+	hexKeyBytes, err := os.ReadFile(filepath.Clean(filename))
 	if err != nil {
-		// Fallback to ioutil for compatibility
-		hexKeyBytes, err = ioutil.ReadFile(filename)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	hexKey := string(hexKeyBytes)
 	return p.parseSecretKey(hexKey)

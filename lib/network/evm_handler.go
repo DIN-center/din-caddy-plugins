@@ -12,9 +12,10 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"go.uber.org/zap"
 )
 
 var _ NetworkHandler = (*EVMHandler)(nil)
@@ -196,10 +197,7 @@ func (h *EVMHandler) ValidateChainID(chainID string) error {
 	}
 
 	// Validate the actual chain ID (with or without 0x prefix)
-	chainIDNum := actualChainID
-	if strings.HasPrefix(chainIDNum, "0x") {
-		chainIDNum = strings.TrimPrefix(chainIDNum, "0x")
-	}
+	chainIDNum := strings.TrimPrefix(actualChainID, "0x")
 
 	// Convert to ensure it's a valid number
 	if _, err := strconv.ParseInt(chainIDNum, 16, 64); err != nil {

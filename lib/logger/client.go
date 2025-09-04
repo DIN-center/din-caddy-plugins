@@ -1,8 +1,9 @@
 package logger
 
 import (
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
 type LoggerClient struct {

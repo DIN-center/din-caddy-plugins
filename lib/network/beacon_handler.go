@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"go.uber.org/zap"
 )
 
 var _ NetworkHandler = (*BeaconChainHandler)(nil)
@@ -134,7 +135,7 @@ func (h *BeaconChainHandler) ParseResponse(body []byte, statusCode int) error {
 
 	// Check for error field in response
 	if errorField, exists := response["error"]; exists && errorField != nil {
-		apiErr := fmt.Errorf("Beacon Chain API error: %v", errorField)
+		apiErr := fmt.Errorf("error in Beacon Chain API: %v", errorField)
 		return apiErr
 	}
 
@@ -233,7 +234,7 @@ func (h *BeaconChainHandler) FormatBlockHeight(blockNum int64) string {
 
 func (h *BeaconChainHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
 	// Beacon chain uses REST API, not JSON-RPC
-	return nil, fmt.Errorf("Beacon Chain uses REST API, not JSON-RPC block requests")
+	return nil, fmt.Errorf("the Beacon Chain uses REST API, not JSON-RPC block requests")
 }
 
 func (h *BeaconChainHandler) ParseBlockResponse(body []byte) (interface{}, error) {
@@ -275,11 +276,11 @@ func (h *BeaconChainHandler) GetArchiveMethod() string {
 }
 
 func (h *BeaconChainHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
-	return nil, fmt.Errorf("Beacon Chain does not support archive mode")
+	return nil, fmt.Errorf("the Beacon Chain does not support archive mode")
 }
 
 func (h *BeaconChainHandler) ParseArchiveResponse(body []byte) error {
-	return fmt.Errorf("Beacon Chain does not support archive mode")
+	return fmt.Errorf("the Beacon Chain does not support archive mode")
 }
 
 // Network Capabilities methods
@@ -518,7 +519,7 @@ func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]strin
 func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	var lastErr error
 	var lastResponseStatus int
-	var lastHealthStatus HealthStatus = Unhealthy
+	var lastHealthStatus = Unhealthy
 
 	// Use the block info endpoint to get latest slot
 	blockInfoMethod := h.GetBlockInfoMethod()

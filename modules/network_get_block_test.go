@@ -4,14 +4,15 @@ import (
 	"net/http"
 	"testing"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
+
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
 // TestGetBlockByNumber tests the getBlockByNumber functionality

@@ -172,7 +172,7 @@ func (h *BitcoinEsploraHandler) FormatBlockHeight(blockNum int64) string {
 }
 
 func (h *BitcoinEsploraHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	return nil, fmt.Errorf("Bitcoin Esplora uses REST API, not JSON-RPC")
+	return nil, fmt.Errorf("the Bitcoin Esplora uses REST API, not JSON-RPC")
 }
 
 func (h *BitcoinEsploraHandler) ParseBlockResponse(body []byte) (interface{}, error) {

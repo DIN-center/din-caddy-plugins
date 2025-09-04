@@ -38,7 +38,10 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
-	selector.Provision(context)
+	if err := selector.Provision(context); err != nil {
+		return err
+	}
+
 	d.selector = selector
 	return nil
 }
