@@ -20,6 +20,24 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
+// caddyfileConfigFlags tracks which configuration fields were explicitly set via Caddyfile.
+// When a field's flag is true, it means the value was configured in the Caddyfile and should
+// not be overridden by registry sync. This ensures Caddyfile settings take priority.
+type caddyfileConfigFlags struct {
+	HandlerTypeSetInCaddyfile              bool
+	ChainIdSetInCaddyfile                  bool
+	HCIntervalSetInCaddyfile               bool
+	HCThresholdSetInCaddyfile              bool
+	HCTimeoutSetInCaddyfile                bool
+	BlockLagLimitSetInCaddyfile            bool
+	BlockJumpLimitSetInCaddyfile           bool
+	MaxRequestPayloadSizeKBSetInCaddyfile  bool
+	RequestAttemptCountSetInCaddyfile      bool
+	ProviderBlockHistorySizeSetInCaddyfile bool
+	NetworkBlockHistorySizeSetInCaddyfile  bool
+	ArchiveEnabledSetInCaddyfile           bool
+}
+
 var _ json.Unmarshaler = (*network)(nil)
 
 type network struct {
@@ -35,6 +53,9 @@ type network struct {
 
 	// NEW: Handler reference for network-specific operations
 	handler networklib.NetworkHandler
+
+	// CaddyfileFlags tracks which fields were set via Caddyfile (not via registry)
+	CaddyfileFlags *caddyfileConfigFlags `json:"-"` // Don't serialize to JSON
 
 	// internal health check values
 	HCThreshold              int
@@ -88,6 +109,11 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 		Environment:              environment,
 		Providers:                make(map[string]*provider),
 		CaddyPort:                caddyPort,
+		// Initialize Caddyfile flags tracking
+		CaddyfileFlags: &caddyfileConfigFlags{
+			// If handlerType is provided (not empty), mark it as set in Caddyfile
+			HandlerTypeSetInCaddyfile: handlerType != "",
+		},
 	}
 
 	// Note: Handler initialization is deferred to avoid duplicate initialization.
@@ -416,10 +442,6 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 	quarterBlockHeightString := n.handler.FormatBlockHeight(quarterBlockHeight)
 
 	return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
-}
-
-func (n *network) close() {
-	close(n.quit)
 }
 
 // isStalled checks if provider's block numbers haven't changed

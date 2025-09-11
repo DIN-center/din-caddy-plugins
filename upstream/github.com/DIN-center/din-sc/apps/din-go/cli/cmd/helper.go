@@ -93,18 +93,19 @@ func buildNetworkConfigFromUserInput(configJsonAsString string, dinClient din.ID
 	// Define mirror struct for the NetworkOperationsConfig struct but with pointers
 	// This is necessary because the JSON string may not contain all fields, and we want to be able to set only the provided fields
 	type NetworkConfigInput struct {
-		HealthcheckMethod       *string `json:"health_check_method,omitempty"`
-		HealthcheckIntervalSec  *uint8  `json:"health_check_interval_sec,omitempty"`
-		ChainIdMethod           *string `json:"chain_id_method,omitempty"`
-		GetBlockByNumberMethod  *string `json:"get_block_by_number_method,omitempty"`
-		CallContractMethod      *string `json:"call_contract_method,omitempty"`
-		BlockLagLimit           *uint8  `json:"block_lag_limit,omitempty"`
-		BlockJumpLimit          *uint8  `json:"block_jump_limit,omitempty"`
-		RequestAttemptCount     *uint8  `json:"request_attempt_count,omitempty"`
-		MaxRequestPayloadSizeKb *uint16 `json:"max_request_payload_size_kb,omitempty"`
-		RegistryBlockEpoch      *uint32 `json:"registry_block_epoch,omitempty"`
-		ArchiveEnabled          *bool   `json:"archive_enabled,omitempty"`
-		ChainId                 *string `json:"chain_id,omitempty"`
+		Handler                  *string `json:"handler,omitempty"`
+		HealthcheckIntervalSec   *uint8  `json:"health_check_interval_sec,omitempty"`
+		HealthcheckThreshold     *uint8  `json:"health_check_threshold,omitempty"`
+		HealthcheckTimeout       *uint16 `json:"health_check_timeout,omitempty"`
+		BlockLagLimit            *uint8  `json:"block_lag_limit,omitempty"`
+		BlockJumpLimit           *uint8  `json:"block_jump_limit,omitempty"`
+		RequestAttemptCount      *uint8  `json:"request_attempt_count,omitempty"`
+		MaxRequestPayloadSizeKb  *uint16 `json:"max_request_payload_size_kb,omitempty"`
+		RegistryBlockEpoch       *uint32 `json:"registry_block_epoch,omitempty"`
+		ArchiveEnabled           *bool   `json:"archive_enabled,omitempty"`
+		ProviderBlockHistorySize *uint16 `json:"provider_block_history_size,omitempty"`
+		NetworkBlockHistorySize  *uint16 `json:"network_block_history_size,omitempty"`
+		ChainId                  *string `json:"chain_id,omitempty"`
 	}
 
 	// Parse the JSON string into the temporary struct
@@ -124,24 +125,20 @@ func buildNetworkConfigFromUserInput(configJsonAsString string, dinClient din.ID
 
 	// Print which fields were provided in the JSON
 	modified := false
-	if configInput.HealthcheckMethod != nil {
-		newConfig.HealthcheckMethod = *configInput.HealthcheckMethod
+	if configInput.Handler != nil {
+		newConfig.Handler = *configInput.Handler
 		modified = true
 	}
 	if configInput.HealthcheckIntervalSec != nil {
 		newConfig.HealthcheckIntervalSec = *configInput.HealthcheckIntervalSec
 		modified = true
 	}
-	if configInput.ChainIdMethod != nil {
-		newConfig.ChainIdMethod = *configInput.ChainIdMethod
+	if configInput.HealthcheckThreshold != nil {
+		newConfig.HealthcheckThreshold = *configInput.HealthcheckThreshold
 		modified = true
 	}
-	if configInput.GetBlockByNumberMethod != nil {
-		newConfig.GetBlockByNumberMethod = *configInput.GetBlockByNumberMethod
-		modified = true
-	}
-	if configInput.CallContractMethod != nil {
-		newConfig.CallContractMethod = *configInput.CallContractMethod
+	if configInput.HealthcheckTimeout != nil {
+		newConfig.HealthcheckTimeout = *configInput.HealthcheckTimeout
 		modified = true
 	}
 	if configInput.BlockLagLimit != nil {
@@ -166,6 +163,14 @@ func buildNetworkConfigFromUserInput(configJsonAsString string, dinClient din.ID
 	}
 	if configInput.ArchiveEnabled != nil {
 		newConfig.ArchiveEnabled = *configInput.ArchiveEnabled
+		modified = true
+	}
+	if configInput.ProviderBlockHistorySize != nil {
+		newConfig.ProviderBlockHistorySize = *configInput.ProviderBlockHistorySize
+		modified = true
+	}
+	if configInput.NetworkBlockHistorySize != nil {
+		newConfig.NetworkBlockHistorySize = *configInput.NetworkBlockHistorySize
 		modified = true
 	}
 	if configInput.ChainId != nil {

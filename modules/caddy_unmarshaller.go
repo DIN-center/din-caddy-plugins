@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -214,26 +215,11 @@ func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) err
 		return p.parseStringField(&network.HCEndpoint)
 	case "chain_id":
 		return p.parseChainId(network, networkName)
-	case "healthcheck_threshold":
-		return p.parseIntField(&network.HCThreshold, "healthcheck threshold")
-	case "healthcheck_timeout":
-		return p.parseIntField(&network.HCTimeout, "healthcheck timeout")
-	case "healthcheck_interval":
-		return p.parseIntField(&network.HCInterval, "healthcheck interval")
-	case "healthcheck_blocklag_limit":
-		return p.parseInt64Field(&network.BlockLagLimit, "healthcheck blocklag limit")
-	case "healthcheck_blockjump_limit":
-		return p.parseInt64Field(&network.BlockJumpLimit, "healthcheck blockjump limit")
-	case "healthcheck_provider_block_history_size":
-		return p.parseIntFieldToInt(&network.ProviderBlockHistorySize, "healthcheck provider block history size")
-	case "network_block_history_size":
-		return p.parseIntFieldToInt(&network.NetworkBlockHistorySize, "network block history size")
-	case "max_request_payload_size_kb":
-		return p.parseInt64Field(&network.MaxRequestPayloadSizeKB, "max request payload size")
-	case "request_attempt_count":
-		return p.parseIntField(&network.RequestAttemptCount, "request attempt count")
-	case "archive_enabled":
-		return p.parseBoolField(&network.ArchiveEnabled, "archive enabled")
+	case "healthcheck_threshold", "healthcheck_timeout", "healthcheck_interval",
+		"healthcheck_blocklag_limit", "healthcheck_blockjump_limit",
+		"healthcheck_provider_block_history_size", "network_block_history_size",
+		"max_request_payload_size_kb", "request_attempt_count", "archive_enabled":
+		return p.parseConfigField(network, p.dispenser.Val())
 	case "custom_config":
 		return p.parseCustomConfig(network, nesting)
 	default:
@@ -258,6 +244,9 @@ func (p *caddyfileParser) parseNetworkHandler(network *network) error {
 	p.dispenser.Next()
 	explicitType := p.dispenser.Val()
 	network.HandlerType = HandlerType(explicitType)
+	if network.CaddyfileFlags != nil {
+		network.CaddyfileFlags.HandlerTypeSetInCaddyfile = true
+	}
 	// Handler creation is deferred to Provision phase for proper logger initialization
 	return nil
 }
@@ -534,6 +523,9 @@ func (p *caddyfileParser) parseChainId(network *network, networkName string) err
 		return fmt.Errorf("chain ID cannot be empty for network %s", networkName)
 	}
 	network.ChainId = chainId
+	if network.CaddyfileFlags != nil {
+		network.CaddyfileFlags.ChainIdSetInCaddyfile = true
+	}
 	return nil
 }
 
@@ -568,27 +560,27 @@ func (p *caddyfileParser) parseDinRegistry() error {
 	for n1 := p.dispenser.Nesting(); p.dispenser.NextBlock(n1); {
 		switch p.dispenser.Val() {
 		case "registry_enabled":
-			if err := p.parseBoolField(&p.middleware.RegistryEnabled, "registry enabled"); err != nil {
+			if err := p.parseBoolField(&p.middleware.Registry.Enabled, "registry enabled"); err != nil {
 				return err
 			}
 		case "registry_block_epoch":
-			if err := p.parseUint64Field(&p.middleware.RegistryBlockEpoch, "registry block epoch"); err != nil {
+			if err := p.parseUint64Field(&p.middleware.Registry.BlockEpoch, "registry block epoch"); err != nil {
 				return err
 			}
 		case "registry_block_check_interval_sec":
-			if err := p.parseInt64Field(&p.middleware.RegistryBlockCheckIntervalSec, "registry block check interval"); err != nil {
+			if err := p.parseUint64Field(&p.middleware.Registry.BlockCheckIntervalSec, "registry block check interval"); err != nil {
 				return err
 			}
 		case "registry_endpoint_url":
-			if err := p.parseStringField(&p.middleware.RegistryEndpointUrl); err != nil {
+			if err := p.parseStringField(&p.middleware.Registry.EndpointUrl); err != nil {
 				return err
 			}
 		case "registry_contract_address":
-			if err := p.parseStringField(&p.middleware.RegistryContractAddress); err != nil {
+			if err := p.parseStringField(&p.middleware.Registry.ContractAddress); err != nil {
 				return err
 			}
 		case "registry_priority":
-			if err := p.parseIntField(&p.middleware.RegistryPriority, "registry priority"); err != nil {
+			if err := p.parseIntField(&p.middleware.Registry.Priority, "registry priority"); err != nil {
 				return err
 			}
 		default:
@@ -618,6 +610,81 @@ func (p *caddyfileParser) validateNetwork(networkName string) error {
 }
 
 // Helper functions for parsing common field types
+
+// configFieldMapping maps Caddyfile directive names to their corresponding struct field names and flag field names
+var configFieldMapping = map[string]struct {
+	fieldName string
+	flagName  string
+}{
+	"healthcheck_threshold":                   {"HCThreshold", "HCThresholdSetInCaddyfile"},
+	"healthcheck_timeout":                     {"HCTimeout", "HCTimeoutSetInCaddyfile"},
+	"healthcheck_interval":                    {"HCInterval", "HCIntervalSetInCaddyfile"},
+	"healthcheck_blocklag_limit":              {"BlockLagLimit", "BlockLagLimitSetInCaddyfile"},
+	"healthcheck_blockjump_limit":             {"BlockJumpLimit", "BlockJumpLimitSetInCaddyfile"},
+	"healthcheck_provider_block_history_size": {"ProviderBlockHistorySize", "ProviderBlockHistorySizeSetInCaddyfile"},
+	"network_block_history_size":              {"NetworkBlockHistorySize", "NetworkBlockHistorySizeSetInCaddyfile"},
+	"max_request_payload_size_kb":             {"MaxRequestPayloadSizeKB", "MaxRequestPayloadSizeKBSetInCaddyfile"},
+	"request_attempt_count":                   {"RequestAttemptCount", "RequestAttemptCountSetInCaddyfile"},
+	"archive_enabled":                         {"ArchiveEnabled", "ArchiveEnabledSetInCaddyfile"},
+}
+
+// parseConfigField uses reflection to parse a configuration field and automatically set the corresponding flag
+func (p *caddyfileParser) parseConfigField(network *network, directive string) error {
+	mapping, exists := configFieldMapping[directive]
+	if !exists {
+		return fmt.Errorf("unknown configuration directive: %s", directive)
+	}
+
+	// Get the next value from the dispenser
+	p.dispenser.Next()
+	value := p.dispenser.Val()
+
+	// Use reflection to access the network struct fields
+	networkValue := reflect.ValueOf(network).Elem()
+	fieldValue := networkValue.FieldByName(mapping.fieldName)
+
+	if !fieldValue.IsValid() {
+		return fmt.Errorf("field %s not found in network struct", mapping.fieldName)
+	}
+
+	// Parse and set the value based on the field type
+	switch fieldValue.Kind() {
+	case reflect.Int:
+		val, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", directive, err)
+		}
+		fieldValue.SetInt(int64(val))
+
+	case reflect.Int64:
+		val, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", directive, err)
+		}
+		fieldValue.SetInt(val)
+
+	case reflect.Bool:
+		val, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", directive, err)
+		}
+		fieldValue.SetBool(val)
+
+	default:
+		return fmt.Errorf("unsupported field type %v for %s", fieldValue.Kind(), mapping.fieldName)
+	}
+
+	// Set the corresponding flag field if CaddyfileFlags exists
+	if network.CaddyfileFlags != nil {
+		flagsValue := reflect.ValueOf(network.CaddyfileFlags).Elem()
+		flagField := flagsValue.FieldByName(mapping.flagName)
+		if flagField.IsValid() && flagField.Kind() == reflect.Bool {
+			flagField.SetBool(true)
+		}
+	}
+
+	return nil
+}
 
 func (p *caddyfileParser) parseStringField(field *string) error {
 	p.dispenser.Next()

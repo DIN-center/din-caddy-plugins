@@ -1,5 +1,7 @@
 package modules
 
+import "time"
+
 type HealthStatus int
 
 // HandlerType represents the type of network handler
@@ -50,11 +52,18 @@ const (
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
 	DefaultArchiveEnabled          = false
+
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = int64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
-	DefaultPort                          = "8000"
+	DefaultRegistryRetryMaxAttempts      = 3
+	DefaultRegistryRetryDelay            = 2 * time.Second  // Fixed delay between retries
+	DefaultRegistryPanicRecoveryDelay    = 30 * time.Second // Delay before restarting after panic
+
+	// General constants
+	DefaultPort = "8000"
+
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 

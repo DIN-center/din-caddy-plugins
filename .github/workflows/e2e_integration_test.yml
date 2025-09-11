@@ -44,19 +44,24 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone https://github.com/DIN-center/din-sc.git
+          cd din-sc && git checkout develop && cd ..
+          mkdir -p upstream/github.com/DIN-center/
+          cp -r din-sc upstream/github.com/DIN-center/din-sc
           
       - name: Install xcaddy
         run: |
           export GOBIN=$HOME/go/bin
           export PATH=$PATH:$HOME/go/bin
-          go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.3.5
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.5
           echo "$HOME/go/bin" >> $GITHUB_PATH
           
       - name: Build Caddy with DIN Plugins
         id: build
         run: |
           echo "Building Caddy with DIN plugins..."
-          if xcaddy build --with github.com/DIN-center/din-caddy-plugins=. --output ./caddy-din; then
+          # Build with xcaddy using --replace flag to use local din-sc
+          # Using Caddy v2.8.4 for compatibility with Go 1.21
+          if xcaddy build v2.8.4 --with github.com/DIN-center/din-caddy-plugins=. --replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go --output ./caddy-din; then
             echo "success=true" >> $GITHUB_OUTPUT
             echo "Build successful"
             ./caddy-din version

@@ -166,18 +166,19 @@ type ProviderAuthConfig struct {
 }
 
 type NetworkOperationsConfig struct {
-	HealthcheckMethod       string `json:"health_check_method"`
-	HealthcheckIntervalSec  uint8  `json:"health_check_interval_sec"`
-	ChainIdMethod           string `json:"chain_id_method"`
-	GetBlockByNumberMethod  string `json:"get_block_by_number_method"`
-	CallContractMethod      string `json:"call_contract_method"`
-	BlockLagLimit           uint8  `json:"block_lag_limit"`
-	BlockJumpLimit          uint8  `json:"block_jump_limit"`
-	RequestAttemptCount     uint8  `json:"request_attempt_count"`
-	MaxRequestPayloadSizeKb uint16 `json:"max_request_payload_size_kb"`
-	RegistryBlockEpoch      uint32 `json:"registry_block_epoch"`
-	ArchiveEnabled          bool   `json:"archive_enabled"`
-	ChainId                 string `json:"chain_id"`
+	Handler                  string `json:"handler"`
+	HealthcheckIntervalSec   uint8  `json:"health_check_interval_sec"`
+	HealthcheckThreshold     uint8  `json:"health_check_threshold"`
+	HealthcheckTimeout       uint16 `json:"health_check_timeout"`
+	BlockLagLimit            uint8  `json:"block_lag_limit"`
+	BlockJumpLimit           uint8  `json:"block_jump_limit"`
+	RequestAttemptCount      uint8  `json:"request_attempt_count"`
+	MaxRequestPayloadSizeKb  uint16 `json:"max_request_payload_size_kb"`
+	RegistryBlockEpoch       uint32 `json:"registry_block_epoch"`
+	ArchiveEnabled           bool   `json:"archive_enabled"`
+	ProviderBlockHistorySize uint16 `json:"provider_block_history_size"`
+	NetworkBlockHistorySize  uint16 `json:"network_block_history_size"`
+	ChainId                  string `json:"chain_id"`
 }
 
 // Type-safe for network status

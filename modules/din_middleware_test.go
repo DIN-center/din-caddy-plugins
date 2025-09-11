@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	reflect "reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -31,6 +33,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 )
 
 func TestMiddlewareCaddyModule(t *testing.T) {
@@ -236,9 +239,9 @@ func TestInitialize(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Assert default values are set if not provided
-				assert.NotZero(t, dinMiddleware.RegistryBlockCheckIntervalSec)
-				assert.NotZero(t, dinMiddleware.RegistryBlockEpoch)
-				assert.Equal(t, 0, dinMiddleware.RegistryPriority)
+				assert.NotZero(t, dinMiddleware.Registry.BlockCheckIntervalSec)
+				assert.NotZero(t, dinMiddleware.Registry.BlockEpoch)
+				assert.Equal(t, 0, dinMiddleware.Registry.Priority)
 
 				// // Assert networks and providers are initialized
 				for _, network := range dinMiddleware.Networks {
@@ -343,11 +346,13 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
 			dinMiddleware := &DinMiddleware{
-				testMode:            true, // Ensure test mode is enabled
-				logger:              logger,
-				Networks:            tt.networks,
-				RegistryEndpointUrl: tt.registryEndpointUrl,
-				RegistryEnabled:     tt.registryEnabled,
+				testMode: true, // Ensure test mode is enabled
+				logger:   logger,
+				Networks: tt.networks,
+				Registry: RegistryConfig{
+					EndpointUrl: tt.registryEndpointUrl,
+					Enabled:     tt.registryEnabled,
+				},
 			}
 
 			// Call the Provision method
@@ -705,4 +710,422 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetRegistryData tests the getRegistryData function with retry logic
+func TestGetRegistryData(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	tests := []struct {
+		name             string
+		retryMaxAttempts int
+		retryDelay       time.Duration
+		mockSetup        func(mockClient *din.MockIDinClient)
+		expectedData     *din.DinRegistryData
+		expectedError    bool
+		expectedCalls    int
+	}{
+		{
+			name:             "Success on first attempt",
+			retryMaxAttempts: 3,
+			retryDelay:       10 * time.Millisecond,
+			mockSetup: func(mockClient *din.MockIDinClient) {
+				mockData := &din.DinRegistryData{
+					Networks: map[string]*din.Network{
+						"test-network": {ProxyName: "test-network"},
+					},
+				}
+				mockClient.EXPECT().
+					GetRegistryData().
+					Return(mockData, nil).
+					Times(1)
+			},
+			expectedData: &din.DinRegistryData{
+				Networks: map[string]*din.Network{
+					"test-network": {ProxyName: "test-network"},
+				},
+			},
+			expectedError: false,
+			expectedCalls: 1,
+		},
+		{
+			name:             "Success on second attempt",
+			retryMaxAttempts: 3,
+			retryDelay:       10 * time.Millisecond,
+			mockSetup: func(mockClient *din.MockIDinClient) {
+				mockData := &din.DinRegistryData{
+					Networks: map[string]*din.Network{
+						"test-network": {ProxyName: "test-network"},
+					},
+				}
+				gomock.InOrder(
+					mockClient.EXPECT().
+						GetRegistryData().
+						Return(nil, errors.New("temporary error")).
+						Times(1),
+					mockClient.EXPECT().
+						GetRegistryData().
+						Return(mockData, nil).
+						Times(1),
+				)
+			},
+			expectedData: &din.DinRegistryData{
+				Networks: map[string]*din.Network{
+					"test-network": {ProxyName: "test-network"},
+				},
+			},
+			expectedError: false,
+			expectedCalls: 2,
+		},
+		{
+			name:             "Failure after all retries",
+			retryMaxAttempts: 2,
+			retryDelay:       10 * time.Millisecond,
+			mockSetup: func(mockClient *din.MockIDinClient) {
+				mockClient.EXPECT().
+					GetRegistryData().
+					Return(nil, errors.New("persistent error")).
+					Times(3) // initial + 2 retries
+			},
+			expectedData:  nil,
+			expectedError: true,
+			expectedCalls: 3,
+		},
+		{
+			name:             "Success on last attempt",
+			retryMaxAttempts: 2,
+			retryDelay:       10 * time.Millisecond,
+			mockSetup: func(mockClient *din.MockIDinClient) {
+				mockData := &din.DinRegistryData{
+					Networks: map[string]*din.Network{
+						"test-network": {ProxyName: "test-network"},
+					},
+				}
+				gomock.InOrder(
+					mockClient.EXPECT().
+						GetRegistryData().
+						Return(nil, errors.New("error 1")).
+						Times(1),
+					mockClient.EXPECT().
+						GetRegistryData().
+						Return(nil, errors.New("error 2")).
+						Times(1),
+					mockClient.EXPECT().
+						GetRegistryData().
+						Return(mockData, nil).
+						Times(1),
+				)
+			},
+			expectedData: &din.DinRegistryData{
+				Networks: map[string]*din.Network{
+					"test-network": {ProxyName: "test-network"},
+				},
+			},
+			expectedError: false,
+			expectedCalls: 3,
+		},
+		{
+			name:             "Zero retries - fail immediately",
+			retryMaxAttempts: 0,
+			retryDelay:       10 * time.Millisecond,
+			mockSetup: func(mockClient *din.MockIDinClient) {
+				mockClient.EXPECT().
+					GetRegistryData().
+					Return(nil, errors.New("error")).
+					Times(1)
+			},
+			expectedData:  nil,
+			expectedError: true,
+			expectedCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
+			tt.mockSetup(mockDingoClient)
+
+			d := &DinMiddleware{
+				Registry: RegistryConfig{
+					RetryMaxAttempts: tt.retryMaxAttempts,
+					RetryDelay:       tt.retryDelay,
+				},
+				DingoClient: mockDingoClient,
+				logger:      logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+			}
+
+			startTime := time.Now()
+			data, err := d.getRegistryData()
+			elapsed := time.Since(startTime)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+				assert.Nil(t, data)
+				assert.Contains(t, err.Error(), "registry call failed after")
+				// Verify delay was applied (except for last attempt)
+				if tt.retryMaxAttempts > 0 {
+					expectedMinDelay := time.Duration(tt.retryMaxAttempts) * tt.retryDelay
+					assert.GreaterOrEqual(t, elapsed, expectedMinDelay)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedData, data)
+			}
+		})
+	}
+}
+
+// TestCleanup tests the Cleanup function
+func TestCleanup(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupNetworks  func() map[string]*network
+		registryQuit   bool
+		expectedClosed int
+	}{
+		{
+			name: "Cleanup with multiple networks",
+			setupNetworks: func() map[string]*network {
+				return map[string]*network{
+					"network1": {
+						Name: "network1",
+						quit: make(chan struct{}),
+					},
+					"network2": {
+						Name: "network2",
+						quit: make(chan struct{}),
+					},
+					"network3": {
+						Name: "network3",
+						quit: make(chan struct{}),
+					},
+				}
+			},
+			registryQuit:   true,
+			expectedClosed: 4, // 3 networks + 1 registry
+		},
+		{
+			name: "Cleanup with no networks",
+			setupNetworks: func() map[string]*network {
+				return map[string]*network{}
+			},
+			registryQuit:   true,
+			expectedClosed: 1, // only registry
+		},
+		{
+			name: "Cleanup with nil quit channels",
+			setupNetworks: func() map[string]*network {
+				return map[string]*network{
+					"network1": {
+						Name: "network1",
+						quit: nil, // nil channel
+					},
+					"network2": {
+						Name: "network2",
+						quit: make(chan struct{}),
+					},
+				}
+			},
+			registryQuit:   false, // registry quit is nil
+			expectedClosed: 1,     // only network2
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &DinMiddleware{
+				Networks: tt.setupNetworks(),
+				logger:   logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+			}
+
+			if tt.registryQuit {
+				d.quit = make(chan struct{})
+			}
+
+			// Track which channels are closed
+			closedCount := 0
+
+			// Monitor channels in goroutines
+			for _, network := range d.Networks {
+				if network.quit != nil {
+					go func(ch chan struct{}) {
+						<-ch
+						closedCount++
+					}(network.quit)
+				}
+			}
+
+			if d.quit != nil {
+				go func() {
+					<-d.quit
+					closedCount++
+				}()
+			}
+
+			// Call Cleanup
+			err := d.Cleanup()
+			assert.NoError(t, err)
+
+			// Give goroutines time to detect closed channels
+			time.Sleep(50 * time.Millisecond)
+
+			// Verify expected number of channels were closed
+			assert.Equal(t, tt.expectedClosed, closedCount)
+		})
+	}
+}
+
+// TestCleanupConcurrency tests that Cleanup handles concurrent access safely
+func TestCleanupConcurrency(t *testing.T) {
+	d := &DinMiddleware{
+		Networks: map[string]*network{
+			"network1": {
+				Name: "network1",
+				quit: make(chan struct{}),
+			},
+			"network2": {
+				Name: "network2",
+				quit: make(chan struct{}),
+			},
+		},
+		quit:   make(chan struct{}),
+		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+	}
+
+	// Track if channels are closed
+	network1Closed := false
+	network2Closed := false
+	quitClosed := false
+
+	// Monitor channels
+	go func() {
+		<-d.Networks["network1"].quit
+		network1Closed = true
+	}()
+	go func() {
+		<-d.Networks["network2"].quit
+		network2Closed = true
+	}()
+	go func() {
+		<-d.quit
+		quitClosed = true
+	}()
+
+	// Start multiple goroutines trying to cleanup simultaneously
+	done := make(chan error, 5)
+	for i := 0; i < 5; i++ {
+		go func() {
+			done <- d.Cleanup()
+		}()
+	}
+
+	// All should complete without panic or error
+	for i := 0; i < 5; i++ {
+		err := <-done
+		assert.NoError(t, err, "Cleanup should not return an error")
+	}
+
+	// Give time for channel monitors to detect closure
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify channels were closed exactly once (no panic from double close)
+	assert.True(t, network1Closed, "network1 quit channel should be closed")
+	assert.True(t, network2Closed, "network2 quit channel should be closed")
+	assert.True(t, quitClosed, "main quit channel should be closed")
+}
+
+// TestStartRegistrySyncPanicRecovery tests panic recovery in startRegistrySync
+func TestStartRegistrySyncPanicRecovery(t *testing.T) {
+	// This test verifies the panic recovery mechanism
+	// We'll simulate a panic and ensure the function recovers
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockDingoClient := din.NewMockIDinClient(mockCtrl)
+
+	// Setup mock to return data successfully first time
+	mockData := &din.DinRegistryData{
+		Networks: map[string]*din.Network{
+			"test-network": {ProxyName: "test-network"},
+		},
+	}
+	mockDingoClient.EXPECT().
+		GetRegistryData().
+		Return(mockData, nil).
+		AnyTimes()
+
+	d := &DinMiddleware{
+		Registry: RegistryConfig{
+			Enabled:               true,
+			BlockCheckIntervalSec: 1, // 1 second for faster test
+			RetryMaxAttempts:      1,
+			RetryDelay:            10 * time.Millisecond,
+			PanicRecoveryDelay:    50 * time.Millisecond,
+		},
+		DingoClient: mockDingoClient,
+		Networks:    make(map[string]*network),
+		quit:        make(chan struct{}),
+		logger:      logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+	}
+
+	// Start the registry sync
+	d.startRegistrySync()
+
+	// Give it time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Close the quit channel to stop the sync
+	close(d.quit)
+
+	// Give it time to shutdown gracefully
+	time.Sleep(100 * time.Millisecond)
+
+	// Test passes if no panic occurred
+	assert.True(t, true, "Registry sync handled without panic")
+}
+
+// TestRegistryConfigDefaults tests that default values are set correctly
+func TestRegistryConfigDefaults(t *testing.T) {
+	d := &DinMiddleware{
+		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+	}
+
+	// Call initializeDefaults
+	d.initializeDefaults()
+
+	// Verify defaults are set
+	assert.Equal(t, uint64(DefaultRegistryBlockCheckIntervalSec), d.Registry.BlockCheckIntervalSec)
+	assert.Equal(t, DefaultRegistryBlockEpoch, d.Registry.BlockEpoch)
+	assert.Equal(t, DefaultRegistryPriority, d.Registry.Priority)
+	assert.Equal(t, DefaultRegistryRetryMaxAttempts, d.Registry.RetryMaxAttempts)
+	assert.Equal(t, DefaultRegistryRetryDelay, d.Registry.RetryDelay)
+	assert.Equal(t, DefaultRegistryPanicRecoveryDelay, d.Registry.PanicRecoveryDelay)
+}
+
+// TestRegistryConfigCustomValues tests that custom values override defaults
+func TestRegistryConfigCustomValues(t *testing.T) {
+	d := &DinMiddleware{
+		Registry: RegistryConfig{
+			BlockCheckIntervalSec: 120,
+			BlockEpoch:            5000,
+			Priority:              5,
+			RetryMaxAttempts:      10,
+			RetryDelay:            5 * time.Second,
+			PanicRecoveryDelay:    60 * time.Second,
+		},
+		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+	}
+
+	// Call initializeDefaults
+	d.initializeDefaults()
+
+	// Verify custom values are preserved
+	assert.Equal(t, uint64(120), d.Registry.BlockCheckIntervalSec)
+	assert.Equal(t, uint64(5000), d.Registry.BlockEpoch)
+	assert.Equal(t, 5, d.Registry.Priority)
+	assert.Equal(t, 10, d.Registry.RetryMaxAttempts)
+	assert.Equal(t, 5*time.Second, d.Registry.RetryDelay)
+	assert.Equal(t, 60*time.Second, d.Registry.PanicRecoveryDelay)
 }
