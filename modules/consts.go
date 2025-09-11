@@ -13,6 +13,7 @@ const (
 	SolanaHandler         HandlerType = "solana"
 	BitcoinHandler        HandlerType = "bitcoin"
 	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
+	TronHandler           HandlerType = "tron-full-node"
 )
 
 const (

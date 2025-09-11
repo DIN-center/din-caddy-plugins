@@ -212,4 +212,11 @@ func RegisterBuiltinHandlers() {
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Bitcoin Esplora handler: %v", err))
 	}
+
+	// Register Tron Full Node handler - matches modules.TronHandler constant
+	if err := DefaultRegistry.RegisterHandler("tron-full-node", func(config *NetworkConfig) (NetworkHandler, error) {
+		return NewTronHandler(config), nil
+	}); err != nil {
+		panic(fmt.Sprintf("Failed to register Tron Full Node handler: %v", err))
+	}
 }
