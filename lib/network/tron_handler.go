@@ -408,6 +408,12 @@ func (h *TronHandler) performGetBlockByNumber(httpUrl string, headers map[string
 			return nil, err
 		}
 
+		if *statusCode >= http.StatusBadRequest && *statusCode < http.StatusInternalServerError && *statusCode != http.StatusTooManyRequests {
+			return nil, &backoff.PermanentError{
+				Err: fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode),
+			}
+		}
+
 		if *statusCode != http.StatusOK {
 			return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
 		}
@@ -515,6 +521,12 @@ func (h *TronHandler) getChainID(httpUrl string, headers map[string]string, http
 		respBody, statusCode, err := httpClient.Post(httpUrl+"/wallet/getblock", headers, reqBody, authClient)
 		if err != nil {
 			return "", err
+		}
+
+		if *statusCode >= http.StatusBadRequest && *statusCode < http.StatusInternalServerError && *statusCode != http.StatusTooManyRequests {
+			return "", &backoff.PermanentError{
+				Err: fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode),
+			}
 		}
 
 		return h.ParseChainIDResponse(respBody, *statusCode)
