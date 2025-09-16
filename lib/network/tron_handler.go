@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"reflect"
-	"strings"
+	"syscall"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -84,6 +86,7 @@ func (h *TronHandler) Initialize(config *NetworkConfig) error {
 	if config.Logger != nil {
 		h.logger = config.Logger
 	}
+
 	return nil
 }
 
@@ -152,21 +155,17 @@ func (h *TronHandler) IsRetryableError(err error, statusCode int) bool {
 	}
 
 	// Network errors are retryable
-	// TODO: This should switch to errors.Is() if possible as the character
-	//       scanning in strings.Contains() can be avoided.
 	if err != nil {
-		message := strings.ToLower(err.Error())
-		retryablePatterns := []string{
-			"timeout",
-			"connection",
-			"temporary",
-			"rate limit",
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return true
 		}
 
-		for _, pattern := range retryablePatterns {
-			if strings.Contains(message, pattern) {
-				return true
-			}
+		switch {
+		case errors.Is(err, io.EOF),
+			errors.Is(err, syscall.ECONNRESET),
+			errors.Is(err, syscall.ECONNREFUSED):
+			return true
 		}
 	}
 

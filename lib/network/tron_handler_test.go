@@ -2,7 +2,10 @@ package network_test
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"syscall"
 	"testing"
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -12,6 +15,153 @@ import (
 	gomock "go.uber.org/mock/gomock"
 	"gotest.tools/v3/golden"
 )
+
+//
+// Request processing
+//
+
+func TestHandler_ProcessRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passes with allowed HTTP method", func(t *testing.T) {
+		testcases := []string{http.MethodGet, http.MethodPost}
+
+		for _, testcase := range testcases {
+			testcase := testcase
+
+			t.Run(testcase, func(t *testing.T) {
+				t.Parallel()
+
+				h := &network.TronHandler{}
+				require.NoError(t, h.ProcessRequest(&http.Request{
+					Method: testcase,
+				}))
+			})
+		}
+	})
+
+	t.Run("fails with disallowed HTTP method", func(t *testing.T) {
+		testcases := []string{
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodHead,
+			http.MethodOptions,
+			http.MethodConnect,
+			http.MethodTrace,
+		}
+
+		for _, testcase := range testcases {
+			testcase := testcase
+
+			t.Run(testcase, func(t *testing.T) {
+				t.Parallel()
+
+				h := &network.TronHandler{}
+				require.ErrorIs(t, h.ProcessRequest(&http.Request{
+					Method: testcase,
+				}), network.ErrUnexpectedHTTPMethod)
+			})
+		}
+	})
+}
+
+// Custom error that implements net.Error with Timeout() returning true
+type timeoutError struct {
+	error
+}
+
+func (e timeoutError) Timeout() bool {
+	return true
+}
+
+func (e timeoutError) Temporary() bool {
+	return false
+}
+
+func TestHandler_IsRetryableError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		statusCode int
+		expected   bool
+	}{
+		{
+			name:       "retryable status code 500",
+			statusCode: http.StatusInternalServerError,
+			expected:   true,
+		},
+		{
+			name:       "retryable status code 503",
+			statusCode: http.StatusServiceUnavailable,
+			expected:   true,
+		},
+		{
+			name:       "retryable status code 429",
+			statusCode: http.StatusTooManyRequests,
+			expected:   true,
+		},
+		{
+			name:       "non-retryable status code 400",
+			statusCode: http.StatusBadRequest,
+			expected:   false,
+		},
+		{
+			name:       "non-retryable status code 404",
+			statusCode: http.StatusNotFound,
+			expected:   false,
+		},
+		{
+			name:       "retryable net.Error with timeout",
+			err:        timeoutError{errors.New("i/o timeout")},
+			statusCode: http.StatusOK,
+			expected:   true,
+		},
+		{
+			name:       "retryable io.EOF",
+			err:        io.EOF,
+			statusCode: http.StatusOK,
+			expected:   true,
+		},
+		{
+			name:       "retryable syscall.ECONNRESET",
+			err:        syscall.ECONNRESET,
+			statusCode: http.StatusOK,
+			expected:   true,
+		},
+		{
+			name:       "retryable syscall.ECONNREFUSED",
+			err:        syscall.ECONNREFUSED,
+			statusCode: http.StatusOK,
+			expected:   true,
+		},
+		{
+			name:       "non-retryable generic error",
+			err:        errors.New("some random error"),
+			statusCode: http.StatusOK,
+			expected:   false,
+		},
+		{
+			name:       "no error and non-retryable status code",
+			err:        nil,
+			statusCode: http.StatusOK,
+			expected:   false,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &network.TronHandler{}
+			assert.Equal(t, test.expected, h.IsRetryableError(test.err, test.statusCode))
+		})
+	}
+}
 
 //
 // Block operations
