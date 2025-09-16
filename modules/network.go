@@ -218,7 +218,7 @@ func (n *network) healthCheck() {
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
 				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.ProviderBlockHistorySize)
-				n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+				n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
 			}
@@ -228,7 +228,7 @@ func (n *network) healthCheck() {
 
 		// Update metrics and history
 		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.ProviderBlockHistorySize)
-		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 	}
 }
 
@@ -291,6 +291,7 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 	baseFields := []zap.Field{
 		zap.String("provider", provider.host),
 		zap.String("network", n.Name),
+		zap.Int("priority", provider.Priority),
 	}
 
 	n.logger.Warn(msg, append(baseFields, fields...)...)
@@ -513,13 +514,14 @@ func (n *network) getLatestHealthyBlock() int64 {
 	return latestBlockFromWarning
 }
 
-func (n *network) sendHealthCheckMetric(providerName string, responseStatus int, healthStatus string, blockNumber int64, environment string) {
+func (n *network) sendHealthCheckMetric(providerName string, responseStatus int, healthStatus string, blockNumber int64, priority int, environment string) {
 	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
 		Network:        n.Name,
 		Provider:       providerName,
 		ResponseStatus: responseStatus,
 		HealthStatus:   healthStatus,
 		BlockNumber:    blockNumber,
+		Priority:       priority,
 		Environment:    environment,
 	})
 }

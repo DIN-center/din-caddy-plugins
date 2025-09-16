@@ -113,6 +113,7 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 		rw.Header().Set(DinProviderInfo, provider.host)
 	}
 	repl.Set(RequestProviderKey, provider.host)
+	repl.Set(RequestProviderPriorityKey, provider.Priority)
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

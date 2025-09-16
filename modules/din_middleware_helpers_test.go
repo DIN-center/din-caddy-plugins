@@ -25,11 +25,6 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// Constants for replacer keys used in tests, mirroring those in din_middleware.go
-const (
-	testRequestProviderKey = "request_provider"
-	testRequestBodyKey     = "request_body"
-)
 
 // MockWeb3Client is a mock implementation of web3.Web3Client for testing
 type MockWeb3Client struct {
