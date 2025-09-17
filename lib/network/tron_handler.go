@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 const (
 	tronHandlerVersion      = "1.0.0"
 	tronHealthCheckEndpoint = "/wallet/getnowblock" // Get the height from the block info
-	tronBlockInfoEndpoint   = "/wallet/getnowblock"
+	tronBlockInfoEndpoint   = "/wallet/getblock"
 	tronChainIDMethod       = "/wallet/getblock"
 )
 
@@ -323,17 +324,8 @@ func (h *TronHandler) GetBlockByNumberMethod() string {
 
 // GetLatestBlockNumber implements the Handler interface.
 func (h *TronHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
-	return backoff.Retry(
-		context.Background(),
-		h.getLatestBlockNumberFunc(httpUrl, headers, httpClient, authClient),
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
-	)
-}
-
-func (h *TronHandler) getLatestBlockNumberFunc(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient) func() (*LatestBlockResult, error) {
-	return func() (*LatestBlockResult, error) {
-		body, statusCode, err := httpClient.Post(httpUrl+h.GetBlockInfoMethod(), headers, []byte{}, authClient)
+	op := func() (*LatestBlockResult, error) {
+		body, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, []byte{}, authClient)
 		if err != nil {
 			return nil, err
 		}
@@ -359,6 +351,13 @@ func (h *TronHandler) getLatestBlockNumberFunc(httpUrl string, headers map[strin
 			ResponseStatus: *statusCode,
 		}, nil
 	}
+
+	return backoff.Retry(
+		context.Background(),
+		op,
+		backoff.WithBackOff(backoff.NewExponentialBackOff()),
+		backoff.WithMaxTries(uint(requestAttempts)),
+	)
 }
 
 // RequiresSeparateBlockInfoCall implements the Handler interface.
@@ -387,22 +386,13 @@ func (h *TronHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int
 
 // PerformGetBlockByNumber implements the Handler interface.
 func (h *TronHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	return backoff.Retry(
-		context.Background(),
-		h.performGetBlockByNumber(httpUrl, headers, httpClient, authClient, blockNumber),
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
-	)
-}
-
-func (h *TronHandler) performGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, blockNumber int64) func() (*TronBlock, error) {
-	return func() (*TronBlock, error) {
+	op := func() (*TronBlock, error) {
 		reqBody, err := h.CreateBlockRequest("", blockNumber, false)
 		if err != nil {
 			return nil, err
 		}
 
-		respBody, statusCode, err := httpClient.Post(httpUrl+"/wallet/getblock", headers, reqBody, authClient)
+		respBody, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, reqBody, authClient)
 		if err != nil {
 			return nil, err
 		}
@@ -419,6 +409,13 @@ func (h *TronHandler) performGetBlockByNumber(httpUrl string, headers map[string
 
 		return h.parseBlockResponse(respBody)
 	}
+
+	return backoff.Retry(
+		context.Background(),
+		op,
+		backoff.WithBackOff(backoff.NewExponentialBackOff()),
+		backoff.WithMaxTries(uint(requestAttempts)),
+	)
 }
 
 //
@@ -469,6 +466,10 @@ func (h *TronHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) 
 //
 
 // GetChainIDMethod implements the Handler interface.
+//
+// Per the documentation, the chain id for each Tron network is the last
+// four bytes of the genesis block hash in hexadecimal format and with
+// the 0x prefix.
 func (h *TronHandler) GetChainIDMethod() string {
 	return tronChainIDMethod
 }
@@ -493,8 +494,12 @@ func (h *TronHandler) ParseChainIDResponse(body []byte, statusCode int) (string,
 
 // ValidateChainID implements the Handler interface.
 func (h *TronHandler) ValidateChainID(chainID string) error {
-	if h.config.ChainID != chainID {
-		return fmt.Errorf("%w: expected %s but received %s", ErrUnexpectedChainID, h.config.ChainID, chainID)
+	if len(chainID) != 10 || !strings.HasPrefix(chainID, "0x") {
+		return fmt.Errorf("%w: expected 0x plus 8 hexadecimal digits but received %s", ErrUnexpectedChainID, chainID)
+	}
+
+	if _, err := hex.DecodeString(chainID[2:]); err != nil {
+		return fmt.Errorf("%w: %w: contains invalid hexadecimal digits %s", ErrUnexpectedChainID, err, chainID)
 	}
 
 	return nil
@@ -502,22 +507,13 @@ func (h *TronHandler) ValidateChainID(chainID string) error {
 
 // GetChainID implements the Handler interface.
 func (h *TronHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
-	return backoff.Retry(
-		context.Background(),
-		h.getChainID(httpUrl, headers, httpClient, authClient),
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
-	)
-}
-
-func (h *TronHandler) getChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient) func() (string, error) {
-	return func() (string, error) {
+	op := func() (string, error) {
 		reqBody, err := h.CreateBlockRequest("", 0, false)
 		if err != nil {
 			return "", err
 		}
 
-		respBody, statusCode, err := httpClient.Post(httpUrl+"/wallet/getblock", headers, reqBody, authClient)
+		respBody, statusCode, err := httpClient.Post(httpUrl+h.GetChainIDMethod(), headers, reqBody, authClient)
 		if err != nil {
 			return "", err
 		}
@@ -530,6 +526,13 @@ func (h *TronHandler) getChainID(httpUrl string, headers map[string]string, http
 
 		return h.ParseChainIDResponse(respBody, *statusCode)
 	}
+
+	return backoff.Retry(
+		context.Background(),
+		op,
+		backoff.WithBackOff(backoff.NewExponentialBackOff()),
+		backoff.WithMaxTries(uint(requestAttempts)),
+	)
 }
 
 //
@@ -584,15 +587,18 @@ func (h *TronHandler) parseBlockResponse(body []byte) (*TronBlock, error) {
 
 // TronBlock represents the JSON structure of a Tron block.
 type TronBlock struct {
-	BlockID      string            `json:"blockID"`
-	BlockHeader  TronBlockHeader   `json:"block_header"`
-	Transactions []TronTransaction `json:"transactions"`
+	BlockID     string          `json:"blockID"`
+	BlockHeader TronBlockHeader `json:"block_header"`
 }
 
+// IsGenesis returns true if the block's (buried) number is zero.
 func (b *TronBlock) IsGenesis() bool {
 	return b.BlockHeader.RawData.Number == 0
 }
 
+// Validate returns an error if the block's required fields are not
+// present, the field data is the wrong type or the field data is in the
+// wrong format.
 func (b *TronBlock) Validate() error {
 	if b.IsGenesis() {
 		return errors.Join(
@@ -635,11 +641,15 @@ func (h *TronBlock) validateNotZero(key string, val any) error {
 	return nil
 }
 
+// TronBlockHeader contains the block's metadata (a fully populated and
+// decoded TronBlock would also have an array of transactions.)
 type TronBlockHeader struct {
 	RawData          TronBlockRawData `json:"raw_data"`
 	WitnessSignature string           `json:"witness_signature"`
 }
 
+// TronBlockRawData is the message that's "signed over" by the witness
+// if a WitnessSignature is present.
 type TronBlockRawData struct {
 	Timestamp        int64  `json:"timestamp"`
 	TXTrieRoot       string `json:"txTrieRoot"`
@@ -649,8 +659,4 @@ type TronBlockRawData struct {
 	WitnessAddress   string `json:"witness_address"`
 	Version          int64  `json:"version"`
 	AccountStateRoot string `json:"accountStateRoot"`
-}
-
-type TronTransaction struct {
-	// TODO: Not needed for health checks and block height.
 }

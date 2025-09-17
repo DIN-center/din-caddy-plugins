@@ -202,7 +202,7 @@ func TestHandler_GetLatestBlockNumber(t *testing.T) {
 
 	cl := din_http.NewMockIHTTPClient(ctrl)
 	cl.EXPECT().Post(
-		"/wallet/getnowblock",
+		"/wallet/getblock",
 		map[string]string{"Content-Type": "application/json"},
 		gomock.Any(),
 		nil,
@@ -312,22 +312,33 @@ func TestHandler_GetChainID(t *testing.T) {
 func TestHandler_ValidateChainID(t *testing.T) {
 	t.Parallel()
 
-	chainID := "0xdeadbeef"
-	h := network.NewTronHandler(&network.NetworkConfig{
-		ChainID: chainID,
-	})
+	h := &network.TronHandler{}
 
-	t.Run("passes with matching chain IDs", func(t *testing.T) {
+	t.Run("passes with valid IDs", func(t *testing.T) {
 		t.Parallel()
 
-		require.Nil(t, h.ValidateChainID(chainID))
+		require.Nil(t, h.ValidateChainID("0xdeadbeef"))
 	})
 
-	t.Run("errors with mismatched chain IDs", func(t *testing.T) {
-		t.Parallel()
+	testcases := []struct {
+		name    string
+		chainID string
+	}{
+		{name: "invalid prefix", chainID: "0ydeadbeef"},
+		{name: "hex too short", chainID: "0xdead"},
+		{name: "hex too long", chainID: "0xdeadbeefface"},
+		{name: "invalid hex digit", chainID: "0xdeadbeeh"},
+	}
 
-		require.ErrorIs(t, h.ValidateChainID("0x5eac0a57"), network.ErrUnexpectedChainID)
-	})
+	for _, testcase := range testcases {
+		testcase := testcase
+
+		t.Run("errors with "+testcase.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.ErrorIs(t, h.ValidateChainID(testcase.chainID), network.ErrUnexpectedChainID)
+		})
+	}
 }
 
 //
