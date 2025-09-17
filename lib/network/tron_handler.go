@@ -35,6 +35,9 @@ var ErrNotTronGenesisBlock = errors.New("the parsed block is not a Tron genesis 
 // the returned HTTP body can't be unmarshaled into a TronBlock.
 var ErrRetrievingTronBlock = errors.New("failed to retrieve Tron block")
 
+// ErrUnderflow is returned when an int can't be safely cast to a uint.
+var ErrUnderflow = errors.New("underflow converting from int to uint")
+
 // ErrUnexpectedHexFieldLength is returned if the string being validated
 // doesn't match the expected number of hex digits.
 var ErrUnexpectedHexFieldLength = errors.New("unexpected hex field length")
@@ -324,6 +327,12 @@ func (h *TronHandler) GetBlockByNumberMethod() string {
 
 // GetLatestBlockNumber implements the Handler interface.
 func (h *TronHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	if requestAttempts < 0 {
+		return nil, fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
+	}
+
+	tries := uint(requestAttempts)
+
 	op := func() (*LatestBlockResult, error) {
 		body, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, []byte{}, authClient)
 		if err != nil {
@@ -356,7 +365,7 @@ func (h *TronHandler) GetLatestBlockNumber(httpUrl string, headers map[string]st
 		context.Background(),
 		op,
 		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
+		backoff.WithMaxTries(tries),
 	)
 }
 
@@ -386,6 +395,12 @@ func (h *TronHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int
 
 // PerformGetBlockByNumber implements the Handler interface.
 func (h *TronHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	if requestAttempts < 0 {
+		return nil, fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
+	}
+
+	tries := uint(requestAttempts)
+
 	op := func() (*TronBlock, error) {
 		reqBody, err := h.CreateBlockRequest("", blockNumber, false)
 		if err != nil {
@@ -414,7 +429,7 @@ func (h *TronHandler) PerformGetBlockByNumber(httpUrl string, headers map[string
 		context.Background(),
 		op,
 		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
+		backoff.WithMaxTries(tries),
 	)
 }
 
@@ -507,6 +522,12 @@ func (h *TronHandler) ValidateChainID(chainID string) error {
 
 // GetChainID implements the Handler interface.
 func (h *TronHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+	if requestAttempts < 0 {
+		return "", fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
+	}
+
+	tries := uint(requestAttempts)
+
 	op := func() (string, error) {
 		reqBody, err := h.CreateBlockRequest("", 0, false)
 		if err != nil {
@@ -531,7 +552,7 @@ func (h *TronHandler) GetChainID(httpUrl string, headers map[string]string, http
 		context.Background(),
 		op,
 		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(uint(requestAttempts)),
+		backoff.WithMaxTries(tries),
 	)
 }
 
