@@ -61,7 +61,7 @@ func RegisterMetrics() {
 			Name: DinRequestCountMetricName,
 			Help: "Metric for counting the number of requests to the din http server",
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "priority", "machine_id", "environment"},
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -73,7 +73,7 @@ func RegisterMetrics() {
 				7000, 10000, 20000, 30000, 40000, 50000,
 				60000, 70000, 80000, 90000, 100000}, //
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "priority", "machine_id", "environment"},
 	)
 
 	DinRequestBodyBytes = prometheus.NewHistogramVec(
@@ -82,7 +82,7 @@ func RegisterMetrics() {
 			Help:    "Metric for measuring the size of the request body in bytes",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "machine_id", "environment"},
+		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "priority", "machine_id", "environment"},
 	)
 
 	// Register health check count metric for din health checks
@@ -91,7 +91,7 @@ func RegisterMetrics() {
 			Name: DinHealthCheckCountMetricName,
 			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
-		[]string{"service", "provider", "response_status", "health_status", "machine_id", "environment"},
+		[]string{"service", "provider", "response_status", "health_status", "priority", "machine_id", "environment"},
 	)
 
 	DinProviderHealthCheckBlockNumber = prometheus.NewGaugeVec(
@@ -99,7 +99,7 @@ func RegisterMetrics() {
 			Name: DinHealthCheckBlockNumberMetricName,
 			Help: "Metric for storing the block number of the latest health check",
 		},
-		[]string{"service", "provider", "machine_id", "environment"},
+		[]string{"service", "provider", "priority", "machine_id", "environment"},
 	)
 
 	prometheus.MustRegister(DinRequestCount, DinProviderHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinProviderHealthCheckBlockNumber)
@@ -136,6 +136,7 @@ type PromRequestMetricData struct {
 	HostName       string
 	ResponseStatus int
 	HealthStatus   string
+	Priority       int
 	Environment    string
 }
 
@@ -145,16 +146,17 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, dur
 	method := data.Method
 	network := strings.TrimPrefix(data.Network, "/")
 	status := strconv.Itoa(data.ResponseStatus)
+	priority := strconv.Itoa(data.Priority)
 
 	durationMS := duration.Milliseconds()
 
-	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
+	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
 
 	// Increment prometheus counter metric based on request data
-	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
+	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, priority, p.machineID, data.Environment).Inc()
 
 	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, priority, p.machineID, data.Environment).Observe(float64(durationMS))
 }
 
 type PromHealthCheckMetricData struct {
@@ -163,19 +165,21 @@ type PromHealthCheckMetricData struct {
 	ResponseStatus int
 	HealthStatus   string
 	BlockNumber    int64
+	Priority       int
 	Environment    string
 }
 
 func (p *PrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricData) {
 	network := strings.TrimPrefix(data.Network, "/")
+	priority := strconv.Itoa(data.Priority)
 
-	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("health_status", data.HealthStatus), zap.String("environment", data.Environment))
+	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.String("environment", data.Environment))
 
 	// Increment prometheus metric based on request data
-	DinProviderHealthCheckCount.WithLabelValues(network, data.Provider, strconv.Itoa(data.ResponseStatus), data.HealthStatus, p.machineID, data.Environment).Inc()
+	DinProviderHealthCheckCount.WithLabelValues(network, data.Provider, strconv.Itoa(data.ResponseStatus), data.HealthStatus, priority, p.machineID, data.Environment).Inc()
 
 	// Update prometheus metric based on block number
-	DinProviderHealthCheckBlockNumber.WithLabelValues(network, data.Provider, p.machineID, data.Environment).Set(float64(data.BlockNumber))
+	DinProviderHealthCheckBlockNumber.WithLabelValues(network, data.Provider, priority, p.machineID, data.Environment).Set(float64(data.BlockNumber))
 }
 
 // PromNetworkHealthCheckMetricData holds data for network level health check metrics

@@ -192,6 +192,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 		responseStatus int
 		healthStatus   string
 		blockNumber    int64
+		priority       int
 		environment    string
 		expectedMetric *prom.PromHealthCheckMetricData
 	}{
@@ -201,6 +202,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			responseStatus: 200,
 			healthStatus:   "Healthy",
 			blockNumber:    12345,
+			priority:       0,
 			environment:    "production",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
@@ -208,6 +210,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				ResponseStatus: 200,
 				HealthStatus:   "Healthy",
 				BlockNumber:    12345,
+				Priority:       0,
 				Environment:    "production",
 			},
 		},
@@ -217,6 +220,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			responseStatus: 200,
 			healthStatus:   "Warning",
 			blockNumber:    12340,
+			priority:       1,
 			environment:    "staging",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
@@ -224,6 +228,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				ResponseStatus: 200,
 				HealthStatus:   "Warning",
 				BlockNumber:    12340,
+				Priority:       1,
 				Environment:    "staging",
 			},
 		},
@@ -233,6 +238,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			responseStatus: 500,
 			healthStatus:   "Unhealthy",
 			blockNumber:    0,
+			priority:       2,
 			environment:    "test",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
@@ -240,6 +246,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				ResponseStatus: 500,
 				HealthStatus:   "Unhealthy",
 				BlockNumber:    0,
+				Priority:       2,
 				Environment:    "test",
 			},
 		},
@@ -249,6 +256,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			responseStatus: 429,
 			healthStatus:   "Warning",
 			blockNumber:    12345,
+			priority:       0,
 			environment:    "production",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
@@ -256,6 +264,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				ResponseStatus: 429,
 				HealthStatus:   "Warning",
 				BlockNumber:    12345,
+				Priority:       0,
 				Environment:    "production",
 			},
 		},
@@ -280,11 +289,12 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				assert.Equal(t, tt.expectedMetric.ResponseStatus, data.ResponseStatus)
 				assert.Equal(t, tt.expectedMetric.HealthStatus, data.HealthStatus)
 				assert.Equal(t, tt.expectedMetric.BlockNumber, data.BlockNumber)
+				assert.Equal(t, tt.expectedMetric.Priority, data.Priority)
 				assert.Equal(t, tt.expectedMetric.Environment, data.Environment)
 			})
 
 			// Execute
-			n.sendHealthCheckMetric(tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.environment)
+			n.sendHealthCheckMetric(tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.priority, tt.environment)
 		})
 	}
 }

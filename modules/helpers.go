@@ -414,8 +414,16 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		return
 	}
 
+	// Extract provider priority from the Caddy replacer context
+	priority := 0
+	if prioVal, prioOk := params.Replacer.Get(RequestProviderPriorityKey); prioOk {
+		if pInt, intOk := prioVal.(int); intOk {
+			priority = pInt
+		}
+	}
+
 	// Record Prometheus metrics for the request.
-	// This includes details like network, provider, response status, health status, and duration.
+	// This includes details like network, provider, response status, health status, priority, and duration.
 	params.DinMiddleware.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Method:         requestMethod,
 		Network:        params.NetworkPath,
@@ -423,6 +431,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		HostName:       params.OriginalReq.Host,
 		ResponseStatus: effectiveStatusCode,
 		HealthStatus:   healthStatus,
+		Priority:       priority,
 		Environment:    string(params.DinMiddleware.Env),
 	}, params.Duration, params.ParsedReqBody)
 }
@@ -612,6 +621,14 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			provider = "unknown"
 		}
 
+		// Get priority from replacer for metrics
+		priority := 0
+		if v, ok := repl.Get(RequestProviderPriorityKey); ok {
+			if pInt, ok := v.(int); ok {
+				priority = pInt
+			}
+		}
+
 		// Record metrics for the context cancellation
 		promClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 			Method:         "unknown", // Generic - no network-specific parsing
@@ -620,6 +637,7 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			HostName:       r.Host,
 			ResponseStatus: statusCode,
 			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
+			Priority:       priority,
 			Environment:    "unknown",   // We don't have access to environment here
 		}, duration, nil) // No parsed request body - completely generic
 	}

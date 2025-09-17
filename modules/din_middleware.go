@@ -711,6 +711,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		if v, ok := repl.Get(RequestProviderKey); ok {
 			provider = v.(string)
 		}
+		
+		// Get priority for metrics
+		priority := 0
+		if v, ok := repl.Get(RequestProviderPriorityKey); ok {
+			if pInt, ok := v.(int); ok {
+				priority = pInt
+			}
+		}
 
 		duration := time.Since(reqStartTime)
 
@@ -730,6 +738,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
 				HealthStatus:   "unhealthy", // All providers failed
+				Priority:       priority,
 				Environment:    string(d.Env),
 			}, duration, nil)
 		}
