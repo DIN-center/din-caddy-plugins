@@ -116,19 +116,7 @@ func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
 }
 
 func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
-	// Block POST requests and return 405 Method Not Allowed
-	if req.Method == "POST" {
-		return &HTTPError{
-			StatusCode: http.StatusMethodNotAllowed,
-			Message:    "POST method not allowed for Bitcoin Esplora API",
-		}
-	}
-
-	// Check for valid HTTP methods - Bitcoin Esplora REST API now only supports GET
-	if req.Method != "GET" {
-		return fmt.Errorf("unsupported HTTP method for Bitcoin Esplora REST API: %s", req.Method)
-	}
-
+	// For now we let everything through
 	return nil
 }
 
