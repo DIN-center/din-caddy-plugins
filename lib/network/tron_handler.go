@@ -152,6 +152,20 @@ func (h *TronHandler) ParseResponse(body []byte, statusCode int) error {
 }
 
 // IsRetryableError implements the Handler interface.
+//
+// The following Tron Full Node HTTP API methods return additional fields to
+// further analyze returned errors:
+//
+//   - /wallet/validateaddress: message
+//   - /wallet/broadcasttransaction: code, message
+//   - /wallet/broadcasthex: code, message
+//
+// The documentation doesn't describe when these errors are returned or
+// what the expected errors might be.  In addition, the /wallet/validateAddress
+// method returns either the format of the validated address or an error
+// message depending on the value of the HTTP response status code.  Per
+// the above analysis, the HTTP response body should be returned to the
+// user along with the status code.
 func (h *TronHandler) IsRetryableError(err error, statusCode int) bool {
 	// Server errors and rate limits are retryable
 	if statusCode >= 500 || statusCode == 429 {
