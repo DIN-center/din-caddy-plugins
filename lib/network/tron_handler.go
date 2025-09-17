@@ -35,6 +35,10 @@ var ErrNotTronGenesisBlock = errors.New("the parsed block is not a Tron genesis 
 // the returned HTTP body can't be unmarshaled into a TronBlock.
 var ErrRetrievingTronBlock = errors.New("failed to retrieve Tron block")
 
+// ErrTronAPI is returned when an error code (and possibly and associated
+// message) is returned in the body of an HTTP response.
+var ErrTronAPI = errors.New("an error was returned from the Tron API")
+
 // ErrUnderflow is returned when an int can't be safely cast to a uint.
 var ErrUnderflow = errors.New("underflow converting from int to uint")
 
@@ -148,6 +152,23 @@ func (h *TronHandler) ParseResponse(body []byte, statusCode int) error {
 	if statusCode >= 400 {
 		return fmt.Errorf("HTTP error: %d, body: %s", statusCode, string(body))
 	}
+
+	// All the methods that return error information in the body do so as
+	// JSON objects.
+	if !strings.HasPrefix(string(body), "{") || !strings.HasSuffix(string(body), "}") {
+		return nil
+	}
+
+	var fields map[string]interface{}
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	msg, _ := fields["message"].(string)
+	if code, codeOK := fields["code"]; codeOK {
+		return fmt.Errorf("%w: code: %s, message: %s", ErrTronAPI, code, msg)
+	}
+
 	return nil
 }
 
