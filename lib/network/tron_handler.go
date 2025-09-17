@@ -495,15 +495,17 @@ func (h *TronHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) 
 //
 
 // GetChainIDMethod implements the Handler interface.
-//
-// Per the documentation, the chain id for each Tron network is the last
-// four bytes of the genesis block hash in hexadecimal format and with
-// the 0x prefix.
 func (h *TronHandler) GetChainIDMethod() string {
 	return tronChainIDMethod
 }
 
 // ParseChainIDResponse implements the Handler interface.
+//
+// [Per the documentation], the chain id for each Tron network is the last
+// four bytes of the genesis block hash in hexadecimal format and with
+// the 0x prefix.
+//
+// [Per the documenttation]: https://developers.tron.network/reference/eth_chainid
 func (h *TronHandler) ParseChainIDResponse(body []byte, statusCode int) (string, error) {
 	if statusCode != http.StatusOK {
 		return "", ErrRetrievingTronBlock
