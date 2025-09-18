@@ -444,80 +444,63 @@ func (h *BitcoinHandler) PerformArchiveCheck(httpUrl string, headers map[string]
 // PerformGetBlockByNumber performs get block by number operation for Bitcoin chains using JSON-RPC
 // This implements the two-step process: getblockhash -> getblock
 func (h *BitcoinHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	var lastErr error
-
+	// Single attempt - let middleware handle retries
 	// Step 1: Get block hash from block number
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		// Create getblockhash request
-		hashPayload, err := h.CreateBlockRequest("getblockhash", blockNumber, false)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create getblockhash request: %w", err)
-			continue
-		}
-
-		// Make POST request for block hash
-		hashResBytes, statusCode, err := httpClient.Post(httpUrl, headers, hashPayload, authClient)
-		if err != nil {
-			lastErr = fmt.Errorf("error sending getblockhash request: %w", err)
-			continue
-		}
-
-		// Check HTTP status
-		if statusCode != nil && *statusCode >= 400 {
-			lastErr = fmt.Errorf("HTTP error for getblockhash: %d", *statusCode)
-			continue
-		}
-
-		// Parse response to get block hash
-		var hashResponse JSONRPCResponse
-		if err := json.Unmarshal(hashResBytes, &hashResponse); err != nil {
-			lastErr = fmt.Errorf("failed to parse getblockhash response: %w", err)
-			continue
-		}
-
-		// Check for JSON-RPC error
-		if hashResponse.Error != nil {
-			lastErr = fmt.Errorf("getblockhash error %d: %s", hashResponse.Error.Code, hashResponse.Error.Message)
-			continue
-		}
-
-		// Extract block hash from result
-		var blockHash string
-		if err := json.Unmarshal(hashResponse.Result, &blockHash); err != nil {
-			lastErr = fmt.Errorf("failed to extract block hash: %w", err)
-			continue
-		}
-
-		// Step 2: Get block details using the hash
-		blockPayload, err := h.CreateBlockRequestWithHash(blockHash, false)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create getblock request: %w", err)
-			continue
-		}
-
-		// Make POST request for block details
-		blockResBytes, statusCode, err := httpClient.Post(httpUrl, headers, blockPayload, authClient)
-		if err != nil {
-			lastErr = fmt.Errorf("error sending getblock request: %w", err)
-			continue
-		}
-
-		// Check HTTP status
-		if statusCode != nil && *statusCode >= 400 {
-			lastErr = fmt.Errorf("HTTP error for getblock: %d", *statusCode)
-			continue
-		}
-
-		// Parse block response
-		blockData, err := h.ParseBlockResponse(blockResBytes)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// Success!
-		return blockData, nil
+	hashPayload, err := h.CreateBlockRequest("getblockhash", blockNumber, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create getblockhash request: %w", err)
 	}
 
-	return nil, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+	// Make POST request for block hash
+	hashResBytes, statusCode, err := httpClient.Post(httpUrl, headers, hashPayload, authClient)
+	if err != nil {
+		return nil, fmt.Errorf("error sending getblockhash request: %w", err)
+	}
+
+	// Check HTTP status
+	if statusCode != nil && *statusCode >= 400 {
+		return nil, fmt.Errorf("HTTP error for getblockhash: %d", *statusCode)
+	}
+
+	// Parse response to get block hash
+	var hashResponse JSONRPCResponse
+	if err := json.Unmarshal(hashResBytes, &hashResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse getblockhash response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if hashResponse.Error != nil {
+		return nil, fmt.Errorf("getblockhash error %d: %s", hashResponse.Error.Code, hashResponse.Error.Message)
+	}
+
+	// Extract block hash from result
+	var blockHash string
+	if err := json.Unmarshal(hashResponse.Result, &blockHash); err != nil {
+		return nil, fmt.Errorf("failed to extract block hash: %w", err)
+	}
+
+	// Step 2: Get block details using the hash
+	blockPayload, err := h.CreateBlockRequestWithHash(blockHash, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create getblock request: %w", err)
+	}
+
+	// Make POST request for block details
+	blockResBytes, statusCode, err := httpClient.Post(httpUrl, headers, blockPayload, authClient)
+	if err != nil {
+		return nil, fmt.Errorf("error sending getblock request: %w", err)
+	}
+
+	// Check HTTP status
+	if statusCode != nil && *statusCode >= 400 {
+		return nil, fmt.Errorf("HTTP error for getblock: %d", *statusCode)
+	}
+
+	// Parse block response
+	blockData, err := h.ParseBlockResponse(blockResBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return blockData, nil
 }

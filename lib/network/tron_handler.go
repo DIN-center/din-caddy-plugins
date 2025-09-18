@@ -1,7 +1,6 @@
 package network
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,7 +16,6 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/cenkalti/backoff/v5"
 )
 
 const (
@@ -362,46 +360,52 @@ func (h *TronHandler) GetBlockByNumberMethod() string {
 
 // GetLatestBlockNumber implements the Handler interface.
 func (h *TronHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
-	if requestAttempts < 0 {
-		return nil, fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
-	}
-
-	tries := uint(requestAttempts)
-
-	op := func() (*LatestBlockResult, error) {
-		body, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, []byte{}, authClient)
-		if err != nil {
-			return nil, err
-		}
-
-		if *statusCode >= http.StatusBadRequest && *statusCode < http.StatusInternalServerError && *statusCode != http.StatusTooManyRequests {
-			return nil, &backoff.PermanentError{
-				Err: fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode),
-			}
-		}
-
-		if *statusCode <= http.StatusOK && *statusCode >= http.StatusMultipleChoices {
-			return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
-		}
-
-		block, err := h.parseBlockResponse(body)
-		if err != nil {
-			return nil, err
-		}
-
+	// Single attempt - let middleware handle retries
+	body, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, []byte{}, authClient)
+	if err != nil {
 		return &LatestBlockResult{
-			BlockNumber:    block.BlockHeader.RawData.Number,
-			HealthStatus:   Healthy,
-			ResponseStatus: *statusCode,
-		}, nil
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: 0,
+		}, err
 	}
 
-	return backoff.Retry(
-		context.Background(),
-		op,
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(tries),
-	)
+	if *statusCode >= http.StatusBadRequest {
+		if *statusCode == http.StatusTooManyRequests {
+			return &LatestBlockResult{
+				BlockNumber:    0,
+				HealthStatus:   Warning,
+				ResponseStatus: *statusCode,
+			}, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
+		}
+		if *statusCode >= http.StatusInternalServerError {
+			return &LatestBlockResult{
+				BlockNumber:    0,
+				HealthStatus:   Warning,
+				ResponseStatus: *statusCode,
+			}, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
+		}
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: *statusCode,
+		}, fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode)
+	}
+
+	block, err := h.parseBlockResponse(body)
+	if err != nil {
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: *statusCode,
+		}, err
+	}
+
+	return &LatestBlockResult{
+		BlockNumber:    block.BlockHeader.RawData.Number,
+		HealthStatus:   Healthy,
+		ResponseStatus: *statusCode,
+	}, nil
 }
 
 // RequiresSeparateBlockInfoCall implements the Handler interface.
@@ -430,42 +434,22 @@ func (h *TronHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int
 
 // PerformGetBlockByNumber implements the Handler interface.
 func (h *TronHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
-	if requestAttempts < 0 {
-		return nil, fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
+	// Single attempt - let middleware handle retries
+	reqBody, err := h.CreateBlockRequest("", blockNumber, false)
+	if err != nil {
+		return nil, err
 	}
 
-	tries := uint(requestAttempts)
-
-	op := func() (*TronBlock, error) {
-		reqBody, err := h.CreateBlockRequest("", blockNumber, false)
-		if err != nil {
-			return nil, err
-		}
-
-		respBody, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, reqBody, authClient)
-		if err != nil {
-			return nil, err
-		}
-
-		if *statusCode >= http.StatusBadRequest && *statusCode < http.StatusInternalServerError && *statusCode != http.StatusTooManyRequests {
-			return nil, &backoff.PermanentError{
-				Err: fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode),
-			}
-		}
-
-		if *statusCode != http.StatusOK {
-			return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
-		}
-
-		return h.parseBlockResponse(respBody)
+	respBody, statusCode, err := httpClient.Post(httpUrl+h.GetBlockByNumberMethod(), headers, reqBody, authClient)
+	if err != nil {
+		return nil, err
 	}
 
-	return backoff.Retry(
-		context.Background(),
-		op,
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(tries),
-	)
+	if *statusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, *statusCode)
+	}
+
+	return h.parseBlockResponse(respBody)
 }
 
 //
@@ -559,38 +543,18 @@ func (h *TronHandler) ValidateChainID(chainID string) error {
 
 // GetChainID implements the Handler interface.
 func (h *TronHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
-	if requestAttempts < 0 {
-		return "", fmt.Errorf("%w: %d", ErrUnderflow, requestAttempts)
+	// Single attempt - let middleware handle retries
+	reqBody, err := h.CreateBlockRequest("", 0, false)
+	if err != nil {
+		return "", err
 	}
 
-	tries := uint(requestAttempts)
-
-	op := func() (string, error) {
-		reqBody, err := h.CreateBlockRequest("", 0, false)
-		if err != nil {
-			return "", err
-		}
-
-		respBody, statusCode, err := httpClient.Post(httpUrl+h.GetChainIDMethod(), headers, reqBody, authClient)
-		if err != nil {
-			return "", err
-		}
-
-		if *statusCode >= http.StatusBadRequest && *statusCode < http.StatusInternalServerError && *statusCode != http.StatusTooManyRequests {
-			return "", &backoff.PermanentError{
-				Err: fmt.Errorf("%w: (Client error) %d", ErrUnexpectedStatusCode, *statusCode),
-			}
-		}
-
-		return h.ParseChainIDResponse(respBody, *statusCode)
+	respBody, statusCode, err := httpClient.Post(httpUrl+h.GetChainIDMethod(), headers, reqBody, authClient)
+	if err != nil {
+		return "", err
 	}
 
-	return backoff.Retry(
-		context.Background(),
-		op,
-		backoff.WithBackOff(backoff.NewExponentialBackOff()),
-		backoff.WithMaxTries(tries),
-	)
+	return h.ParseChainIDResponse(respBody, *statusCode)
 }
 
 //

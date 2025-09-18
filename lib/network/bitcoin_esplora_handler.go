@@ -282,44 +282,59 @@ func (h *BitcoinEsploraHandler) ParseHealthCheckResponse(body []byte) (*BlockInf
 func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	endpoint := httpUrl + h.healthCheckEndpoint
 
-	// Execute request with retries
-	var resp []byte
-	var lastErr error
-	var statusCode int
+	// Single attempt - let middleware handle retries
+	respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
 
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
-		if err != nil {
-			lastErr = err
-			if status != nil {
-				statusCode = *status
-			}
-			continue
-		}
-		if status != nil {
-			statusCode = *status
-		}
-		if statusCode >= 200 && statusCode < 300 {
-			resp = respBytes
-			break
-		}
-		lastErr = fmt.Errorf("HTTP error %d", statusCode)
+	var statusCode int
+	if status != nil {
+		statusCode = *status
 	}
 
-	if resp == nil {
-		return nil, lastErr
+	if err != nil {
+		var healthStatus HealthStatus
+		if statusCode >= 500 || statusCode == 429 {
+			healthStatus = Warning
+		} else {
+			healthStatus = Unhealthy
+		}
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   healthStatus,
+			ResponseStatus: statusCode,
+			Metadata:       make(map[string]interface{}),
+		}, err
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		var healthStatus HealthStatus
+		if statusCode >= 500 || statusCode == 429 {
+			healthStatus = Warning
+		} else {
+			healthStatus = Unhealthy
+		}
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   healthStatus,
+			ResponseStatus: statusCode,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("HTTP error %d", statusCode)
 	}
 
 	// Parse response
-	blockInfo, err := h.ParseHealthCheckResponse(resp)
+	blockInfo, err := h.ParseHealthCheckResponse(respBytes)
 	if err != nil {
-		return nil, err
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: statusCode,
+			Metadata:       make(map[string]interface{}),
+		}, err
 	}
 
 	return &LatestBlockResult{
 		BlockNumber:    blockInfo.Number,
 		HealthStatus:   Healthy,
-		ResponseStatus: 200,
+		ResponseStatus: statusCode,
 		Metadata:       make(map[string]interface{}),
 	}, nil
 }
@@ -391,39 +406,27 @@ func (h *BitcoinEsploraHandler) PerformArchiveCheck(httpUrl string, headers map[
 
 // PerformGetBlockByNumber performs the complete get block by number operation
 func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+	// Single attempt - let middleware handle retries
 	// First get block hash by height
 	endpoint := fmt.Sprintf("%s/block-height/%d", httpUrl, blockNumber)
 
 	// Execute request to get block hash
-	var resp []byte
-	var lastErr error
-	var statusCode int
-
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
-		if err != nil {
-			lastErr = err
-			if status != nil {
-				statusCode = *status
-			}
-			continue
-		}
-		if status != nil {
-			statusCode = *status
-		}
-		if statusCode >= 200 && statusCode < 300 {
-			resp = respBytes
-			break
-		}
-		lastErr = fmt.Errorf("HTTP error %d", statusCode)
+	respBytes, status, err := httpClient.Get(endpoint, headers, authClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block hash: %w", err)
 	}
 
-	if resp == nil {
-		return nil, fmt.Errorf("failed to get block hash: %w", lastErr)
+	var statusCode int
+	if status != nil {
+		statusCode = *status
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		return nil, fmt.Errorf("HTTP error %d getting block hash", statusCode)
 	}
 
 	var blockHash string
-	if err := json.Unmarshal(resp, &blockHash); err != nil {
+	if err := json.Unmarshal(respBytes, &blockHash); err != nil {
 		return nil, fmt.Errorf("failed to parse block hash: %w", err)
 	}
 
@@ -431,31 +434,18 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 	blockEndpoint := fmt.Sprintf("%s/block/%s", httpUrl, blockHash)
 
 	// Execute request to get block data
-	var blockResp []byte
-	lastErr = nil
-
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		respBytes, status, err := httpClient.Get(blockEndpoint, headers, authClient)
-		if err != nil {
-			lastErr = err
-			if status != nil {
-				statusCode = *status
-			}
-			continue
-		}
-		if status != nil {
-			statusCode = *status
-		}
-		if statusCode >= 200 && statusCode < 300 {
-			blockResp = respBytes
-			break
-		}
-		lastErr = fmt.Errorf("HTTP error %d", statusCode)
+	blockRespBytes, blockStatus, err := httpClient.Get(blockEndpoint, headers, authClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block data: %w", err)
 	}
 
-	if blockResp == nil {
-		return nil, fmt.Errorf("failed to get block data: %w", lastErr)
+	if blockStatus != nil {
+		statusCode = *blockStatus
 	}
 
-	return h.ParseBlockResponse(blockResp)
+	if statusCode < 200 || statusCode >= 300 {
+		return nil, fmt.Errorf("HTTP error %d getting block data", statusCode)
+	}
+
+	return h.ParseBlockResponse(blockRespBytes)
 }

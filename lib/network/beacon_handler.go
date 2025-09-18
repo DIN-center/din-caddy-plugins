@@ -486,160 +486,150 @@ func (h *BeaconChainHandler) ParseChainIDResponse(body []byte, statusCode int) (
 // For beacon chain, we can either return the configured chain ID directly
 // or make a REST API call to get the network configuration
 func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
-	var lastErr error
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		// Make GET request to config/spec endpoint
-		configURL, err := url.JoinPath(httpUrl, h.GetChainIDMethod())
-		if err != nil {
-			lastErr = fmt.Errorf("failed to construct config URL: %w", err)
-			continue
-		}
-		resBytes, statusCode, err := httpClient.Get(configURL, headers, authClient)
-		if err != nil {
-			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
-			continue
-		}
-
-		// Parse the response to extract chain ID
-		chainID, err := h.ParseChainIDResponse(resBytes, *statusCode)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// Success!
-		return chainID, nil
+	// Single attempt - let middleware handle retries
+	configURL, err := url.JoinPath(httpUrl, h.GetChainIDMethod())
+	if err != nil {
+		return "", fmt.Errorf("failed to construct config URL: %w", err)
+	}
+	resBytes, statusCode, err := httpClient.Get(configURL, headers, authClient)
+	if err != nil {
+		return "", fmt.Errorf("error sending HTTP request: %w", err)
 	}
 
-	return "", fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+	// Parse the response to extract chain ID
+	chainID, err := h.ParseChainIDResponse(resBytes, *statusCode)
+	if err != nil {
+		return "", err
+	}
+
+	return chainID, nil
 }
 
 // GetLatestBlockNumber retrieves the latest block number (slot) for beacon chain
 // Uses the REST API endpoint /eth/v2/beacon/blocks/head to get the latest slot
 func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
-	var lastErr error
-	var lastResponseStatus int
-	var lastHealthStatus = Unhealthy
-
-	// Use the block info endpoint to get latest slot
+	// Single attempt - let middleware handle retries
 	blockInfoMethod := h.GetBlockInfoMethod()
 
 	h.logger.Debug("Starting beacon chain latest block number request",
 		zap.String("endpoint", blockInfoMethod),
-		zap.String("base_url", httpUrl),
-		zap.Int("max_attempts", requestAttempts))
+		zap.String("base_url", httpUrl))
 
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		// Make GET request to beacon headers/head endpoint
-		blockInfoURL, err := url.JoinPath(httpUrl, blockInfoMethod)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to construct block info URL: %w", err)
-			lastHealthStatus = Unhealthy
-			continue
-		}
-
-		h.logger.Debug("Making GET request for latest block number",
-			zap.String("url", blockInfoURL),
-			zap.String("network", "beacon"),
-			zap.Int("attempt", attempt+1))
-
-		resBytes, statusCode, err := httpClient.Get(blockInfoURL, headers, authClient)
-		if statusCode != nil {
-			lastResponseStatus = *statusCode
-		}
-
-		if err != nil {
-			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
-			// Check if it's a retryable error based on status code
-			if lastResponseStatus >= 500 || lastResponseStatus == 429 {
-				lastHealthStatus = Warning
-			} else {
-				lastHealthStatus = Unhealthy
-			}
-			h.logger.Debug("HTTP request failed",
-				zap.Error(err),
-				zap.Int("status_code", lastResponseStatus),
-				zap.Int("attempt", attempt+1))
-			continue
-		}
-
-		// Check HTTP status code
-		if lastResponseStatus >= 400 {
-			if lastResponseStatus == 429 {
-				lastErr = fmt.Errorf("rate limit error (status code: %d)", lastResponseStatus)
-				lastHealthStatus = Warning
-			} else {
-				lastErr = fmt.Errorf("error status code: %d", lastResponseStatus)
-				lastHealthStatus = Unhealthy
-			}
-			h.logger.Debug("HTTP request returned error status",
-				zap.Int("status_code", lastResponseStatus),
-				zap.String("response_body", string(resBytes)),
-				zap.Int("attempt", attempt+1))
-			continue
-		}
-
-		h.logger.Debug("Received successful response from beacon API",
-			zap.Int("status_code", lastResponseStatus),
-			zap.Int("response_size", len(resBytes)),
-			zap.String("response_preview", string(resBytes[:min(len(resBytes), 200)])))
-
-		// Parse the beacon chain response to get block info
-		blockInfo, err := h.ParseHealthCheckResponse(resBytes)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to parse beacon chain response: %w", err)
-			lastHealthStatus = Unhealthy
-			h.logger.Debug("Failed to parse beacon response",
-				zap.Error(err),
-				zap.String("response_snippet", string(resBytes[:min(len(resBytes), 500)])),
-				zap.Int("attempt", attempt+1))
-			continue
-		}
-
-		if blockInfo == nil {
-			lastErr = fmt.Errorf("beacon chain response parsing returned nil block info")
-			lastHealthStatus = Unhealthy
-			h.logger.Debug("Received nil block info from parser",
-				zap.Int("attempt", attempt+1))
-			continue
-		}
-
-		// Success! Use slot as block number for consistency with other networks
-		h.logger.Debug("Successfully retrieved latest block number",
-			zap.Int64("slot", blockInfo.Number), // Number field contains slot for beacon chain
-			zap.Int64("block_number", blockInfo.Number),
-			zap.Int64("epoch", getInt64FromMetadata(blockInfo.Metadata, "epoch")),
-			zap.String("hash", blockInfo.Hash),
-			zap.Bool("execution_optimistic", getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic")),
-			zap.Bool("finalized", getBoolFromMetadata(blockInfo.Metadata, "finalized")))
-
+	// Make GET request to beacon headers/head endpoint
+	blockInfoURL, err := url.JoinPath(httpUrl, blockInfoMethod)
+	if err != nil {
 		return &LatestBlockResult{
-			BlockNumber:    blockInfo.Number, // This will be the slot number
-			HealthStatus:   Healthy,
-			ResponseStatus: lastResponseStatus,
-			Metadata: map[string]interface{}{
-				"slot":      blockInfo.Number, // Number field contains slot for beacon chain
-				"epoch":     getInt64FromMetadata(blockInfo.Metadata, "epoch"),
-				"hash":      blockInfo.Hash,
-				"timestamp": blockInfo.Timestamp,
-				"endpoint":  blockInfoMethod,
-			},
-		}, nil
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: 0,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("failed to construct block info URL: %w", err)
 	}
 
-	// All attempts failed
-	h.logger.Warn("All attempts to get latest block number failed",
-		zap.Error(lastErr),
-		zap.Int("attempts", requestAttempts),
-		zap.String("health_status", lastHealthStatus.String()),
-		zap.String("endpoint", blockInfoMethod))
+	h.logger.Debug("Making GET request for latest block number",
+		zap.String("url", blockInfoURL),
+		zap.String("network", "beacon"))
+
+	resBytes, statusCode, err := httpClient.Get(blockInfoURL, headers, authClient)
+	var responseStatus int
+	if statusCode != nil {
+		responseStatus = *statusCode
+	}
+
+	if err != nil {
+		// Check if it's a retryable error based on status code
+		var healthStatus HealthStatus
+		if responseStatus >= 500 || responseStatus == 429 {
+			healthStatus = Warning
+		} else {
+			healthStatus = Unhealthy
+		}
+		h.logger.Debug("HTTP request failed",
+			zap.Error(err),
+			zap.Int("status_code", responseStatus))
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   healthStatus,
+			ResponseStatus: responseStatus,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("error sending HTTP request: %w", err)
+	}
+
+	// Check HTTP status code
+	if responseStatus >= 400 {
+		var healthStatus HealthStatus
+		var errMsg string
+		if responseStatus == 429 {
+			errMsg = fmt.Sprintf("rate limit error (status code: %d)", responseStatus)
+			healthStatus = Warning
+		} else if responseStatus >= 500 {
+			errMsg = fmt.Sprintf("server error (status code: %d)", responseStatus)
+			healthStatus = Warning
+		} else {
+			errMsg = fmt.Sprintf("error status code: %d", responseStatus)
+			healthStatus = Unhealthy
+		}
+		h.logger.Debug("HTTP request returned error status",
+			zap.Int("status_code", responseStatus),
+			zap.String("response_body", string(resBytes)))
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   healthStatus,
+			ResponseStatus: responseStatus,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("%s", errMsg)
+	}
+
+	h.logger.Debug("Received successful response from beacon API",
+		zap.Int("status_code", responseStatus),
+		zap.Int("response_size", len(resBytes)),
+		zap.String("response_preview", string(resBytes[:min(len(resBytes), 200)])))
+
+	// Parse the beacon chain response to get block info
+	blockInfo, err := h.ParseHealthCheckResponse(resBytes)
+	if err != nil {
+		h.logger.Debug("Failed to parse beacon response",
+			zap.Error(err),
+			zap.String("response_snippet", string(resBytes[:min(len(resBytes), 500)])))
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: responseStatus,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("failed to parse beacon chain response: %w", err)
+	}
+
+	if blockInfo == nil {
+		h.logger.Debug("Received nil block info from parser")
+		return &LatestBlockResult{
+			BlockNumber:    0,
+			HealthStatus:   Unhealthy,
+			ResponseStatus: responseStatus,
+			Metadata:       make(map[string]interface{}),
+		}, fmt.Errorf("beacon chain response parsing returned nil block info")
+	}
+
+	// Success! Use slot as block number for consistency with other networks
+	h.logger.Debug("Successfully retrieved latest block number",
+		zap.Int64("slot", blockInfo.Number), // Number field contains slot for beacon chain
+		zap.Int64("block_number", blockInfo.Number),
+		zap.Int64("epoch", getInt64FromMetadata(blockInfo.Metadata, "epoch")),
+		zap.String("hash", blockInfo.Hash),
+		zap.Bool("execution_optimistic", getBoolFromMetadata(blockInfo.Metadata, "execution_optimistic")),
+		zap.Bool("finalized", getBoolFromMetadata(blockInfo.Metadata, "finalized")))
 
 	return &LatestBlockResult{
-		BlockNumber:    0,
-		HealthStatus:   lastHealthStatus,
-		ResponseStatus: lastResponseStatus,
-		Metadata:       make(map[string]interface{}),
-	}, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+		BlockNumber:    blockInfo.Number, // This will be the slot number
+		HealthStatus:   Healthy,
+		ResponseStatus: responseStatus,
+		Metadata: map[string]interface{}{
+			"slot":      blockInfo.Number, // Number field contains slot for beacon chain
+			"epoch":     getInt64FromMetadata(blockInfo.Metadata, "epoch"),
+			"hash":      blockInfo.Hash,
+			"timestamp": blockInfo.Timestamp,
+			"endpoint":  blockInfoMethod,
+		},
+	}, nil
 }
 
 // PerformArchiveCheck for beacon chain - stubbed out (archive mode disabled)
@@ -759,4 +749,12 @@ func getBoolFromMetadata(metadata map[string]interface{}, key string) bool {
 		}
 	}
 	return false
+}
+
+// Helper function to get minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
