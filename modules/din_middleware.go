@@ -478,6 +478,12 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Store network object in replacer for later use
 	repl.Set("network_object", networkObj)
+	if api_key := r.Header.Get("Din-Api-Key"); api_key != "" {
+		repl.Set("din_api_key", api_key)
+		r.Header.Del("Din-Api-Key") // We don't want to pass this information to providers
+	} else {
+		repl.Set("din_api_key", "unspecified")
+	}
 
 	// Middleware focuses on request validation only
 	// DinSelect will handle all REST API path processing during provider configuration
@@ -735,7 +741,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
-				ApiKey:         getRequestAPIKey(r),
+				ApiKey:         getRequestAPIKey(repl),
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
 				HealthStatus:   "unhealthy", // All providers failed
