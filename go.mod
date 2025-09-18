@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/aws/aws-sdk-go-v2 v1.32.2
 	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/pkg/errors v0.9.1
@@ -18,6 +19,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
 	go.uber.org/zap v1.27.0
+	gotest.tools/v3 v3.5.2
 )
 
 require (
@@ -65,6 +67,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/cel-go v0.15.1 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
