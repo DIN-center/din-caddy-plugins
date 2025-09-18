@@ -61,7 +61,7 @@ func RegisterMetrics() {
 			Name: DinRequestCountMetricName,
 			Help: "Metric for counting the number of requests to the din http server",
 		},
-		[]string{"service", "method", "provider", "host_name", "response_status", "health_status", "priority", "machine_id", "environment"},
+		[]string{"service", "method", "provider", "api_key", "host_name", "response_status", "health_status", "priority", "machine_id", "environment"},
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -133,6 +133,7 @@ type PromRequestMetricData struct {
 	Method         string
 	Network        string
 	Provider       string
+	ApiKey         string
 	HostName       string
 	ResponseStatus int
 	HealthStatus   string
@@ -153,7 +154,7 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, dur
 	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
 
 	// Increment prometheus counter metric based on request data
-	DinRequestCount.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, priority, p.machineID, data.Environment).Inc()
+	DinRequestCount.WithLabelValues(network, method, data.Provider, data.ApiKey, data.HostName, status, data.HealthStatus, priority, p.machineID, data.Environment).Inc()
 
 	// Observe prometheus histogram based on request duration and data
 	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.HostName, status, data.HealthStatus, priority, p.machineID, data.Environment).Observe(float64(durationMS))

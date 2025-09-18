@@ -735,6 +735,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
+				ApiKey:         getRequestAPIKey(r),
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
 				HealthStatus:   "unhealthy", // All providers failed

@@ -943,3 +943,45 @@ func TestLogFailedAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRequestAPIKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		headerKey  string
+		headerVal  string
+		want       string
+	}{
+		{
+			name:      "Header present with value",
+			headerKey: "Din-Api-Key",
+			headerVal: "abc123",
+			want:      "abc123",
+		},
+		{
+			name:      "Header present but empty",
+			headerKey: "Din-Api-Key",
+			headerVal: "",
+			want:      "unspecified",
+		},
+		{
+			name:      "Header absent entirely",
+			headerKey: "",
+			headerVal: "",
+			want:      "unspecified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.headerKey != "" {
+				req.Header.Set(tt.headerKey, tt.headerVal)
+			}
+
+			got := getRequestAPIKey(req)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

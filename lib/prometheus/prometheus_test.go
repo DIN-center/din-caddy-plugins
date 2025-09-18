@@ -43,6 +43,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ApiKey:         "abc123",
 				HostName:       "node1",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
@@ -52,6 +53,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"service":         "ethereum",
 				"method":          "eth_getBlockByNumber",
 				"provider":        "infura",
+				"api_key":         "abc123",
 				"host_name":       "node1",
 				"response_status": "200",
 				"health_status":   "healthy",
@@ -67,6 +69,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ApiKey:         "abc123",
 				HostName:       "node1",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
@@ -76,6 +79,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"service":         "ethereum",
 				"method":          "",
 				"provider":        "infura",
+				"api_key":         "abc123",
 				"host_name":       "node1",
 				"response_status": "200",
 				"health_status":   "healthy",
