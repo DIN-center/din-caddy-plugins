@@ -2,6 +2,7 @@ package modules
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -388,50 +389,50 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// chainId check health check
 	// Use handler's GetChainID method for all network types
 	if n.handler != nil {
-		// Add retry logic since handlers no longer retry internally
 		var chainId string
-		var lastErr error
-		for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-			var err error
-			chainId, err = n.handler.GetChainID(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), 1)
-			if err != nil {
-				lastErr = err
-				// Check if error is retryable
-				if !n.handler.IsRetryableError(err, 0) {
+
+		err := networklib.RetryWithChecker(
+			context.Background(),
+			n.RequestAttemptCount,
+			func(err error) bool {
+				retryable := n.handler.IsRetryableError(err, 0)
+				if !retryable {
 					n.logProviderWarning("Non-retryable error getting chain ID", provider,
 						zap.String("expected_chain_id", n.ChainId),
 						zap.String("health_status", Unhealthy.String()),
+						zap.Error(err))
+				} else {
+					n.logger.Debug("Retryable error getting chain ID, will retry",
 						zap.Error(err),
-						zap.Int("attempt", attempt+1))
-					return Unhealthy
+						zap.String("provider", provider.host))
 				}
-				n.logger.Debug("Retryable error getting chain ID, will retry",
-					zap.Error(err),
-					zap.String("provider", provider.host),
-					zap.Int("attempt", attempt+1),
-					zap.Int("max_attempts", n.RequestAttemptCount))
-				continue
-			}
+				return retryable
+			},
+			func() error {
+				var err error
+				chainId, err = n.handler.GetChainID(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), 1)
+				if err != nil {
+					return err
+				}
 
-			// Success - validate the chain ID
-			if err := n.handler.ValidateChainID(chainId); err != nil {
-				n.logProviderWarning("Provider has incorrect chain ID", provider,
-					zap.String("chain_id", chainId),
-					zap.String("expected_chain_id", n.ChainId),
-					zap.String("validation_error", err.Error()),
-					zap.String("health_status", Unhealthy.String()))
-				return Unhealthy
-			}
-			// Chain ID is valid, break out of retry loop
-			break
-		}
+				// Success - validate the chain ID
+				if err := n.handler.ValidateChainID(chainId); err != nil {
+					n.logProviderWarning("Provider has incorrect chain ID", provider,
+						zap.String("chain_id", chainId),
+						zap.String("expected_chain_id", n.ChainId),
+						zap.String("validation_error", err.Error()),
+						zap.String("health_status", Unhealthy.String()))
+					return fmt.Errorf("chain ID validation failed: %w", err)
+				}
+				return nil
+			},
+		)
 
-		// If we exhausted all retries with errors
-		if lastErr != nil {
-			n.logProviderWarning("Error getting chain ID after all retries", provider,
+		if err != nil {
+			n.logProviderWarning("Error getting/validating chain ID after all retries", provider,
 				zap.String("expected_chain_id", n.ChainId),
 				zap.String("health_status", Unhealthy.String()),
-				zap.Error(lastErr),
+				zap.Error(err),
 				zap.Int("total_attempts", n.RequestAttemptCount))
 			return Unhealthy
 		}
@@ -471,32 +472,26 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 	// Use handler method to format block height directly
 	quarterBlockHeightString := n.handler.FormatBlockHeight(quarterBlockHeight)
 
-	// Add retry logic since handlers no longer retry internally
-	var lastErr error
-	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		err := n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), 1, quarterBlockHeightString)
-		if err != nil {
-			lastErr = err
-			// Check if error is retryable
-			if !n.handler.IsRetryableError(err, 0) {
+	return networklib.RetryWithChecker(
+		context.Background(),
+		n.RequestAttemptCount,
+		func(err error) bool {
+			retryable := n.handler.IsRetryableError(err, 0)
+			if !retryable {
 				n.logger.Debug("Non-retryable error in archive check",
 					zap.Error(err),
-					zap.String("provider", provider.host),
-					zap.Int("attempt", attempt+1))
-				return err
+					zap.String("provider", provider.host))
+			} else {
+				n.logger.Debug("Retryable error in archive check, will retry",
+					zap.Error(err),
+					zap.String("provider", provider.host))
 			}
-			n.logger.Debug("Retryable error in archive check, will retry",
-				zap.Error(err),
-				zap.String("provider", provider.host),
-				zap.Int("attempt", attempt+1),
-				zap.Int("max_attempts", n.RequestAttemptCount))
-			continue
-		}
-		// Success
-		return nil
-	}
-	// All attempts failed
-	return lastErr
+			return retryable
+		},
+		func() error {
+			return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), 1, quarterBlockHeightString)
+		},
+	)
 }
 
 // isStalled checks if provider's block numbers haven't changed
@@ -586,79 +581,72 @@ type getLatestBlockNumberResult struct {
 }
 
 func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string, ac auth.IAuthClient, providerHost string) (*getLatestBlockNumberResult, error) {
-	// Add retry logic since handlers no longer retry internally
-	var lastErr error
+	var result *getLatestBlockNumberResult
 	var lastResult *networklib.LatestBlockResult
 
-	for attempt := 0; attempt < n.RequestAttemptCount; attempt++ {
-		// Call handler's GetLatestBlockNumber method (single attempt)
-		result, err := n.handler.GetLatestBlockNumber(httpUrl, headers, n.HttpClient, ac, 1)
-		if err != nil {
-			lastErr = err
-			lastResult = result
-
+	err := networklib.RetryWithChecker(
+		context.Background(),
+		n.RequestAttemptCount,
+		func(err error) bool {
 			// Check if the error is retryable
-			var statusCode int
-			if result != nil {
-				statusCode = result.ResponseStatus
+			statusCode := 0
+			if lastResult != nil {
+				statusCode = lastResult.ResponseStatus
 			}
-
-			// Use handler's IsRetryableError to determine if we should retry
-			if !n.handler.IsRetryableError(err, statusCode) {
+			retryable := n.handler.IsRetryableError(err, statusCode)
+			if !retryable {
 				n.logger.Debug("Non-retryable error in GetLatestBlockNumber",
 					zap.Error(err),
 					zap.String("network", n.Name),
-					zap.String("provider", providerHost),
-					zap.Int("attempt", attempt+1))
-				break // Non-retryable error, stop trying
+					zap.String("provider", providerHost))
+			} else {
+				n.logger.Debug("Retryable error in GetLatestBlockNumber",
+					zap.Error(err),
+					zap.String("network", n.Name),
+					zap.String("provider", providerHost))
 			}
+			return retryable
+		},
+		func() error {
+			res, err := n.handler.GetLatestBlockNumber(httpUrl, headers, n.HttpClient, ac, 1)
+			lastResult = res
+			if res != nil {
+				result = &getLatestBlockNumberResult{
+					blockNumber:    res.BlockNumber,
+					healthStatus:   HealthStatus(res.HealthStatus),
+					responseStatus: res.ResponseStatus,
+				}
+			}
+			if err == nil {
+				n.logger.Debug("Handler GetLatestBlockNumber succeeded",
+					zap.Int64("block_number", res.BlockNumber),
+					zap.String("health_status", res.HealthStatus.String()),
+					zap.String("network", n.Name),
+					zap.String("provider", providerHost))
+			}
+			return err
+		},
+	)
 
-			n.logger.Debug("Retryable error in GetLatestBlockNumber",
-				zap.Error(err),
-				zap.String("network", n.Name),
-				zap.String("provider", providerHost),
-				zap.Int("attempt", attempt+1),
-				zap.Int("max_attempts", n.RequestAttemptCount))
-			continue
-		}
-
-		// Success!
-		n.logger.Debug("Handler GetLatestBlockNumber succeeded",
-			zap.Int64("block_number", result.BlockNumber),
-			zap.String("health_status", result.HealthStatus.String()),
+	if err != nil {
+		n.logger.Debug("Handler GetLatestBlockNumber failed after all attempts",
+			zap.Error(err),
 			zap.String("network", n.Name),
 			zap.String("provider", providerHost),
-			zap.Int("attempt", attempt+1))
+			zap.Int("total_attempts", n.RequestAttemptCount))
 
+		if result != nil {
+			return result, err
+		}
+		// Return a default unhealthy result when result is nil
 		return &getLatestBlockNumberResult{
-			blockNumber:    result.BlockNumber,
-			healthStatus:   HealthStatus(result.HealthStatus),
-			responseStatus: result.ResponseStatus,
-		}, nil
+			blockNumber:    0,
+			healthStatus:   Unhealthy,
+			responseStatus: 0,
+		}, err
 	}
 
-	// All attempts failed
-	n.logger.Debug("Handler GetLatestBlockNumber failed after all attempts",
-		zap.Error(lastErr),
-		zap.String("network", n.Name),
-		zap.String("provider", providerHost),
-		zap.Int("total_attempts", n.RequestAttemptCount))
-
-	// Return the last result if available
-	if lastResult != nil {
-		return &getLatestBlockNumberResult{
-			blockNumber:    lastResult.BlockNumber,
-			healthStatus:   HealthStatus(lastResult.HealthStatus),
-			responseStatus: lastResult.ResponseStatus,
-		}, lastErr
-	}
-
-	// Return a default unhealthy result when result is nil
-	return &getLatestBlockNumberResult{
-		blockNumber:    0,
-		healthStatus:   Unhealthy,
-		responseStatus: 0,
-	}, lastErr
+	return result, nil
 }
 
 // Layer 3: Process response

@@ -400,7 +400,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      errors.New("connection failed"),
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "failed after",
+			expectedErrMsg: "error sending HTTP request",
 		},
 		{
 			name:           "service_unavailable",
@@ -410,7 +410,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "failed after",
+			expectedErrMsg: "network unavailable",
 		},
 		{
 			name:           "json_rpc_error",
@@ -420,7 +420,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "0x64",
 			expectError:    true,
-			expectedErrMsg: "failed after",
+			expectedErrMsg: "archive mode not supported",
 		},
 		{
 			name:         "starknet_successful",
@@ -439,7 +439,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			httpError:      nil,
 			quarterBlock:   "1000",
 			expectError:    true,
-			expectedErrMsg: "failed after",
+			expectedErrMsg: "missing or invalid block_hash",
 		},
 	}
 
@@ -478,7 +478,7 @@ func TestArchiveModeCheck(t *testing.T) {
 				require.NoError(t, n.SetHandler(networklib.NewStarknetHandler(config)))
 			}
 
-			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
+			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, 1, tt.quarterBlock)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -737,7 +737,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: Warning,  // 5xx errors are retryable, so Warning not Unhealthy
 			expectedErr:          true,
 		},
 	}

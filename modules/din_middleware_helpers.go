@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -13,56 +14,59 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
 // getRegistryData retrieves registry data with retry logic
 func (d *DinMiddleware) getRegistryData() (*din.DinRegistryData, error) {
-	var lastErr error
+	var data *din.DinRegistryData
 
-	for attempt := 0; attempt <= d.Registry.RetryMaxAttempts; attempt++ {
-		data, err := d.DingoClient.GetRegistryData()
-		if err == nil {
-			return data, nil
-		}
-		lastErr = err
+	err := networklib.Retry(
+		context.Background(),
+		d.Registry.RetryMaxAttempts+1, // +1 because config is 0-indexed for retries
+		func() error {
+			var err error
+			data, err = d.DingoClient.GetRegistryData()
+			if err != nil {
+				d.logger.Warn("Registry call failed, will retry",
+					zap.Error(err))
+			}
+			return err
+		},
+	)
 
-		if attempt < d.Registry.RetryMaxAttempts {
-			d.logger.Warn("Registry call failed, retrying",
-				zap.Int("attempt", attempt+1),
-				zap.Int("max_attempts", d.Registry.RetryMaxAttempts),
-				zap.Error(err))
-			time.Sleep(d.Registry.RetryDelay) // Fixed delay, no backoff
-		}
+	if err != nil {
+		return nil, fmt.Errorf("registry call failed after %d attempts: %w",
+			d.Registry.RetryMaxAttempts+1, err)
 	}
 
-	return nil, fmt.Errorf("registry call failed after %d attempts: %w",
-		d.Registry.RetryMaxAttempts, lastErr)
+	return data, nil
 }
 
 // syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
 func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) {
 	// Get latest block number with retry
 	var latestBlockNumber uint64
-	var err error
 
-	for attempt := 0; attempt <= d.Registry.RetryMaxAttempts; attempt++ {
-		latestBlockNumber, err = web3Client.LatestBlockNumber()
-		if err == nil {
-			break
-		}
-		if attempt < d.Registry.RetryMaxAttempts {
-			d.logger.Warn("Failed to get latest block number, retrying",
-				zap.Int("attempt", attempt+1),
-				zap.Error(err))
-			time.Sleep(d.Registry.RetryDelay)
-		}
-	}
+	err := networklib.Retry(
+		context.Background(),
+		d.Registry.RetryMaxAttempts+1,
+		func() error {
+			var err error
+			latestBlockNumber, err = web3Client.LatestBlockNumber()
+			if err != nil {
+				d.logger.Warn("Failed to get latest block number, will retry",
+					zap.Error(err))
+			}
+			return err
+		},
+	)
 
 	if err != nil {
 		d.logger.Error("Failed to get latest block number after retries",
 			zap.Error(err),
-			zap.Int("max_retries", d.Registry.RetryMaxAttempts))
+			zap.Int("max_retries", d.Registry.RetryMaxAttempts+1))
 		return
 	}
 

@@ -199,6 +199,8 @@ func TestEvaluateProviderHealth(t *testing.T) {
 				mockHandler.EXPECT().GetChainID(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 					Return("0x5", nil).AnyTimes()
 				mockHandler.EXPECT().ValidateChainID("0x5").Return(errors.New("invalid chain ID")).AnyTimes()
+				// The retry logic will check if the validation error is retryable
+				mockHandler.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
 			}
 
 			// Setup mocks for archive mode
