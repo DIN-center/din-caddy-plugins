@@ -78,6 +78,11 @@ func (p *caddyfileParser) initialize() error {
 		p.middleware.Networks = make(map[string]*network)
 	}
 
+	// Initialize API Key map if needed
+	if p.middleware.ApiKeys == nil {
+		p.middleware.ApiKeys = make(map[string]string)
+	}
+
 	// Set environment
 	p.middleware.Env = utils.GetEnv()
 
@@ -106,6 +111,10 @@ func (p *caddyfileParser) parseDirective() error {
 		return p.parseNetworks()
 	case "din_registry":
 		return p.parseDinRegistry()
+	case "api_keys":
+		return p.parseAPIKeys()
+	case "unknown_api_key_salt":
+		return p.parseAPISalt()
 	default:
 		// Continue processing for other directives
 		return nil
@@ -587,6 +596,25 @@ func (p *caddyfileParser) parseDinRegistry() error {
 			return p.dispenser.Errf("unrecognized registry option: %s", p.dispenser.Val())
 		}
 	}
+	return nil
+}
+
+func (p *caddyfileParser) parseAPIKeys() error {
+	for n1 := p.dispenser.Nesting(); p.dispenser.NextBlock(n1); {
+		key := p.dispenser.Val()
+		if !p.dispenser.Next() {
+			return p.dispenser.Errf("API keys must specify user IDs")
+		}
+		p.middleware.ApiKeys[key] = p.dispenser.Val()
+	}
+	return nil
+}
+
+func (p *caddyfileParser) parseAPISalt() error {
+	if !p.dispenser.Next() {
+		return p.dispenser.Errf("unknown_api_key_salt must be followed with a value")
+	}
+	p.middleware.ApiSalt = p.dispenser.Val()
 	return nil
 }
 

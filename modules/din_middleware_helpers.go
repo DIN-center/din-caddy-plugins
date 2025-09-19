@@ -1,11 +1,13 @@
 package modules
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
+	"encoding/hex"
 	"encoding/json"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -761,4 +763,14 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 	// save the block number to the network object's history
 	networkObj.AddNetworkBlockEntry(blockNumber, block) // Add the block number and block hash to the network object's history as long as its the the latest block number
 	d.logger.Debug("Goroutine: HCMethod matched, successfully processed block number and added to network history", zap.Int64("block_number", blockNumber), zap.String("network", networkPath))
+}
+
+func (d *DinMiddleware) getAPIKeyId(key string) string {
+	if v, ok := d.ApiKeys[key]; ok {
+		return v
+	}
+	h := sha256.New()
+	h.Write([]byte(d.ApiSalt))
+	h.Write([]byte(key))
+	return hex.EncodeToString(h.Sum(nil))[:10]
 }

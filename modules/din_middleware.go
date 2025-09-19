@@ -107,6 +107,10 @@ type DinMiddleware struct {
 	// Internal registry tracking - this is not exposed in config
 	registryLastUpdatedEpochBlockNumber uint64
 
+	// Map for associating API keys with users
+	ApiKeys map[string]string
+	ApiSalt string
+
 	// The channel to quit the goroutines
 	quit chan struct{}
 }
@@ -479,7 +483,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Store network object in replacer for later use
 	repl.Set("network_object", networkObj)
 	if api_key := r.Header.Get("Din-Api-Key"); api_key != "" {
-		repl.Set("din_api_key", api_key)
+		repl.Set("din_api_key", d.getAPIKeyId(api_key))
 		r.Header.Del("Din-Api-Key") // We don't want to pass this information to providers
 	} else {
 		repl.Set("din_api_key", "unspecified")
