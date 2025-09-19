@@ -24,16 +24,15 @@ func (d *DinMiddleware) getRegistryData() (*din.DinRegistryData, error) {
 
 	err := networklib.Retry(
 		context.Background(),
+		d.logger,
+		"get_registry_data",
 		d.Registry.RetryMaxAttempts+1, // +1 because config is 0-indexed for retries
 		func() error {
 			var err error
 			data, err = d.DingoClient.GetRegistryData()
-			if err != nil {
-				d.logger.Warn("Registry call failed, will retry",
-					zap.Error(err))
-			}
 			return err
 		},
+		zap.String("registry_endpoint", d.Registry.EndpointUrl),
 	)
 
 	if err != nil {
@@ -51,16 +50,16 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) 
 
 	err := networklib.Retry(
 		context.Background(),
+		d.logger,
+		"get_latest_block_number",
 		d.Registry.RetryMaxAttempts+1,
 		func() error {
 			var err error
 			latestBlockNumber, err = web3Client.LatestBlockNumber()
-			if err != nil {
-				d.logger.Warn("Failed to get latest block number, will retry",
-					zap.Error(err))
-			}
 			return err
 		},
+		zap.String("network", "linea"),
+		zap.String("registry_endpoint", d.Registry.EndpointUrl),
 	)
 
 	if err != nil {
