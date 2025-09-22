@@ -146,6 +146,13 @@ func getRequestBody(repl *caddy.Replacer) (*dinHttp.JSONRPCRequest, error) {
 	return nil, nil
 }
 
+func getRequestAPIKey(repl *caddy.Replacer) string {
+	if key, ok := repl.Get("din_api_key"); ok {
+		return key.(string)
+	}
+	return "unspecified"
+}
+
 func getRequestMethod(repl *caddy.Replacer) (string, error) {
 	method, ok := repl.Get(RequestMethodKey)
 	if !ok {
@@ -428,6 +435,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		Method:         requestMethod,
 		Network:        params.NetworkPath,
 		Provider:       params.Provider,
+		ApiKey:         getRequestAPIKey(params.Replacer),
 		HostName:       params.OriginalReq.Host,
 		ResponseStatus: effectiveStatusCode,
 		HealthStatus:   healthStatus,
@@ -634,6 +642,7 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			Method:         "unknown", // Generic - no network-specific parsing
 			Network:        networkPath,
 			Provider:       provider,
+			ApiKey:         getRequestAPIKey(repl),
 			HostName:       r.Host,
 			ResponseStatus: statusCode,
 			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state

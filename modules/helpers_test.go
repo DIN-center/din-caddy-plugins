@@ -943,3 +943,36 @@ func TestLogFailedAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRequestAPIKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		apiKey  string
+		want       string
+	}{
+		{
+			name:      "Header present with value",
+			apiKey:    "abc123",
+			want:      "abc123",
+		},
+		{
+			name:      "Header absent entirely",
+			apiKey:    "",
+			want:      "unspecified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repl := caddy.NewReplacer()
+			if tt.apiKey != "" {
+				repl.Set("din_api_key", tt.apiKey)
+			}
+
+			got := getRequestAPIKey(repl)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

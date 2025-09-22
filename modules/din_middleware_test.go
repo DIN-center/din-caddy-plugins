@@ -495,6 +495,70 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 	}
 }
 
+func TestUnmarshalCaddyfileAPIKeys(t *testing.T) {
+	dinMiddleware := new(DinMiddleware)
+	dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+
+	tests := []struct {
+		name      string
+		caddyfile string
+		hasErr    bool
+		expectKeys map[string]string
+	}{
+		{
+			name: "Valid Caddyfile",
+			caddyfile: `networks {
+				eth {
+					methods eth_blockNumber eth_getBlockByNumber
+					providers {
+						http://test-website-1.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 1
+						}
+						http://test-website-2.com/eth {
+							headers {
+								Content-Type application/json
+							}
+							priority 2
+						}
+					}
+					chain_id 0x1
+					healthcheck_threshold 2
+					healthcheck_interval 5
+					healthcheck_blocklag_limit 10
+					max_request_payload_size_kb 100
+				}
+			}
+			unknown_api_key_salt foo
+			api_keys {
+				test-key some-user
+				other-key other-user
+			}`,
+			expectKeys: map[string]string{
+				"test-key": "some-user",
+				"other-key": "other-user",
+				"missing-key": "c92388d1d4", // sha256(foo + missing-key)[:10]
+			},
+			hasErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dispenser := caddyfile.NewTestDispenser(tt.caddyfile)
+			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
+			if err != nil && !tt.hasErr {
+				t.Errorf("UnmarshalCaddyfile() = %v, want %v", err, tt.hasErr)
+			}
+			for k, v := range tt.expectKeys {
+				assert.Equal(t, dinMiddleware.getAPIKeyId(k), v)
+			}
+		})
+	}
+}
+
 func TestProcessHCMethodResponseAsync(t *testing.T) {
 	// Helper to capture stdout for fmt.Printf checks
 	captureOutput := func(f func()) string {
