@@ -133,13 +133,6 @@ jobs:
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.5
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: Clone DIN-SC dependency
-        run: |
-          git clone https://github.com/DIN-center/din-sc.git
-          cd din-sc && git checkout develop && cd ..
-          mkdir -p upstream/github.com/DIN-center/
-          cp -r din-sc upstream/github.com/DIN-center/din-sc
-
       - name: Build Caddy with DIN plugins
         run: |
           xcaddy build \
