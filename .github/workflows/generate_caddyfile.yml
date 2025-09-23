@@ -138,7 +138,7 @@ jobs:
       #     go mod tidy
       #     go build -o caddy cmd/caddy/main.go
 
-      - name: Test configuration
+      - name: Validate Caddyfile
         run: xcaddy validate --config Caddyfile
 
       - name: Archive artifacts
