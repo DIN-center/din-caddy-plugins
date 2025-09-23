@@ -24,3 +24,12 @@ services/.DS_Store
 coverage.out
 Claude.md
 PR_DESCRIPTION.md
+
+# Environment files with secrets
+.env.local
+.env.production
+.env.staging
+*.env
+
+# But keep the example file
+!.env.example
