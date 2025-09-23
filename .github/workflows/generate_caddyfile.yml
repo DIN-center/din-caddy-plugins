@@ -133,20 +133,55 @@ jobs:
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.5
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      # Skip building and validation for now - requires fixing compilation issues first
-      # - name: Build Caddy with xcaddy
-      #   run: |
-      #     xcaddy build \
-      #       --with github.com/DIN-center/din-caddy-plugins=. \
-      #       --output ./caddy
+      - name: Clone DIN-SC dependency
+        run: |
+          git clone https://github.com/DIN-center/din-sc.git
+          cd din-sc && git checkout develop && cd ..
+          mkdir -p upstream/github.com/DIN-center/
+          cp -r din-sc upstream/github.com/DIN-center/din-sc
 
-      # - name: Validate Caddyfile
-      #   run: ./caddy validate --config Caddyfile --adapter caddyfile
+      - name: Build Caddy with DIN plugins
+        run: |
+          xcaddy build \
+            --with github.com/DIN-center/din-caddy-plugins=. \
+            --replace github.com/DIN-center/din-sc/apps/din-go=./upstream/github.com/DIN-center/din-sc/apps/din-go \
+            --output ./caddy-din
+
+      - name: Prepare and Validate Caddyfile
+        run: |
+          echo "Preparing Caddyfile for validation..."
+
+          # Create a copy for validation
+          cp Caddyfile Caddyfile.validate
+
+          # Create a dummy 256-bit hex secret key for validation
+          echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" > secret.key
+
+          # Replace the secret path with local path
+          sed -i 's|/run/secrets/din-secret-key|./secret.key|g' Caddyfile.validate
+
+          # Fix log format syntax (move format outside file block)
+          sed -i '/output file caddy.log {/,/}/ {
+            /format json/d
+          }' Caddyfile.validate
+          sed -i '/log {/a\
+              format json' Caddyfile.validate
+
+          # Validate the Caddyfile
+          echo "Validating Caddyfile..."
+          ./caddy-din validate --config Caddyfile.validate --adapter caddyfile
+
+          # Clean up validation files
+          rm -f Caddyfile.validate secret.key
+
+          echo "✅ Caddyfile validation successful!"
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: caddyfile-${{ github.sha }}
-          path: Caddyfile
+          name: caddy-build-${{ github.sha }}
+          path: |
+            caddy-din
+            Caddyfile
 
       # Add your deployment steps here

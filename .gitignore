@@ -32,3 +32,12 @@ PR_DESCRIPTION.md
 
 # But keep the example file
 !.env.example
+secret.key
+caddy-din
+caddy-test
+Caddyfile.validate
+Caddyfile.test
+Caddyfile.basic
+Caddyfile.minimal
+upstream/
+din-sc/
