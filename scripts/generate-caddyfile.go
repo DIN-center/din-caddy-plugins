@@ -169,18 +169,47 @@ func (sm *SecretManager) ProcessTemplate(templatePath, outputPath string) error 
 
 // PrintPreview shows a masked preview of the generated file
 func (sm *SecretManager) PrintPreview(outputPath string) error {
-	fmt.Println("\n📋 Preview (secrets masked):")
-	fmt.Println("=" + strings.Repeat("=", 50))
+	// Read the generated file
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read generated file for preview: %w", err)
+	}
 
-	for key, masked := range sm.masked {
-		fmt.Printf("  %s = %s\n", key, masked)
-		if len(sm.masked) > 10 {
-			fmt.Println("  ... (showing first 10)")
-			break
+	// Replace actual secrets with masked versions in the preview
+	preview := string(content)
+	for key, value := range sm.secrets {
+		if value != "" {
+			masked := MaskSecret(value)
+			preview = strings.ReplaceAll(preview, value, masked)
 		}
 	}
 
+	fmt.Println("\n📋 Preview of generated Caddyfile (secrets masked):")
 	fmt.Println("=" + strings.Repeat("=", 50))
+
+	// Show first 100 lines of the masked Caddyfile
+	lines := strings.Split(preview, "\n")
+	maxLines := 100
+	if len(lines) < maxLines {
+		maxLines = len(lines)
+	}
+
+	for i := 0; i < maxLines; i++ {
+		fmt.Println(lines[i])
+	}
+
+	if len(lines) > 100 {
+		fmt.Printf("\n... (%d more lines)\n", len(lines)-100)
+	}
+
+	fmt.Println("=" + strings.Repeat("=", 50))
+
+	// Also show a summary of replacements
+	fmt.Printf("\n✅ Replaced %d secrets with masked values\n", len(sm.secrets))
+	if len(sm.missing) > 0 {
+		fmt.Printf("⚠️  %d placeholders were not replaced\n", len(sm.missing))
+	}
+
 	return nil
 }
 
