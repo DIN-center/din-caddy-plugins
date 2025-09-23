@@ -160,12 +160,14 @@ jobs:
           # Replace the secret path with local path
           sed -i 's|/run/secrets/din-secret-key|./secret.key|g' Caddyfile.validate
 
-          # Fix log format syntax (move format outside file block)
-          sed -i '/output file caddy.log {/,/}/ {
+          # Fix log format syntax - format must be outside the file block
+          # Remove format json from inside the file block
+          sed -i '/output file caddy.log {/,/^[[:space:]]*}/ {
             /format json/d
           }' Caddyfile.validate
-          sed -i '/log {/a\
-              format json' Caddyfile.validate
+          # Add format at the correct level (directly under log)
+          sed -i '/^[[:space:]]*log {/a\
+		format json' Caddyfile.validate
 
           # Validate the Caddyfile
           echo "Validating Caddyfile..."
