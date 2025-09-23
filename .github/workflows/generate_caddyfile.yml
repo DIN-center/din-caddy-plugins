@@ -1,5 +1,5 @@
 ---
-name: Deploy Caddy
+name: Generate Caddyfile
 
 on:
   push:
@@ -126,20 +126,27 @@ jobs:
             fi
           fi
 
-      - name: Build Caddy
+      - name: Install xcaddy
         run: |
-          go mod tidy
-          go build -o caddy cmd/caddy/main.go
+          export GOBIN=$HOME/go/bin
+          export PATH=$PATH:$HOME/go/bin
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.5
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      # - name: Build Caddy
+      #   run: |
+      #     go mod tidy
+      #     go build -o caddy cmd/caddy/main.go
 
       - name: Test configuration
-        run: ./caddy validate --config Caddyfile
+        run: xcaddy validate --config Caddyfile
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
           name: caddy-${{ github.sha }}
           path: |
-            caddy
+            xcaddy
             Caddyfile
 
       # Add your deployment steps here
