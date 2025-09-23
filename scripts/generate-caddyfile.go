@@ -177,7 +177,7 @@ func (sm *SecretManager) PrintPreview(outputPath string) error {
 
 	// Replace actual secrets with masked versions in the preview
 	preview := string(content)
-	for key, value := range sm.secrets {
+	for _, value := range sm.secrets {
 		if value != "" {
 			masked := MaskSecret(value)
 			preview = strings.ReplaceAll(preview, value, masked)
