@@ -99,17 +99,29 @@ jobs:
           VALIDATIONCLOUD_OPBNB_MAINNET_KEY: ${{ secrets.VALIDATIONCLOUD_OPBNB_MAINNET_KEY }}
           VALIDATIONCLOUD_OPBNB_TESTNET_KEY: ${{ secrets.VALIDATIONCLOUD_OPBNB_TESTNET_KEY }}
         run: |
-          go run scripts/generate-caddyfile.go \
-            -template=Caddyfile \
-            -output=Caddyfile \
-            -use-env=true \
-            -strict=true
+          # For PRs, run in non-strict mode (secrets not available)
+          # For pushes to main/develop, run in strict mode
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "Running in PR mode - validation only"
+            go run scripts/generate-caddyfile.go \
+              -template=Caddyfile \
+              -output=Caddyfile \
+              -use-env=true \
+              -strict=false
+          else
+            echo "Running in deployment mode - strict validation"
+            go run scripts/generate-caddyfile.go \
+              -template=Caddyfile \
+              -output=Caddyfile \
+              -use-env=true \
+              -strict=true
 
-          # Verify no placeholders remain
-          if grep -q '{{.*}}' Caddyfile; then
-            echo "Error: Unreplaced placeholders found"
-            grep '{{.*}}' Caddyfile
-            exit 1
+            # Verify no placeholders remain
+            if grep -q '{{.*}}' Caddyfile; then
+              echo "Error: Unreplaced placeholders found"
+              grep '{{.*}}' Caddyfile
+              exit 1
+            fi
           fi
 
       - name: Build Caddy
