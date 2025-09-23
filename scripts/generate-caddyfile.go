@@ -187,20 +187,8 @@ func (sm *SecretManager) PrintPreview(outputPath string) error {
 	fmt.Println("\n📋 Preview of generated Caddyfile (secrets masked):")
 	fmt.Println("=" + strings.Repeat("=", 50))
 
-	// Show first 100 lines of the masked Caddyfile
-	lines := strings.Split(preview, "\n")
-	maxLines := 100
-	if len(lines) < maxLines {
-		maxLines = len(lines)
-	}
-
-	for i := 0; i < maxLines; i++ {
-		fmt.Println(lines[i])
-	}
-
-	if len(lines) > 100 {
-		fmt.Printf("\n... (%d more lines)\n", len(lines)-100)
-	}
+	// Show the entire masked Caddyfile
+	fmt.Println(preview)
 
 	fmt.Println("=" + strings.Repeat("=", 50))
 
