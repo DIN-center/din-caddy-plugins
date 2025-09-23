@@ -208,6 +208,7 @@ func (n *network) healthCheck() {
 			n.logProviderWarning("Health check failed after all attempts for provider", provider,
 				zap.Int64("block_number", latestBlockResult.blockNumber),
 				zap.String("provider", provider.host),
+				zap.String("providerName", provider.Name),
 				zap.Int("response_status", latestBlockResult.responseStatus),
 				zap.String("health_status", latestBlockResult.healthStatus.String()),
 				zap.Int("total_attempts", n.RequestAttemptCount),
@@ -290,6 +291,7 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 func (n *network) logProviderWarning(msg string, provider *provider, fields ...zap.Field) {
 	baseFields := []zap.Field{
 		zap.String("provider", provider.host),
+		zap.String("providerName", provider.Name),
 		zap.String("network", n.Name),
 		zap.Int("priority", provider.Priority),
 	}

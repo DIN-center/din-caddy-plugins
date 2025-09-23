@@ -185,6 +185,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 				d.logger.Debug("Registry: Added provider to network map",
 					zap.String("network", network.Name),
 					zap.String("providerHost", provider.host),
+					zap.String("providerName", provider.Name),
 					zap.String("providerUrl", provider.HttpUrl))
 			}
 		}

@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
+	"golang.org/x/net/publicsuffix"
 
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -647,7 +649,25 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			ResponseStatus: statusCode,
 			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
 			Priority:       priority,
-			Environment:    "unknown",   // We don't have access to environment here
+			Environment:    "unknown", // We don't have access to environment here
 		}, duration, nil) // No parsed request body - completely generic
 	}
+}
+
+// SafeExtractMainDomainWithPSL extracts the main domain from the URL using the Public Suffix List
+// if this fails, return the hostname
+func safeExtractMainDomainWithPSL(url *url.URL) string {
+	// Get the eTLD+1 (effective TLD plus one label)
+	domain, err := publicsuffix.EffectiveTLDPlusOne(url.Hostname())
+	if err != nil {
+		return url.Hostname()
+	}
+
+	// Split and get the main part (before the TLD)
+	parts := strings.Split(domain, ".")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+
+	return domain
 }

@@ -2,6 +2,7 @@ package modules
 
 import (
 	"container/list"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -579,6 +580,64 @@ func TestProviderBlockHistory(t *testing.T) {
 						t.Errorf("BlockHistory()[%d].timestamp is not a deep copy, got same pointer", i)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestSafeExtractMainDomainWithPSL(t *testing.T) {
+	tests := []struct {
+		name         string
+		urlStr       string
+		expectedName string
+	}{
+		{
+			name:         "valid url",
+			urlStr:       "https://example.com",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with port",
+			urlStr:       "https://example.com:8545",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with path",
+			urlStr:       "https://example.com/path",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with query params",
+			urlStr:       "https://example.com/path?query=value",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with two level domain",
+			urlStr:       "https://example.com.au",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url multple subdomains and two level domain",
+			urlStr:       "https://subdomain.buying-spree.example.com.au",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with suffix",
+			urlStr:       "https://invalid.domain.io-XHG",
+			expectedName: "domain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, err := url.Parse(tt.urlStr)
+			if err != nil {
+				t.Errorf("failed to parse url: %v", err)
+			}
+
+			name := safeExtractMainDomainWithPSL(url)
+			if name != tt.expectedName {
+				t.Errorf("expected name %q, but got %q", tt.expectedName, name)
 			}
 		})
 	}
