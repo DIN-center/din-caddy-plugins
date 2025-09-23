@@ -238,3 +238,82 @@ func TestReflectionBasedConfigErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestCaddyUnmarshallerProviders(t *testing.T) {
+	tests := []struct {
+		name              string
+		caddyfile         string
+		expectedProviders map[string]*provider
+	}{
+		{
+			name: "Valid Caddyfile with providers (default values)",
+			caddyfile: `networks {
+				eth {
+					chain_id 0x1
+					providers {
+						http://test.com/eth {
+						}
+					}
+				}
+			}`,
+			expectedProviders: map[string]*provider{
+				"test.com": {
+					HttpUrl:  "http://test.com/eth",
+					host:     "test.com",
+					Name:     "test",
+					Priority: 0,
+				},
+			},
+		},
+		{
+			name: "Valid Caddyfile with providers (default values)",
+			caddyfile: `networks {
+				eth {
+					chain_id 0x1
+					providers {
+						http://subdomain.test.com/eth {
+							priority 1
+							name MyCustomProvider
+						}
+					}
+				}
+			}`,
+			expectedProviders: map[string]*provider{
+				"subdomain.test.com": {
+					HttpUrl:  "http://subdomain.test.com/eth",
+					host:     "subdomain.test.com",
+					Name:     "MyCustomProvider",
+					Priority: 1,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinMiddleware := new(DinMiddleware)
+			dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+
+			dispenser := caddyfile.NewTestDispenser(tt.caddyfile)
+			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
+
+			assert.NoError(t, err)
+
+			// Get the network
+			network, networkExists := dinMiddleware.Networks["eth"]
+			assert.True(t, networkExists, "Network 'eth' should exist")
+
+			assert.Equal(t, len(tt.expectedProviders), len(network.Providers), "Should have %d providers", len(tt.expectedProviders))
+
+			// Check providers
+			for _, expectedProvider := range tt.expectedProviders {
+				actualProvider, exists := network.Providers[expectedProvider.host]
+				assert.True(t, exists, "Provider %s should exist", expectedProvider.host)
+				assert.Equal(t, expectedProvider.HttpUrl, actualProvider.HttpUrl, "Provider %s should have the correct HTTP URL", expectedProvider.host)
+				assert.Equal(t, expectedProvider.host, actualProvider.host, "Provider %s should have the correct host", expectedProvider.host)
+				assert.Equal(t, expectedProvider.Name, actualProvider.Name, "Provider %s should have the correct name", expectedProvider.host)
+				assert.Equal(t, expectedProvider.Priority, actualProvider.Priority, "Provider %s should have the correct priority", expectedProvider.host)
+			}
+		})
+	}
+}

@@ -43,6 +43,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ProviderName:   "infura",
 				ApiKey:         "abc123",
 				HostName:       "node1",
 				ResponseStatus: 200,
@@ -53,6 +54,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"service":         "ethereum",
 				"method":          "eth_getBlockByNumber",
 				"provider":        "infura",
+				"provider_name":   "infura",
 				"api_key":         "abc123",
 				"host_name":       "node1",
 				"response_status": "200",
@@ -69,6 +71,7 @@ func TestHandleRequestMetric(t *testing.T) {
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ProviderName:   "infura",
 				ApiKey:         "abc123",
 				HostName:       "node1",
 				ResponseStatus: 200,
@@ -79,6 +82,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				"service":         "ethereum",
 				"method":          "",
 				"provider":        "infura",
+				"provider_name":   "infura",
 				"api_key":         "abc123",
 				"host_name":       "node1",
 				"response_status": "200",
@@ -103,6 +107,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				tt.expectedLabels["service"],
 				tt.expectedLabels["method"],
 				tt.expectedLabels["provider"],
+				tt.expectedLabels["provider_name"],
 				tt.expectedLabels["host_name"],
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
@@ -133,6 +138,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 			data: &PromHealthCheckMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ProviderName:   "infura",
 				ResponseStatus: 200,
 				HealthStatus:   "healthy",
 				Environment:    "test",
@@ -140,6 +146,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
 				"provider":        "infura",
+				"provider_name":   "infura",
 				"response_status": "200",
 				"health_status":   "healthy",
 				"machine_id":      client.machineID,
@@ -151,6 +158,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 			data: &PromHealthCheckMetricData{
 				Network:        "/ethereum",
 				Provider:       "infura",
+				ProviderName:   "infura",
 				ResponseStatus: 500,
 				HealthStatus:   "unhealthy",
 				Environment:    "test",
@@ -158,6 +166,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 			expectedLabels: map[string]string{
 				"service":         "ethereum",
 				"provider":        "infura",
+				"provider_name":   "infura",
 				"response_status": "500",
 				"health_status":   "unhealthy",
 				"machine_id":      client.machineID,
@@ -178,6 +187,7 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 			metric := testutil.ToFloat64(DinProviderHealthCheckCount.WithLabelValues(
 				tt.expectedLabels["service"],
 				tt.expectedLabels["provider"],
+				tt.expectedLabels["provider_name"],
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
 				tt.expectedLabels["machine_id"],

@@ -157,11 +157,11 @@ update-deps: ## Update Go dependencies
 ## Docker Commands
 docker-build: ## Build Docker image
 	@echo "$(GREEN)Building Docker image...$(NC)"
-	docker build -t din-caddy-plugins .
+	docker build -t din-caddy .
 
 docker-run: ## Run Docker container
 	@echo "$(GREEN)Running Docker container...$(NC)"
-	docker run -p 80:80 -p 443:443 din-caddy-plugins
+	docker run -p 80:80 -p 443:443 din-caddy
 
 ## Utility Commands
 clean: ## Clean build artifacts and test files

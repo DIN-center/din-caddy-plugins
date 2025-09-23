@@ -730,6 +730,12 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			}
 		}
 
+		// Get provider name for metrics
+		providerName := "unknown"
+		if v, ok := networkObj.Providers[provider]; ok {
+			providerName = v.Name
+		}
+
 		duration := time.Since(reqStartTime)
 
 		// Determine appropriate status code for the failure
@@ -745,6 +751,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
+				ProviderName:   providerName,
 				ApiKey:         getRequestAPIKey(repl),
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
