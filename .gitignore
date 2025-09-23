@@ -39,5 +39,4 @@ Caddyfile.validate
 Caddyfile.test
 Caddyfile.basic
 Caddyfile.minimal
-upstream/
 din-sc/
