@@ -107,14 +107,16 @@ jobs:
               -template=Caddyfile \
               -output=Caddyfile \
               -use-env=true \
-              -strict=false
+              -strict=false \
+              -preview=true
           else
             echo "Running in deployment mode - strict validation"
             go run scripts/generate-caddyfile.go \
               -template=Caddyfile \
               -output=Caddyfile \
               -use-env=true \
-              -strict=true
+              -strict=true \
+              -preview=true
 
             # Verify no placeholders remain
             if grep -q '{{.*}}' Caddyfile; then
