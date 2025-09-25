@@ -266,7 +266,7 @@ func TestCaddyUnmarshallerProviders(t *testing.T) {
 			},
 		},
 		{
-			name: "Valid Caddyfile with providers (default values)",
+			name: "Valid Caddyfile with providers (set name and priority)",
 			caddyfile: `networks {
 				eth {
 					chain_id 0x1
