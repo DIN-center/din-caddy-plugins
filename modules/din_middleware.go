@@ -430,7 +430,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		}
 	}
 	provider.logger = d.logger
-	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
 	// Make sure blockHistory is initialized
 	if provider.blockHistory == nil {
@@ -721,13 +721,19 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		if v, ok := repl.Get(RequestProviderKey); ok {
 			provider = v.(string)
 		}
-		
+
 		// Get priority for metrics
 		priority := 0
 		if v, ok := repl.Get(RequestProviderPriorityKey); ok {
 			if pInt, ok := v.(int); ok {
 				priority = pInt
 			}
+		}
+
+		// Get provider name for metrics
+		providerName := "unknown"
+		if v, ok := networkObj.Providers[provider]; ok {
+			providerName = v.Name
 		}
 
 		duration := time.Since(reqStartTime)
@@ -745,6 +751,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
+				ProviderName:   providerName,
 				ApiKey:         getRequestAPIKey(repl),
 				HostName:       r.Host,
 				ResponseStatus: statusCode,

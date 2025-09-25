@@ -320,6 +320,7 @@ func (p *caddyfileParser) parseProvider(network *network, providerUrl string, pa
 		p.middleware.logger.Debug("Added provider to network map",
 			zap.String("network", network.Name),
 			zap.String("providerHost", providerObj.host),
+			zap.String("providerName", providerObj.Name),
 			zap.String("providerUrl", providerObj.HttpUrl))
 	}
 
@@ -337,6 +338,8 @@ func (p *caddyfileParser) parseProviderField(provider *provider, nesting int) er
 		return p.parseProviderHeaders(provider, nesting)
 	case "priority":
 		return p.parseProviderPriority(provider, nesting)
+	case "name":
+		return p.parseProviderName(provider, nesting)
 	default:
 		return p.dispenser.Errf("unrecognized provider option: %s", p.dispenser.Val())
 	}
@@ -521,6 +524,13 @@ func (p *caddyfileParser) parseProviderPriority(provider *provider, nesting int)
 		return fmt.Errorf("invalid priority: %w", err)
 	}
 	provider.Priority = priority
+	return nil
+}
+
+// parseProviderName parses provider name
+func (p *caddyfileParser) parseProviderName(provider *provider, nesting int) error {
+	p.dispenser.NextBlock(nesting)
+	provider.Name = p.dispenser.Val()
 	return nil
 }
 

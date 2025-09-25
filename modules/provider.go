@@ -24,6 +24,7 @@ type provider struct {
 	upstream *reverseproxy.Upstream
 	logger   *logger.LoggerClient
 	Priority int
+	Name     string
 
 	// Registry Configuration Values
 	Methods map[string]struct{}  `json:"methods"`
@@ -69,6 +70,7 @@ func NewProvider(urlStr string) (*provider, error) {
 	p := &provider{
 		HttpUrl:      urlStr,
 		host:         url.Host,
+		Name:         safeExtractMainDomainWithPSL(url),
 		Headers:      make(map[string]string),
 		blockHistory: list.New(),
 	}

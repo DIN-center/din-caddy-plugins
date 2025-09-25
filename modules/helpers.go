@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
+	"golang.org/x/net/publicsuffix"
 
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -214,10 +216,20 @@ type LogFailedAttemptParams struct {
 // should be handled by the caller before passing data to this function.
 func logFailedAttempt(params LogFailedAttemptParams) {
 	// Extract provider information from the Caddy replacer context
-	provider := "unknown"
+	providerHost := "unknown"
+	providerName := "unknown"
 	if provVal, provOk := params.Replacer.Get(RequestProviderKey); provOk {
 		if pStr, strOk := provVal.(string); strOk {
-			provider = pStr
+			providerHost = pStr
+
+			// Now get the provider name from the providers map
+			if providerMapVal, exists := params.Replacer.Get(DinUpstreamsContextKey); exists {
+				if providers, castOk := providerMapVal.(map[string]*provider); castOk {
+					if providerObj, exists := providers[providerHost]; exists {
+						providerName = providerObj.Name
+					}
+				}
+			}
 		}
 	}
 
@@ -243,7 +255,8 @@ func logFailedAttempt(params LogFailedAttemptParams) {
 	// Build the base log fields
 	logFields := []zap.Field{
 		zap.String("network", params.NetworkPath),
-		zap.String("provider", provider),
+		zap.String("provider", providerHost),
+		zap.String("provider_name", providerName),
 		zap.Int("failed_attempt_number", params.FailedAttemptNumber),
 		zap.Int("max_attempts", params.MaxAttempts),
 		zap.Int("status_code", params.StatusCodeOfFailure),
@@ -429,12 +442,19 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		}
 	}
 
+	// Get provider name for metrics
+	providerName := "unknown"
+	if v, ok := params.NetworkObj.Providers[params.Provider]; ok {
+		providerName = v.Name
+	}
+
 	// Record Prometheus metrics for the request.
 	// This includes details like network, provider, response status, health status, priority, and duration.
 	params.DinMiddleware.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Method:         requestMethod,
 		Network:        params.NetworkPath,
 		Provider:       params.Provider,
+		ProviderName:   providerName,
 		ApiKey:         getRequestAPIKey(params.Replacer),
 		HostName:       params.OriginalReq.Host,
 		ResponseStatus: effectiveStatusCode,
@@ -637,17 +657,42 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			}
 		}
 
+		// Get provider name for metrics
+		providerName := "unknown"
+		if v, ok := networkObj.Providers[provider]; ok {
+			providerName = v.Name
+		}
+
 		// Record metrics for the context cancellation
 		promClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 			Method:         "unknown", // Generic - no network-specific parsing
 			Network:        networkPath,
 			Provider:       provider,
+			ProviderName:   providerName,
 			ApiKey:         getRequestAPIKey(repl),
 			HostName:       r.Host,
 			ResponseStatus: statusCode,
 			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
 			Priority:       priority,
-			Environment:    "unknown",   // We don't have access to environment here
+			Environment:    "unknown", // We don't have access to environment here
 		}, duration, nil) // No parsed request body - completely generic
 	}
+}
+
+// SafeExtractMainDomainWithPSL extracts the main domain from the URL using the Public Suffix List
+// if this fails, return the hostname
+func safeExtractMainDomainWithPSL(url *url.URL) string {
+	// Get the eTLD+1 (effective TLD plus one label)
+	domain, err := publicsuffix.EffectiveTLDPlusOne(url.Hostname())
+	if err != nil {
+		return url.Hostname()
+	}
+
+	// Split and get the main part (before the TLD)
+	parts := strings.Split(domain, ".")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+
+	return domain
 }
