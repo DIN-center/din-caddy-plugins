@@ -17,7 +17,9 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -82,6 +84,24 @@ type DinMiddleware struct {
 	RegistryContractAddress string
 	// The priority of the registry providers
 	RegistryPriority int
+
+	// Dynamic load balacing configuration
+	// The flag to enable or disable the dynamic load balacing
+	DynamicLoadBalacingEnabled bool
+	// The endpoint of the watcher
+	DynamicLoadBalacingWatcherEndpoint string
+	// The API key for the watcher
+	DynamicLoadBalacingWatcherApiKey string
+	// The flag to enable or disable the dynamic load balacing sync
+	DynamicLoadBalacingSyncEnabled bool
+	// The sync interval in seconds for the dynamic load balacing
+	DynamicLoadBalacingSyncIntervalSec uint64
+
+	//The backend to manage score (Watcher score)
+	watcherScoreManager *ws.WatcherScoreManager
+
+	//The watcher client for dynamic load balacing
+	watcherClient watcher.IWatcherAPIClient
 
 	// The channel to quit the goroutines
 	quit chan struct{}
@@ -158,29 +178,40 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		}
 	}
 
-	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
+	// If dynamic load balacing is enabled, initialize the score backend
+	if d.isSmartScoringActive() {
+		d.logger.Info("[DYNAMIC_LB]  Dynamic load balacing activated, initializing watcher score manager")
+		d.logger.Debug("[DYNAMIC_LB]  Dynamic load balacing settings:",
+			zap.Bool("sync_score_enabled", d.DynamicLoadBalacingSyncEnabled),
+			zap.Uint64("sync_interval_secs", d.DynamicLoadBalacingSyncIntervalSec),
+			zap.String("watcher_endpoint", d.DynamicLoadBalacingWatcherEndpoint))
 
-	// Start the latest block number polling for each provider in each network.
-	// This is done in a goroutine that sets the latest block number in the network object,
-	// and updates the provider's health status accordingly.
-	// Skips if test mode is enabled.
-	if !d.testMode {
-		// Start the latest block number polling for each provider in each network.
-		// This is done in a goroutine that sets the latest block number in the network object,
-		// and updates the provider's health status accordingly.
-		err := d.startHealthChecks()
-		if err != nil {
-			return fmt.Errorf("error starting healthchecks: %v", err)
+		//list of networks to compute scores
+		networks := make([]string, 0, len(d.Networks))
+		for network := range d.Networks {
+			networks = append(networks, network)
 		}
 
-		// Pull data from the din registry
-		// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
-		// This is done in a goroutine that sets the latest networks and providers in the network map
-		if d.RegistryEnabled {
-			d.logger.Info("Din registry is enabled, pulling data from the registry")
-			d.startRegistrySync()
-		}
+		//initialize the watcher score manager for provisioned networks
+		d.watcherScoreManager = ws.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger)
 	}
+
+	// Pull data from the din registry
+	// This will pull the latest networks and providers from the din registry and update the networks and providers in the middleware object
+	// This is done in a goroutine that sets the latest networks and providers in the network map
+	if d.RegistryEnabled {
+		d.logger.Info("Din registry is enabled, pulling data from the registry")
+		d.startRegistrySync()
+	}
+
+	// Start the periodic updates for the watcher scores (after the registry is pulled)
+	if d.isSmartScoringActive() && d.DynamicLoadBalacingSyncEnabled {
+		d.logger.Info("[DYNAMIC_LB]  Watcher score is activated, starting periodic updates")
+		d.watcherScoreManager.StartPeriodicUpdates(time.Duration(d.DynamicLoadBalacingSyncIntervalSec) * time.Second)
+		d.SyncMiddlewareWithLatestScores()
+	}
+
+	d.logger.Info("Din middleware provisioned", zap.String("machine_id", d.machineID))
 
 	return nil
 }
@@ -207,6 +238,7 @@ func (d *DinMiddleware) initializeProvider(provider *provider, httpClient *din_h
 		}
 	}
 	provider.logger = d.logger
+	provider.Score = ws.EmptyScore
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
 	return nil
@@ -257,6 +289,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Set the upstreams in the context for the request
 	repl.Set(DinUpstreamsContextKey, network.Providers)
+
+	// Set if score based routing should be done
+	repl.Set(DinScoreBasedRoutingContextKey, d.isSmartScoringActive())
 
 	reqStartTime := time.Now()
 
@@ -585,10 +620,49 @@ func (d *DinMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error
 						return dispenser.Errf("Error converting string to int: %v", err)
 					}
 					d.RegistryPriority = intValue
+				case "smart_routing":
+					for n2 := dispenser.Nesting(); dispenser.NextBlock(n2); {
+						switch dispenser.Val() {
+						case "enabled":
+							dispenser.Next()
+							smartRoutingEnabledVal := dispenser.Val()
+							// Convert string to bool
+							boolValue, err := strconv.ParseBool(smartRoutingEnabledVal)
+							if err != nil {
+								return dispenser.Errf("Error while parsing smart_routing_enabled: %v", err)
+							}
+							d.DynamicLoadBalacingEnabled = boolValue
+						case "watcher_endpoint":
+							dispenser.Next()
+							smartRoutingWatcherEndpoint := dispenser.Val()
+							d.DynamicLoadBalacingWatcherEndpoint = smartRoutingWatcherEndpoint
+						case "watcher_api_key":
+							dispenser.Next()
+							smartRoutingWatcherApiKey := dispenser.Val()
+							d.DynamicLoadBalacingWatcherApiKey = smartRoutingWatcherApiKey
+						case "sync_score_enabled":
+							dispenser.Next()
+							syncScoreEnabledVal := dispenser.Val()
+							boolValue, err := strconv.ParseBool(syncScoreEnabledVal)
+							if err != nil {
+								return dispenser.Errf("Error while parsing sync_score_enabled: %v", err)
+							}
+							d.DynamicLoadBalacingSyncEnabled = boolValue
+						case "sync_score_interval_secs":
+							dispenser.Next()
+							smartRoutingSyncIntervalSecVal := dispenser.Val()
+							intValue, err := strconv.Atoi(smartRoutingSyncIntervalSecVal)
+							if err != nil {
+								return dispenser.Errf("Error parsing sync_score_interval_secs: %v", err)
+							}
+							d.DynamicLoadBalacingSyncIntervalSec = uint64(intValue)
+						}
+					}
+				default:
+					return dispenser.Errf("unrecognized option: %s", dispenser.Val())
 				}
 			}
 		}
-
 	}
 
 	return nil
@@ -650,4 +724,10 @@ func (d *DinMiddleware) closeAll() {
 
 func (d *DinMiddleware) close() {
 	close(d.quit)
+}
+
+// WatcherScoreActive checks if watcher score is enabled and the registry is enabled
+// We prefer to use "active" instead of "enabled" to avoid confusion with the "enabled" flag
+func (d *DinMiddleware) isSmartScoringActive() bool {
+	return d.DynamicLoadBalacingEnabled && d.RegistryEnabled
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"go.uber.org/zap"
 )
@@ -36,6 +37,11 @@ func (d *DinMiddleware) syncRegistryWithLatestBlock() {
 			return
 		}
 		d.processRegistryData(registryData)
+
+		// Sync scores at the end of each epoch if dynamic load balacing is enabled and the sync is enabled
+		if d.isSmartScoringActive() && d.DynamicLoadBalacingSyncEnabled {
+			d.SyncMiddlewareWithLatestScores()
+		}
 
 		// Update the last updated block number
 		d.registryLastUpdatedEpochBlockNumber = latestBlockFloorByEpoch
@@ -79,6 +85,12 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				// Delete the network for now if it is not active
 				d.logger.Debug("Network is not active, removing from middleware: ", zap.String("network", regNetwork.ProxyName))
 				delete(d.Networks, regNetwork.ProxyName)
+
+				// Remove the network from the watcher score manager if the watcher score is enabled
+				if d.isSmartScoringActive() {
+					d.watcherScoreManager.RemoveNetwork(regNetwork.ProxyName)
+					d.logger.Info("[DYNAMIC_LB]  Removing network from watcher score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
+				}
 				continue
 			}
 			// if active, update the existing network in place with the registry data
@@ -141,6 +153,13 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 		network.startHealthcheck()
 		d.logger.Info("Starting healthcheck for registry network", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}
+
+	// Add the network to the watcher score manager if the watcher score is enabled
+	if d.isSmartScoringActive() {
+		d.watcherScoreManager.AddNetworkWithBuiltInFormula(network.Name, d.GetOrCreateWatcherClient())
+		d.logger.Info("[DYNAMIC_LB]  Adding network to watcher score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
+	}
+
 	return nil
 }
 
@@ -301,6 +320,27 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 	// add the new providers to the middleware network.Providers map
 	for _, p := range network.Providers {
 		d.Networks[network.Name].Providers[p.host] = p
+	}
+}
+
+func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
+	if d.watcherClient == nil {
+		d.watcherClient = watcher.NewClient(d.DynamicLoadBalacingWatcherEndpoint, d.DynamicLoadBalacingWatcherApiKey)
+	}
+	return d.watcherClient
+}
+
+// Fetches the latest score from the watcher score manager and updates the provider score for all active networks
+func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
+	d.logger.Info("[DYNAMIC_LB]  Syncing provider scores from watcher score manager")
+	for _, network := range d.Networks {
+		for _, provider := range network.Providers {
+			provider.Score = d.watcherScoreManager.GetScore(network.Name, provider.host)
+			d.logger.Debug("[DYNAMIC_LB]  Provider score",
+				zap.String("network", network.Name),
+				zap.String("provider", provider.host),
+				zap.Any("score", provider.Score))
+		}
 	}
 }
 

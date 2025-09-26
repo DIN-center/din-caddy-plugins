@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	rs "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	dinreg "github.com/DIN-center/din-sc/apps/din-go/pkg/dinregistry"
 	"github.com/pkg/errors"
@@ -21,6 +23,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	logger := zap.NewNop()
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+
 	dinMiddleware := &DinMiddleware{
 		RegistryBlockEpoch:                  10,
 		registryLastUpdatedEpochBlockNumber: 40,
@@ -84,6 +87,94 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			if dinMiddleware.registryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
 				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v", tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
 			}
+		})
+	}
+}
+
+func TestSyncMiddlewareWithLatestScores(t *testing.T) {
+	logger := zap.NewNop()
+	mockCtrl := gomock.NewController(t)
+	mockDingoClient := din.NewMockIDingoClient(mockCtrl)
+
+	oldScore := rs.MustCreateScore(20, time.Now())
+	updatedScore := rs.MustCreateScore(100, time.Now())
+	mockWatcherScoreManager := rs.NewMock(logger, map[string]map[string]*rs.Score{
+		"test-network": {
+			"provider1": oldScore,
+		},
+	}, make(map[string]rs.ScoreFormula))
+
+	dinMiddleware := &DinMiddleware{
+		RegistryBlockEpoch:                  10,
+		registryLastUpdatedEpochBlockNumber: 40,
+		logger:                              logger,
+		DingoClient:                         mockDingoClient,
+		testMode:                            true,
+		watcherScoreManager:                 mockWatcherScoreManager,
+		RegistryEnabled:                     true,
+		DynamicLoadBalacingEnabled:          true,
+		DynamicLoadBalacingSyncEnabled:      true,
+	}
+
+	tests := []struct {
+		name                                string
+		registryLastUpdatedEpochBlockNumber uint64
+		latestBlockNumber                   uint64
+		smartRoutingSyncEnabled             bool
+		expectedUpdateCall                  bool
+		expectedScore                       *rs.Score
+	}{
+		{
+			name:                                "Sync should update as block difference is equal to or exceeds epoch 50",
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(50),
+			smartRoutingSyncEnabled:             true,
+			expectedUpdateCall:                  true,
+			expectedScore:                       updatedScore,
+		},
+		{
+			name:                                "Sync should not update as block difference is less than epoch 48",
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(48),
+			smartRoutingSyncEnabled:             true,
+			expectedUpdateCall:                  false,
+			expectedScore:                       oldScore,
+		},
+		{
+			name:                                "Sync should update (as block difference is equal to or exceeds epoch 50) but not dynamic load balacing sync",
+			registryLastUpdatedEpochBlockNumber: uint64(40),
+			latestBlockNumber:                   uint64(50),
+			smartRoutingSyncEnabled:             false,
+			expectedUpdateCall:                  true,
+			expectedScore:                       oldScore,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinMiddleware.Networks = map[string]*network{
+				"test-network": {
+					Name: "test-network",
+					Providers: map[string]*provider{
+						"provider1": {
+							// This is the old score, it should be updated if the block difference is equal to or exceeds the epoch
+							Score: oldScore,
+						},
+					},
+				},
+			}
+			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
+			dinMiddleware.DynamicLoadBalacingSyncEnabled = tt.smartRoutingSyncEnabled
+			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
+			// Check if update was called as expected
+			if tt.expectedUpdateCall {
+				mockDingoClient.EXPECT().GetRegistryData().Return(&din.DinRegistryData{}, nil).Times(1)
+			}
+			// Call the function
+			dinMiddleware.syncRegistryWithLatestBlock()
+
+			currentScore := dinMiddleware.Networks["test-network"].Providers["provider1"].Score
+			assert.Equal(t, currentScore, tt.expectedScore)
 		})
 	}
 }
@@ -196,10 +287,13 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
-				DingoClient: mockDingoClient,
-				logger:      logger,
-				Networks:    make(map[string]*network),
-				testMode:    true,
+				DingoClient:                mockDingoClient,
+				logger:                     logger,
+				Networks:                   make(map[string]*network),
+				testMode:                   true,
+				RegistryEnabled:            true,
+				DynamicLoadBalacingEnabled: true,
+				watcherScoreManager:        rs.NewEmpty(logger),
 			}
 
 			// Call the function being tested
@@ -218,6 +312,9 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 				if network != nil {
 					// Verify the number of providers added to the network
 					assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
+
+					// Verify the network is added to the watcher score manager
+					assert.NotNil(t, dinMiddleware.watcherScoreManager.GetNetworkFormula(network.Name))
 				}
 			}
 		})

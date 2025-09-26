@@ -6,6 +6,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	rs "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
 )
@@ -29,6 +30,9 @@ type provider struct {
 	Auth    *siwe.SIWEClientAuth `json:"auth"`
 
 	consecutiveHealthyChecks int
+
+	// Watcher Score
+	Score *rs.Score
 }
 
 func NewProvider(urlStr string) (*provider, error) {
@@ -41,6 +45,7 @@ func NewProvider(urlStr string) (*provider, error) {
 		host:                     url.Host,
 		Headers:                  make(map[string]string),
 		consecutiveHealthyChecks: 0,
+		Score:                    rs.EmptyScore,
 	}
 	return p, nil
 }

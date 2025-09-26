@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
@@ -38,8 +39,14 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 
-	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
-	selector.Provision(context)
+	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id",
+		FallbackRaw: caddyconfig.JSONModuleObject(DinScoreBasedSelector{}, "policy", "din_score_based_selector", nil)}
+
+	d.logger.Debug("Provisioning DinSelect", zap.Any("selector", selector))
+	err := selector.Provision(context)
+	if err != nil {
+		return err
+	}
 	d.selector = selector
 	return nil
 }
@@ -59,6 +66,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
 		providers = v.(map[string]*provider)
 	}
+
 	// Select upstream based on request
 	selectedUpstream := d.selector.Select(pool, r, rw)
 
@@ -83,7 +91,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 		}
 	}
 
-	d.logger.Debug("Selected upstream", zap.String("upstream", selectedUpstream.Dial))
+	d.logger.Debug("Selected upstream", zap.Any("upstream", selectedUpstream))
 
 	// if the request body is nil, return without setting the context for request metrics
 	if r.Body == nil {
