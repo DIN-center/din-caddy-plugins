@@ -317,3 +317,97 @@ func TestCaddyUnmarshallerProviders(t *testing.T) {
 		})
 	}
 }
+
+func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
+	tests := []struct {
+		name                        string
+		caddyfile                   string
+		dynamicLoadBalancingEnabled bool
+		watcherEndpoint             string
+		watcherApiKey               string
+		syncScoreEnabled            bool
+		syncScoreIntervalSecs       uint64
+		hasError                    bool
+	}{
+		{
+			name: "Valid Caddyfile with dynamic load balancing disabled",
+			caddyfile: `networks {
+				eth { 
+					chain_id 0x1
+				}
+			}
+			dynamic_load_balancing {
+				enabled false
+			}
+			`,
+			dynamicLoadBalancingEnabled: false,
+			watcherEndpoint:             "",
+			watcherApiKey:               "",
+			syncScoreEnabled:            false,
+			syncScoreIntervalSecs:       0,
+			hasError:                    false,
+		},
+		{
+			name: "Valid Caddyfile with dynamic load balancing enabled (mandatory values)",
+			caddyfile: `networks {
+				eth { 
+					chain_id 0x1
+				}
+			}
+			dynamic_load_balancing {
+				enabled true
+			}
+			`,
+			dynamicLoadBalancingEnabled: true,
+			watcherEndpoint:             "",
+			watcherApiKey:               "",
+			syncScoreEnabled:            false,
+			syncScoreIntervalSecs:       0,
+			hasError:                    true,
+		},
+		{
+			name: "Valid Caddyfile dynamic load balancing with custom values",
+			caddyfile: `networks {
+				eth { 
+					chain_id 0x1
+				}
+			}
+			dynamic_load_balancing {
+				enabled true
+				watcher_endpoint https://watcher.din.com
+				watcher_api_key key
+				sync_score_enabled true
+				sync_score_interval_secs 300 # 5 minutes
+			}
+			`,
+			dynamicLoadBalancingEnabled: true,
+			watcherEndpoint:             "https://watcher.din.com",
+			watcherApiKey:               "key",
+			syncScoreEnabled:            true,
+			syncScoreIntervalSecs:       300,
+			hasError:                    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinMiddleware := new(DinMiddleware)
+			dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+
+			dispenser := caddyfile.NewTestDispenser(tt.caddyfile)
+			err := dinMiddleware.UnmarshalCaddyfile(dispenser)
+
+			if tt.hasError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, tt.dynamicLoadBalancingEnabled, dinMiddleware.DynamicLoadBalacingEnabled, "Dynamic load balancing enabled should be %v", tt.dynamicLoadBalancingEnabled)
+			assert.Equal(t, tt.watcherEndpoint, dinMiddleware.DynamicLoadBalacingWatcherEndpoint, "Watcher endpoint should be %v", tt.watcherEndpoint)
+			assert.Equal(t, tt.watcherApiKey, dinMiddleware.DynamicLoadBalacingWatcherApiKey, "Watcher API key should be %v", tt.watcherApiKey)
+			assert.Equal(t, tt.syncScoreEnabled, dinMiddleware.DynamicLoadBalacingSyncEnabled, "Sync score enabled should be %v", tt.syncScoreEnabled)
+			assert.Equal(t, tt.syncScoreIntervalSecs, dinMiddleware.DynamicLoadBalacingSyncIntervalSec, "Sync score interval secs should be %v", tt.syncScoreIntervalSecs)
+		})
+	}
+}

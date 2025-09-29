@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -90,6 +91,9 @@ func TestNewProvider(t *testing.T) {
 				}
 				if p != nil && len(p.Headers) != 0 {
 					t.Errorf("expected empty headers, but got %v", p.Headers)
+				}
+				if p != nil && p.Score != ws.EmptyScore {
+					t.Errorf("expected to be empty score, but got %v", p.Score)
 				}
 			}
 		})

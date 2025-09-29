@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -111,6 +113,24 @@ type DinMiddleware struct {
 	ApiKeys map[string]string
 	ApiSalt string
 
+	// Dynamic load balacing configuration
+	// The flag to enable or disable the dynamic load balacing
+	DynamicLoadBalacingEnabled bool
+	// The endpoint of the watcher
+	DynamicLoadBalacingWatcherEndpoint string
+	// The API key for the watcher
+	DynamicLoadBalacingWatcherApiKey string
+	// The flag to enable or disable the dynamic load balacing sync
+	DynamicLoadBalacingSyncEnabled bool
+	// The sync interval in seconds for the dynamic load balacing
+	DynamicLoadBalacingSyncIntervalSec uint64
+
+	//The backend to manage score (Watcher score)
+	watcherScoreManager ws.IWatcherScoreManager
+
+	//The watcher client for dynamic load balacing
+	watcherClient watcher.IWatcherAPIClient
+
 	// The channel to quit the goroutines
 	quit chan struct{}
 }
@@ -161,6 +181,25 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	// Initialize all networks
 	if err := d.initializeNetworks(); err != nil {
 		return fmt.Errorf("failed to initialize networks: %w", err)
+	}
+
+	// If dynamic load balacing is enabled, initialize the score backend
+	if d.DynamicLoadBalacingEnabled {
+		d.logger.Info("[DYNAMIC_LB]  Dynamic load balacing activated, initializing watcher score manager")
+		d.logger.Debug("[DYNAMIC_LB]  Dynamic load balacing settings:",
+			zap.Bool("sync_score_enabled", d.DynamicLoadBalacingSyncEnabled),
+			zap.Uint64("sync_interval_secs", d.DynamicLoadBalacingSyncIntervalSec),
+			zap.String("watcher_endpoint", d.DynamicLoadBalacingWatcherEndpoint))
+
+		//list of networks to compute scores
+		networks := make([]string, 0, len(d.Networks))
+		for network := range d.Networks {
+			networks = append(networks, network)
+		}
+
+		//initialize the watcher score manager for provisioned networks
+		d.watcherScoreManager = ws.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger.Logger)
+
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -377,6 +416,15 @@ func (d *DinMiddleware) startBackgroundServices() error {
 		d.startRegistrySync()
 	}
 
+	// Start the periodic updates for the watcher scores
+	if d.DynamicLoadBalacingEnabled && d.DynamicLoadBalacingSyncEnabled {
+		d.logger.Info("[DYNAMIC_LB]  Computing watcher scores, starting periodic updates")
+		d.watcherScoreManager.StartPeriodicUpdates(time.Duration(d.DynamicLoadBalacingSyncIntervalSec) * time.Second)
+
+		// Force the first update of the watcher scores
+		d.SyncMiddlewareWithLatestScores()
+	}
+
 	return nil
 }
 
@@ -430,6 +478,10 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		}
 	}
 	provider.logger = d.logger
+
+	// Initialize the score for the provider with an empty score
+	provider.Score = ws.EmptyScore
+
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
 	// Make sure blockHistory is initialized
@@ -579,6 +631,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
 	}
+
+	// Set if dynamic load balancing should be done
+	repl.Set(DinScoreBasedRoutingContextKey, d.DynamicLoadBalacingEnabled)
 
 	reqStartTime := time.Now()
 

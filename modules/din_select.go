@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
@@ -37,8 +38,12 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 
-	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
-	if err := selector.Provision(context); err != nil {
+	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id",
+		FallbackRaw: caddyconfig.JSONModuleObject(DinScoreBasedSelector{}, "policy", "din_score_based_selector", nil)}
+
+	d.logger.Debug("Provisioning DinSelect", zap.Any("selector", selector))
+	err := selector.Provision(context)
+	if err != nil {
 		return err
 	}
 

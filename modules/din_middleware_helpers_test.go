@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/pkg/errors"
 
@@ -24,7 +25,6 @@ import (
 	"go.uber.org/zap/zaptest"
 	"go.uber.org/zap/zaptest/observer"
 )
-
 
 // MockWeb3Client is a mock implementation of web3.Web3Client for testing
 type MockWeb3Client struct {
@@ -232,6 +232,119 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 	}
 }
 
+func TestAddNetworkFromRegistryDataWorksWithDynamicLoadBalancing(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	tests := []struct {
+		name                        string
+		regNetwork                  *din.Network
+		dynamicLoadBalancingEnabled bool
+		networkAdded                bool
+	}{
+		{
+			name: "Network removed, and DLB enabled",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:    "http://new-provider.com",
+								Status: din.NetworkServiceStatusActive,
+							},
+						},
+					},
+				},
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: true,
+			networkAdded:                true,
+		},
+		{
+			name: "No network added, and DLB enabled",
+			regNetwork: &din.Network{
+				ProxyName:     "test-network",
+				Providers:     map[string]*din.Provider{},
+				Status:        din.NetworkStatusOnboarding,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: true,
+			networkAdded:                false,
+		},
+		{
+			name: "network added, and DLB disabled",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:    "http://new-provider.com",
+								Status: din.NetworkServiceStatusActive,
+							},
+						},
+					},
+				},
+				Status:        din.NetworkStatusActive,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: false,
+			networkAdded:                false,
+		},
+		{
+			name: "No network added, and DLB disabled",
+			regNetwork: &din.Network{
+				ProxyName:     "test-network",
+				Providers:     map[string]*din.Provider{},
+				Status:        din.NetworkStatusOnboarding,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: false,
+			networkAdded:                false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock DingoClient and other dependencies
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
+
+			// Create a mock WatcherScoreManager
+			mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
+
+			// Create logger
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
+
+			// Create DinMiddleware instance with proper initialization
+			dinMiddleware := &DinMiddleware{
+				DingoClient:                mockDingoClient,
+				logger:                     logger,
+				Networks:                   make(map[string]*network),
+				testMode:                   true,
+				Env:                        utils.Environment("test"),
+				CaddyPort:                  "8080",
+				machineID:                  "test-machine-id",
+				DynamicLoadBalacingEnabled: tt.dynamicLoadBalancingEnabled,
+				watcherScoreManager:        mockWatcherScoreManager,
+			}
+
+			// Set up the expectations according to the test case
+			if tt.networkAdded && tt.dynamicLoadBalancingEnabled {
+				mockWatcherScoreManager.EXPECT().AddNetworkWithBuiltInFormula(tt.regNetwork.ProxyName, dinMiddleware.GetOrCreateWatcherClient()).Return(nil).
+					Times(1)
+			} else {
+				mockWatcherScoreManager.EXPECT().AddNetworkWithBuiltInFormula(tt.regNetwork.ProxyName, dinMiddleware.GetOrCreateWatcherClient()).Return(nil).
+					Times(0)
+			}
+
+			// Call the function being tested
+			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
+		})
+	}
+}
+
+// TODO LN implement test for remove network with dynamic load balancing
 func TestUpdateNetworkWithRegistryData(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -1453,3 +1566,33 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	// Verify total count
 	assert.Equal(t, 4, len(d.Networks["test-net"].Providers), "Should have exactly 4 providers")
 }
+
+//TODO LN implement test
+// func TestSyncMiddlewareWithLatestScores(t *testing.T) {
+// 	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
+// 	mockCtrl := gomock.NewController(t)
+// 	mockDingoClient := din.NewMockIDinClient(mockCtrl)
+
+// 	oldScore := ws.MustCreateScore(20, time.Now())
+// 	updatedScore := ws.MustCreateScore(100, time.Now())
+// 	mockWatcherScoreManager := ws.NewMock(logger.Logger, map[string]map[string]*ws.Score{
+// 		"test-network": {
+// 			"provider1": oldScore,
+// 		},
+// 	}, make(map[string]ws.ScoreFormula))
+
+// 	dinMiddleware := &DinMiddleware{
+// 		Registry: RegistryConfig{
+// 			BlockEpoch: 10,
+// 		},
+// 		registryLastUpdatedEpochBlockNumber: 40,
+// 		logger:                              logger,
+// 		DingoClient:                         mockDingoClient,
+// 		testMode:                            true,
+// 		watcherScoreManager:                 mockWatcherScoreManager,
+// 		DynamicLoadBalacingEnabled:          true,
+// 		DynamicLoadBalacingSyncEnabled:      true,
+// 	}
+
+// 	//TODO LN implement test
+// }

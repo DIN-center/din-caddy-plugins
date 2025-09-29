@@ -33,6 +33,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 )
 
@@ -212,7 +213,8 @@ func TestInitialize(t *testing.T) {
 						},
 					},
 				},
-				testMode: true,
+				testMode:                   true,
+				DynamicLoadBalacingEnabled: true,
 			},
 			expectedError: nil,
 		},
@@ -243,14 +245,26 @@ func TestInitialize(t *testing.T) {
 				assert.NotZero(t, dinMiddleware.Registry.BlockEpoch)
 				assert.Equal(t, 0, dinMiddleware.Registry.Priority)
 
+				// Assert watcher score manager is initialized
+				assert.NotNil(t, dinMiddleware.watcherScoreManager)
+
 				// // Assert networks and providers are initialized
-				for _, network := range dinMiddleware.Networks {
+				for networkName, network := range dinMiddleware.Networks {
 					assert.NotNil(t, network.HttpClient)
 					assert.NotNil(t, network.logger)
+
+					//Asset each network has a formula
+					assert.NotNil(t, dinMiddleware.watcherScoreManager.GetNetworkFormula(networkName))
+
 					for _, provider := range network.Providers {
 						assert.NotNil(t, provider.upstream)
+
+						// Assert provider score is initialized
+						assert.NotNil(t, provider.Score)
+						assert.Equal(t, ws.EmptyScore, provider.Score)
 					}
 				}
+
 			}
 		})
 	}
@@ -269,6 +283,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example2.com",
 				Auth:    nil,
+				Score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -278,6 +293,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "https://example3.com",
 				Auth:    nil,
+				Score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -289,6 +305,7 @@ func TestInitializeProvider(t *testing.T) {
 				Auth: &siwe.SIWEClientAuth{
 					ProviderURL: "http://auth.example.com",
 				},
+				Score: ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -305,6 +322,8 @@ func TestInitializeProvider(t *testing.T) {
 				},
 			}
 			err := dinMiddleware.initializeProvider("test-network", tt.provider, tt.httpClient, logger)
+			// Assert provider score is set to the empty score
+			assert.Equal(t, ws.EmptyScore, tt.provider.Score)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -500,9 +519,9 @@ func TestUnmarshalCaddyfileAPIKeys(t *testing.T) {
 	dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 	tests := []struct {
-		name      string
-		caddyfile string
-		hasErr    bool
+		name       string
+		caddyfile  string
+		hasErr     bool
 		expectKeys map[string]string
 	}{
 		{
@@ -537,8 +556,8 @@ func TestUnmarshalCaddyfileAPIKeys(t *testing.T) {
 				other-key other-user
 			}`,
 			expectKeys: map[string]string{
-				"test-key": "some-user",
-				"other-key": "other-user",
+				"test-key":    "some-user",
+				"other-key":   "other-user",
 				"missing-key": "c92388d1d4", // sha256(foo + missing-key)[:10]
 			},
 			hasErr: false,

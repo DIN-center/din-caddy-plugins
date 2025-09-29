@@ -13,6 +13,7 @@ import (
 func init() {
 	caddy.RegisterModule(mod.DinUpstreams{})
 	caddy.RegisterModule(mod.DinSelect{})
+	caddy.RegisterModule(mod.DinScoreBasedSelector{})
 	caddy.RegisterModule(&mod.DinMiddleware{})
 	caddy.RegisterModule(siwe.SIWEAuthMiddleware{})
 
