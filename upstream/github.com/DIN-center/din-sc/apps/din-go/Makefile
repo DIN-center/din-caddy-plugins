@@ -14,4 +14,5 @@ include $(MONO_ROOT_DIR)/common.mk
 generate-mocks:
 	mockgen -source=./cli/cmd/interface.go -package=dincli -destination=./cli/cmd/interface_mock.go
 	mockgen -source=./lib/din/interface.go -package=din -destination=./lib/din/interface_mock.go
+	mockgen -source=./lib/watcher/interface.go -package=watcher -destination=./lib/watcher/interface_mock.go
 
