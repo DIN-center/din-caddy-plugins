@@ -17,10 +17,19 @@ caddy-data/
 cmd/siwe-token/secret
 foundry.toml
 local_rivet_script.sh
-scripts/
 services/.DS_Store
 .DS_Store
 */.DS_Store
 coverage.out
 Claude.md
 PR_DESCRIPTION.md
+
+# Environment files with secrets
+.env.local
+.env.production
+.env.staging
+*.env
+
+# But keep the example file
+!.env.example
+secret.key
