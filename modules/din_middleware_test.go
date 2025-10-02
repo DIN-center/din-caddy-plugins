@@ -1212,3 +1212,41 @@ func TestRegistryConfigCustomValues(t *testing.T) {
 	assert.Equal(t, 5*time.Second, d.Registry.RetryDelay)
 	assert.Equal(t, 60*time.Second, d.Registry.PanicRecoveryDelay)
 }
+
+func TestSyncMiddlewareWithLatestScores(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+
+	mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
+
+	mockMiddleware := &DinMiddleware{
+		Networks: map[string]*network{
+			"network1": {
+				Name: "network1",
+				Providers: map[string]*provider{
+					"provider1": {
+						host:  "provider1",
+						Score: ws.MustCreateScore(0.8, time.Now()),
+					},
+					"provider2": {
+						host:  "provider2",
+						Score: ws.MustCreateScore(0.2, time.Now()),
+					},
+				},
+			},
+		},
+		logger:              logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+		watcherScoreManager: mockWatcherScoreManager,
+	}
+
+	//Set expected score for providers
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider1").Return(ws.MustCreateScore(0.75, time.Now())).Times(1)
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider2").Return(ws.MustCreateScore(0.25, time.Now())).Times(1)
+
+	//Call SyncMiddlewareWithLatestScores
+	mockMiddleware.SyncMiddlewareWithLatestScores()
+
+	//Verify if scores are updated correctly in the middleware
+	assert.Equal(t, 0.75, mockMiddleware.Networks["network1"].Providers["provider1"].Score.Value())
+	assert.Equal(t, 0.25, mockMiddleware.Networks["network1"].Providers["provider2"].Score.Value())
+
+}

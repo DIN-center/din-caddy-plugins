@@ -39,6 +39,7 @@ func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 
 	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id",
+		// Fallback to score based selector if no session affinity is found
 		FallbackRaw: caddyconfig.JSONModuleObject(DinScoreBasedSelector{}, "policy", "din_score_based_selector", nil)}
 
 	d.logger.Debug("Provisioning DinSelect", zap.Any("selector", selector))

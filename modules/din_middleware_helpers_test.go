@@ -344,7 +344,6 @@ func TestAddNetworkFromRegistryDataWorksWithDynamicLoadBalancing(t *testing.T) {
 	}
 }
 
-// TODO LN implement test for remove network with dynamic load balancing
 func TestUpdateNetworkWithRegistryData(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -1566,33 +1565,3 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	// Verify total count
 	assert.Equal(t, 4, len(d.Networks["test-net"].Providers), "Should have exactly 4 providers")
 }
-
-//TODO LN implement test
-// func TestSyncMiddlewareWithLatestScores(t *testing.T) {
-// 	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
-// 	mockCtrl := gomock.NewController(t)
-// 	mockDingoClient := din.NewMockIDinClient(mockCtrl)
-
-// 	oldScore := ws.MustCreateScore(20, time.Now())
-// 	updatedScore := ws.MustCreateScore(100, time.Now())
-// 	mockWatcherScoreManager := ws.NewMock(logger.Logger, map[string]map[string]*ws.Score{
-// 		"test-network": {
-// 			"provider1": oldScore,
-// 		},
-// 	}, make(map[string]ws.ScoreFormula))
-
-// 	dinMiddleware := &DinMiddleware{
-// 		Registry: RegistryConfig{
-// 			BlockEpoch: 10,
-// 		},
-// 		registryLastUpdatedEpochBlockNumber: 40,
-// 		logger:                              logger,
-// 		DingoClient:                         mockDingoClient,
-// 		testMode:                            true,
-// 		watcherScoreManager:                 mockWatcherScoreManager,
-// 		DynamicLoadBalacingEnabled:          true,
-// 		DynamicLoadBalacingSyncEnabled:      true,
-// 	}
-
-// 	//TODO LN implement test
-// }

@@ -31,7 +31,6 @@ const (
 
 	// Module Context Key constants
 	DinUpstreamsContextKey          = "din.internal.upstreams"
-	DinScoreBasedRoutingContextKey  = "din.internal.score_based_routing"
 	RequestProviderKey              = "request_provider"
 	RequestProviderPriorityKey      = "request_provider_priority"
 	RequestBodyKey                  = "request_body"
@@ -88,8 +87,11 @@ const (
 	StarknetArchiveMethod = "starknet_getBlockWithTxs"
 
 	// Watcher score based dynamic load balancing constants
-	ProvidersDefaultWeight         = 50
-	StaleScoreGracePeriodInMinutes = 60
+	DinScoreBasedLoadBalancingContextKey     = "din.internal.score_based_load_balancing"
+	DinScoreBasedSelectionCaddyModuleKey     = "http.reverse_proxy.selection_policies.din_score_based_selector"
+	ScoreBasedSelectionProviderDefaultWeight = 50
+	StaleScoreGracePeriodInMinutes           = 60
+	WatcherScoreUpdateInterval               = 1 * time.Minute
 )
 
 // String method to convert MyEnum to string

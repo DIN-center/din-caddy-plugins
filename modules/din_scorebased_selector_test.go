@@ -77,19 +77,14 @@ func (m *mockSelector) Select(_ reverseproxy.UpstreamPool, _ *http.Request, _ ht
 
 func TestDinScoreBasedSelectorSelect(t *testing.T) {
 
-	upstream_mock := &reverseproxy.Upstream{
-		Dial: "mock",
-	}
-	upstream_foo := &reverseproxy.Upstream{
-		Dial: "foo",
-	}
-	upstream_bar := &reverseproxy.Upstream{
-		Dial: "bar",
-	}
+	//Markers for the tests
+	upstream_fallback := &reverseproxy.Upstream{}
+	upstream_foo := &reverseproxy.Upstream{}
+	upstream_bar := &reverseproxy.Upstream{}
 
 	selector := DinScoreBasedSelector{
 		logger:   zap.NewNop(), // suppress logger here because we repeat the test multiple times
-		fallback: &mockSelector{alwaysReturnUpstream: upstream_mock},
+		fallback: &mockSelector{alwaysReturnUpstream: upstream_fallback},
 	}
 
 	type Output struct {
@@ -98,133 +93,148 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		request             *http.Request
-		pool                reverseproxy.UpstreamPool
-		providers           map[string]*provider
-		smartRoutingEnabled bool
-		repeat              int
-		output              []Output
+		name                        string
+		request                     *http.Request
+		pool                        reverseproxy.UpstreamPool
+		providers                   map[string]*provider
+		dynamicLoadBalancingEnabled bool
+		repeat                      int
+		output                      []Output
 	}{
 		{
-			name:                "Score based routing disabled, use fallback => upstream selected",
-			request:             &http.Request{},
-			pool:                reverseproxy.UpstreamPool{upstream_mock},
-			providers:           nil,
-			smartRoutingEnabled: false,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_mock, target_prob: 1.0}},
+			name:                        "Score based load balancing disabled, use fallback => upstream selected",
+			request:                     &http.Request{},
+			pool:                        reverseproxy.UpstreamPool{upstream_fallback},
+			providers:                   nil,
+			dynamicLoadBalancingEnabled: false,
+			repeat:                      1,
+			output:                      []Output{{upstream: upstream_fallback, target_prob: 1.0}},
 		},
 		{
-			name:                "Score based routing enabled, no providers score => no upstream selected",
-			request:             &http.Request{},
-			pool:                reverseproxy.UpstreamPool{},
-			providers:           nil,
-			smartRoutingEnabled: true,
-			repeat:              1,
-			output:              []Output{{upstream: nil, target_prob: 0.0}},
+			name:                        "Score based load balancing enabled, no providers in context => no upstream selected",
+			request:                     &http.Request{},
+			pool:                        reverseproxy.UpstreamPool{},
+			providers:                   nil,
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1,
+			output:                      []Output{{upstream: nil, target_prob: 0.0}},
 		},
 		{
-			name:    "Score based routing enabled, single provider (score is empty) => upstream selected",
+			name:    "Score based load balancing enabled, single provider (score is empty) => upstream selected",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_foo},
 			providers: map[string]*provider{
-				upstream_foo.Dial: {
-					Score: ws.NewEmptyScore(),
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.NewEmptyScore(), // foo has no score, score will use default weight
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_foo, target_prob: 1.0}},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1,
+			output:                      []Output{{upstream: upstream_foo, target_prob: 1.0}},
 		},
 		{
-			name:    "Score based routing enabled, single provider (score has a value > 0.0) => upstream selected",
+			name:    "Score based load balancing enabled, single provider (score has a value > 0.0) => upstream selected",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(1.0, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(1.0, time.Now().UTC()),
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_bar, target_prob: 1.0}},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1,
+			output:                      []Output{{upstream: upstream_bar, target_prob: 1.0}},
 		},
 		{
-			name:    "Score based routing enabled, single provider (score has a value, but it's 0.0) => no upstream selected",
+			name:    "Score based load balancing enabled, single provider (score has a value, but it's 0.0) => no upstream selected",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.0, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1,
-			output:              []Output{{upstream: nil, target_prob: 0.0}},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1,
+			output:                      []Output{{upstream: nil, target_prob: 0.0}},
 		},
 		{
-			name:    "Score based routing enabled, single provider (score has a value, but it is stale) => upstream selected",
-			request: &http.Request{},
-			pool:    reverseproxy.UpstreamPool{upstream_bar},
-			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.0, time.Now().UTC().Add(-time.Minute*StaleScoreGracePeriodInMinutes-1)),
-				},
-			},
-			smartRoutingEnabled: true,
-			repeat:              1,
-			output:              []Output{{upstream: upstream_bar, target_prob: 1.0}},
-		},
-		{
-			name:    "Score based routing enabled, two providers (same score) => upstream selected with same odds",
+			name:    "Score based load balancing enabled, two providers (same score) => upstream selected with same odds",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.8, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
-				upstream_foo.Dial: {
-					Score: ws.MustCreateScore(0.8, time.Now().UTC()),
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
-			output:              []Output{{upstream: upstream_bar, target_prob: 0.5}, {upstream: upstream_foo, target_prob: 0.5}},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			output:                      []Output{{upstream: upstream_bar, target_prob: 0.5}, {upstream: upstream_foo, target_prob: 0.5}},
 		},
 		{
-			name:    "Score based routing enabled, two providers (bar valid, foo valid) => upstream selected according to odds",
+			name:    "Score based load balancing enabled, two providers (bar valid, foo valid) => upstream selected according to odds",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.92, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
-				upstream_foo.Dial: {
-					Score: ws.MustCreateScore(0.67, time.Now().UTC()),
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.67, time.Now().UTC()),
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
-			output: []Output{{upstream: upstream_bar, target_prob: 0.5786}, // note that prob = odd / (odd + 1)
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			output: []Output{{upstream: upstream_bar, target_prob: 0.5786},
 				{upstream: upstream_foo, target_prob: 0.4214}},
 		},
 		{
-			name:    "Score based routing enabled, two providers (bar valid, foo invalid) => upstream selected according to odds",
+			name:    "Score based load balancing enabled, two providers (bar valid, foo invalid) => upstream selected according to odds",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.92, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
-				upstream_foo.Dial: {
-					Score: ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1000, // less than 10000 is not enough to get a stable result
-			output: []Output{{upstream: upstream_bar, target_prob: 0.6479}, // note that prob = odd / (odd + 1)
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			output: []Output{{upstream: upstream_bar, target_prob: 0.6479},
 				{upstream: upstream_foo, target_prob: 0.3521}},
+		},
+		{
+			name:    "Score based load balancing enabled, two providers (bar is stale, foo is valid) => upstream selected (foo is selected 100% of the time)",
+			request: &http.Request{},
+			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers: map[string]*provider{
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-time.Minute*StaleScoreGracePeriodInMinutes-1)), // bar is stale so weight is the default weight
+				},
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+				},
+			},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000,
+			output: []Output{{upstream: upstream_bar, target_prob: 0.3846},
+				{upstream: upstream_foo, target_prob: 0.6154}},
 		},
 	}
 	for _, tt := range tests {
@@ -235,7 +245,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(DinUpstreamsContextKey, tt.providers)
-			repl.Set(DinScoreBasedRoutingContextKey, tt.smartRoutingEnabled)
+			repl.Set(DinScoreBasedLoadBalancingContextKey, tt.dynamicLoadBalancingEnabled)
 
 			results := make([]*reverseproxy.Upstream, tt.repeat)
 			upstream_count := make(map[*reverseproxy.Upstream]int)

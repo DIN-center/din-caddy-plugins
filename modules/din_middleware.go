@@ -109,6 +109,9 @@ type DinMiddleware struct {
 	// Internal registry tracking - this is not exposed in config
 	registryLastUpdatedEpochBlockNumber uint64
 
+	// The channel to quit the goroutines
+	quit chan struct{}
+
 	// Map for associating API keys with users
 	ApiKeys map[string]string
 	ApiSalt string
@@ -116,14 +119,15 @@ type DinMiddleware struct {
 	// Dynamic load balacing configuration
 	// The flag to enable or disable the dynamic load balacing
 	DynamicLoadBalacingEnabled bool
-	// The endpoint of the watcher
-	DynamicLoadBalacingWatcherEndpoint string
-	// The API key for the watcher
-	DynamicLoadBalacingWatcherApiKey string
-	// The flag to enable or disable the dynamic load balacing sync
-	DynamicLoadBalacingSyncEnabled bool
-	// The sync interval in seconds for the dynamic load balacing
-	DynamicLoadBalacingSyncIntervalSec uint64
+	// The endpoint of the watcher API
+	WatcherApiEndpoint string
+	// The API key for the watcher API
+	WatcherApiKey string
+
+	// Defines the interval in seconds to sync the watcher scores to the middleware
+	WatcherScoreSyncIntervalSec uint64
+	// The last time the watcher scores were synced to the middleware
+	WatcherScoreLastSyncTime time.Time
 
 	//The backend to manage score (Watcher score)
 	watcherScoreManager ws.IWatcherScoreManager
@@ -131,8 +135,11 @@ type DinMiddleware struct {
 	//The watcher client for dynamic load balacing
 	watcherClient watcher.IWatcherAPIClient
 
-	// The channel to quit the goroutines
-	quit chan struct{}
+	// The channel to quit the goroutine that computes the watcher scores
+	watcherScoreComputeQuit chan struct{}
+
+	// The channel to quit the goroutine that syncs the watcher scores to the middleware
+	watcherScoreSyncQuit chan struct{}
 }
 
 // CaddyModule returns the Caddy module information.
@@ -185,11 +192,10 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 
 	// If dynamic load balacing is enabled, initialize the score backend
 	if d.DynamicLoadBalacingEnabled {
-		d.logger.Info("[DYNAMIC_LB]  Dynamic load balacing activated, initializing watcher score manager")
-		d.logger.Debug("[DYNAMIC_LB]  Dynamic load balacing settings:",
-			zap.Bool("sync_score_enabled", d.DynamicLoadBalacingSyncEnabled),
-			zap.Uint64("sync_interval_secs", d.DynamicLoadBalacingSyncIntervalSec),
-			zap.String("watcher_endpoint", d.DynamicLoadBalacingWatcherEndpoint))
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balacing activated, initializing watcher score manager")
+		d.logger.Debug("[DYNAMIC_LB] Dynamic load balacing settings:",
+			zap.Uint64("watcher_scores_sync_interval_secs", d.WatcherScoreSyncIntervalSec),
+			zap.String("watcher_endpoint", d.WatcherApiEndpoint))
 
 		//list of networks to compute scores
 		networks := make([]string, 0, len(d.Networks))
@@ -416,13 +422,15 @@ func (d *DinMiddleware) startBackgroundServices() error {
 		d.startRegistrySync()
 	}
 
-	// Start the periodic updates for the watcher scores
-	if d.DynamicLoadBalacingEnabled && d.DynamicLoadBalacingSyncEnabled {
-		d.logger.Info("[DYNAMIC_LB]  Computing watcher scores, starting periodic updates")
-		d.watcherScoreManager.StartPeriodicUpdates(time.Duration(d.DynamicLoadBalacingSyncIntervalSec) * time.Second)
-
-		// Force the first update of the watcher scores
-		d.SyncMiddlewareWithLatestScores()
+	// Check if we need to start the periodic updates for the watcher scores
+	if d.DynamicLoadBalacingEnabled {
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balacing enabled, starting periodic updates for watcher scores", zap.Duration("frequency_interval", WatcherScoreUpdateInterval))
+		d.watcherScoreComputeQuit = d.watcherScoreManager.StartPeriodicUpdates(WatcherScoreUpdateInterval)
+		// If the sync interval is greater than 0, start the watcher score sync goroutine
+		if d.WatcherScoreSyncIntervalSec > 0 {
+			d.logger.Info("[DYNAMIC_LB] Dynamic load balacing enabled, syncing watcher scores to the middleware", zap.Duration("frequency_interval", time.Duration(d.WatcherScoreSyncIntervalSec)*time.Second))
+			d.watcherScoreSyncQuit = d.startWatcherScoreSync()
+		}
 	}
 
 	return nil
@@ -633,7 +641,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Set if dynamic load balancing should be done
-	repl.Set(DinScoreBasedRoutingContextKey, d.DynamicLoadBalacingEnabled)
+	repl.Set(DinScoreBasedLoadBalancingContextKey, d.DynamicLoadBalacingEnabled)
 
 	reqStartTime := time.Now()
 
@@ -937,6 +945,29 @@ func (d *DinMiddleware) startRegistrySync() {
 	}()
 }
 
+// startWatcherScoreSync starts a background goroutine to sync the watcher scores to the middleware
+func (d *DinMiddleware) startWatcherScoreSync() chan struct{} {
+	syncQuit := make(chan struct{})
+
+	// Do immediate initial sync
+	d.SyncMiddlewareWithLatestScores()
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(d.WatcherScoreSyncIntervalSec) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-syncQuit:
+				d.logger.Info("Watcher score sync goroutine shutting down gracefully")
+				return
+			case <-ticker.C:
+				d.SyncMiddlewareWithLatestScores()
+			}
+		}
+	}()
+	return syncQuit
+}
+
 // Cleanup implements caddy.CleanerUpper and is called when Caddy shuts down or reloads.
 // It ensures all goroutines are properly terminated and resources are cleaned up.
 func (d *DinMiddleware) Cleanup() error {
@@ -957,6 +988,18 @@ func (d *DinMiddleware) Cleanup() error {
 		if d.quit != nil {
 			d.logger.Debug("Signaling shutdown to registry sync goroutine")
 			close(d.quit)
+		}
+
+		// Close middleware-level goroutine that syncs the watcher scores to the middleware
+		if d.watcherScoreSyncQuit != nil {
+			d.logger.Debug("Signaling shutdown to watcher score sync goroutine")
+			close(d.watcherScoreSyncQuit)
+		}
+
+		// Close middleware-level goroutine that computes the watcher scores
+		if d.watcherScoreComputeQuit != nil {
+			d.logger.Debug("Signaling shutdown to watcher score compute goroutine")
+			close(d.watcherScoreComputeQuit)
 		}
 
 		d.logger.Info("DIN middleware shutdown complete")

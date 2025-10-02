@@ -23,7 +23,7 @@ func (g *WatcherBlockNumberConsistency) GenerateMetrics(network string) ([]*Prov
 	queryParams := watcher.CheckQueryParams{
 		CheckID:  BlockNumberConsistencyMetricID,
 		Network:  network,
-		Interval: MetricDefaultInterval,
+		Interval: WatcherDefaultAggInterval,
 	}
 
 	g.Logger.Debug("[WATCHER_SCORE] Generating metrics for block number consistency...")
@@ -53,7 +53,7 @@ func (g *WatcherBlockNonStateConsistency) GenerateMetrics(network string) ([]*Pr
 	queryParams := watcher.CheckQueryParams{
 		CheckID:  BlockNonStateConsistencyMetricID,
 		Network:  network,
-		Interval: MetricDefaultInterval,
+		Interval: WatcherDefaultAggInterval,
 	}
 
 	g.Logger.Debug("[WATCHER_SCORE] Generating metrics for block non-state consistency...")
@@ -82,7 +82,7 @@ func (g *WatcherLatency) GenerateMetrics(network string) ([]*ProviderMetric, err
 	// Get latency data
 	latencyQuery := watcher.LatencyQueryParams{
 		Network:  network,
-		Interval: MetricDefaultInterval,
+		Interval: WatcherDefaultAggInterval,
 	}
 
 	g.Logger.Debug("[WATCHER_SCORE] Generating metrics for latency...")

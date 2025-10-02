@@ -793,21 +793,33 @@ func (d *DinMiddleware) getAPIKeyId(key string) string {
 // GetOrCreateWatcherClient creates a new watcher client if it doesn't exist and returns the watcher client
 func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
 	if d.watcherClient == nil {
-		d.watcherClient = watcher.NewClient(d.DynamicLoadBalacingWatcherEndpoint, d.DynamicLoadBalacingWatcherApiKey)
+		d.watcherClient = watcher.NewClient(d.WatcherApiEndpoint, d.WatcherApiKey)
 	}
 	return d.watcherClient
 }
 
 // Fetches the latest score from the watcher score manager and updates the provider score for all active networks
 func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
-	d.logger.Info("[DYNAMIC_LB] Syncing provider scores from watcher score manager")
+	// Lock the middleware object to prevent race condition when updating provider scores
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	// Keep track of the last time the scores were synced to the middleware
+	d.WatcherScoreLastSyncTime = time.Now().UTC()
+
+	d.logger.Info("[DYNAMIC_LB] Syncing watcher scores to the middleware")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
 			provider.Score = d.watcherScoreManager.GetScore(network.Name, provider.host)
-			d.logger.Debug("[DYNAMIC_LB]  Provider score",
+			d.logger.Info("[DYNAMIC_LB] Synced watcher score",
 				zap.String("network", network.Name),
 				zap.String("provider", provider.host),
-				zap.Any("score", provider.Score))
+				zap.Bool("score_is_valid", provider.Score.HasValue()),
+				zap.Float64("score_value", provider.Score.Value()),
+				zap.String("score_updated_at", provider.Score.LastUpdated().Format(time.RFC3339)),
+				zap.String("middleware_synced_at", d.WatcherScoreLastSyncTime.Format(time.RFC3339)),
+				zap.Bool("is_healthy", provider.Healthy()),
+				zap.Bool("is_warning", provider.Warning()))
 		}
 	}
 }

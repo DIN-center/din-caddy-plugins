@@ -618,9 +618,8 @@
 				enabled true
 				watcher_endpoint https://watcher.din.com
 				watcher_api_key key
-				sync_score_enabled true
 				sync_score_interval_secs 300 # 5 minutes
-		}
+			}
 		}
 		# din reverse proxy directive configuration
 		# https://caddyserver.com/docs/caddyfile/directives/reverse_proxy

@@ -625,28 +625,18 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 			p.middleware.DynamicLoadBalacingEnabled = boolValue
 		case "watcher_endpoint":
 			p.dispenser.Next()
-			smartRoutingWatcherEndpoint := p.dispenser.Val()
-			p.middleware.DynamicLoadBalacingWatcherEndpoint = smartRoutingWatcherEndpoint
+			p.middleware.WatcherApiEndpoint = p.dispenser.Val()
 		case "watcher_api_key":
 			p.dispenser.Next()
-			smartRoutingWatcherApiKey := p.dispenser.Val()
-			p.middleware.DynamicLoadBalacingWatcherApiKey = smartRoutingWatcherApiKey
-		case "sync_score_enabled":
-			p.dispenser.Next()
-			syncScoreEnabledVal := p.dispenser.Val()
-			boolValue, err := strconv.ParseBool(syncScoreEnabledVal)
-			if err != nil {
-				return p.dispenser.Errf("Error while parsing dynamic_load_balancing.sync_score_enabled: %v", err)
-			}
-			p.middleware.DynamicLoadBalacingSyncEnabled = boolValue
+			p.middleware.WatcherApiKey = p.dispenser.Val()
 		case "sync_score_interval_secs":
 			p.dispenser.Next()
-			smartRoutingSyncIntervalSecVal := p.dispenser.Val()
-			intValue, err := strconv.Atoi(smartRoutingSyncIntervalSecVal)
+			syncScoreIntervalSecs := p.dispenser.Val()
+			intValue, err := strconv.Atoi(syncScoreIntervalSecs)
 			if err != nil {
 				return p.dispenser.Errf("Error parsing dynamic_load_balancing.sync_score_interval_secs: %v", err)
 			}
-			p.middleware.DynamicLoadBalacingSyncIntervalSec = uint64(intValue)
+			p.middleware.WatcherScoreSyncIntervalSec = uint64(intValue)
 		default:
 			return p.dispenser.Errf("unrecognized option while parsing dynamic_load_balancing directive: %s", p.dispenser.Val())
 		}
@@ -658,10 +648,10 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 
 func (p *caddyfileParser) validateDynamicLoadBalancing() error {
 	if p.middleware.DynamicLoadBalacingEnabled {
-		if p.middleware.DynamicLoadBalacingWatcherEndpoint == "" {
+		if p.middleware.WatcherApiEndpoint == "" {
 			return p.dispenser.Errf("watcher_endpoint is required when dynamic_load_balancing.enabled is true")
 		}
-		if p.middleware.DynamicLoadBalacingWatcherApiKey == "" {
+		if p.middleware.WatcherApiKey == "" {
 			return p.dispenser.Errf("watcher_api_key is required when dynamic_load_balancing.enabled is true")
 		}
 	}

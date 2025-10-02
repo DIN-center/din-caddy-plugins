@@ -2,9 +2,9 @@ package modules
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/jmcvetta/randutil"
@@ -28,10 +28,18 @@ type DinScoreBasedSelector struct {
 	fallback reverseproxy.Selector
 }
 
+// ChoiceEntry is a struct that contains the upstream, provider host and provider score.
+// It is used to store the choice entry in the choices array.
+type ChoiceEntry struct {
+	upstream *reverseproxy.Upstream
+	host     string
+	score    *ws.Score
+}
+
 // CaddyModule returns the Caddy module information.
 func (DinScoreBasedSelector) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.selection_policies.din_score_based_selector",
+		ID:  DinScoreBasedSelectionCaddyModuleKey,
 		New: func() caddy.Module { return new(DinScoreBasedSelector) },
 	}
 }
@@ -40,7 +48,7 @@ func (DinScoreBasedSelector) CaddyModule() caddy.ModuleInfo {
 // It is called only once, when the server is starting.
 func (s *DinScoreBasedSelector) Provision(context caddy.Context) error {
 	s.logger = context.Logger(s)
-	s.logger.Debug("[DYNAMIC_LB]  Provisioning called")
+	s.logger.Debug("[DYNAMIC_LB] Provisioning called")
 	s.fallback = &reverseproxy.RandomSelection{}
 	return nil
 }
@@ -50,59 +58,95 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 
 	// short circuit if there is no upstreams
 	if len(pool) == 0 {
-		s.logger.Warn("[DYNAMIC_LB]  No upstreams available")
+		s.logger.Warn("[DYNAMIC_LB] No upstreams available")
 		return nil
 	}
 
-	// Get the providers from the context
+	// Get Caddy replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// Look if routing should be done based on watcher score
-	if scoreBasedRouting, ok := repl.Get(DinScoreBasedRoutingContextKey); ok && scoreBasedRouting.(bool) {
+	// Look if dynamic load balancing should be done
+	if scoreBasedSelection, ok := repl.Get(DinScoreBasedLoadBalancingContextKey); ok && scoreBasedSelection.(bool) {
 
 		// Get the providers from the context
 		var providers map[string]*provider
-		if backedProviders, ok := repl.Get(DinUpstreamsContextKey); ok {
-			providers = backedProviders.(map[string]*provider)
+		if v, ok := repl.Get(DinUpstreamsContextKey); ok {
+			providers = v.(map[string]*provider)
 		}
 
-		// Check if providers are available
+		// If providers are available, we can select an upstream based on the watcher score
 		if providers != nil {
-			s.logger.Debug("[DYNAMIC_LB]  Selecting upstream according to its watcher score")
+			s.logger.Debug("[DYNAMIC_LB] Selecting upstream according to its watcher score")
 
+			// Create a map of upstreams and associated providers
+			mapUpstreamProviders := make(map[*reverseproxy.Upstream]*provider)
+			for _, p := range providers {
+				mapUpstreamProviders[p.upstream] = p
+			}
+
+			// Prepare the weights for the selection
 			choices := make([]randutil.Choice, len(pool))
 			for i, upstream := range pool {
-				weight := ProvidersDefaultWeight
-				// Try to get the provider score (if available)
-				providerKey := strings.Split(upstream.Dial, ":")[0]
-				if provider, exists := providers[providerKey]; exists {
-					providerScore := provider.Score
-					s.logger.Debug("[DYNAMIC_LB]  Provider score found:",
-						zap.String("provider key", providerKey),
-						zap.Any("score", providerScore))
+				// Default values
+				weight := ScoreBasedSelectionProviderDefaultWeight
+				providerHost := "unknown"
+				providerScore := ws.NewEmptyScore()
 
-					if providerScore.HasValue() && providerScore.LastUpdated().After(time.Now().UTC().Add(-time.Minute*StaleScoreGracePeriodInMinutes)) {
-						weight = int(providerScore.Value() * 100)
+				if provider, exists := mapUpstreamProviders[upstream]; exists {
+
+					providerHost = provider.host
+					providerScore = provider.Score
+
+					if providerScore.HasValue() {
+						s.logger.Debug("[DYNAMIC_LB] Score found for provider",
+							zap.String("provider", providerHost),
+							zap.Any("score", providerScore))
+
+						// If the score has a valid value and is not stale, we can use it to weight the selection
+						graceTimeStart := time.Now().UTC().Add(-time.Minute * StaleScoreGracePeriodInMinutes)
+						if provider.Score.LastUpdated().After(graceTimeStart) {
+							weight = int(provider.Score.Value() * 100)
+						} else {
+							s.logger.Debug("[DYNAMIC_LB] Score is stale for provider",
+								zap.String("provider", providerHost),
+								zap.String("score_updated_at", provider.Score.LastUpdated().Format(time.RFC3339)),
+								zap.String("grace_time", graceTimeStart.Format(time.RFC3339)))
+						}
+					} else {
+						s.logger.Debug("[DYNAMIC_LB] No score found for provider",
+							zap.String("provider", provider.host))
 					}
+
 				}
 				choices[i] = randutil.Choice{
-					Item:   upstream,
+					Item:   ChoiceEntry{upstream: upstream, host: providerHost, score: providerScore},
 					Weight: weight,
 				}
 			}
 
+			// Select the upstream based on the weights
 			selected, err := randutil.WeightedChoice(choices)
 			if err != nil {
-				s.logger.Warn("[DYNAMIC_LB]  Error when selecting upstreams, all weights are 0 (zero value)")
+				s.logger.Warn("[DYNAMIC_LB] Error when selecting upstreams, all weights are 0 (zero value)")
 				return nil
 			}
-			return selected.Item.(*reverseproxy.Upstream)
+
+			// Break the selected item into its components
+			selectedItem := selected.Item.(ChoiceEntry)
+
+			s.logger.Debug("[DYNAMIC_LB] Weighted upstream selection",
+				zap.String("provider", selectedItem.host),
+				zap.Any("score", selectedItem.score),
+				zap.Int("weight", selected.Weight))
+
+			return selectedItem.upstream
 		} else {
-			s.logger.Warn("[DYNAMIC_LB]  Score based routing enabled but there is no providers score")
+			s.logger.Warn("[DYNAMIC_LB] Score based load balancing enabled but there is no providers available in the context")
 			return nil
 		}
 	}
-	// Fallback to random selection
-	s.logger.Debug("[DYNAMIC_LB]  No score based routing, using fallback")
+
+	// Fallback to default selection
+	s.logger.Debug("[DYNAMIC_LB] No score based load balancing, using fallback")
 	return s.fallback.Select(pool, r, rw)
 }

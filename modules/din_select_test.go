@@ -77,51 +77,53 @@ func TestDinSelectSelect(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		request             *http.Request
-		pool                reverseproxy.UpstreamPool
-		providers           map[string]*provider
-		smartRoutingEnabled bool
-		repeat              int
-		tolerance           float64
-		output              []Output
+		name                        string
+		request                     *http.Request
+		pool                        reverseproxy.UpstreamPool
+		providers                   map[string]*provider
+		dynamicLoadBalancingEnabled bool
+		repeat                      int
+		tolerance                   float64
+		output                      []Output
 	}{
 		{
-			name:                "Respect session affinity (header Din-Session-Id) regardless dynamic load balacing => upstream selected to the same provider",
-			request:             &http.Request{Header: http.Header{"Din-Session-Id": []string{"foofoo"}}},
-			pool:                reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
-			providers:           nil,
-			smartRoutingEnabled: true,
-			repeat:              100,
-			tolerance:           0.00, // 0% error margin, session affinity is ALWAYS deterministic
-			output:              []Output{{upstream_foo, 1.0}},
+			name:                        "Respect session affinity (header Din-Session-Id) regardless dynamic load balacing => upstream selected to the same provider",
+			request:                     &http.Request{Header: http.Header{"Din-Session-Id": []string{"foofoo"}}},
+			pool:                        reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers:                   nil,
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      100,
+			tolerance:                   0.00, // 0% error margin, session affinity is ALWAYS deterministic
+			output:                      []Output{{upstream_foo, 1.0}},
 		},
 		{
-			name:                "Random selection when no session affinity and no dynamic load balacing => upstream selected randomly",
-			request:             &http.Request{},
-			pool:                reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
-			providers:           nil,
-			smartRoutingEnabled: false,
-			repeat:              1000,
-			tolerance:           0.05, // 5% error margin
-			output:              []Output{{upstream_foo, 0.5}, {upstream_bar, 0.5}},
+			name:                        "Random selection when no session affinity and no dynamic load balacing => upstream selected randomly",
+			request:                     &http.Request{},
+			pool:                        reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers:                   nil,
+			dynamicLoadBalancingEnabled: false,
+			repeat:                      10000,
+			tolerance:                   0.02, // 2% error margin
+			output:                      []Output{{upstream_foo, 0.5}, {upstream_bar, 0.5}},
 		},
 		{
-			name:    "Dynamic load balacing => upstream selected based on dynamic load balacing scores",
+			name:    "Dynamic load balacing => upstream selected based on provider scores",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				upstream_bar.Dial: {
-					Score: ws.MustCreateScore(0.92, time.Now().UTC()),
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
-				upstream_foo.Dial: {
-					Score: ws.MustCreateScore(0.67, time.Now().UTC()),
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.67, time.Now().UTC()),
 				},
 			},
-			smartRoutingEnabled: true,
-			repeat:              1000,
-			tolerance:           0.05, // 5% error margin
-			output:              []Output{{upstream_bar, 0.5786}, {upstream_foo, 0.4214}},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      10000,
+			tolerance:                   0.02, // 2% error margin
+			output:                      []Output{{upstream_bar, 0.5786}, {upstream_foo, 0.4214}},
 		},
 	}
 	for _, tt := range tests {
@@ -132,7 +134,7 @@ func TestDinSelectSelect(t *testing.T) {
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			repl.Set(DinUpstreamsContextKey, tt.providers)
-			repl.Set(DinScoreBasedRoutingContextKey, tt.smartRoutingEnabled)
+			repl.Set(DinScoreBasedLoadBalancingContextKey, tt.dynamicLoadBalancingEnabled)
 
 			results := make([]*reverseproxy.Upstream, tt.repeat)
 			upstream_count := make(map[*reverseproxy.Upstream]int)

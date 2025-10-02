@@ -325,7 +325,6 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 		dynamicLoadBalancingEnabled bool
 		watcherEndpoint             string
 		watcherApiKey               string
-		syncScoreEnabled            bool
 		syncScoreIntervalSecs       uint64
 		hasError                    bool
 	}{
@@ -343,7 +342,6 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 			dynamicLoadBalancingEnabled: false,
 			watcherEndpoint:             "",
 			watcherApiKey:               "",
-			syncScoreEnabled:            false,
 			syncScoreIntervalSecs:       0,
 			hasError:                    false,
 		},
@@ -361,7 +359,6 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 			dynamicLoadBalancingEnabled: true,
 			watcherEndpoint:             "",
 			watcherApiKey:               "",
-			syncScoreEnabled:            false,
 			syncScoreIntervalSecs:       0,
 			hasError:                    true,
 		},
@@ -375,15 +372,13 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 			dynamic_load_balancing {
 				enabled true
 				watcher_endpoint https://watcher.din.com
-				watcher_api_key key
-				sync_score_enabled true
+				watcher_api_key  key
 				sync_score_interval_secs 300 # 5 minutes
 			}
 			`,
 			dynamicLoadBalancingEnabled: true,
 			watcherEndpoint:             "https://watcher.din.com",
 			watcherApiKey:               "key",
-			syncScoreEnabled:            true,
 			syncScoreIntervalSecs:       300,
 			hasError:                    false,
 		},
@@ -404,10 +399,9 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.dynamicLoadBalancingEnabled, dinMiddleware.DynamicLoadBalacingEnabled, "Dynamic load balancing enabled should be %v", tt.dynamicLoadBalancingEnabled)
-			assert.Equal(t, tt.watcherEndpoint, dinMiddleware.DynamicLoadBalacingWatcherEndpoint, "Watcher endpoint should be %v", tt.watcherEndpoint)
-			assert.Equal(t, tt.watcherApiKey, dinMiddleware.DynamicLoadBalacingWatcherApiKey, "Watcher API key should be %v", tt.watcherApiKey)
-			assert.Equal(t, tt.syncScoreEnabled, dinMiddleware.DynamicLoadBalacingSyncEnabled, "Sync score enabled should be %v", tt.syncScoreEnabled)
-			assert.Equal(t, tt.syncScoreIntervalSecs, dinMiddleware.DynamicLoadBalacingSyncIntervalSec, "Sync score interval secs should be %v", tt.syncScoreIntervalSecs)
+			assert.Equal(t, tt.watcherEndpoint, dinMiddleware.WatcherApiEndpoint, "Watcher endpoint should be %v", tt.watcherEndpoint)
+			assert.Equal(t, tt.watcherApiKey, dinMiddleware.WatcherApiKey, "Watcher API key should be %v", tt.watcherApiKey)
+			assert.Equal(t, tt.syncScoreIntervalSecs, dinMiddleware.WatcherScoreSyncIntervalSec, "Sync score interval secs should be %v", tt.syncScoreIntervalSecs)
 		})
 	}
 }
