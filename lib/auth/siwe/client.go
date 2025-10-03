@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
+	snft "github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -137,7 +137,7 @@ func NewSIWEClient(url string, sessionCount int, signer *SigningConfig) *SIWECli
 		ProviderURL:  url,
 		Signer:       signer,
 		SessionCount: sessionCount,
-		nftSelector:  func(tokens []*superfluid.NFTMetadata) *superfluid.NFTMetadata {
+		nftSelector:  func(tokens []*snft.NFTMetadata) *snft.NFTMetadata {
 			// Naive selection strategy - Take the first unexpired option
 			for _, token := range tokens {
 				if token.Expiration > uint64(time.Now().Unix()) {

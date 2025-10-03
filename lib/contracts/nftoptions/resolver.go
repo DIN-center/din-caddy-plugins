@@ -2,7 +2,7 @@ package nftoptions
 
 import (
 	"math/big"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
+	snft "github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -13,7 +13,7 @@ import (
 type Config struct {
 	Type string
 	Options map[string]string
-	opts superfluid.INftOptions
+	opts snft.INftOptions
 	logger *zap.Logger
 }
 
@@ -38,7 +38,7 @@ func (cfg *Config) Init() (error) {
 			return err
 		}
 
-		opts, err := superfluid.NewSuperfluidNFTClient(common.HexToAddress(addr), client, cfg.logger)
+		opts, err := snft.NewSuperfluidNFTClient(common.HexToAddress(addr), client, cfg.logger)
 		if err == nil {
 			cfg.opts = opts
 		}
@@ -55,7 +55,7 @@ func (cfg *Config) OwnerOf(tokenid *big.Int) (common.Address, error) {
 	}
 	return cfg.opts.OwnerOf(tokenid)
 }
-func (cfg *Config) GetTokenMetadata(tokenid *big.Int) (*superfluid.NFTMetadata, error) {
+func (cfg *Config) GetTokenMetadata(tokenid *big.Int) (*snft.NFTMetadata, error) {
 	err := cfg.Init()
 	if err != nil {
 		return nil, err

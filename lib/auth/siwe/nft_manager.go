@@ -3,7 +3,7 @@ package siwe
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/DIN-center/din-caddy-plugins/lib/contracts/nftoptions"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
+	snft "github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
-type NFTSelector func([]*superfluid.NFTMetadata) *superfluid.NFTMetadata
+type NFTSelector func([]*snft.NFTMetadata) *snft.NFTMetadata
 
 
 type NFTManager struct {
 	OptionsManager *nftoptions.Config
 	Owner common.Address
-	nftsByProvider map[string][]*superfluid.NFTMetadata
+	nftsByProvider map[string][]*snft.NFTMetadata
 	mutex sync.RWMutex
 	stopChan chan struct{}
 	once sync.Once
@@ -28,12 +28,12 @@ func NewNFTManager(optionsManager *nftoptions.Config, owner string) *NFTManager 
 	return &NFTManager{
 		OptionsManager: optionsManager,
 		Owner: common.HexToAddress(owner),
-		nftsByProvider: make(map[string][]*superfluid.NFTMetadata),
+		nftsByProvider: make(map[string][]*snft.NFTMetadata),
 		stopChan: make(chan struct{}),
 	}
 }
 
-func (m *NFTManager) GetNFTForProvider(providerID *big.Int, selector NFTSelector) *superfluid.NFTMetadata {
+func (m *NFTManager) GetNFTForProvider(providerID *big.Int, selector NFTSelector) *snft.NFTMetadata {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -61,7 +61,7 @@ func (m *NFTManager) Refresh() error {
 	now := uint64(time.Now().Unix())
 	bufferTime := now + 60
 
-	nftsByProvider := make(map[string][]*superfluid.NFTMetadata) // Clear old data
+	nftsByProvider := make(map[string][]*snft.NFTMetadata) // Clear old data
 
 	for _, tokenId := range tokenIds {
 		metadata, err := m.OptionsManager.GetTokenMetadata(tokenId)

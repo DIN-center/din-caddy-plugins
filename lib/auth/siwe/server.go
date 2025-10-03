@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	sessions "github.com/DIN-center/din-caddy-plugins/lib/auth/siwe/sessions"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -20,7 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
+	snft "github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
@@ -45,12 +47,34 @@ func handleError(err error, rw http.ResponseWriter, code int) {
 	rw.Write([]byte("\n"))
 }
 
+type ChainInfo struct {
+	Endpoint string `json:"endpoint"`
+	CFAV1Address common.Address `json:"superfluid_forwarder_address"`
+	client *superfluid.SupefluidForwarderClient
+}
+
+func (c *ChainInfo) Client(logger *zap.Logger) (*superfluid.SupefluidForwarderClient, err) {
+	if c.client == nil {
+		ec, err := ethclient.Dial(d.NftEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		c.client, err = superfluid.NewSuperfluidForwarderClient(c.CFAV1Address, ec, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return c.client, nil
+}
+
 type SIWEAuthMiddleware struct {
 	Whitelist map[string]struct{}     `json:"whitelist"`
 	Secret    string                  `json:"secret"`
 	ProviderID *big.Int               `json:"provider_id"`
 	NftEndpoint string                `json:"nft_endpoint"`
 	NftAddresses map[common.Address]struct{}  `json:"nft_addresses"`
+	ChainInfo map[string]*ChainInfo      `json:"chain_info`
+	SessionTracker *sessions.Tracker
 	logger    *zap.Logger
 }
 
@@ -119,7 +143,7 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 		if err != nil {
 			return err
 		}
-		oc, err := superfluid.NewSuperfluidNFTClient(common.HexToAddress(resources[0].Host), client, d.logger)
+		oc, err := snft.NewSuperfluidNFTClient(common.HexToAddress(resources[0].Host), client, d.logger)
 		if err != nil {
 			err := errors.New("could not construct contract endpoint")
 			handleError(err, rw, 500)
@@ -147,6 +171,53 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 			handleError(err, rw, 401)
 			return err
 		}
+		if metadata.TokenAddress != (common.Address{}) {
+			chainid := fmt.Sprintf("%#x", metadata.ChainID)
+
+			cfav1_client, err := d.ChainInfo[chainid].Client()
+			if err != nil {
+				return err
+			}
+
+			flowrate, err := cfav1_client.GetFlowrate(metadata.TokenAddress, owner, metadata.RecipientAddress)
+			if err != nil {
+				return err
+			}
+
+			rps := int(metadata.RequestsPerSecondLimit)
+			if rpsStr := resources[0].Query().Get("rps"); rpsStr != "" {
+				if rpsInt, err := strconv.Atoi(rpsStr); err != nil {
+					d.logger.Debug("Parse error on rps string", zap.String("rps", rpsStr), zap.String("error", err.Error()))
+				} else {
+					rps = rpsInt
+				}
+			}
+
+			d.RPSTracker(r.Context(), metadata.URL().String())
+
+			
+
+			// TODO: We need separate session trackers, one that tracks RPS against NFTs, and one that tracks flow rate against streams
+
+				// TokenId               *big.Int
+				// NFTAddress            common.Address
+				// ChainID               *big.Int
+				// ServiceId             *big.Int
+				// RequestsPerSecondLimit uint32
+				// Expiration            uint64
+				// TokenAddress          common.Address
+				// CostPerRequest        *big.Int
+				// RecipientAddress      common.Address
+
+		}
+		// Extension: If the NFT has a non-zero token set, use the CFAV1 script to check the flowrate between
+		// the token's owner and the specified recipient. Get the combined flowrate of existing sessions from
+		// the sessiontracker, and if that plus the requirement for this request is less than the flowrate from
+		// the chain, the token can be issued and this session should be tracked in the session manager.
+		//
+		// For interacting with the session manger, the "customer" field should be an aggregate of the token,
+		// sender, and recipient addresses.
+
 	} else {
 		if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
 			err := errors.New("unauthorized signer")
@@ -222,6 +293,8 @@ func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, 
 func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {
 	d.Whitelist = make(map[string]struct{})
 	d.NftAddresses = make(map[common.Address]struct{})
+	d.FlowrateTracker = sessions.NewMemoryTracker()
+	d.RPSTracker = sessions.NewMemoryTracker()
 	for dispenser.Next() {
 		for dispenser.NextBlock(0) {
 			switch dispenser.Val() {
@@ -252,6 +325,17 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 				for _, v := range dispenser.RemainingArgs() {
 					d.NftAddresses[common.HexToAddress(v)] = struct{}{}
 				}
+			case "chain_info":
+				for dispenser.NextBlock(1) {
+					var ci ChainInfo
+					var chainid string
+					if !disp.AllArgs(&chainid, &ci.Endpoint, &ci.CFAV1Address) {
+						return disp.ArgErr()
+					}
+					d.Chains[chainid] = ci
+				}
+
+			// TODO: Once we have other session tracker configurations, those will go here.
 
 			default:
 				return dispenser.Errf("unknown subdirective: %s", dispenser.Val())
