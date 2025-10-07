@@ -1,39 +1,160 @@
-### Watcher-Driven Dynamic Load Balancing
+# DIN Router Dynamic Load Balancing
 
-@author: @noleto
+**Author:** @noleto  
+**Status:** In review  
+**Date:** 2025-01-24  
+**Updated:** 2025-09-26  
 
-@status: in review
+## Executive Summary
 
-date: 2025-01-24
-updated: 2025-09-26
+Dynamic load balancing is an advanced feature for the DIN Router that intelligently distributes network traffic among providers based on their near real-time performance. Unlike the current DIN Router behavior, which doesn’t consider provider performance or data quality in its distribution, this new system automatically directs more traffic to better-performing providers, ensuring optimal service quality for DIN developers.
+The system continuously monitors each provider's performance using three key metrics: data freshness, data accuracy, and response speed. These metrics are combined into a single score that determines how much traffic each provider receives.
 
-## Introduction
+## Overview
 
-The DIN Router currently routes traffic evenly among providers of the same priority level. "Evenly" means each eligible and healthy provider gets an equal share of the traffic. There's no consideration of provider performance or data quality in this distribution.
-This document proposes a way to improve the routing algorithm by introducing a "Provider Watcher Score" that reflects how well each provider is performing in terms of data consistency and latency over time. This score will be used to dynamically weight traffic distribution, hence the name "dynamic load balacing." Better-performing providers will receive a proportionally larger share of requests. The ultimate goal is to improve service quality for DIN developers.
+### What is Dynamic Load Balancing?
 
-## Computing Watcher Scores
+Dynamic load balancing is a traffic distribution method that adapts in near real-time to provider performance. Instead of splitting traffic equally among all providers, the system:
 
-Watcher Scores are a way to assess the reliability of a JSON RPC Provider from a high level perspective. Providers will be measured based on a set of criteria, forming the "Provider Watcher Score." This score is calculated using data provided by Watchers, which perform regular checks and latency measurement. The criteria currently monitored by Watchers include:
+- **Monitors** each provider's performance continuously (Via Watcher observations)
+- **Scores** providers based on their reliability and speed
+- **Adjusts** traffic distribution proportionally to these scores
+- **Ensures** users get routed to the best-performing providers
 
-- Block Number Consistency (BNC): This metric ensures that the block number either monotonically increases or remains consistent.
-- Consistency of Non-State Data for a Block (CNSB): This metric verifies that non-state data for a given block hash remains consistent over time.
-- Request Latency (RLAT): This metric measures the elapsed time (in milliseconds) between sending a request and receiving a response, targeting the provider endpoint directly (without the DIN Router).
+### Why Dynamic Load Balancing?
 
-These metrics are evaluated per network and per provider. The formula to compute the Provider Watcher Score for a provider (e.g., P1) in a given network is:
+Currently, DIN Router load balancing treats all providers equally, regardless of their performance. This can lead to:
+- Users experiencing slow responses from underperforming providers
+- Errors from providers serving outdated or incorrect data
+- Suboptimal resource utilization across the network
 
-$$Φ({P1}) = BNC(P1) \times W_{bnc} + CNSB({P1}) \times W_{cnsb} + RLAT({P1} | {P(95)}) \times W_{rlat}$$
+Dynamic load balancing solves these issues by continuously adapting to provider performance, ensuring that:
+- High-performing providers receive more traffic
+- Problematic providers receive less traffic until they recover
+- Overall system reliability and speed improve
 
-Where:
-* Φ (Phi) is the Watcher Score (range: [0,1])
-* $W_{bnc}$, $W_{cnsb}$, $W_{rlat}$ are the weights assigned to each metric (weights sum to 1)
-* BNC, CNSB, and RLAT are scaled metrics (range: [0,1]) for Block Number Consistency, Consistency of Non-State Data, and Request Latency, respectively and are provided by the Watcher
+## How It Works
 
-## Technical Details for the Watcher Score
+### High-Level Architecture
 
-The current proposal defines a set of abstractions and implementations to calculate the Watcher Score for a provider.
+![Routing Pipeline](routing_pipeline.png)
 
-### Abstractions
+The dynamic load balancing system consists of three main components:
+
+1. **Watcher Service**: Monitors provider performance
+2. **Score Calculation**: Converts Watcher metrics into scores
+3. **DIN Router**: Routes traffic based on scores
+
+### The Monitoring Process
+
+#### Step 1: Watcher Monitoring
+
+The Watcher service continuously tests each provider every minute using three types of checks:
+
+**1. Data Freshness Check (Block Number Consistency - BNC)**
+- Ensures providers report the latest blockchain data
+- Verifies block numbers always move forward
+- Detects providers that are behind or serving stale data
+
+**2. Data Accuracy Check (Consistency of Non-State Data - CNSB)**
+- Verifies data consistency across multiple requests
+- Ensures the same query returns the same result
+- Identifies providers with unreliable or corrupted data
+
+**3. Speed Check (Request Latency - RLAT)**
+- Measures response times for common requests
+- Tracks how quickly providers respond
+- Ensures SLA requirements are met
+
+#### Step 2: Score Calculation
+
+Every 5 minutes, the system combines the monitoring results into a single Watcher Score (0-1 scale):
+
+$$\text{Score} = \text{Freshness} \times 50\% + \text{Accuracy} \times 30\% + \text{Speed} \times 20\%$$
+
+This weighting prioritizes data quality (freshness and accuracy) while still rewarding fast providers.
+
+#### Step 3: Traffic Distribution
+
+The DIN Router uses these scores to distribute incoming traffic:
+
+- **Higher scores** → More traffic
+- **Lower scores** → Less traffic
+- **No score** → Default fair share (For new providers or when the Watcher service is not operating correctly)
+
+The router uses a weighted random algorithm to ensure proportional distribution while maintaining randomness for load distribution.
+
+## Configuration
+
+### Basic Setup
+
+Enable dynamic load balancing in your Caddyfile:
+
+```caddy
+dynamic_load_balancing {
+    enabled true                                # Enable the feature
+    watcher_endpoint https://watcher.din.com    # Watcher API endpoint
+    watcher_api_key your_api_key               # API authentication
+    sync_score_interval_secs 300               # How often to fetch new scores (seconds). If 0, sync is disabled.
+}
+```
+
+### Configuration Parameters
+
+| Parameter | Description | Default | Required |
+|-----------|-------------|---------|----------|
+| `enabled` | Enables dynamic load balancing | false | Yes |
+| `watcher_endpoint` | URL of the Watcher API service | - | Yes (if enabled) |
+| `watcher_api_key` | Authentication key for Watcher API | - | Yes (if enabled) |
+| `sync_score_interval_secs` | How often to fetch new scores (seconds). If 0, sync is disabled. | 0 | No |
+
+### Operational Behavior
+
+#### Session Affinity
+Session-based requests (with `Din-Session-Id` header) always route to the same provider, regardless of scores, ensuring session consistency (as previously defined in the DIN Router). 
+
+#### New Providers
+Newly registered providers without score history receive a default weight of 50, ensuring fair initial traffic distribution while the Watcher builds performance data.
+
+#### Stale Data Handling
+If Watcher data becomes unavailable:
+1. **Grace Period (60 minutes)**: Continue using last known scores
+2. **After Grace Period**: Revert to default weight of 50 for affected providers
+3. **Recovery**: Resume score-based routing when data becomes available
+
+## Technical Implementation Details
+
+*This section is intended for system maintainers and developers.*
+
+### Core Architecture
+
+The dynamic load balancing system is built on a modular architecture with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────┐
+│           WatcherScoreManager               │
+│  ┌────────────────────────────────────┐     │
+│  │         ScoreFormula                │     │
+│  │  ┌──────────────────────────┐       │     │
+│  │  │   MetricGenerators        │       │     │
+│  │  │   - BNC Generator         │       │     │
+│  │  │   - CNSB Generator        │       │     │
+│  │  │   - Latency Generator     │       │     │
+│  │  └──────────────────────────┘       │     │
+│  │  ┌──────────────────────────┐       │     │
+│  │  │   MetricCombiner          │       │     │
+│  │  │   (WeightedCombiner)      │       │     │
+│  │  └──────────────────────────┘       │     │
+│  │  ┌──────────────────────────┐       │     │
+│  │  │   ScoreTransformer        │       │     │
+│  │  │   - EWMA Transformer      │       │     │
+│  │  │   - HighPass Transformer  │       │     │
+│  │  └──────────────────────────┘       │     │
+│  └────────────────────────────────────┘     │
+└─────────────────────────────────────────────┘
+```
+
+### Key Components
 - `ProviderMetric`: A provider metric is a number between 0 and 1 that can be used to measure the quality of a provider for a given criteria. For example, the block number consistency metric ensures the consistency rate of a provider's block number.
 - `Score`: A score is a number in the range [0,1] that represents how well a provider is performing globally.
 - `ProviderMetricGenerator`: A provider metric generator is responsible for generating the same metric type for all providers in a given network. In mathematical terms, a provider metric generator can be represented as a function: 
@@ -122,8 +243,8 @@ $$WC(M_1, M_2, ..., M_n) = M_1 \times W_{m_1} + M_2 \times W_{m_2} + ... + M_n \
 
 There are 3 transformers implemented:
 - `HighPassThroughTransformer`: This transformer passes through scores above a given cutoff value. This is useful to avoid having providers with very low scores to be included in the routing algorithm. This is the default transformer.
-- `ShareOfTotalTransformer`: This transformer converts a set of score for different providers into a score that represents the percentage this provider contributes to the total score. This ensures that the sum of all providers' score for a given network is 1. This is useful to transform the score into a traffic weight distribution.
-- `EWMATransformer`: This transformer applies an Exponential Weighted Moving Average (EWMA) function to the score as a way to smooth the score over time. This is useful to avoid sudden changes in the score that could be caused by a single metric [1].
+- `EWMATransformer`: This transformer applies an Exponential Weighted Moving Average (EWMA) function to the score as a way to smooth the score over time. This is useful to avoid sudden changes in the score that could be caused by a single metric.
+- `CompositeTransformer`: This applies the output of each transformer in the chain to the next transformer, then returns the final result.
 
 ### Watcher metrics
 
@@ -191,56 +312,53 @@ deactivate WSM
 
 ![sequence](sequence-diagram.png)
 
-## Integration with the DIN Router
+### Implementation Classes
 
-The DIN Router integrates watcher scores through the `WatcherScoreManager` to enable dynamic traffic distribution among providers. This feature requires both the registry and dynamic load balacing to be enabled.
+#### Core Classes
 
-### Smart Routing
+```go
+// WatcherScoreManager - Manages scores across networks
+type WatcherScoreManager struct {
+    scores   map[string]map[string]*Score
+    formulas map[string]ScoreFormula
+    logger   *zap.Logger
+    mu       sync.RWMutex
+}
 
-This proposal adds a new selection policy called `din_score_based_selector` that considers provider watcher scores when distributing traffic. This selector is integrated with the existing `din_select` selector and will be used when the `smart_routing` directive is enabled.
+// ScoreFormula - Defines score computation pipeline
+type ScoreFormula struct {
+    network          string
+    metricGenerators []ProviderMetricGenerator
+    metricCombiner   ProviderMetricCombiner
+    scoreTransformer ScoreTransformer
+}
 
-The selection process follows these rules:
-
-1. Session affinity takes precedence (as previously defined in the `din_select` selector) - if a request specifies a session, it will always be routed to the same provider regardless of scores
-2. For non-session requests (this is where the new `din_score_based_selector` comes into play):
-   - With dynamic load balacing enabled: Traffic is distributed proportionally based on provider scores (scaled to the range 0-100). It uses Weighted Random algorithm [2] to distribute the traffic where provider scores are the relative odds in selection algorithm.
-   - With dynamic load balacing disabled: Traffic is distributed evenly (randomly) among all providers.
-
-### Configuration
-
-Dynamic load balacing is configured within the `din_registry` directive:
-
-```caddy
-din_registry {
-    smart_routing {
-        enabled true                                # Enables score-based routing
-        watcher_endpoint https://watcher.din.com    # Source of provider metrics
-        watcher_api_key key                         # Authentication for watcher API
-        sync_score_enabled true                     # Enables periodic score updates
-        sync_score_interval_secs 300                # Score update frequency (5 minutes)
-    }
+// Score - Immutable score representation
+type Score struct {
+    value       float64
+    hasValue    bool
+    lastUpdated time.Time
 }
 ```
 
-The router synchronizes scores with the watcher service at regular intervals aligned with registry epochs. This ensures that routing decisions are based on recent performance data while maintaining system stability (score doesn't change over the same epoch).
+#### Module Integration
 
-### Corner Cases
+The `DinScoreBasedSelector` integrates with Caddy's module system:
 
-The dynamic load balacing system handles several edge cases to ensure stable operation:
+```go
+type DinScoreBasedSelector struct {
+    logger   *zap.Logger
+    fallback reverseproxy.Selector
+}
+```
 
-1. **New or Unmonitored Providers**: 
-   - When a provider has no watcher score yet (e.g., newly registered provider or not yet monitored by Watcher)
-   - The system assigns a default score of 50 to ensure the provider receives a fair share of traffic while building its watcher
-
-2. **Stale or Missing Data**:
-   - If Watcher data becomes stale or unavailable, the system:
-     - Continues using last known scores during a grace period (default grace period is 60 minutes)
-     - After the grace period, reverts to a default score of 50 for affected providers
-   - This approach maintains system stability while gracefully degrading to fair distribution when needed
-
+Key integration points:
+- Registered as Caddy module: `din_score_based_selector`
+- Fallback to `DinSelect` for session affinity
+- Context-based provider score retrieval
 
 ## References
 
-[1] See [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing) for more details.
-
-[2] See [Weighted Random](https://dev.to/jacktt/understanding-the-weighted-random-algorithm-581p) for more details.
+1. [Watcher API Documentation](https://www.notion.so/consensys/Watcher-API-V1-136fc61a326e80f4b266d06e7743cb96)
+2. [Exponential Smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing)
+3. [Weighted Random Algorithm](https://dev.to/jacktt/understanding-the-weighted-random-algorithm-581p)
