@@ -24,6 +24,7 @@ import (
 	snft "github.com/DIN-center/din-sc/apps/din-go/lib/superfluidnft"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/superfluid"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
 )
@@ -53,9 +54,9 @@ type ChainInfo struct {
 	client *superfluid.SupefluidForwarderClient
 }
 
-func (c *ChainInfo) Client(logger *zap.Logger) (*superfluid.SupefluidForwarderClient, err) {
+func (c *ChainInfo) Client(logger *zap.Logger) (*superfluid.SupefluidForwarderClient, error) {
 	if c.client == nil {
-		ec, err := ethclient.Dial(d.NftEndpoint)
+		ec, err := ethclient.Dial(c.Endpoint)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +75,8 @@ type SIWEAuthMiddleware struct {
 	NftEndpoint string                `json:"nft_endpoint"`
 	NftAddresses map[common.Address]struct{}  `json:"nft_addresses"`
 	ChainInfo map[string]*ChainInfo      `json:"chain_info`
-	SessionTracker *sessions.Tracker
+	FlowrateTracker *sessions.Tracker
+	RPSTracker *sessions.Tracker
 	logger    *zap.Logger
 }
 
@@ -91,8 +93,30 @@ func (d *SIWEAuthMiddleware) Provision(context caddy.Context) error {
 	return nil
 }
 
+func flowRateSessionKey(sender, recipient, token common.Address) string {
+	return fmt.Sprintf("%s:%s:%s", sender, recipient, token)
+}
+
+func calcAvailableRPS(flowrate, maxFlowRate, rpsLimit *big.Int) *big.Int {
+	if maxFlowRate.Sign() == 0 {
+		return big.NewInt(0)
+	}
+
+	// (flowrate * rpsLimit) / maxFlowRate
+	scaled := new(big.Int).Mul(flowrate, rpsLimit)
+	scaled.Div(scaled, maxFlowRate)
+
+	// Return min(scaled, rpsLimit)
+	if scaled.Cmp(rpsLimit) > 0 {
+		return new(big.Int).Set(rpsLimit)
+	}
+	return scaled
+}
+
 func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Request) error {
 	isNftRequest := false
+	issued := time.Now()
+	sessionId := uuid.NewString()
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		handleError(err, rw, 500)
@@ -174,50 +198,75 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 		if metadata.TokenAddress != (common.Address{}) {
 			chainid := fmt.Sprintf("%#x", metadata.ChainID)
 
-			cfav1_client, err := d.ChainInfo[chainid].Client()
+			cfav1_client, err := d.ChainInfo[chainid].Client(d.logger)
 			if err != nil {
 				return err
 			}
 
-			flowrate, err := cfav1_client.GetFlowrate(metadata.TokenAddress, owner, metadata.RecipientAddress)
+			totalFlow, err := cfav1_client.GetFlowrate(metadata.TokenAddress, owner, metadata.StreamRecipient)
+			if err != nil {
+				return err
+			}
+			
+			frKey := flowRateSessionKey(owner, metadata.StreamRecipient, metadata.TokenAddress)
+			allocatedFlow, err := d.FlowrateTracker.GetCollectionQuantity(r.Context(), frKey)
 			if err != nil {
 				return err
 			}
 
-			rps := int(metadata.RequestsPerSecondLimit)
-			if rpsStr := resources[0].Query().Get("rps"); rpsStr != "" {
-				if rpsInt, err := strconv.Atoi(rpsStr); err != nil {
-					d.logger.Debug("Parse error on rps string", zap.String("rps", rpsStr), zap.String("error", err.Error()))
-				} else {
-					rps = rpsInt
-				}
+			availableFlow := new(big.Int).Sub(totalFlow, allocatedFlow)
+
+			rpsLimit := new(big.Int).SetInt64(int64(metadata.RequestsPerSecondLimit))
+
+			allocatedRPS, err := d.RPSTracker.GetCollectionQuantity(r.Context(), metadata.URL().String())
+			if err != nil {
+				return err
 			}
 
-			d.RPSTracker(r.Context(), metadata.URL().String())
-
+			availableRPS := new(big.Int).Sub(rpsLimit, allocatedRPS)
 			
 
-			// TODO: We need separate session trackers, one that tracks RPS against NFTs, and one that tracks flow rate against streams
+			var sessionRPS *big.Int
+			if rpsStr := resources[0].Query().Get("rps"); rpsStr != "" {
+				if rps, ok := new(big.Int).SetString(rpsStr, 10); ok {
+					sessionRPS = rps
+				}
+			}
+			if sessionRPS == nil {
+				// TODO (longer term): rather than erroring out here, determine the maximum available flow given the RPS limit on the token, the available flow, and the token's stream max
+				err := errors.New("session requests must specify a number of rps")
+				handleError(err, rw, 401)
+				return err
+			}
 
-				// TokenId               *big.Int
-				// NFTAddress            common.Address
-				// ChainID               *big.Int
-				// ServiceId             *big.Int
-				// RequestsPerSecondLimit uint32
-				// Expiration            uint64
-				// TokenAddress          common.Address
-				// CostPerRequest        *big.Int
-				// RecipientAddress      common.Address
 
+			// requiredFlow := (sesionRPS * metadata.StreamMax) / rpsLimit
+			requiredFlow := new(big.Int).Div(new(big.Int).Mul(sessionRPS, metadata.StreamMax, ), rpsLimit)
+
+			if sessionRPS.Cmp(availableRPS) > 0 {
+				d.logger.Info("requested more RPS than available", zap.Any("session", sessionRPS), zap.Any("avail", availableRPS))
+				err := errors.New("requested more RPS than token has available")
+				handleError(err, rw, 401)
+				return err
+			}
+			
+			if requiredFlow.Cmp(availableFlow) > 0 {
+				d.logger.Info("request needs more flow than available", zap.Any("session", requiredFlow), zap.Any("avail", availableFlow))
+				err := errors.New("request needs more flow than token has available")
+				handleError(err, rw, 401)
+				return err
+			}
+			// TODO: Consider giving some leeway (eg. 30 seconds or a minute) before a session expires during which
+			// replacement sessions can be issued, so both can co-exist for a brief period.
+			exp := issued.Add(time.Hour)
+
+			if err := d.FlowrateTracker.AddSession(r.Context(), sessionId, frKey, requiredFlow, exp); err != nil {
+				return err
+			}
+			if err := d.RPSTracker.AddSession(r.Context(), sessionId, metadata.URL().String(), sessionRPS, exp); err != nil {
+				return err
+			}
 		}
-		// Extension: If the NFT has a non-zero token set, use the CFAV1 script to check the flowrate between
-		// the token's owner and the specified recipient. Get the combined flowrate of existing sessions from
-		// the sessiontracker, and if that plus the requirement for this request is less than the flowrate from
-		// the chain, the token can be issued and this session should be tracked in the session manager.
-		//
-		// For interacting with the session manger, the "customer" field should be an aggregate of the token,
-		// sender, and recipient addresses.
-
 	} else {
 		if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
 			err := errors.New("unauthorized signer")
@@ -225,7 +274,6 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 			return err
 		}
 	}
-	issued := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.RegisteredClaims{
 		IssuedAt:  jwt.NewNumericDate(issued),
 		ExpiresAt: jwt.NewNumericDate(issued.Add(time.Hour)),
@@ -328,14 +376,13 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 			case "chain_info":
 				for dispenser.NextBlock(1) {
 					var ci ChainInfo
-					var chainid string
-					if !disp.AllArgs(&chainid, &ci.Endpoint, &ci.CFAV1Address) {
-						return disp.ArgErr()
+					var chainid, address string
+					if !dispenser.AllArgs(&chainid, &ci.Endpoint, &address) {
+						return dispenser.ArgErr()
 					}
-					d.Chains[chainid] = ci
+					ci.CFAV1Address = common.HexToAddress(address)
+					d.ChainInfo[chainid] = &ci
 				}
-
-			// TODO: Once we have other session tracker configurations, those will go here.
 
 			default:
 				return dispenser.Errf("unknown subdirective: %s", dispenser.Val())

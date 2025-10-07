@@ -261,7 +261,7 @@ func (c *SIWEClientAuth) GetToken(map[string]interface{}) (auth.AuthToken, error
 		nftMetadata := c.Signer.NFTManager.GetNFTForProvider(c.ProviderID, c.nftSelector)
 		if nftMetadata != nil {
 			options["statement"] = "DIN NFT Authentication"
-			options["resources"] = []url.URL{nftMetadata.URL()}
+			options["resources"] = []url.URL{*nftMetadata.URL()}
 		} else {
 			c.logger.Debug("No nft available for this provider / owner", zap.Any("provider", c.ProviderID))
 		}
