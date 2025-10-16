@@ -143,6 +143,7 @@ func (rm *WatcherScoreManager) StartPeriodicUpdates(frequency time.Duration) cha
 			case <-ticker.C:
 				rm.ComputeScores()
 			case <-stopChan:
+				rm.logger.Info("[WATCHER_SCORE] Watcher compute score sync goroutine shutting down gracefully")
 				return
 			}
 		}

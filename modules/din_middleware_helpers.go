@@ -810,16 +810,23 @@ func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 	d.logger.Info("[DYNAMIC_LB] Syncing watcher scores to the middleware")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
-			provider.Score = d.watcherScoreManager.GetScore(network.Name, provider.host)
-			d.logger.Info("[DYNAMIC_LB] Synced watcher score",
-				zap.String("network", network.Name),
-				zap.String("provider", provider.host),
-				zap.Bool("score_is_valid", provider.Score.HasValue()),
-				zap.Float64("score_value", provider.Score.Value()),
-				zap.String("score_updated_at", provider.Score.LastUpdated().Format(time.RFC3339)),
-				zap.String("middleware_synced_at", d.WatcherScoreLastSyncTime.Format(time.RFC3339)),
-				zap.Bool("is_healthy", provider.Healthy()),
-				zap.Bool("is_warning", provider.Warning()))
+			newScore := d.watcherScoreManager.GetScore(network.Name, provider.host)
+
+			if newScore.HasValue() {
+				provider.Score = newScore
+				d.logger.Info("[DYNAMIC_LB] Synced watcher score",
+					zap.String("network", network.Name),
+					zap.String("provider", provider.host),
+					zap.Float64("score_value", newScore.Value()),
+					zap.String("score_updated_at", newScore.LastUpdated().Format(time.RFC3339)),
+					zap.String("middleware_synced_at", d.WatcherScoreLastSyncTime.Format(time.RFC3339)),
+					zap.Bool("is_healthy", provider.Healthy()),
+					zap.Bool("is_warning", provider.Warning()))
+			} else {
+				d.logger.Info("[DYNAMIC_LB] No score found for provider",
+					zap.String("network", network.Name),
+					zap.String("provider", provider.host))
+			}
 		}
 	}
 }

@@ -958,7 +958,7 @@ func (d *DinMiddleware) startWatcherScoreSync() chan struct{} {
 		for {
 			select {
 			case <-syncQuit:
-				d.logger.Info("Watcher score sync goroutine shutting down gracefully")
+				d.logger.Info("[DYNAMIC_LB] Watcher score sync goroutine shutting down gracefully")
 				return
 			case <-ticker.C:
 				d.SyncMiddlewareWithLatestScores()

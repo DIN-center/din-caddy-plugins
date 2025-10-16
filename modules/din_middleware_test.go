@@ -1218,6 +1218,7 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 
 	mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
 
+	markerForNonMonitoredProvider := ws.NewEmptyScore()
 	mockMiddleware := &DinMiddleware{
 		Networks: map[string]*network{
 			"network1": {
@@ -1231,6 +1232,10 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 						host:  "provider2",
 						Score: ws.MustCreateScore(0.2, time.Now()),
 					},
+					"non-monitored-provider": {
+						host:  "non-monitored-provider",
+						Score: markerForNonMonitoredProvider,
+					},
 				},
 			},
 		},
@@ -1241,6 +1246,7 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 	//Set expected score for providers
 	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider1").Return(ws.MustCreateScore(0.75, time.Now())).Times(1)
 	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider2").Return(ws.MustCreateScore(0.25, time.Now())).Times(1)
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "non-monitored-provider").Return(&ws.Score{}).Times(1)
 
 	//Call SyncMiddlewareWithLatestScores
 	mockMiddleware.SyncMiddlewareWithLatestScores()
@@ -1248,5 +1254,8 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 	//Verify if scores are updated correctly in the middleware
 	assert.Equal(t, 0.75, mockMiddleware.Networks["network1"].Providers["provider1"].Score.Value())
 	assert.Equal(t, 0.25, mockMiddleware.Networks["network1"].Providers["provider2"].Score.Value())
-
+	//assert memory address is the same
+	if markerForNonMonitoredProvider != mockMiddleware.Networks["network1"].Providers["non-monitored-provider"].Score {
+		t.Errorf("Non-monitored provider score should be the same as the marker")
+	}
 }
