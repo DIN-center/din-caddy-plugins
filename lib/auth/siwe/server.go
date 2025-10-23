@@ -1,6 +1,7 @@
 package siwe
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -207,65 +209,12 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 			if err != nil {
 				return err
 			}
-			
-			frKey := flowRateSessionKey(owner, metadata.StreamRecipient, metadata.TokenAddress)
-			allocatedFlow, err := d.FlowrateTracker.GetCollectionQuantity(r.Context(), frKey)
-			if err != nil {
-				return err
-			}
 
-			availableFlow := new(big.Int).Sub(totalFlow, allocatedFlow)
-
-			rpsLimit := new(big.Int).SetInt64(int64(metadata.RequestsPerSecondLimit))
-
-			allocatedRPS, err := d.RPSTracker.GetCollectionQuantity(r.Context(), metadata.URL().String())
-			if err != nil {
-				return err
-			}
-
-			availableRPS := new(big.Int).Sub(rpsLimit, allocatedRPS)
-			
-
-			var sessionRPS *big.Int
-			if rpsStr := resources[0].Query().Get("rps"); rpsStr != "" {
-				if rps, ok := new(big.Int).SetString(rpsStr, 10); ok {
-					sessionRPS = rps
-				}
-			}
-			if sessionRPS == nil {
-				// TODO (longer term): rather than erroring out here, determine the maximum available flow given the RPS limit on the token, the available flow, and the token's stream max
-				err := errors.New("session requests must specify a number of rps")
-				handleError(err, rw, 401)
-				return err
-			}
-
-
-			// requiredFlow := (sesionRPS * metadata.StreamMax) / rpsLimit
-			requiredFlow := new(big.Int).Div(new(big.Int).Mul(sessionRPS, metadata.StreamMax, ), rpsLimit)
-
-			if sessionRPS.Cmp(availableRPS) > 0 {
-				d.logger.Info("requested more RPS than available", zap.Any("session", sessionRPS), zap.Any("avail", availableRPS))
-				err := errors.New("requested more RPS than token has available")
-				handleError(err, rw, 401)
+			if status, err := d.validateFlow(r.Context(), sessionId, issued, resources[0].Query(), owner, metadata, totalFlow); err != nil {
+				handleError(err, rw, status)
 				return err
 			}
 			
-			if requiredFlow.Cmp(availableFlow) > 0 {
-				d.logger.Info("request needs more flow than available", zap.Any("session", requiredFlow), zap.Any("avail", availableFlow))
-				err := errors.New("request needs more flow than token has available")
-				handleError(err, rw, 401)
-				return err
-			}
-			// TODO: Consider giving some leeway (eg. 30 seconds or a minute) before a session expires during which
-			// replacement sessions can be issued, so both can co-exist for a brief period.
-			exp := issued.Add(time.Hour)
-
-			if err := d.FlowrateTracker.AddSession(r.Context(), sessionId, frKey, requiredFlow, exp); err != nil {
-				return err
-			}
-			if err := d.RPSTracker.AddSession(r.Context(), sessionId, metadata.URL().String(), sessionRPS, exp); err != nil {
-				return err
-			}
 		}
 	} else {
 		if _, ok := d.Whitelist[strings.ToLower(crypto.PubkeyToAddress(*publicKey).String())]; !ok {
@@ -301,6 +250,65 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 	rw.Write(data)
 	rw.Write([]byte("\n"))
 	return nil
+}
+
+func (d *SIWEAuthMiddleware) validateFlow(ctx context.Context, sessionId string, issued time.Time, query url.Values, owner common.Address, metadata *snft.NFTMetadata, totalFlow *big.Int) (int, error) {
+	frKey := flowRateSessionKey(owner, metadata.StreamRecipient, metadata.TokenAddress)
+	allocatedFlow, err := d.FlowrateTracker.GetCollectionQuantity(ctx, frKey)
+	if err != nil {
+		return 500, err
+	}
+
+	availableFlow := new(big.Int).Sub(totalFlow, allocatedFlow)
+
+	rpsLimit := new(big.Int).SetInt64(int64(metadata.RequestsPerSecondLimit))
+
+	allocatedRPS, err := d.RPSTracker.GetCollectionQuantity(ctx, metadata.URL().String())
+	if err != nil {
+		return 500, err
+	}
+
+	availableRPS := new(big.Int).Sub(rpsLimit, allocatedRPS)
+	
+
+	var sessionRPS *big.Int
+	if rpsStr := query.Get("rps"); rpsStr != "" {
+		if rps, ok := new(big.Int).SetString(rpsStr, 10); ok {
+			sessionRPS = rps
+		}
+	}
+	if sessionRPS == nil {
+		// TODO (longer term): rather than erroring out here, determine the maximum available flow given the RPS limit on the token, the available flow, and the token's stream max
+		err := errors.New("session requests must specify a number of rps")
+		return 401, err
+	}
+
+
+	// requiredFlow := (sesionRPS * metadata.StreamMax) / rpsLimit
+	requiredFlow := new(big.Int).Div(new(big.Int).Mul(sessionRPS, metadata.StreamMax, ), rpsLimit)
+
+	if sessionRPS.Cmp(availableRPS) > 0 {
+		d.logger.Info("requested more RPS than available", zap.Any("session", sessionRPS), zap.Any("avail", availableRPS))
+		err := errors.New("requested more RPS than token has available")
+		return 401, err
+	}
+	
+	if requiredFlow.Cmp(availableFlow) > 0 {
+		d.logger.Info("request needs more flow than available", zap.Any("session", requiredFlow), zap.Any("avail", availableFlow))
+		err := errors.New("request needs more flow than token has available")
+		return 401, err
+	}
+	// TODO: Consider giving some leeway (eg. 30 seconds or a minute) before a session expires during which
+	// replacement sessions can be issued, so both can co-exist for a brief period.
+	exp := issued.Add(time.Hour)
+
+	if err := d.FlowrateTracker.AddSession(ctx, sessionId, frKey, requiredFlow, exp); err != nil {
+		return 500, err
+	}
+	if err := d.RPSTracker.AddSession(ctx, sessionId, metadata.URL().String(), sessionRPS, exp); err != nil {
+		return 500, err
+	}
+	return 0, nil
 }
 
 func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
