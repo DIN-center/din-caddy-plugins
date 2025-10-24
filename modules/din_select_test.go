@@ -87,7 +87,7 @@ func TestDinSelectSelect(t *testing.T) {
 		output                      []Output
 	}{
 		{
-			name:                        "Respect session affinity (header Din-Session-Id) regardless dynamic load balacing => upstream selected to the same provider",
+			name:                        "Respect session affinity (header Din-Session-Id) regardless dynamic load balancing => upstream selected to the same provider",
 			request:                     &http.Request{Header: http.Header{"Din-Session-Id": []string{"foofoo"}}},
 			pool:                        reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers:                   nil,
@@ -97,7 +97,7 @@ func TestDinSelectSelect(t *testing.T) {
 			output:                      []Output{{upstream_foo, 1.0}},
 		},
 		{
-			name:                        "Random selection when no session affinity and no dynamic load balacing => upstream selected randomly",
+			name:                        "Random selection when no session affinity and no dynamic load balancing => upstream selected randomly",
 			request:                     &http.Request{},
 			pool:                        reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers:                   nil,
@@ -107,7 +107,7 @@ func TestDinSelectSelect(t *testing.T) {
 			output:                      []Output{{upstream_foo, 0.5}, {upstream_bar, 0.5}},
 		},
 		{
-			name:    "Dynamic load balacing => upstream selected based on provider scores",
+			name:    "Dynamic load balancing => upstream selected based on provider scores",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{

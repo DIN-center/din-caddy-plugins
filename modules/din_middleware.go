@@ -116,9 +116,9 @@ type DinMiddleware struct {
 	ApiKeys map[string]string
 	ApiSalt string
 
-	// Dynamic load balacing configuration
-	// The flag to enable or disable the dynamic load balacing
-	DynamicLoadBalacingEnabled bool
+	// Dynamic load balancing configuration
+	// The flag to enable or disable the dynamic load balancing
+	DynamicLoadBalancingEnabled bool
 	// The endpoint of the watcher API
 	WatcherApiEndpoint string
 	// The API key for the watcher API
@@ -132,7 +132,7 @@ type DinMiddleware struct {
 	//The backend to manage score (Watcher score)
 	watcherScoreManager ws.IWatcherScoreManager
 
-	//The watcher client for dynamic load balacing
+	//The watcher client for dynamic load balancing
 	watcherClient watcher.IWatcherAPIClient
 
 	// The channel to quit the goroutine that computes the watcher scores
@@ -190,10 +190,10 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 		return fmt.Errorf("failed to initialize networks: %w", err)
 	}
 
-	// If dynamic load balacing is enabled, initialize the score backend
-	if d.DynamicLoadBalacingEnabled {
-		d.logger.Info("[DYNAMIC_LB] Dynamic load balacing activated, initializing watcher score manager")
-		d.logger.Debug("[DYNAMIC_LB] Dynamic load balacing settings:",
+	// If dynamic load balancing is enabled, initialize the score backend
+	if d.DynamicLoadBalancingEnabled {
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balancing activated, initializing watcher score manager")
+		d.logger.Debug("[DYNAMIC_LB] Dynamic load balancing settings:",
 			zap.Uint64("watcher_scores_sync_interval_secs", d.WatcherScoreSyncIntervalSec),
 			zap.String("watcher_endpoint", d.WatcherApiEndpoint))
 
@@ -423,12 +423,12 @@ func (d *DinMiddleware) startBackgroundServices() error {
 	}
 
 	// Check if we need to start the periodic updates for the watcher scores
-	if d.DynamicLoadBalacingEnabled {
-		d.logger.Info("[DYNAMIC_LB] Dynamic load balacing enabled, starting periodic updates for watcher scores", zap.Duration("frequency_interval", WatcherScoreUpdateInterval))
+	if d.DynamicLoadBalancingEnabled {
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balancing enabled, starting periodic updates for watcher scores", zap.Duration("frequency_interval", WatcherScoreUpdateInterval))
 		d.watcherScoreComputeQuit = d.watcherScoreManager.StartPeriodicUpdates(WatcherScoreUpdateInterval)
 		// If the sync interval is greater than 0, start the watcher score sync goroutine
 		if d.WatcherScoreSyncIntervalSec > 0 {
-			d.logger.Info("[DYNAMIC_LB] Dynamic load balacing enabled, syncing watcher scores to the middleware", zap.Duration("frequency_interval", time.Duration(d.WatcherScoreSyncIntervalSec)*time.Second))
+			d.logger.Info("[DYNAMIC_LB] Dynamic load balancing enabled, syncing watcher scores to the middleware", zap.Duration("frequency_interval", time.Duration(d.WatcherScoreSyncIntervalSec)*time.Second))
 			d.watcherScoreSyncQuit = d.startWatcherScoreSync()
 		}
 	}
@@ -641,7 +641,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Set if dynamic load balancing should be done
-	repl.Set(DinScoreBasedLoadBalancingContextKey, d.DynamicLoadBalacingEnabled)
+	repl.Set(DinScoreBasedLoadBalancingContextKey, d.DynamicLoadBalancingEnabled)
 
 	reqStartTime := time.Now()
 

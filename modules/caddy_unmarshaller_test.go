@@ -398,7 +398,7 @@ func TestCaddyUnmarshallerWithDynamicLoadBalancing(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			assert.Equal(t, tt.dynamicLoadBalancingEnabled, dinMiddleware.DynamicLoadBalacingEnabled, "Dynamic load balancing enabled should be %v", tt.dynamicLoadBalancingEnabled)
+			assert.Equal(t, tt.dynamicLoadBalancingEnabled, dinMiddleware.DynamicLoadBalancingEnabled, "Dynamic load balancing enabled should be %v", tt.dynamicLoadBalancingEnabled)
 			assert.Equal(t, tt.watcherEndpoint, dinMiddleware.WatcherApiEndpoint, "Watcher endpoint should be %v", tt.watcherEndpoint)
 			assert.Equal(t, tt.watcherApiKey, dinMiddleware.WatcherApiKey, "Watcher API key should be %v", tt.watcherApiKey)
 			assert.Equal(t, tt.syncScoreIntervalSecs, dinMiddleware.WatcherScoreSyncIntervalSec, "Sync score interval secs should be %v", tt.syncScoreIntervalSecs)

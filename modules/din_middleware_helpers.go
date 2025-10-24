@@ -133,7 +133,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 				delete(d.Networks, regNetwork.ProxyName)
 
 				// Remove the network from the watcher score computation if the dynamic load balancing is enabled
-				if d.DynamicLoadBalacingEnabled {
+				if d.DynamicLoadBalancingEnabled {
 					d.watcherScoreManager.RemoveNetwork(regNetwork.ProxyName)
 					d.logger.Info("[DYNAMIC_LB] Removing network from watcher score manager", zap.String("network", regNetwork.ProxyName), zap.String("machine_id", d.machineID))
 				}
@@ -210,7 +210,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 	d.initializeNetwork(network.Name)
 
 	// Add the network to the watcher score manager if the dynamic load balancing is enabled
-	if d.DynamicLoadBalacingEnabled {
+	if d.DynamicLoadBalancingEnabled {
 		d.watcherScoreManager.AddNetworkWithBuiltInFormula(network.Name, d.GetOrCreateWatcherClient())
 		d.logger.Info("[DYNAMIC_LB] Adding network to watcher score manager", zap.String("network", network.Name), zap.String("machine_id", d.machineID))
 	}

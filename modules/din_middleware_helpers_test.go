@@ -318,15 +318,15 @@ func TestAddNetworkFromRegistryDataWorksWithDynamicLoadBalancing(t *testing.T) {
 
 			// Create DinMiddleware instance with proper initialization
 			dinMiddleware := &DinMiddleware{
-				DingoClient:                mockDingoClient,
-				logger:                     logger,
-				Networks:                   make(map[string]*network),
-				testMode:                   true,
-				Env:                        utils.Environment("test"),
-				CaddyPort:                  "8080",
-				machineID:                  "test-machine-id",
-				DynamicLoadBalacingEnabled: tt.dynamicLoadBalancingEnabled,
-				watcherScoreManager:        mockWatcherScoreManager,
+				DingoClient:                 mockDingoClient,
+				logger:                      logger,
+				Networks:                    make(map[string]*network),
+				testMode:                    true,
+				Env:                         utils.Environment("test"),
+				CaddyPort:                   "8080",
+				machineID:                   "test-machine-id",
+				DynamicLoadBalancingEnabled: tt.dynamicLoadBalancingEnabled,
+				watcherScoreManager:         mockWatcherScoreManager,
 			}
 
 			// Set up the expectations according to the test case

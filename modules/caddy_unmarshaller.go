@@ -622,7 +622,7 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 			if err != nil {
 				return p.dispenser.Errf("Error while parsing dynamic_load_balancing.enabled: %v", err)
 			}
-			p.middleware.DynamicLoadBalacingEnabled = boolValue
+			p.middleware.DynamicLoadBalancingEnabled = boolValue
 		case "watcher_endpoint":
 			p.dispenser.Next()
 			p.middleware.WatcherApiEndpoint = p.dispenser.Val()
@@ -647,7 +647,7 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 }
 
 func (p *caddyfileParser) validateDynamicLoadBalancing() error {
-	if p.middleware.DynamicLoadBalacingEnabled {
+	if p.middleware.DynamicLoadBalancingEnabled {
 		if p.middleware.WatcherApiEndpoint == "" {
 			return p.dispenser.Errf("watcher_endpoint is required when dynamic_load_balancing.enabled is true")
 		}
