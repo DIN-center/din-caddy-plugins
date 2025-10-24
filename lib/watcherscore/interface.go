@@ -9,7 +9,7 @@ import (
 // IWatcherScoreManager defines the responsibilities of the component that computes and stores the scores for providers on a given network.
 type IWatcherScoreManager interface {
 	// ComputeScores computes the scores for all providers on all networks
-	ComputeScores() error
+	ComputeScores()
 	// GetScore gets the score for a given provider on a given network
 	GetScore(network string, providerID string) *Score
 	// StartPeriodicUpdates starts a background process that periodically computes the scores for all providers on all networks

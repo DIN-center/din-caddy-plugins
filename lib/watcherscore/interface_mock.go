@@ -68,11 +68,9 @@ func (mr *MockIWatcherScoreManagerMockRecorder) AddNetworkWithBuiltInFormula(net
 }
 
 // ComputeScores mocks base method.
-func (m *MockIWatcherScoreManager) ComputeScores() error {
+func (m *MockIWatcherScoreManager) ComputeScores() {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ComputeScores")
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "ComputeScores")
 }
 
 // ComputeScores indicates an expected call of ComputeScores.

@@ -453,4 +453,89 @@ func TestWatcherScoreManager(t *testing.T) {
 			t.Error("expected score to be empty after network removal")
 		}
 	})
+
+	t.Run("scores are computed independently for each network (case one network is failing)", func(t *testing.T) {
+		logger := zaptest.NewLogger(t)
+		rm := NewEmpty(logger)
+		rm.AddNetworkFormula("network-ok", ScoreFormula{
+			network: "network-ok",
+			metricGenerators: []ProviderMetricGenerator{
+				&WatcherBlockNumberConsistency{
+					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
+					Logger:        logger,
+				},
+				&WatcherLatency{
+					WatcherClient: &MockWatcherAPIClient{mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
+					Logger:        logger,
+				},
+			},
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
+				BlockNumberConsistencyMetricID: 0.3,
+				LatencyMetricID:                0.7,
+			}, logger),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(logger),
+		})
+
+		rm.AddNetworkFormula("network-error", ScoreFormula{
+			network: "network-error",
+			metricGenerators: []ProviderMetricGenerator{
+				&WatcherBlockNumberConsistency{
+					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{KO_CHECK_RESPONSE_API_ERROR}},
+					Logger:        logger,
+				},
+				&WatcherLatency{
+					WatcherClient: &MockWatcherAPIClient{mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
+					Logger:        logger,
+				},
+			},
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
+				BlockNumberConsistencyMetricID: 0.3,
+				LatencyMetricID:                0.7,
+			}, logger),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(logger),
+		})
+
+		rm.ComputeScores()
+
+		scoreGoodNetwork := rm.GetScore("network-ok", "provider1.com")
+		scoreErrorNetwork := rm.GetScore("network-error", "provider1.com")
+
+		if !scoreGoodNetwork.HasValue() || !Float64Equal(scoreGoodNetwork.Value(), 0.96295) {
+			t.Errorf("expected score has value to be 0.96295, got %f", scoreGoodNetwork.Value())
+		}
+		if scoreErrorNetwork.HasValue() {
+			t.Errorf("expected no score for error network, got %f", scoreErrorNetwork.Value())
+		}
+	})
+
+	t.Run("no score is computed for a network if no providers are monitored", func(t *testing.T) {
+		logger := zaptest.NewLogger(t)
+		rm := NewEmpty(logger)
+		rm.AddNetworkFormula("network-no-providers", ScoreFormula{
+			network: "network-no-providers",
+			metricGenerators: []ProviderMetricGenerator{
+				&WatcherBlockNumberConsistency{
+					WatcherClient: &MockWatcherAPIClient{mockCheckResponses: []watcher.Result[watcher.CheckResponse]{OK_CHECK_RESPONSE_BUT_EMPTY_RESULT}},
+					Logger:        logger,
+				},
+				&WatcherLatency{
+					WatcherClient: &MockWatcherAPIClient{mockLatencyResponses: []watcher.Result[watcher.LatencyResponse]{OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE}},
+					Logger:        logger,
+				},
+			},
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
+				BlockNumberConsistencyMetricID: 0.3,
+				LatencyMetricID:                0.7,
+			}, logger),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(logger),
+		})
+
+		rm.ComputeScores()
+
+		scoreNoProvidersNetwork := rm.GetScore("network-no-providers", "provider1.com")
+
+		if scoreNoProvidersNetwork.HasValue() {
+			t.Errorf("expected no score for network with no providers, got %f", scoreNoProvidersNetwork.Value())
+		}
+	})
 }

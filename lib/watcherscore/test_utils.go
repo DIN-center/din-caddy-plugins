@@ -149,6 +149,10 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1 = watcher.Ok(watcher.CheckR
 
 var KO_CHECK_RESPONSE_API_ERROR = watcher.Err[watcher.CheckResponse](fmt.Errorf("API error"))
 
+var OK_CHECK_RESPONSE_BUT_EMPTY_RESULT = watcher.Ok(watcher.CheckResponse{
+	Providers: []watcher.CheckProviderData{}, // Empty result means no providers are monitored for this network
+})
+
 var OK_CHECK_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{

@@ -52,7 +52,7 @@ func NewWithBuiltInFormula(networks []string, client watcher.IWatcherAPIClient, 
 	return rm
 }
 
-func (rm *WatcherScoreManager) ComputeScores() error {
+func (rm *WatcherScoreManager) ComputeScores() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -64,13 +64,23 @@ func (rm *WatcherScoreManager) ComputeScores() error {
 
 		// A score may be composed of multiple metrics, so we need to collect all metrics for each provider
 		metricsPerProvider := make(map[string][]*ProviderMetric)
+		allMetricsCompleted := true
 		for _, metricGenerator := range formula.metricGenerators {
 
 			// A metric generator produces the same metric type for all providers monitored on the network
 			providerMetrics, err := metricGenerator.GenerateMetrics(network)
 			if err != nil {
-				rm.logger.Error("[WATCHER_SCORE] Error generating metrics for network", zap.String("network", network), zap.Error(err))
-				return errors.Wrapf(err, "Error generating metrics for network %s", network)
+				rm.logger.Error("[WATCHER_SCORE] Error while generating metrics for network", zap.String("network", network), zap.Error(err))
+				// If one metric generator fails, we are not able to compute the scores for this network
+				allMetricsCompleted = false
+				break
+			}
+
+			// If no metrics are generated, we are not able to compute the scores for this network
+			if len(providerMetrics) == 0 {
+				rm.logger.Error("[WATCHER_SCORE] Empty metrics generated for network", zap.String("network", network))
+				allMetricsCompleted = false
+				break
 			}
 
 			// Group the metrics by provider (Provider -> [Metric1, Metric2, ...])
@@ -79,22 +89,29 @@ func (rm *WatcherScoreManager) ComputeScores() error {
 			}
 		}
 
+		if !allMetricsCompleted {
+			rm.logger.Error("[WATCHER_SCORE] Not all metrics completed for network, skipping network", zap.String("network", network))
+			continue
+		}
+
 		// Combine the metrics for each provider by reducing them to a single score per provider
-		rawScores := map[string]*Score{}
+		rawScoresPerProvider := map[string]*Score{}
 		for providerID, metrics := range metricsPerProvider {
 			providerRawScore, err := formula.metricCombiner.CombineMetrics(metrics)
 			if err != nil {
 				rm.logger.Error("[WATCHER_SCORE] Error while combining metrics for provider", zap.String("network", network), zap.String("providerID", providerID), zap.Error(err))
-				return errors.Wrapf(err, "Error while combining metrics for provider %s on network %s", providerID, network)
+				// If one provider fails, we just skip it and continue with the next one
+				continue
 			}
-			rawScores[providerID] = providerRawScore
+			rawScoresPerProvider[providerID] = providerRawScore
 		}
 
 		// Apply the score transformer
-		transformedScores, err := formula.scoreTransformer.TransformScore(network, rawScores)
+		transformedScores, err := formula.scoreTransformer.TransformScore(network, rawScoresPerProvider)
 		if err != nil {
 			rm.logger.Error("[WATCHER_SCORE] Error while transforming scores for network", zap.String("network", network), zap.Error(err))
-			return errors.Wrapf(err, "Error while transforming scores for network %s", network)
+			// If final score transformation fails, we just skip the entire network
+			continue
 		}
 
 		// Finally, update the manager with the new scores
@@ -115,7 +132,6 @@ func (rm *WatcherScoreManager) ComputeScores() error {
 			rm.scores[network][providerID] = score
 		}
 	}
-	return nil
 }
 
 func (rm *WatcherScoreManager) GetScore(network string, providerID string) *Score {
