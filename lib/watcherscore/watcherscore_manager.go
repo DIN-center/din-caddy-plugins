@@ -135,6 +135,10 @@ func (rm *WatcherScoreManager) ComputeScores() {
 }
 
 func (rm *WatcherScoreManager) GetScore(network string, providerID string) *Score {
+	// Lock the manager to prevent race condition when reading scores
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
 	if _, networkExists := rm.scores[network]; !networkExists {
 		return NewEmptyScore()
 	}
@@ -169,6 +173,10 @@ func (rm *WatcherScoreManager) StartPeriodicUpdates(frequency time.Duration) cha
 }
 
 func (rm *WatcherScoreManager) GetAllScores(network string) map[string]*Score {
+
+	// Lock the manager to prevent race condition when reading scores
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
 
 	// Copy the scores to a new map to avoid returning the underlying map
 	scores := make(map[string]*Score)

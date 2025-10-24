@@ -801,8 +801,8 @@ func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
 // Fetches the latest score from the watcher score manager and updates the provider score for all active networks
 func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 	// Lock the middleware object to prevent race condition when updating provider scores
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	// Keep track of the last time the scores were synced to the middleware
 	d.WatcherScoreLastSyncTime = time.Now().UTC()
