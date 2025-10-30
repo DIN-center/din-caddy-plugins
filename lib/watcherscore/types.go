@@ -15,13 +15,14 @@ type ProviderMetric struct {
 	metricID     string
 	network      string
 	providerName string
+	providerID   string
 	providerURL  *url.URL
 	value        float64
 	lastUpdated  time.Time
 }
 
 // Constructor function to create a new ProviderMetric
-func NewProviderMetric(metricID, network, providerID, providerEndpoint string, value float64, lastUpdated time.Time) (*ProviderMetric, error) {
+func NewProviderMetric(metricID, network, providerName, providerID, providerEndpoint string, value float64, lastUpdated time.Time) (*ProviderMetric, error) {
 	if value < 0 || value > 1 {
 		return nil, fmt.Errorf("value must be between 0 and 1, got %f", value)
 	}
@@ -34,7 +35,8 @@ func NewProviderMetric(metricID, network, providerID, providerEndpoint string, v
 	return &ProviderMetric{
 		metricID:     metricID,
 		network:      network,
-		providerName: providerID,
+		providerName: providerName,
+		providerID:   providerID,
 		providerURL:  providerURL,
 		value:        value,
 		lastUpdated:  lastUpdated,
@@ -54,7 +56,7 @@ func (m *ProviderMetric) ProviderName() string {
 }
 
 func (m *ProviderMetric) ProviderID() string {
-	return m.providerURL.Hostname()
+	return m.providerID
 }
 
 func (m *ProviderMetric) ProviderURL() *url.URL {
@@ -77,13 +79,14 @@ func (m *ProviderMetric) Equal(other *ProviderMetric) bool {
 	return m.metricID == other.metricID &&
 		m.network == other.network &&
 		m.providerName == other.providerName &&
+		m.providerID == other.providerID &&
 		m.providerURL.String() == other.providerURL.String() &&
 		Float64Equal(m.value, other.value) &&
 		m.lastUpdated.Equal(other.lastUpdated)
 }
 
 func (m *ProviderMetric) String() string {
-	return fmt.Sprintf("ProviderMetric{metricID: %s, providerID: %s, providerURL: %s, value: %f, lastUpdated: %s}", m.metricID, m.ProviderID(), m.providerURL.String(), m.value, m.lastUpdated.Format(time.RFC3339))
+	return fmt.Sprintf("ProviderMetric{metricID: %s, providerID: %s, providerName: %s, providerURL: %s, value: %f, lastUpdated: %s}", m.metricID, m.ProviderID(), m.ProviderName(), m.providerURL.String(), m.value, m.lastUpdated.Format(time.RFC3339))
 }
 
 var EmptyScore = &Score{value: 0, hasValue: false, lastUpdated: time.Time{}}

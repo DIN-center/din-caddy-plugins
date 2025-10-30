@@ -66,7 +66,7 @@ func (t *EWMATransformer) TransformScore(network string, scores map[string]*Scor
 		transformedScore := score.Value()*t.alpha + (1-t.alpha)*previousScore.Value()
 		t.logger.Info("[WATCHER_SCORE] EWMA transformed score",
 			zap.String("network", network),
-			zap.String("provider", providerID),
+			zap.String("providerID", providerID),
 			zap.Float64("alpha", t.alpha),
 			zap.Float64("currentScore", score.Value()),
 			zap.Float64("previousScore", previousScore.Value()),
@@ -100,7 +100,7 @@ func (t *HighPassThroughTransformer) TransformScore(network string, scores map[s
 			} else {
 				t.logger.Debug("[WATCHER_SCORE] Score below cutoff value",
 					zap.String("network", network),
-					zap.String("provider", providerID),
+					zap.String("providerID", providerID),
 					zap.Float64("score", score.Value()),
 					zap.Float64("cutoffValue", t.cutoffValue))
 				transformedScores[providerID], _ = NewScore(0.0, score.LastUpdated())

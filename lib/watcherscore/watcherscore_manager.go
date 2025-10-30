@@ -125,7 +125,7 @@ func (rm *WatcherScoreManager) ComputeScores() {
 			// Add the final score to the scores map
 			rm.logger.Info("[WATCHER_SCORE] Provider score",
 				zap.String("network", network),
-				zap.String("provider", providerID),
+				zap.String("providerID", providerID),
 				zap.Bool("isValid", score.HasValue()),
 				zap.Float64("score", score.Value()),
 				zap.Time("lastUpdated", score.LastUpdated()))

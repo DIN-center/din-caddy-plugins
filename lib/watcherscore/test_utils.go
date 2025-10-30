@@ -38,6 +38,7 @@ var OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.CheckResponse
 	Providers: []watcher.CheckProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -54,6 +55,7 @@ var OK_CHECK_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
@@ -70,6 +72,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1 = watcher.Ok(watcher.Check
 	Providers: []watcher.CheckProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -81,6 +84,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME1 = watcher.Ok(watcher.Check
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -97,6 +101,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2 = watcher.Ok(watcher.Check
 	Providers: []watcher.CheckProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -108,6 +113,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_GOOD_SCORES_TIME2 = watcher.Ok(watcher.Check
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -124,6 +130,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1 = watcher.Ok(watcher.CheckR
 	Providers: []watcher.CheckProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
@@ -135,6 +142,7 @@ var OK_CHECK_RESPONSE_TWO_PROVIDERS_BAD_SCORES_TIME1 = watcher.Ok(watcher.CheckR
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -156,7 +164,8 @@ var OK_CHECK_RESPONSE_BUT_EMPTY_RESULT = watcher.Ok(watcher.CheckResponse{
 var OK_CHECK_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{
 		{
-			Provider: "provider1",
+			Provider:   "provider1",
+			ProviderID: "provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
 			},
@@ -173,6 +182,7 @@ var OK_LATENCY_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.LatencyResp
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -189,6 +199,7 @@ var OK_LATENCY_RESPONSE_ONE_PROVIDER_BAD_SCORE = watcher.Ok(watcher.LatencyRespo
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 55.0,
@@ -205,6 +216,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1 = watcher.Ok(watcher.Late
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -216,6 +228,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME1 = watcher.Ok(watcher.Late
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -232,6 +245,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2 = watcher.Ok(watcher.Late
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -243,6 +257,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_GOOD_SCORE_TIME2 = watcher.Ok(watcher.Late
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -259,6 +274,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_BAD_SCORE_TIME1 = watcher.Ok(watcher.Laten
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 50.0,
@@ -270,6 +286,7 @@ var OK_LATENCY_RESPONSE_TWO_PROVIDERS_BAD_SCORE_TIME1 = watcher.Ok(watcher.Laten
 		},
 		{
 			Provider:    "provider2",
+			ProviderID:  "provider2.com",
 			EndpointURL: "https://provider2.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
@@ -288,6 +305,7 @@ var OK_LATENCY_RESPONSE_WRONG_TIMESTAMP = watcher.Ok(watcher.LatencyResponse{
 	Providers: []watcher.LatencyProviderData{
 		{
 			Provider:    "provider1",
+			ProviderID:  "provider1.com",
 			EndpointURL: "https://provider1.com",
 			ResponseStatus: watcher.Status{
 				SuccessPercentage: 100.0,
