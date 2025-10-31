@@ -213,8 +213,10 @@ func TestInitialize(t *testing.T) {
 						},
 					},
 				},
-				testMode:                    true,
-				DynamicLoadBalancingEnabled: true,
+				testMode: true,
+				DynamicLoadBalancing: DynamicLoadBalancingConfig{
+					Enabled: true,
+				},
 			},
 			expectedError: nil,
 		},
@@ -246,7 +248,7 @@ func TestInitialize(t *testing.T) {
 				assert.Equal(t, 0, dinMiddleware.Registry.Priority)
 
 				// Assert watcher score manager is initialized
-				assert.NotNil(t, dinMiddleware.watcherScoreManager)
+				assert.NotNil(t, dinMiddleware.DynamicLoadBalancing.watcherScoreManager)
 
 				// // Assert networks and providers are initialized
 				for networkName, network := range dinMiddleware.Networks {
@@ -254,7 +256,7 @@ func TestInitialize(t *testing.T) {
 					assert.NotNil(t, network.logger)
 
 					//Asset each network has a formula
-					assert.NotNil(t, dinMiddleware.watcherScoreManager.GetNetworkFormula(networkName))
+					assert.NotNil(t, dinMiddleware.DynamicLoadBalancing.watcherScoreManager.GetNetworkFormula(networkName))
 
 					for _, provider := range network.Providers {
 						assert.NotNil(t, provider.upstream)
@@ -1239,8 +1241,10 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 				},
 			},
 		},
-		logger:              logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
-		watcherScoreManager: mockWatcherScoreManager,
+		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+		DynamicLoadBalancing: DynamicLoadBalancingConfig{
+			watcherScoreManager: mockWatcherScoreManager,
+		},
 	}
 
 	//Set expected score for providers

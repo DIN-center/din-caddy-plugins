@@ -622,13 +622,13 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 			if err != nil {
 				return p.dispenser.Errf("Error while parsing dynamic_load_balancing.enabled: %v", err)
 			}
-			p.middleware.DynamicLoadBalancingEnabled = boolValue
+			p.middleware.DynamicLoadBalancing.Enabled = boolValue
 		case "watcher_endpoint":
 			p.dispenser.Next()
-			p.middleware.WatcherApiEndpoint = p.dispenser.Val()
+			p.middleware.DynamicLoadBalancing.WatcherApiEndpoint = p.dispenser.Val()
 		case "watcher_api_key":
 			p.dispenser.Next()
-			p.middleware.WatcherApiKey = p.dispenser.Val()
+			p.middleware.DynamicLoadBalancing.WatcherApiKey = p.dispenser.Val()
 		case "sync_score_interval_secs":
 			p.dispenser.Next()
 			syncScoreIntervalSecs := p.dispenser.Val()
@@ -636,7 +636,7 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 			if err != nil {
 				return p.dispenser.Errf("Error parsing dynamic_load_balancing.sync_score_interval_secs: %v", err)
 			}
-			p.middleware.WatcherScoreSyncIntervalSec = uint64(intValue)
+			p.middleware.DynamicLoadBalancing.WatcherScoreSyncIntervalSec = uint64(intValue)
 		default:
 			return p.dispenser.Errf("unrecognized option while parsing dynamic_load_balancing directive: %s", p.dispenser.Val())
 		}
@@ -647,11 +647,11 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 }
 
 func (p *caddyfileParser) validateDynamicLoadBalancing() error {
-	if p.middleware.DynamicLoadBalancingEnabled {
-		if p.middleware.WatcherApiEndpoint == "" {
+	if p.middleware.DynamicLoadBalancing.Enabled {
+		if p.middleware.DynamicLoadBalancing.WatcherApiEndpoint == "" {
 			return p.dispenser.Errf("watcher_endpoint is required when dynamic_load_balancing.enabled is true")
 		}
-		if p.middleware.WatcherApiKey == "" {
+		if p.middleware.DynamicLoadBalancing.WatcherApiKey == "" {
 			return p.dispenser.Errf("watcher_api_key is required when dynamic_load_balancing.enabled is true")
 		}
 	}
