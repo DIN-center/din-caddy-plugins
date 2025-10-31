@@ -92,6 +92,7 @@ const (
 	ScoreBasedSelectionProviderDefaultWeight = 50
 	StaleScoreGracePeriodInMinutes           = 60
 	WatcherScoreUpdateInterval               = 1 * time.Minute
+	ScoreBasedSelectionWeightBase            = 100
 )
 
 // String method to convert MyEnum to string

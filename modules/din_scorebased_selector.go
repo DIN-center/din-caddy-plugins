@@ -105,7 +105,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 						// If the score has a valid value and is not stale, we can use it to weight the selection
 						graceTimeStart := time.Now().UTC().Add(-time.Minute * StaleScoreGracePeriodInMinutes)
 						if provider.Score.LastUpdated().After(graceTimeStart) {
-							weight = int(provider.Score.Value() * 100)
+							weight = int(provider.Score.Value() * ScoreBasedSelectionWeightBase)
 						} else {
 							s.logger.Debug("[DYNAMIC_LB] Score is stale for provider",
 								zap.String("provider", providerHost),
