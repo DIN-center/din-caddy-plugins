@@ -62,6 +62,13 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 		return nil
 	}
 
+	// Short circuit if there is only one upstream available, return it directly regardless of the score
+	// Should we return nil if the score is 0.0?
+	if len(pool) == 1 {
+		s.logger.Debug("[DYNAMIC_LB] Only one upstream available, returning it")
+		return pool[0]
+	}
+
 	// Get Caddy replacer context
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 

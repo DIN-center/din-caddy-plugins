@@ -117,7 +117,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers:                   nil,
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
-			output:                      []Output{{upstream: nil, target_prob: 0.0}},
+			output:                      []Output{{upstream: nil}},
 		},
 		{
 			name:    "Score based load balancing enabled, single provider (score is empty) => upstream selected",
@@ -148,7 +148,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			output:                      []Output{{upstream: upstream_bar, target_prob: 1.0}},
 		},
 		{
-			name:    "Score based load balancing enabled, single provider (score has a value, but it's 0.0) => no upstream selected",
+			name:    "Score based load balancing enabled, single provider (score has a value, but it's 0.0) => upstream selected",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar},
 			providers: map[string]*provider{
@@ -159,7 +159,25 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
-			output:                      []Output{{upstream: nil, target_prob: 0.0}},
+			output:                      []Output{{upstream: upstream_bar, target_prob: 1.0}},
+		},
+		{
+			name:    "Score based load balancing enabled, two providers (all zero score) => no upstream selected",
+			request: &http.Request{},
+			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers: map[string]*provider{
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
+				},
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
+				},
+			},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1,
+			output:                      []Output{{upstream: nil}},
 		},
 		{
 			name:    "Score based load balancing enabled, two providers (same score) => upstream selected with same odds",
@@ -176,7 +194,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
-			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			repeat:                      1000,
 			output:                      []Output{{upstream: upstream_bar, target_prob: 0.5}, {upstream: upstream_foo, target_prob: 0.5}},
 		},
 		{
@@ -194,7 +212,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
-			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			repeat:                      1000,
 			output: []Output{{upstream: upstream_bar, target_prob: 0.5786},
 				{upstream: upstream_foo, target_prob: 0.4214}},
 		},
@@ -213,9 +231,28 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
-			repeat:                      1000, // less than 10000 is not enough to get a stable result
+			repeat:                      1000,
 			output: []Output{{upstream: upstream_bar, target_prob: 0.6479},
 				{upstream: upstream_foo, target_prob: 0.3521}},
+		},
+		{
+			name:    "Score based load balancing enabled, two providers (bar invalid, foo invalid) => upstream selected according to odds",
+			request: &http.Request{},
+			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers: map[string]*provider{
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.NewEmptyScore(), // bar has no score, score will be defaulted to 0.5
+				},
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
+				},
+			},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      2000, // required to get a stable result
+			output: []Output{{upstream: upstream_bar, target_prob: 0.5},
+				{upstream: upstream_foo, target_prob: 0.5}},
 		},
 		{
 			name:    "Score based load balancing enabled, two providers (bar in grace period, foo is valid) => upstream selected according to odds",
