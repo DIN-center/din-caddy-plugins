@@ -218,13 +218,51 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 				{upstream: upstream_foo, target_prob: 0.3521}},
 		},
 		{
-			name:    "Score based load balancing enabled, two providers (bar is stale, foo is valid) => upstream selected (foo is selected 100% of the time)",
+			name:    "Score based load balancing enabled, two providers (bar in grace period, foo is valid) => upstream selected according to odds",
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-time.Minute*StaleScoreGracePeriodInMinutes-1)), // bar is stale so weight is the default weight
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod+(1*time.Minute))), // bar stale and grace period is not expired yet
+				},
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+				},
+			},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000,
+			output: []Output{{upstream: upstream_bar, target_prob: 0.5},
+				{upstream: upstream_foo, target_prob: 0.5}},
+		},
+		{
+			name:    "Score based load balancing enabled, two providers (bar is stale and converging towards default weight, foo is valid) => upstream selected according to odds",
+			request: &http.Request{},
+			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers: map[string]*provider{
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-(10*time.Minute))), // bar stale and elapsed time since grace period finished is 10 minutes ago
+				},
+				"foo": {
+					upstream: upstream_foo,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+				},
+			},
+			dynamicLoadBalancingEnabled: true,
+			repeat:                      1000,
+			output: []Output{{upstream: upstream_bar, target_prob: 0.4826},
+				{upstream: upstream_foo, target_prob: 0.5174}},
+		},
+		{
+			name:    "Score based load balancing enabled, two providers (bar is stale and converging period is expired, foo is valid) => upstream selected according to odds",
+			request: &http.Request{},
+			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
+			providers: map[string]*provider{
+				"bar": {
+					upstream: upstream_bar,
+					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-StaleScoreConvergencePeriod)), // bar stale and elapsed time since grace period finished is 70 minutes ago
 				},
 				"foo": {
 					upstream: upstream_foo,
@@ -234,7 +272,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
 			output: []Output{{upstream: upstream_bar, target_prob: 0.3846},
-				{upstream: upstream_foo, target_prob: 0.6154}},
+				{upstream: upstream_foo, target_prob: 0.6153}},
 		},
 	}
 	for _, tt := range tests {

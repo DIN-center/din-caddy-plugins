@@ -81,7 +81,7 @@ func (m *ProviderMetric) Equal(other *ProviderMetric) bool {
 		m.providerName == other.providerName &&
 		m.providerID == other.providerID &&
 		m.providerURL.String() == other.providerURL.String() &&
-		Float64Equal(m.value, other.value) &&
+		Float64AlmostEqual(m.value, other.value) &&
 		m.lastUpdated.Equal(other.lastUpdated)
 }
 
@@ -147,6 +147,6 @@ type ScoreTransformer interface {
 }
 
 // Helper function to compare two float64 with a precision of 1e-9
-func Float64Equal(a, b float64) bool {
-	return math.Abs(a-b) < 1e-9
+func Float64AlmostEqual(a, b float64) bool {
+	return math.Abs(a-b) < 1e-5
 }

@@ -74,7 +74,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 			providers = v.(map[string]*provider)
 		}
 
-		// If providers are available, we can select an upstream based on the watcher score
+		// If providers are available, we can select a upstream based on the watcher score
 		if providers != nil {
 			s.logger.Debug("[DYNAMIC_LB] Selecting upstream according to its watcher score")
 
@@ -102,15 +102,30 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 							zap.String("provider", providerHost),
 							zap.Any("score", providerScore))
 
-						// If the score has a valid value and is not stale, we can use it to weight the selection
-						graceTimeStart := time.Now().UTC().Add(-time.Minute * StaleScoreGracePeriodInMinutes)
+						graceTimeStart := time.Now().UTC().Add(-StaleScoreGracePeriod)
 						if provider.Score.LastUpdated().After(graceTimeStart) {
+							// If the score has a valid value and is not stale, we can use it to weight the selection
 							weight = int(provider.Score.Value() * ScoreBasedSelectionWeightBase)
 						} else {
-							s.logger.Debug("[DYNAMIC_LB] Score is stale for provider",
+							//Score is stale, so we gradually pull the weight towards the default weight
+							timeSinceStale := graceTimeStart.Sub(provider.Score.LastUpdated())
+							staleScore := provider.Score.Value()
+							adjustedStaleScore, err := ws.ExponentialPullToMidpoint(staleScore,
+								timeSinceStale,
+								StaleScoreConvergencePeriod,
+								float64(ScoreBasedSelectionProviderDefaultWeight)/float64(ScoreBasedSelectionWeightBase))
+							if err != nil {
+								s.logger.Error("[DYNAMIC_LB] Error when pulling stale score towards default weight", zap.Error(err))
+								return nil
+							}
+							weight = int(adjustedStaleScore * ScoreBasedSelectionWeightBase)
+							s.logger.Debug("[DYNAMIC_LB] Score is stale for provider, adjusted towards default weight",
 								zap.String("provider", providerHost),
 								zap.String("score_updated_at", provider.Score.LastUpdated().Format(time.RFC3339)),
-								zap.String("grace_time", graceTimeStart.Format(time.RFC3339)))
+								zap.String("grace_time_start", graceTimeStart.Format(time.RFC3339)),
+								zap.Float64("stale_score", staleScore),
+								zap.Float64("adjusted_stale_score", adjustedStaleScore),
+								zap.Int("weight", weight))
 						}
 					} else {
 						s.logger.Debug("[DYNAMIC_LB] No score found for provider",

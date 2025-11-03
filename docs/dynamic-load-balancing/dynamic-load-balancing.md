@@ -118,9 +118,13 @@ Newly registered providers without score history receive a default weight of 50,
 
 #### Stale Data Handling
 If Watcher data becomes unavailable:
-1. **Grace Period (60 minutes)**: Continue using last known scores
-2. **After Grace Period**: Revert to default weight of 50 for affected providers
+1. **Grace Period (default 60 minutes)**: Continue using last known scores as source for weight
+2. **After Grace Period**: Gradually revert to the default weight (currently set to 50) for affected providers within 60 minutes using the below curve. After that period, the weight is fixed at 50. 
+<img src="exponential-pull-to-midpoint-plot.png" width="50%" align="center">
+
+
 3. **Recovery**: Resume score-based routing when data becomes available
+
 
 ## Technical Implementation Details
 

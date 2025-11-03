@@ -90,7 +90,8 @@ const (
 	DinScoreBasedLoadBalancingContextKey     = "din.internal.score_based_load_balancing"
 	DinScoreBasedSelectionCaddyModuleKey     = "http.reverse_proxy.selection_policies.din_score_based_selector"
 	ScoreBasedSelectionProviderDefaultWeight = 50
-	StaleScoreGracePeriodInMinutes           = 60
+	StaleScoreGracePeriod                    = 60 * time.Minute
+	StaleScoreConvergencePeriod              = 60 * time.Minute
 	WatcherScoreUpdateInterval               = 1 * time.Minute
 	ScoreBasedSelectionWeightBase            = 100
 )

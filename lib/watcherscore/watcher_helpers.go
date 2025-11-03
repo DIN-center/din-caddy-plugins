@@ -39,12 +39,10 @@ func calculateLatencyMetric(responseStatus watcher.Status, latencyStats watcher.
 		// Zero rank for latencies over 1000ms
 		rank = 0.0
 	} else {
-		// Normalized exponential function with k=1
-		// f(x) = (e^(kx) - 1) / (e^k - 1)
+
 		normalizedLatency := (latencyStats.P95 - LowLatencyInMillis) / (HighLatencyInMillis - LowLatencyInMillis)
-		k := 1.0 // This is the slope of the curve, TODO: make this configurable
 		// We invert it since we want higher latencies to have lower scores
-		rank = 1.0 - (math.Exp(k*normalizedLatency)-1.0)/(math.Exp(k)-1.0)
+		rank = 1.0 - NormalizedExponentialFunction(normalizedLatency, 1.0)
 		// Visualization of the latency ranking function (k=1):
 		// Rank
 		// 1.0 |  ****
