@@ -44,7 +44,7 @@ func TestEWMATransformer(t *testing.T) {
 		}
 
 		// First call initializes previous scores
-		transformer.TransformScore("network", scoresTMinusOne)
+		_, _ = transformer.TransformScore("network", scoresTMinusOne)
 
 		// Second call should apply EWMA
 		transformedScores, err := transformer.TransformScore("network", scoresT)

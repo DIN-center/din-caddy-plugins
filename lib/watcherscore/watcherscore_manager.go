@@ -47,7 +47,10 @@ func NewWithBuiltInFormula(networks []string, client watcher.IWatcherAPIClient, 
 
 	rm := NewEmpty(logger)
 	for network := range uniqueNetworksMap {
-		rm.AddNetworkWithBuiltInFormula(network, client)
+		err := rm.AddNetworkWithBuiltInFormula(network, client)
+		if err != nil {
+			logger.Error("[WATCHER_SCORE] Error while adding network with built-in formula", zap.String("network", network), zap.Error(err))
+		}
 	}
 	return rm
 }

@@ -632,11 +632,11 @@ func (p *caddyfileParser) parseDynamicLoadBalancing() error {
 		case "sync_score_interval_secs":
 			p.dispenser.Next()
 			syncScoreIntervalSecs := p.dispenser.Val()
-			intValue, err := strconv.Atoi(syncScoreIntervalSecs)
+			uint64Value, err := strconv.ParseUint(syncScoreIntervalSecs, 10, 64)
 			if err != nil {
 				return p.dispenser.Errf("Error parsing dynamic_load_balancing.sync_score_interval_secs: %v", err)
 			}
-			p.middleware.DynamicLoadBalancing.WatcherScoreSyncIntervalSec = uint64(intValue)
+			p.middleware.DynamicLoadBalancing.WatcherScoreSyncIntervalSec = uint64Value
 		default:
 			return p.dispenser.Errf("unrecognized option while parsing dynamic_load_balancing directive: %s", p.dispenser.Val())
 		}
