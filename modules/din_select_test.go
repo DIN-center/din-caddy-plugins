@@ -88,13 +88,13 @@ func TestDinSelectSelect(t *testing.T) {
 	}{
 		{
 			name:                        "Respect session affinity (header Din-Session-Id) regardless dynamic load balancing => upstream selected to the same provider",
-			request:                     &http.Request{Header: http.Header{"Din-Session-Id": []string{"foofoo"}}},
+			request:                     &http.Request{Header: http.Header{"Din-Session-Id": []string{"a0xf-1234567890"}}},
 			pool:                        reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers:                   nil,
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      100,
 			tolerance:                   0.00, // 0% error margin, session affinity is ALWAYS deterministic
-			output:                      []Output{{upstream_foo, 1.0}},
+			output:                      []Output{{upstream_bar, 1.0}},
 		},
 		{
 			name:                        "Random selection when no session affinity and no dynamic load balancing => upstream selected randomly",
