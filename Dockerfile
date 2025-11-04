@@ -1,4 +1,4 @@
-FROM caddy:2.8.4-builder AS builder
+FROM docker.io/library/caddy:2.8.4-builder AS builder
 
 # run xcaddy build once to go get common packages
 # this will be cached and hopefully make later runs of xcaddy build for our plugin faster
@@ -15,6 +15,6 @@ COPY modules/ /din-plugins/modules/
 
 RUN xcaddy build --replace github.com/DIN-center/din-sc/apps/din-go=/din-plugins/vendor/github.com/DIN-center/din-sc/apps/din-go --with github.com/DIN-center/din-caddy-plugins=/din-plugins
 
-FROM caddy:2.8.4
+FROM docker.io/library/caddy:2.8.4
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

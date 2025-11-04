@@ -9,8 +9,8 @@
 	# logging configuration
 	# https://caddyserver.com/docs/caddyfile/directives/log#file
 	log {
+		format json
 		output file caddy.log {
-			format json
 			roll_size 205mb
 			roll_keep 2
 			roll_keep_for 3d
