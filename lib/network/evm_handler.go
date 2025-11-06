@@ -284,11 +284,11 @@ func (h *EVMHandler) SupportsArchiveMode() bool {
 }
 
 func (h *EVMHandler) GetArchiveMethod() string {
-	return "eth_call"
+	return "eth_getBalance"
 }
 
 func (h *EVMHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
-	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`,
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["0x0000000000000000000000000000000000000000","%s"]}`,
 		method, blockHeight)
 	return []byte(payload), nil
 }
