@@ -1,6 +1,7 @@
 package prometheus
 
 import (
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -156,8 +157,10 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, dur
 	// Increment prometheus counter metric based on request data
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.ProviderName, data.ApiKey, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
 
-	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	// Sample 25% of requests for histogram metrics to reduce costs (histograms are expensive)
+	if rand.Intn(4) == 0 {
+		DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	}
 }
 
 type PromHealthCheckMetricData struct {
@@ -207,5 +210,9 @@ func (p *PrometheusClient) HandleNetworkHealthCheckMetric(data *PromNetworkHealt
 	)
 
 	DinNetworkHealthCheckCount.WithLabelValues(network, status, p.machineID, data.Environment).Inc()
-	DinNetworkRequestHealthCheckDurationMilliseconds.WithLabelValues(network, status, p.machineID, data.Environment).Observe(float64(durationMS))
+
+	// Sample 50% of health checks for histogram metrics to reduce costs
+	if rand.Intn(2) == 0 {
+		DinNetworkRequestHealthCheckDurationMilliseconds.WithLabelValues(network, status, p.machineID, data.Environment).Observe(float64(durationMS))
+	}
 }
