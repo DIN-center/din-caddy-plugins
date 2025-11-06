@@ -1,0 +1,81 @@
+package prometheus
+
+import (
+	"hash/fnv"
+)
+
+// HybridSampler combines hash-based deterministic sampling with error boosting
+// to ensure fair sampling across all label combinations while prioritizing errors.
+type HybridSampler struct {
+	baseRate  float64 // Base sampling rate for normal requests
+	errorRate float64 // Higher sampling rate for errors
+}
+
+// NewHybridSampler creates a new hybrid sampler with specified rates.
+// baseRate: sampling rate for normal requests (e.g., 0.25 for 25%)
+// errorRate: sampling rate for errors (e.g., 1.0 for 100%)
+func NewHybridSampler(baseRate, errorRate float64) *HybridSampler {
+	return &HybridSampler{
+		baseRate:  baseRate,
+		errorRate: errorRate,
+	}
+}
+
+// ShouldSample determines if a metric should be sampled based on deterministic hashing.
+// This ensures the same label combination always gets the same sampling decision.
+//
+// isError: whether this is an error condition that should be sampled at higher rate
+// labels: the label values that identify this metric series
+func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
+	// Select appropriate sampling rate
+	rate := hs.baseRate
+	if isError {
+		rate = hs.errorRate
+	}
+
+	// Always sample if rate is 1.0 or higher
+	if rate >= 1.0 {
+		return true
+	}
+
+	// Never sample if rate is 0 or negative
+	if rate <= 0 {
+		return false
+	}
+
+	// Hash all label values to get a deterministic value
+	h := fnv.New64a()
+	for _, label := range labels {
+		h.Write([]byte(label))
+		// Add separator to prevent collisions between adjacent labels
+		h.Write([]byte("|"))
+	}
+
+	hashValue := h.Sum64()
+
+	// Convert rate to threshold value
+	// We use the full uint64 range for maximum precision
+	threshold := uint64(float64(^uint64(0)) * rate)
+
+	// Deterministic decision based on hash
+	return hashValue < threshold
+}
+
+// ShouldSampleRequest determines if a request metric should be sampled.
+// It checks for error conditions based on HTTP status and health status.
+func (hs *HybridSampler) ShouldSampleRequest(responseStatus int, healthStatus string, labels ...string) bool {
+	// Consider it an error if:
+	// - HTTP status is 4xx or 5xx
+	// - Health status is not "Healthy" (capitalized, from HealthStatus.String())
+	// Note: healthStatus comes from the enum's String() method which returns "Healthy", "Warning", or "Unhealthy"
+	isError := responseStatus >= 400 || (healthStatus != "Healthy" && healthStatus != "")
+	return hs.ShouldSample(isError, labels...)
+}
+
+// ShouldSampleHealthCheck determines if a health check metric should be sampled.
+// It checks for error conditions based on HTTP status.
+func (hs *HybridSampler) ShouldSampleHealthCheck(responseStatus int, labels ...string) bool {
+	// Consider it an error if HTTP status is 4xx or 5xx
+	isError := responseStatus >= 400
+	return hs.ShouldSample(isError, labels...)
+}
