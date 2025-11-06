@@ -85,6 +85,15 @@ const (
 	// Starknet
 	StarknetNamespace     = "starknet"
 	StarknetArchiveMethod = "starknet_getBlockWithTxs"
+
+	// Watcher score based dynamic load balancing constants
+	DinScoreBasedLoadBalancingContextKey     = "din.internal.score_based_load_balancing"
+	DinScoreBasedSelectionCaddyModuleKey     = "http.reverse_proxy.selection_policies.din_score_based_selector"
+	ScoreBasedSelectionProviderDefaultWeight = 50
+	StaleScoreGracePeriod                    = 60 * time.Minute
+	StaleScoreConvergencePeriod              = 60 * time.Minute
+	WatcherScoreUpdateInterval               = 1 * time.Minute
+	ScoreBasedSelectionWeightBase            = 100
 )
 
 // String method to convert MyEnum to string

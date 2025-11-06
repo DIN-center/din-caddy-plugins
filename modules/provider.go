@@ -14,6 +14,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
 
 type provider struct {
@@ -35,6 +36,9 @@ type provider struct {
 
 	// Generic auth client for supporting multiple auth types
 	authClient auth.IAuthClient
+
+	// Watcher Score
+	Score *ws.Score
 
 	consecutiveUnhealthyChecks int
 	blockHistory               *list.List
@@ -73,6 +77,7 @@ func NewProvider(urlStr string) (*provider, error) {
 		Name:         safeExtractMainDomainWithPSL(url),
 		Headers:      make(map[string]string),
 		blockHistory: list.New(),
+		Score:        ws.EmptyScore,
 	}
 	return p, nil
 }

@@ -268,5 +268,6 @@ status: ## Show project status
 generate-mocks: ## Generate Mock interface
 	go tool mockgen -source=./lib/auth/interface.go -package=auth -destination=./lib/auth/interface_mock.go
 	go tool mockgen -source=./lib/auth/siwe/client.go -package=siwe -destination=./lib/auth/siwe/interface_mock.go
+	go tool mockgen -source=./lib/watcherscore/interface.go -package=watcherscore -destination=./lib/watcherscore/interface_mock.go
 
 .PHONY: tag quick-test dev ci status

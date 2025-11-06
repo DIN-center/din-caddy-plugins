@@ -25,6 +25,7 @@ type CheckResponse struct {
 
 type CheckProviderData struct {
 	Provider             string  `json:"provider"`
+	ProviderID           string  `json:"provider_id"`
 	ProviderLocation     string  `json:"provider_location"`
 	EndpointURL          string  `json:"endpoint_url"`
 	BlockNumberFrom      int     `json:"block_number_from"`
@@ -76,6 +77,7 @@ type LatencyResponse struct {
 
 type LatencyProviderData struct {
 	Provider             string       `json:"provider"`
+	ProviderID           string       `json:"provider_id"`
 	ProviderLocation     string       `json:"provider_location"`
 	EndpointURL          string       `json:"endpoint_url"`
 	LastRequestTimestamp string       `json:"last_request_ts"`

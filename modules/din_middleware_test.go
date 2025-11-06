@@ -33,6 +33,7 @@ import (
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 )
 
@@ -213,6 +214,9 @@ func TestInitialize(t *testing.T) {
 					},
 				},
 				testMode: true,
+				DynamicLoadBalancing: DynamicLoadBalancingConfig{
+					Enabled: true,
+				},
 			},
 			expectedError: nil,
 		},
@@ -243,14 +247,26 @@ func TestInitialize(t *testing.T) {
 				assert.NotZero(t, dinMiddleware.Registry.BlockEpoch)
 				assert.Equal(t, 0, dinMiddleware.Registry.Priority)
 
+				// Assert watcher score manager is initialized
+				assert.NotNil(t, dinMiddleware.DynamicLoadBalancing.watcherScoreManager)
+
 				// // Assert networks and providers are initialized
-				for _, network := range dinMiddleware.Networks {
+				for networkName, network := range dinMiddleware.Networks {
 					assert.NotNil(t, network.HttpClient)
 					assert.NotNil(t, network.logger)
+
+					//Asset each network has a formula
+					assert.NotNil(t, dinMiddleware.DynamicLoadBalancing.watcherScoreManager.GetNetworkFormula(networkName))
+
 					for _, provider := range network.Providers {
 						assert.NotNil(t, provider.upstream)
+
+						// Assert provider score is initialized
+						assert.NotNil(t, provider.Score)
+						assert.Equal(t, ws.EmptyScore, provider.Score)
 					}
 				}
+
 			}
 		})
 	}
@@ -269,6 +285,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example2.com",
 				Auth:    nil,
+				Score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -278,6 +295,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "https://example3.com",
 				Auth:    nil,
+				Score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -289,6 +307,7 @@ func TestInitializeProvider(t *testing.T) {
 				Auth: &siwe.SIWEClientAuth{
 					ProviderURL: "http://auth.example.com",
 				},
+				Score: ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -305,6 +324,8 @@ func TestInitializeProvider(t *testing.T) {
 				},
 			}
 			err := dinMiddleware.initializeProvider("test-network", tt.provider, tt.httpClient, logger)
+			// Assert provider score is set to the empty score
+			assert.Equal(t, ws.EmptyScore, tt.provider.Score)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -500,9 +521,9 @@ func TestUnmarshalCaddyfileAPIKeys(t *testing.T) {
 	dinMiddleware.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 	tests := []struct {
-		name      string
-		caddyfile string
-		hasErr    bool
+		name       string
+		caddyfile  string
+		hasErr     bool
 		expectKeys map[string]string
 	}{
 		{
@@ -537,8 +558,8 @@ func TestUnmarshalCaddyfileAPIKeys(t *testing.T) {
 				other-key other-user
 			}`,
 			expectKeys: map[string]string{
-				"test-key": "some-user",
-				"other-key": "other-user",
+				"test-key":    "some-user",
+				"other-key":   "other-user",
 				"missing-key": "c92388d1d4", // sha256(foo + missing-key)[:10]
 			},
 			hasErr: false,
@@ -1192,4 +1213,53 @@ func TestRegistryConfigCustomValues(t *testing.T) {
 	assert.Equal(t, 10, d.Registry.RetryMaxAttempts)
 	assert.Equal(t, 5*time.Second, d.Registry.RetryDelay)
 	assert.Equal(t, 60*time.Second, d.Registry.PanicRecoveryDelay)
+}
+
+func TestSyncMiddlewareWithLatestScores(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+
+	mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
+
+	markerForNonMonitoredProvider := ws.NewEmptyScore()
+	mockMiddleware := &DinMiddleware{
+		Networks: map[string]*network{
+			"network1": {
+				Name: "network1",
+				Providers: map[string]*provider{
+					"provider1": {
+						host:  "provider1",
+						Score: ws.MustCreateScore(0.8, time.Now()),
+					},
+					"provider2": {
+						host:  "provider2",
+						Score: ws.MustCreateScore(0.2, time.Now()),
+					},
+					"non-monitored-provider": {
+						host:  "non-monitored-provider",
+						Score: markerForNonMonitoredProvider,
+					},
+				},
+			},
+		},
+		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+		DynamicLoadBalancing: DynamicLoadBalancingConfig{
+			watcherScoreManager: mockWatcherScoreManager,
+		},
+	}
+
+	//Set expected score for providers
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider1").Return(ws.MustCreateScore(0.75, time.Now())).Times(1)
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "provider2").Return(ws.MustCreateScore(0.25, time.Now())).Times(1)
+	mockWatcherScoreManager.EXPECT().GetScore("network1", "non-monitored-provider").Return(&ws.Score{}).Times(1)
+
+	//Call SyncMiddlewareWithLatestScores
+	mockMiddleware.SyncMiddlewareWithLatestScores()
+
+	//Verify if scores are updated correctly in the middleware
+	assert.Equal(t, 0.75, mockMiddleware.Networks["network1"].Providers["provider1"].Score.Value())
+	assert.Equal(t, 0.25, mockMiddleware.Networks["network1"].Providers["provider2"].Score.Value())
+	//assert memory address is the same
+	if markerForNonMonitoredProvider != mockMiddleware.Networks["network1"].Providers["non-monitored-provider"].Score {
+		t.Errorf("Non-monitored provider score should be the same as the marker")
+	}
 }
