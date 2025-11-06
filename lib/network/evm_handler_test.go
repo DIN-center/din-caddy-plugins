@@ -292,7 +292,7 @@ func TestEVMHandler_SupportsArchiveMode(t *testing.T) {
 func TestEVMHandler_GetArchiveMethod(t *testing.T) {
 	handler := NewEVMHandler(&NetworkConfig{})
 
-	expected := "eth_call"
+	expected := "eth_getBalance"
 	if handler.GetArchiveMethod() != expected {
 		t.Errorf("Expected archive method '%s', got '%s'", expected, handler.GetArchiveMethod())
 	}
@@ -301,7 +301,7 @@ func TestEVMHandler_GetArchiveMethod(t *testing.T) {
 func TestEVMHandler_CreateArchivePayload(t *testing.T) {
 	handler := NewEVMHandler(&NetworkConfig{})
 
-	payload, err := handler.CreateArchivePayload("eth_call", "0x3039")
+	payload, err := handler.CreateArchivePayload("eth_getBalance", "0x3039")
 	if err != nil {
 		t.Errorf("CreateArchivePayload() error = %v", err)
 		return
@@ -321,8 +321,8 @@ func TestEVMHandler_CreateArchivePayload(t *testing.T) {
 	}
 
 	// Check method
-	if req["method"] != "eth_call" {
-		t.Errorf("Expected method 'eth_call', got %v", req["method"])
+	if req["method"] != "eth_getBalance" {
+		t.Errorf("Expected method 'eth_getBalance', got %v", req["method"])
 	}
 
 	// Check parameters
@@ -333,14 +333,14 @@ func TestEVMHandler_CreateArchivePayload(t *testing.T) {
 	}
 
 	// Check call object
-	callObj, ok := params[0].(map[string]interface{})
+	balanceAddress, ok := params[0].(string)
 	if !ok {
-		t.Errorf("Expected first param to be call object, got %v", params[0])
+		t.Errorf("Expected first param to be string, got %v", params[0])
 		return
 	}
 
-	if callObj["input"] != "0x436000526004601cf3" {
-		t.Errorf("Expected call input '0x436000526004601cf3', got %v", callObj["input"])
+	if balanceAddress != "0x0000000000000000000000000000000000000000" {
+		t.Errorf("Expected call input '0x0000000000000000000000000000000000000000', got %v", balanceAddress)
 	}
 
 	// Check block parameter
