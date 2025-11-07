@@ -3,6 +3,7 @@ package prometheus
 import (
 	"fmt"
 	"hash/fnv"
+	"math"
 	"time"
 )
 
@@ -16,7 +17,22 @@ type HybridSampler struct {
 // NewHybridSampler creates a new hybrid sampler with specified rates.
 // baseRate: sampling rate for normal requests (e.g., 0.25 for 25%)
 // errorRate: sampling rate for errors (e.g., 1.0 for 100%)
+// Both rates must be within [0.0, 1.0]. Values outside this range will be clamped.
 func NewHybridSampler(baseRate, errorRate float64) *HybridSampler {
+	// Enforce rate boundaries [0.0, 1.0]
+	// Rates < 0.0 or > 1.0 have no valid meaning
+	if baseRate < 0.0 {
+		baseRate = 0.0
+	} else if baseRate > 1.0 {
+		baseRate = 1.0
+	}
+
+	if errorRate < 0.0 {
+		errorRate = 0.0
+	} else if errorRate > 1.0 {
+		errorRate = 1.0
+	}
+
 	return &HybridSampler{
 		baseRate:  baseRate,
 		errorRate: errorRate,
@@ -36,12 +52,14 @@ func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
 		rate = hs.errorRate
 	}
 
-	// Always sample if rate is 1.0 or higher
+	// Always sample if rate is 1.0 (100% sampling)
+	// Since we enforce boundaries in the constructor, rate will never exceed 1.0
 	if rate >= 1.0 {
 		return true
 	}
 
-	// Never sample if rate is 0 or negative
+	// Never sample if rate is 0 (0% sampling)
+	// Since we enforce boundaries in the constructor, rate will never be negative
 	if rate <= 0 {
 		return false
 	}
@@ -62,7 +80,8 @@ func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
 	hashValue := h.Sum64()
 
 	// Convert rate to threshold value
-	threshold := uint64(float64(^uint64(0)) * rate)
+	// We use the full uint64 range for maximum precision
+	threshold := uint64(float64(math.MaxUint64) * rate)
 
 	// Decision based on hash that includes timestamp
 	return hashValue < threshold

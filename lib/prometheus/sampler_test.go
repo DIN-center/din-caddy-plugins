@@ -365,17 +365,17 @@ func TestEdgeCaseSamplingRates(t *testing.T) {
 		expectNever   bool // true if should never sample
 	}{
 		{
-			name:         "negative base rate",
+			name:         "negative base rate (clamped to 0.0)",
 			baseRate:     -0.1,
 			errorRate:    1.0,
-			expectNever:  true, // negative rate should never sample
+			expectNever:  true, // negative rate is clamped to 0.0, should never sample
 			expectAlways: false,
 		},
 		{
-			name:         "rate above 1.0",
+			name:         "rate above 1.0 (clamped to 1.0)",
 			baseRate:     1.5,
 			errorRate:    2.0,
-			expectAlways: true, // rates >= 1.0 should always sample
+			expectAlways: true, // rates > 1.0 are clamped to 1.0, should always sample
 			expectNever:  false,
 		},
 		{
@@ -425,11 +425,104 @@ func TestEdgeCaseSamplingRates(t *testing.T) {
 				}
 			}
 
-			if tc.errorRate >= 1.0 {
-				assert.Equal(t, iterations, errorCount, "Error sampling should always occur when error rate >= 1.0")
+			// Since we clamp rates, check against clamped values
+			clampedErrorRate := tc.errorRate
+			if clampedErrorRate < 0.0 {
+				clampedErrorRate = 0.0
+			} else if clampedErrorRate > 1.0 {
+				clampedErrorRate = 1.0
 			}
-			if tc.errorRate <= 0 {
-				assert.Equal(t, 0, errorCount, "Error sampling should never occur when error rate <= 0")
+
+			if clampedErrorRate >= 1.0 {
+				assert.Equal(t, iterations, errorCount, "Error sampling should always occur when clamped error rate = 1.0")
+			}
+			if clampedErrorRate <= 0 {
+				assert.Equal(t, 0, errorCount, "Error sampling should never occur when clamped error rate = 0")
+			}
+		})
+	}
+}
+
+// TestRateBoundaryClamping verifies that rates are properly clamped to [0.0, 1.0]
+func TestRateBoundaryClamping(t *testing.T) {
+	testCases := []struct {
+		name             string
+		inputBaseRate    float64
+		inputErrorRate   float64
+		expectedBaseBehavior  string // "always", "never", or "probabilistic"
+		expectedErrorBehavior string // "always", "never", or "probabilistic"
+	}{
+		{
+			name:             "negative rates clamped to 0",
+			inputBaseRate:    -0.5,
+			inputErrorRate:   -1.0,
+			expectedBaseBehavior:  "never",
+			expectedErrorBehavior: "never",
+		},
+		{
+			name:             "rates > 1.0 clamped to 1.0",
+			inputBaseRate:    1.5,
+			inputErrorRate:   10.0,
+			expectedBaseBehavior:  "always",
+			expectedErrorBehavior: "always",
+		},
+		{
+			name:             "valid rates unchanged",
+			inputBaseRate:    0.25,
+			inputErrorRate:   0.75,
+			expectedBaseBehavior:  "probabilistic",
+			expectedErrorBehavior: "probabilistic",
+		},
+		{
+			name:             "boundary values unchanged",
+			inputBaseRate:    0.0,
+			inputErrorRate:   1.0,
+			expectedBaseBehavior:  "never",
+			expectedErrorBehavior: "always",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sampler := NewHybridSampler(tc.inputBaseRate, tc.inputErrorRate)
+			iterations := 100
+
+			// Test base rate behavior
+			baseCount := 0
+			for i := 0; i < iterations; i++ {
+				labels := []string{"test", fmt.Sprintf("iter-%d", i)}
+				if sampler.ShouldSample(false, labels...) {
+					baseCount++
+				}
+			}
+
+			switch tc.expectedBaseBehavior {
+			case "always":
+				assert.Equal(t, iterations, baseCount, "Base rate clamped to 1.0 should always sample")
+			case "never":
+				assert.Equal(t, 0, baseCount, "Base rate clamped to 0.0 should never sample")
+			case "probabilistic":
+				assert.Greater(t, baseCount, 0, "Probabilistic base rate should sample some requests")
+				assert.Less(t, baseCount, iterations, "Probabilistic base rate should not sample all requests")
+			}
+
+			// Test error rate behavior
+			errorCount := 0
+			for i := 0; i < iterations; i++ {
+				labels := []string{"test", fmt.Sprintf("iter-%d", i)}
+				if sampler.ShouldSample(true, labels...) {
+					errorCount++
+				}
+			}
+
+			switch tc.expectedErrorBehavior {
+			case "always":
+				assert.Equal(t, iterations, errorCount, "Error rate clamped to 1.0 should always sample")
+			case "never":
+				assert.Equal(t, 0, errorCount, "Error rate clamped to 0.0 should never sample")
+			case "probabilistic":
+				assert.Greater(t, errorCount, 0, "Probabilistic error rate should sample some requests")
+				assert.Less(t, errorCount, iterations, "Probabilistic error rate should not sample all requests")
 			}
 		})
 	}
