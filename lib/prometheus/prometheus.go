@@ -25,15 +25,19 @@ const (
 
 // PrometheusClient is a struct that holds the prometheus client
 type PrometheusClient struct {
-	logger    *logger.LoggerClient
-	machineID string
+	logger             *logger.LoggerClient
+	machineID          string
+	requestSampler     *HybridSampler
+	healthCheckSampler *HybridSampler
 }
 
 // NewPrometheusClient returns a new prometheus client
 func NewPrometheusClient(logger *logger.LoggerClient, machineId string) *PrometheusClient {
 	return &PrometheusClient{
-		logger:    logger,
-		machineID: machineId,
+		logger:             logger,
+		machineID:          machineId,
+		requestSampler:     NewHybridSampler(0.25, 1.0), // 25% for normal requests, 100% for errors
+		healthCheckSampler: NewHybridSampler(0.5, 1.0),  // 50% for normal health checks, 100% for errors
 	}
 }
 
@@ -153,11 +157,14 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, dur
 
 	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("provider_name", data.ProviderName), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
 
-	// Increment prometheus counter metric based on request data
+	// Increment prometheus counter metric based on request data (always record - counters are cheap)
 	DinRequestCount.WithLabelValues(network, method, data.Provider, data.ProviderName, data.ApiKey, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
 
-	// Observe prometheus histogram based on request duration and data
-	DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	// Use hybrid sampling for expensive histogram metrics to reduce costs while ensuring fair distribution
+	// Samples 25% of normal requests, 100% of errors for better observability
+	if p.requestSampler.ShouldSampleRequest(data.ResponseStatus, data.HealthStatus, network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment) {
+		DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	}
 }
 
 type PromHealthCheckMetricData struct {
@@ -206,6 +213,12 @@ func (p *PrometheusClient) HandleNetworkHealthCheckMetric(data *PromNetworkHealt
 		zap.String("environment", data.Environment),
 	)
 
+	// Increment counter metric (always record - counters are cheap)
 	DinNetworkHealthCheckCount.WithLabelValues(network, status, p.machineID, data.Environment).Inc()
-	DinNetworkRequestHealthCheckDurationMilliseconds.WithLabelValues(network, status, p.machineID, data.Environment).Observe(float64(durationMS))
+
+	// Use hybrid sampling for expensive histogram metrics to reduce costs while ensuring fair distribution
+	// Samples 50% of normal health checks, 100% of errors for better observability
+	if p.healthCheckSampler.ShouldSampleHealthCheck(data.ResponseStatus, network, status, p.machineID, data.Environment) {
+		DinNetworkRequestHealthCheckDurationMilliseconds.WithLabelValues(network, status, p.machineID, data.Environment).Observe(float64(durationMS))
+	}
 }
