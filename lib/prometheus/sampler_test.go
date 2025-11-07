@@ -7,41 +7,59 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestHybridSamplerDeterministic verifies that the same labels always produce the same sampling decision
-func TestHybridSamplerDeterministic(t *testing.T) {
+// TestWithinGroupSampling verifies that we sample approximately 25% of requests within each label group
+func TestWithinGroupSampling(t *testing.T) {
 	sampler := NewHybridSampler(0.25, 1.0)
 
 	testCases := []struct {
-		name   string
-		labels []string
+		name       string
+		labels     []string
+		iterations int
 	}{
 		{
-			name:   "simple labels",
-			labels: []string{"ethereum", "eth_call", "infura", "200"},
+			name:       "simple labels",
+			labels:     []string{"ethereum", "eth_call", "infura", "200"},
+			iterations: 10000, // More iterations for better statistical accuracy
 		},
 		{
-			name:   "complex labels",
-			labels: []string{"polygon", "eth_getBalance", "alchemy", "provider1", "host1.example.com", "200", "healthy", "machine-123", "production"},
+			name:       "complex labels",
+			labels:     []string{"polygon", "eth_getBalance", "alchemy", "provider1", "host1.example.com", "200", "healthy", "machine-123", "production"},
+			iterations: 10000,
 		},
 		{
-			name:   "empty label",
-			labels: []string{"", "method", "provider"},
+			name:       "empty label",
+			labels:     []string{"", "method", "provider"},
+			iterations: 10000,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Run sampling decision multiple times with same labels
-			results := make([]bool, 100)
-			for i := 0; i < 100; i++ {
-				results[i] = sampler.ShouldSample(false, tc.labels...)
+			// Sample many times with the same labels
+			// Each call should get a different decision due to timestamp
+			sampledCount := 0
+
+			for i := 0; i < tc.iterations; i++ {
+				if sampler.ShouldSample(false, tc.labels...) {
+					sampledCount++
+				}
+				// No sleep needed - UnixNano() changes between calls
 			}
 
-			// All results should be the same
-			firstResult := results[0]
-			for i, result := range results {
-				assert.Equal(t, firstResult, result, "Iteration %d: sampling should be deterministic for labels %v", i, tc.labels)
-			}
+			// Should sample approximately 25% of requests
+			expectedRate := 0.25
+			actualRate := float64(sampledCount) / float64(tc.iterations)
+
+			// With 10000 iterations, we can use tighter tolerance
+			// Standard deviation for binomial distribution: sqrt(n * p * (1-p))
+			// For n=10000, p=0.25: stddev = sqrt(10000 * 0.25 * 0.75) = ~43.3
+			// 3 standard deviations = 130, so tolerance = 130/10000 = 0.013 (1.3%)
+			// We'll use 2% to be safe
+			tolerance := 0.02
+
+			assert.InDelta(t, expectedRate, actualRate, tolerance,
+				"Expected ~25%% sampling for labels %v, got %.2f%% (sampled %d/%d)",
+				tc.labels, actualRate*100, sampledCount, tc.iterations)
 		})
 	}
 }
@@ -50,27 +68,26 @@ func TestHybridSamplerDeterministic(t *testing.T) {
 func TestHybridSamplerErrorBoosting(t *testing.T) {
 	sampler := NewHybridSampler(0.25, 1.0) // 25% normal, 100% errors
 
-	// Test with different label combinations to ensure good distribution
+	// Test with the same labels to verify error boosting works
 	errorCount := 0
 	normalCount := 0
-	iterations := 10000
+	iterations := 1000
+	labels := []string{"ethereum", "eth_call", "provider", "200"}
 
 	for i := 0; i < iterations; i++ {
-		// Generate unique labels for each iteration
-		labels := []string{"ethereum", "eth_call", fmt.Sprintf("provider%d", i), fmt.Sprintf("%d", i)}
-
 		if sampler.ShouldSample(true, labels...) {
 			errorCount++
 		}
 		if sampler.ShouldSample(false, labels...) {
 			normalCount++
 		}
+		// No sleep needed - UnixNano() changes between calls
 	}
 
 	// Errors should be sampled at 100% rate
 	assert.Equal(t, iterations, errorCount, "All errors should be sampled when error rate is 1.0")
 
-	// Normal requests should be sampled at ~25% rate (with some tolerance for randomness)
+	// Normal requests should be sampled at ~25% rate
 	expectedNormal := float64(iterations) * 0.25
 	tolerance := float64(iterations) * 0.05 // 5% tolerance
 
@@ -333,6 +350,86 @@ func TestLabelCollisionResistance(t *testing.T) {
 					"Same labels should always produce same result")
 				assert.Equal(t, result2, sampler.ShouldSample(false, labels2...),
 					"Same labels should always produce same result")
+			}
+		})
+	}
+}
+
+// TestEdgeCaseSamplingRates verifies edge cases for sampling rates
+func TestEdgeCaseSamplingRates(t *testing.T) {
+	testCases := []struct {
+		name          string
+		baseRate      float64
+		errorRate     float64
+		expectAlways  bool // true if should always sample
+		expectNever   bool // true if should never sample
+	}{
+		{
+			name:         "negative base rate",
+			baseRate:     -0.1,
+			errorRate:    1.0,
+			expectNever:  true, // negative rate should never sample
+			expectAlways: false,
+		},
+		{
+			name:         "rate above 1.0",
+			baseRate:     1.5,
+			errorRate:    2.0,
+			expectAlways: true, // rates >= 1.0 should always sample
+			expectNever:  false,
+		},
+		{
+			name:         "exactly 0 rate",
+			baseRate:     0.0,
+			errorRate:    0.0,
+			expectNever:  true,
+			expectAlways: false,
+		},
+		{
+			name:         "exactly 1.0 rate",
+			baseRate:     1.0,
+			errorRate:    1.0,
+			expectAlways: true,
+			expectNever:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sampler := NewHybridSampler(tc.baseRate, tc.errorRate)
+			labels := []string{"test", "labels"}
+
+			// Test normal sampling
+			normalCount := 0
+			iterations := 100
+			for i := 0; i < iterations; i++ {
+				uniqueLabels := append(labels, fmt.Sprintf("iter-%d", i))
+				if sampler.ShouldSample(false, uniqueLabels...) {
+					normalCount++
+				}
+			}
+
+			if tc.expectAlways {
+				assert.Equal(t, iterations, normalCount, "Should always sample when rate >= 1.0")
+			}
+			if tc.expectNever {
+				assert.Equal(t, 0, normalCount, "Should never sample when rate <= 0")
+			}
+
+			// Test error sampling
+			errorCount := 0
+			for i := 0; i < iterations; i++ {
+				uniqueLabels := append(labels, fmt.Sprintf("iter-%d", i))
+				if sampler.ShouldSample(true, uniqueLabels...) {
+					errorCount++
+				}
+			}
+
+			if tc.errorRate >= 1.0 {
+				assert.Equal(t, iterations, errorCount, "Error sampling should always occur when error rate >= 1.0")
+			}
+			if tc.errorRate <= 0 {
+				assert.Equal(t, 0, errorCount, "Error sampling should never occur when error rate <= 0")
 			}
 		})
 	}

@@ -1,7 +1,9 @@
 package prometheus
 
 import (
+	"fmt"
 	"hash/fnv"
+	"time"
 )
 
 // HybridSampler combines hash-based deterministic sampling with error boosting
@@ -21,8 +23,9 @@ func NewHybridSampler(baseRate, errorRate float64) *HybridSampler {
 	}
 }
 
-// ShouldSample determines if a metric should be sampled based on deterministic hashing.
-// This ensures the same label combination always gets the same sampling decision.
+// ShouldSample determines if a metric should be sampled.
+// Now includes per-request uniqueness to ensure sampling happens WITHIN label groups,
+// not all-or-nothing per group.
 //
 // isError: whether this is an error condition that should be sampled at higher rate
 // labels: the label values that identify this metric series
@@ -43,21 +46,25 @@ func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
 		return false
 	}
 
-	// Hash all label values to get a deterministic value
+	// Hash labels AND current timestamp to ensure each request gets its own decision
 	h := fnv.New64a()
 	for _, label := range labels {
 		h.Write([]byte(label))
-		// Add separator to prevent collisions between adjacent labels
 		h.Write([]byte("|"))
 	}
+
+	// Add nanosecond timestamp to make each request unique
+	// This ensures we sample 25% of requests within each label group,
+	// not 0% or 100% for the entire group
+	timestamp := time.Now().UnixNano()
+	h.Write([]byte(fmt.Sprintf("%d", timestamp)))
 
 	hashValue := h.Sum64()
 
 	// Convert rate to threshold value
-	// We use the full uint64 range for maximum precision
 	threshold := uint64(float64(^uint64(0)) * rate)
 
-	// Deterministic decision based on hash
+	// Decision based on hash that includes timestamp
 	return hashValue < threshold
 }
 
