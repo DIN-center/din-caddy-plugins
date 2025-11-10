@@ -11,7 +11,7 @@ type LoggerClient struct {
 }
 
 func NewLoggerClient(logger *zap.Logger, env utils.Environment) *LoggerClient {
-	//Add context so all logs contains ENV and MachineID fields
+	// Add context to ensure all logs include ENV and MachineID fields.
 	loggerWithContext := logger.With(zap.String("machine_id", utils.GetMachineId()),
 		zap.String("environment", string(env)))
 	return &LoggerClient{
