@@ -7,42 +7,34 @@ import (
 )
 
 type LoggerClient struct {
-	Logger    *zap.Logger
-	machineId string
-	env       utils.Environment
+	Logger *zap.Logger
 }
 
 func NewLoggerClient(logger *zap.Logger, env utils.Environment) *LoggerClient {
+	//Add context so all logs contains ENV and MachineID fields
+	loggerWithContext := logger.With(zap.String("machine_id", utils.GetMachineId()),
+		zap.String("environment", string(env)))
 	return &LoggerClient{
-		Logger:    logger,
-		machineId: utils.GetMachineId(),
-		env:       env,
+		Logger: loggerWithContext,
 	}
 }
 
-// addCommonFields adds standard fields to all log entries
-func (l *LoggerClient) addCommonFields(fields ...zap.Field) []zap.Field {
-	return append(fields,
-		zap.String("machine_id", l.machineId),
-		zap.String("environment", string(l.env)))
-}
-
 func (l *LoggerClient) Info(msg string, fields ...zap.Field) {
-	l.Logger.Info(msg, l.addCommonFields(fields...)...)
+	l.Logger.Info(msg, fields...)
 }
 
 func (l *LoggerClient) Debug(msg string, fields ...zap.Field) {
-	l.Logger.Debug(msg, l.addCommonFields(fields...)...)
+	l.Logger.Debug(msg, fields...)
 }
 
 func (l *LoggerClient) Error(msg string, fields ...zap.Field) {
-	l.Logger.Error(msg, l.addCommonFields(fields...)...)
+	l.Logger.Error(msg, fields...)
 }
 
 func (l *LoggerClient) Warn(msg string, fields ...zap.Field) {
-	l.Logger.Warn(msg, l.addCommonFields(fields...)...)
+	l.Logger.Warn(msg, fields...)
 }
 
 func (l *LoggerClient) Fatal(msg string, fields ...zap.Field) {
-	l.Logger.Fatal(msg, l.addCommonFields(fields...)...)
+	l.Logger.Fatal(msg, fields...)
 }
