@@ -100,7 +100,7 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 
 // ExtractMethod extracts the method name from the request for logging/metrics
 func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
-	return req.URL.Path, nil
+	return "REST", nil
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
