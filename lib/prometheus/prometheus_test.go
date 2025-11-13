@@ -26,7 +26,7 @@ func TestHandleRequestMetric(t *testing.T) {
 
 	// Create a new registry and register our metric
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(DinRequestCount, DinRequestDurationMilliseconds, DinRequestBodyBytes)
+	registry.MustRegister(DinRequestCount, DinRequestDurationMilliseconds)
 
 	tests := []struct {
 		name           string
@@ -103,11 +103,13 @@ func TestHandleRequestMetric(t *testing.T) {
 			_, err := registry.Gather()
 			assert.NoError(t, err)
 
+			// Validate counter metric (DinRequestCount)
 			metric := testutil.ToFloat64(DinRequestCount.WithLabelValues(
 				tt.expectedLabels["service"],
 				tt.expectedLabels["method"],
 				tt.expectedLabels["provider"],
 				tt.expectedLabels["provider_name"],
+				tt.expectedLabels["api_key"],
 				tt.expectedLabels["host_name"],
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
@@ -115,7 +117,28 @@ func TestHandleRequestMetric(t *testing.T) {
 				tt.expectedLabels["environment"],
 			))
 
-			assert.Equal(t, tt.expectedValue, metric, "Metric should be incremented once")
+			assert.Equal(t, tt.expectedValue, metric, "Counter metric should be incremented once")
+
+			// Validate histogram metric (DinRequestDurationMilliseconds) with reduced label set
+			var dtoMetric dto.Metric
+			histogram, err := DinRequestDurationMilliseconds.GetMetricWithLabelValues(
+				tt.expectedLabels["service"],
+				tt.expectedLabels["method"],
+				tt.expectedLabels["provider"],
+				tt.expectedLabels["provider_name"],
+				tt.expectedLabels["response_status"],
+				tt.expectedLabels["environment"],
+			)
+			assert.NoError(t, err, "Error getting histogram metric")
+			if hist, ok := histogram.(prometheus.Histogram); ok {
+				err = hist.Write(&dtoMetric)
+				assert.NoError(t, err, "Error writing histogram to DTO")
+				expectedDurationMS := float64(tt.duration.Milliseconds())
+				assert.Equal(t, expectedDurationMS, *dtoMetric.Histogram.SampleSum, "Duration metric sum should match expected duration")
+				assert.Equal(t, uint64(1), *dtoMetric.Histogram.SampleCount, "Histogram should have one sample")
+			} else {
+				t.Fatalf("Expected prometheus.Histogram, got %T", histogram)
+			}
 		})
 	}
 }

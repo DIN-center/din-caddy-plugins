@@ -16,7 +16,6 @@ import (
 const (
 	DinRequestCountMetricName                      = "din_http_request_count"
 	DinRequestDurationMetricName                   = "din_http_request_duration_milliseconds"
-	DinRequestBodyBytesMetricName                  = "din_http_request_body_bytes"
 	DinHealthCheckCountMetricName                  = "din_health_check_count"
 	DinHealthCheckBlockNumberMetricName            = "din_health_check_block_number"
 	DinNetworkHealthCheckCountMetricName           = "din_network_health_check_count"
@@ -46,7 +45,6 @@ var (
 	// Din Client Request Metrics
 	DinRequestCount                *prometheus.CounterVec
 	DinRequestDurationMilliseconds *prometheus.HistogramVec
-	DinRequestBodyBytes            *prometheus.HistogramVec
 
 	// Din Provider LevelHealth Check Metrics
 	DinProviderHealthCheckCount       *prometheus.CounterVec
@@ -69,24 +67,11 @@ func RegisterMetrics() {
 	)
 	DinRequestDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: DinRequestDurationMetricName,
-			Help: "Metric for measuring the duration of requests to the din http server",
-			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
-				15, 20, 25, 30, 40, 50, 75, 100, 200,
-				300, 500, 750, 1000, 2000, 3000, 5000,
-				7000, 10000, 20000, 30000, 40000, 50000,
-				60000, 70000, 80000, 90000, 100000}, //
+			Name:    DinRequestDurationMetricName,
+			Help:    "Metric for measuring the duration of requests to the din http server",
+			Buckets: []float64{10, 25, 50, 100, 250, 500, 1000, 2000, 3000, 5000},
 		},
-		[]string{"service", "method", "provider", "provider_name", "host_name", "response_status", "health_status", "machine_id", "environment"},
-	)
-
-	DinRequestBodyBytes = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    DinRequestBodyBytesMetricName,
-			Help:    "Metric for measuring the size of the request body in bytes",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"service", "method", "provider", "provider_name", "host_name", "response_status", "health_status", "machine_id", "environment"},
+		[]string{"service", "method", "provider", "provider_name", "response_status", "environment"},
 	)
 
 	// Register health check count metric for din health checks
@@ -106,7 +91,7 @@ func RegisterMetrics() {
 		[]string{"service", "provider", "provider_name", "machine_id", "environment"},
 	)
 
-	prometheus.MustRegister(DinRequestCount, DinProviderHealthCheckCount, DinRequestDurationMilliseconds, DinRequestBodyBytes, DinProviderHealthCheckBlockNumber)
+	prometheus.MustRegister(DinRequestCount, DinProviderHealthCheckCount, DinRequestDurationMilliseconds, DinProviderHealthCheckBlockNumber)
 
 	// Register network level health check metrics
 	DinNetworkHealthCheckCount = prometheus.NewCounterVec(
@@ -119,13 +104,9 @@ func RegisterMetrics() {
 
 	DinNetworkRequestHealthCheckDurationMilliseconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: DinNetworkRequestHealthCheckDurationMetricName,
-			Help: "Metric for measuring the duration of network-level health checks",
-			Buckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12,
-				15, 20, 25, 30, 40, 50, 75, 100, 200,
-				300, 500, 750, 1000, 2000, 3000, 5000,
-				7000, 10000, 20000, 30000, 40000, 50000,
-				60000, 70000, 80000, 90000, 100000}, //
+			Name:    DinNetworkRequestHealthCheckDurationMetricName,
+			Help:    "Metric for measuring the duration of network-level health checks",
+			Buckets: []float64{10, 25, 50, 100, 250, 500, 1000, 2000, 3000, 5000},
 		},
 		[]string{"service", "response_status", "machine_id", "environment"},
 	)
@@ -151,19 +132,19 @@ func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, dur
 	// Use method from data struct instead of requestBody to handle both RPC and REST requests
 	method := data.Method
 	network := strings.TrimPrefix(data.Network, "/")
-	status := strconv.Itoa(data.ResponseStatus)
+	responseStatus := strconv.Itoa(data.ResponseStatus)
 
 	durationMS := duration.Milliseconds()
 
-	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("provider_name", data.ProviderName), zap.String("host_name", data.HostName), zap.String("response_status", status), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
+	p.logger.Debug("Request metric data", zap.String("network", network), zap.String("method", method), zap.String("provider", data.Provider), zap.String("provider_name", data.ProviderName), zap.String("host_name", data.HostName), zap.String("response_status", responseStatus), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.Int64("duration_milliseconds", durationMS), zap.String("environment", data.Environment))
 
 	// Increment prometheus counter metric based on request data (always record - counters are cheap)
-	DinRequestCount.WithLabelValues(network, method, data.Provider, data.ProviderName, data.ApiKey, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Inc()
+	DinRequestCount.WithLabelValues(network, method, data.Provider, data.ProviderName, data.ApiKey, data.HostName, responseStatus, data.HealthStatus, p.machineID, data.Environment).Inc()
 
 	// Use hybrid sampling for expensive histogram metrics to reduce costs while ensuring fair distribution
 	// Samples 25% of normal requests, 100% of errors for better observability
-	if p.requestSampler.ShouldSampleRequest(data.ResponseStatus, data.HealthStatus, network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment) {
-		DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, data.HostName, status, data.HealthStatus, p.machineID, data.Environment).Observe(float64(durationMS))
+	if p.requestSampler.ShouldSampleRequest(data.ResponseStatus, network, method, data.Provider, data.ProviderName, responseStatus, data.Environment) {
+		DinRequestDurationMilliseconds.WithLabelValues(network, method, data.Provider, data.ProviderName, responseStatus, data.Environment).Observe(float64(durationMS))
 	}
 }
 
