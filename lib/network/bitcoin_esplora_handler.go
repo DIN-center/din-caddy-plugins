@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -99,8 +100,9 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 }
 
 // ExtractMethod extracts the method name from the request for logging/metrics
+// Returns a normalized path to prevent cardinality explosion in metrics
 func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
-	return "REST", nil
+	return h.NormalizeEndpoint(req.URL.Path), nil
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
@@ -109,10 +111,135 @@ func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, provider
 	return nil
 }
 
+// Helper functions for path normalization
+
+// isHexHash checks if a string is a 64-character hexadecimal hash (txid, block hash, script hash, asset id)
+func isHexHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	matched, _ := regexp.MatchString("^[0-9a-fA-F]{64}$", s)
+	return matched
+}
+
+// isBitcoinAddress checks if a string is a valid Bitcoin address format
+func isBitcoinAddress(s string) bool {
+	// Legacy P2PKH (starts with 1)
+	if matched, _ := regexp.MatchString("^1[a-km-zA-HJ-NP-Z1-9]{25,34}$", s); matched {
+		return true
+	}
+	// P2SH (starts with 3)
+	if matched, _ := regexp.MatchString("^3[a-km-zA-HJ-NP-Z1-9]{25,34}$", s); matched {
+		return true
+	}
+	// Bech32 SegWit v0 (starts with bc1q, tb1q, bcrt1q)
+	if matched, _ := regexp.MatchString("^(bc1q|tb1q|bcrt1q)[a-z0-9]{38,58}$", s); matched {
+		return true
+	}
+	// Bech32m Taproot SegWit v1 (starts with bc1p, tb1p, bcrt1p)
+	if matched, _ := regexp.MatchString("^(bc1p|tb1p|bcrt1p)[a-z0-9]{58}$", s); matched {
+		return true
+	}
+	return false
+}
+
+// isNumeric checks if a string contains only digits
+func isNumeric(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	matched, _ := regexp.MatchString("^[0-9]+$", s)
+	return matched
+}
+
 func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
-	// For now, return path as-is since we don't have path normalizer
-	// This can be enhanced later if needed
-	return path
+	// Split path into segments
+	segments := strings.Split(path, "/")
+	normalizedSegments := make([]string, len(segments))
+
+	for i, segment := range segments {
+		// Check if previous segment provides context for normalization
+		prevSegment := ""
+		if i > 0 {
+			prevSegment = segments[i-1]
+		}
+
+		// Context-aware normalization based on previous segment
+		switch prevSegment {
+		case "tx":
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{txid}"
+				continue
+			}
+		case "block":
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{hash}"
+				continue
+			}
+		case "scripthash":
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{scripthash}"
+				continue
+			}
+		case "address":
+			if isBitcoinAddress(segment) {
+				normalizedSegments[i] = "{address}"
+				continue
+			}
+		case "asset":
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{asset_id}"
+				continue
+			}
+		case "block-height":
+			if isNumeric(segment) {
+				normalizedSegments[i] = "{height}"
+				continue
+			}
+		case "blocks":
+			if isNumeric(segment) {
+				normalizedSegments[i] = "{start_height}"
+				continue
+			}
+		case "outspend":
+			if isNumeric(segment) {
+				normalizedSegments[i] = "{vout}"
+				continue
+			}
+		case "txid":
+			if isNumeric(segment) {
+				normalizedSegments[i] = "{index}"
+				continue
+			}
+		case "txs":
+			if isNumeric(segment) {
+				normalizedSegments[i] = "{start_index}"
+				continue
+			}
+			// Also check if it's a hex hash (for /txs/chain/{last_seen_txid})
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{last_seen_txid}"
+				continue
+			}
+		case "chain":
+			if isHexHash(segment) {
+				normalizedSegments[i] = "{last_seen_txid}"
+				continue
+			}
+		case "address-prefix":
+			// Replace any prefix with placeholder
+			if len(segment) > 0 {
+				normalizedSegments[i] = "{prefix}"
+				continue
+			}
+		}
+
+		// If no normalization applied, keep original segment
+		normalizedSegments[i] = segment
+	}
+
+	// Reconstruct the normalized path
+	return strings.Join(normalizedSegments, "/")
 }
 
 func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
