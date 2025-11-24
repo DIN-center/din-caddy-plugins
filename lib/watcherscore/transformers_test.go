@@ -59,27 +59,54 @@ func TestEWMATransformer(t *testing.T) {
 		}
 	})
 
-	t.Run("handles empty scores", func(t *testing.T) {
+	t.Run("previous scores valid, current scores empty, then result is empty", func(t *testing.T) {
 		logger := zaptest.NewLogger(t)
 		transformer := NewEWMATransformer(0.7, logger)
 		scores1 := map[string]*Score{
 			"provider1": MustCreateScore(1.0, TIME1),
-			"provider2": MustCreateScore(0.0, TIME1),
 		}
 		scores2 := map[string]*Score{
 			"provider1": NewEmptyScore(),
-			"provider2": MustCreateScore(1.0, TIME1),
 		}
 
-		transformer.TransformScore("network", scores1)
+		// First call initializes previous scores
+		_, _ = transformer.TransformScore("network", scores1)
+
+		// Second call : current score is empty, previous score is valid, so the result is empty
 		transformedScores, err := transformer.TransformScore("network", scores2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		if transformedScores["provider1"].HasValue() {
-			t.Error("expected empty score")
+			t.Error("expected empty score for provider1")
 		}
+
+	})
+
+	t.Run("previous scores empty, current scores valid, then result is valid", func(t *testing.T) {
+		logger := zaptest.NewLogger(t)
+		transformer := NewEWMATransformer(0.7, logger)
+		scores1 := map[string]*Score{
+			"provider1": NewEmptyScore(),
+		}
+		scores2 := map[string]*Score{
+			"provider1": MustCreateScore(1.0, TIME1),
+		}
+
+		// First call initializes previous scores
+		_, _ = transformer.TransformScore("network", scores1)
+
+		// Second call : current score is valid, previous score is empty, so the result is valid
+		transformedScores, err := transformer.TransformScore("network", scores2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !transformedScores["provider1"].HasValue() {
+			t.Error("expected valid score for provider1")
+		}
+
 	})
 
 	t.Run("handles new providers", func(t *testing.T) {
@@ -100,16 +127,17 @@ func TestEWMATransformer(t *testing.T) {
 		}
 
 		// For provider1: 0.85 * 0.7 + 1.0 * 0.3 = 0.895
-		// For provider2: <cannot be calculated> = EmptyScore
 		expectedScore1 := 0.895
 		if transformedScores["provider1"].Value() != expectedScore1 {
 			t.Errorf("expected provider1 score to be %v, got %v", expectedScore1, transformedScores["provider1"].Value())
 		}
 
-		// For provider2 (new): Returned EmptyScore because it has no previous scores
-		if transformedScores["provider2"].HasValue() {
-			t.Errorf("expected no value for provider2")
+		// For provider2 (new): just appeared, so the result is the current score
+		expectedScore2 := 0.15
+		if transformedScores["provider2"].Value() != expectedScore2 {
+			t.Errorf("expected provider2 score to be %v, got %v", expectedScore2, transformedScores["provider2"].Value())
 		}
+
 	})
 	t.Run("handles three consecutive transformations", func(t *testing.T) {
 		logger := zaptest.NewLogger(t)

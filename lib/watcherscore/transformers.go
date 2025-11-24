@@ -33,45 +33,38 @@ func NewCompositeTransformer(chain ...ScoreTransformer) *CompositeTransformer {
 // A lower value of alpha means less change and more smoothing; a higher value means more rapid adaptation to new provider situation.
 // See https://en.wikipedia.org/wiki/Exponential_smoothing#Basic_(simple)_exponential_smoothing
 type EWMATransformer struct {
-	alpha             float64
-	previousScores    map[string]*Score
-	hasPreviousScores bool
-	logger            *zap.Logger
+	alpha          float64
+	previousScores map[string]*Score
+	logger         *zap.Logger
 }
 
 func (t *EWMATransformer) TransformScore(network string, scores map[string]*Score) (map[string]*Score, error) {
-	// If this is the first time we're running the transformer, initialize the previousScores and return same scores
-	if !t.hasPreviousScores {
-		t.previousScores = scores
-		t.hasPreviousScores = true
-		return scores, nil
-	}
 
 	// Apply EWMA to the scores using the previous scores as the T-1 scores
 	smoothedScores := map[string]*Score{}
-	for providerID, score := range scores {
-		if !score.HasValue() {
+	for providerID, currentScore := range scores {
+		if !currentScore.HasValue() {
 			smoothedScores[providerID] = EmptyScore
 			continue
 		}
 
 		previousScore, exists := t.previousScores[providerID]
 		if !exists || !previousScore.HasValue() {
-			smoothedScores[providerID] = EmptyScore
+			smoothedScores[providerID] = currentScore
 			continue
 		}
 
 		//The update formula is:
 		// S_t = alpha * S_t + (1 - alpha) * S_t-1
-		transformedScore := score.Value()*t.alpha + (1-t.alpha)*previousScore.Value()
+		transformedScore := currentScore.Value()*t.alpha + (1-t.alpha)*previousScore.Value()
 		t.logger.Info("[WATCHER_SCORE] EWMA transformed score",
 			zap.String("network", network),
 			zap.String("providerID", providerID),
 			zap.Float64("alpha", t.alpha),
-			zap.Float64("currentScore", score.Value()),
+			zap.Float64("currentScore", currentScore.Value()),
 			zap.Float64("previousScore", previousScore.Value()),
 			zap.Float64("newScore", transformedScore))
-		smoothedScores[providerID], _ = NewScore(math.Round(transformedScore*10000)/10000, score.LastUpdated())
+		smoothedScores[providerID], _ = NewScore(math.Round(transformedScore*10000)/10000, currentScore.LastUpdated())
 	}
 
 	// Update the previous scores with the smoothed scores
