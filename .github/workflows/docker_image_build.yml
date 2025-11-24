@@ -44,7 +44,7 @@ jobs:
           path: deployment
 
       - name: Set foobar to cool
-        uses: mikefarah/yq@v2
+        uses: mikefarah/yq@master
         with:
           cmd: yq e -i ".image_version = \"${GITHUB_SHA}\"" deployment/beta.yaml
 
