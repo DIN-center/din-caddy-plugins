@@ -46,7 +46,9 @@ jobs:
       - name: Set foobar to cool
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i ".image_version = \"${GITHUB_SHA}\"" deployment/beta.yaml
+          cmd: yq e -i ".image_version = env(GITHUB_SHA)" deployment/beta.yaml
+        env:
+          GITHUB_SHA: ${{ github.sha }}
 
       - name: Commit and push changes
         run: |
