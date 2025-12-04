@@ -15,7 +15,7 @@
 │                                                                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐              │
 │  │  DinClient      │  │  Registry Sync  │  │  X402 Payment   │              │
-│  │  (Orchestrator) │  │  Manager        │  │  Client         │              │
+│  │  (Orchestrator) │  │  (permissionless)│  │  Client         │              │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘              │
 │           │                    │                    │                        │
 │           │           ┌────────┴────────┐          │                        │
@@ -23,28 +23,46 @@
 │           ▼           ▼                 ▼          ▼                        │
 │  ┌─────────────────┐  ┌─────────────┐  ┌─────────────────┐                  │
 │  │  Provider       │  │  Network    │  │  Watcher        │                  │
-│  │  Selector       │  │  Cache      │  │  Client         │                  │
+│  │  Selector       │  │  Cache      │  │  (permissionless)│                  │
 │  └─────────────────┘  └─────────────┘  └─────────────────┘                  │
 └─────────────────────────────────────────────────────────────────────────────┘
           │                    │                    │
           │                    ▼                    ▼
           │   ┌────────────────────────────────────────────────┐
-          │   │           @din-center/registry                  │
-          │   │   (Handles smart contract interactions)         │
+          │   │        DIN Linea RPC (permissionless)          │
+          │   │   (DIN-provided bootstrap RPC for registry)    │
           │   └────────────────────────────────────────────────┘
           │                    │
           │                    ▼
           │   ┌────────────────────────────────────────────────┐
-          │   │           DIN Smart Contracts                   │
+          │   │     DIN Registry Smart Contract (Linea)        │
           │   │   DinRegistryHandler → Network → Provider       │
           │   └────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Selected RPC Provider                                │
-│                    (e.g., Infura, Alchemy, QuickNode)                       │
+│               (e.g., Infura, Alchemy, QuickNode) - x402 payment             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Two-Phase Access Model
+
+The SDK uses a two-phase approach:
+
+| Phase | Data Source | Access Method | Payment |
+|-------|-------------|---------------|---------|
+| **Bootstrap** | Registry (Linea) | DIN-provided free RPC | FREE |
+| **Ongoing** | Registry (Linea) | Linea providers from registry | x402 (USDC) |
+| **Ongoing** | Watcher scores | Watcher providers from registry | x402 (USDC) |
+| **Ongoing** | RPC requests | RPC providers from registry | x402 (USDC) |
+
+**Key insight:** The Watcher is registered in the DIN Registry (network name: `watchers`), just like RPC endpoints. After bootstrap, all data access uses x402 payments (USDC on Linea).
+
+This creates a sustainable model:
+- **Low barrier to entry** - Free bootstrap, no upfront costs
+- **Sustainable** - All providers (Linea, Watcher, RPC) get paid for ongoing access
+- **Decentralized** - After bootstrap, you're using the network
 
 ## Component Overview
 
@@ -59,10 +77,15 @@ The orchestrator that coordinates all SDK functionality:
 
 ### Registry Sync Manager
 
-Maintains an up-to-date cache of network and provider data:
+Maintains an up-to-date cache of network and provider data using a **two-phase approach**:
 
+**Phase 1 (Bootstrap):**
+- Uses DIN-provided free Linea RPC for initial sync
+- Gets list of networks, providers, and **Linea RPC endpoints**
+
+**Phase 2 (Ongoing):**
+- Uses Linea providers from the network with x402 payments
 - Polls registry every 60s (configurable)
-- Polls watcher for scores every 30s (configurable)
 - Caches data in memory for fast access
 - Handles network/provider status changes
 
@@ -84,11 +107,13 @@ Handles all payment logic:
 
 ### Watcher Client
 
-Fetches quality metrics for providers:
+Fetches quality metrics from **Watcher providers registered in the DIN Registry** via x402 payments (USDC on Linea):
 
 - Block consistency scores
 - State consistency scores
 - Latency metrics
+
+The Watcher is registered in the registry (network: `watchers`), accessed like any RPC endpoint.
 
 ## Data Flow
 
@@ -160,10 +185,9 @@ Fetches quality metrics for providers:
 
 ```
 @din-center/router
-├── @din-center/registry    # Smart contract interactions
+├── viem                    # Wallet/signing + Linea contract reads
 ├── x402-axios              # Payment interceptor
-├── axios                   # HTTP client
-└── viem                    # Wallet/signing
+└── axios                   # HTTP client
 ```
 
 ## File Structure
@@ -178,11 +202,12 @@ din-router-sdk/
 │   ├── registry/
 │   │   ├── index.ts
 │   │   ├── sync.ts                 # RegistrySyncManager
+│   │   ├── linea-client.ts         # Linea RPC interactions (permissionless)
 │   │   └── types.ts                # Network, Provider types
 │   │
 │   ├── watcher/
 │   │   ├── index.ts
-│   │   ├── client.ts               # WatcherClient
+│   │   ├── client.ts               # WatcherClient (permissionless, no API key)
 │   │   ├── score-manager.ts        # Score computation
 │   │   └── types.ts                # Score types
 │   │
@@ -208,8 +233,9 @@ din-router-sdk/
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Registry access | Separate SDK | Isolates contract complexity |
+| Registry access | DIN-provided Linea RPC | Permissionless, no API key needed |
+| Watcher access | Public HTTP API | Permissionless, no API key needed |
 | HTTP client | Axios | x402-axios compatibility |
-| Signing | Viem | Modern, well-maintained |
+| Signing | Viem | Modern, well-maintained, also handles contract reads |
 | Caching | In-memory Map | Simple, fast |
 | Sync strategy | Timer-based polling | Simpler than epoch-based |

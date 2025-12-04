@@ -15,42 +15,34 @@ const din = new DinClient(config: DinConfig);
 ```typescript
 interface DinConfig {
   /**
-   * Private key for wallet used in x402 payments
+   * Private key for wallet used in all x402 payments (USDC on Linea)
+   * Used for: RPC requests, registry syncs (Linea), and score syncs (Watchers)
    * @required
    */
   privateKey: string;
 
   /**
-   * Base URL for DIN Registry API
-   * @default 'https://registry.din.dev/api/v1'
+   * Bootstrap Linea RPC URL (FREE, used for initial sync only)
+   * After bootstrap, SDK uses providers from the registry with x402 USDC payments
+   * @default 'https://linea.din.dev/rpc'
    */
-  registryUrl?: string;
+  bootstrapRpcUrl?: string;
 
   /**
-   * Base URL for Watcher API
-   * @default 'https://watcher.din.dev/api/v1'
+   * Network name for Watcher service in the DIN Registry
+   * Watcher is accessed via x402 USDC payments like any RPC provider
+   * @default 'watchers'
    */
-  watcherUrl?: string;
+  watcherNetworkName?: string;
 
   /**
-   * API key for Watcher (if required)
-   */
-  watcherApiKey?: string;
-
-  /**
-   * Network for x402 payments
-   * @default 'base'
-   */
-  paymentNetwork?: 'base' | 'base-sepolia';
-
-  /**
-   * Interval for registry data refresh
+   * Interval for registry data refresh (uses Linea providers + x402 USDC)
    * @default 60000 (60 seconds)
    */
   registrySyncIntervalMs?: number;
 
   /**
-   * Interval for score refresh
+   * Interval for score refresh (uses Watchers providers + x402 USDC)
    * @default 30000 (30 seconds)
    */
   scoreSyncIntervalMs?: number;
@@ -362,33 +354,26 @@ interface Score {
 
 ---
 
-## Expected Registry SDK Interface
+## Linea Registry Client (Internal)
 
-The router SDK expects `@din-center/registry` to provide:
+The SDK reads from the DIN Registry smart contract on Linea directly using viem:
 
 ```typescript
-interface DinRegistryClient {
+// Internal client - users don't interact with this directly
+interface LineaRegistryClient {
   /**
-   * Get all networks
+   * Get all networks from registry contract
    */
   getNetworks(): Promise<Network[]>;
 
   /**
    * Get providers for a specific network
    */
-  getProviders(networkName: string): Promise<Provider[]>;
-
-  /**
-   * Get single network by name
-   */
-  getNetwork(name: string): Promise<Network | null>;
-
-  /**
-   * Get single provider by address
-   */
-  getProvider(address: string): Promise<Provider | null>;
+  getProviders(networkAddress: string): Promise<Provider[]>;
 }
 ```
+
+**Note:** This is handled internally by the SDK. Users only need to provide a private key for x402 payments. Registry access is permissionless via DIN-provided Linea RPC.
 
 ---
 

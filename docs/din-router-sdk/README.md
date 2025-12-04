@@ -1,6 +1,6 @@
 # DIN Router SDK (TypeScript)
 
-A TypeScript SDK for dynamic routing to DIN network providers with **mandatory x402 micropayments**.
+A TypeScript SDK for dynamic routing to DIN network providers with **permissionless data access** and **x402 micropayments**.
 
 ## What This SDK Does
 
@@ -10,8 +10,15 @@ The SDK handles the complete request flow for accessing blockchain RPC providers
 User Request → Provider Selection → x402 Payment → Request Forwarding → Response
 ```
 
-**You provide:** The network name and request payload
-**SDK handles:** Provider selection, payment, and request execution
+**You provide:** The network name, request payload, and private key (for payments)
+**SDK handles:** Registry sync, provider selection, payment, and request execution
+
+## Design Principles
+
+1. **Permissionless bootstrap** - Free DIN Linea RPC for initial registry sync
+2. **x402 payments (USDC on Linea)** - All ongoing payments use USDC on Linea blockchain
+3. **Watchers as a registry service** - Score data accessed via x402, same as RPC providers
+4. **Network-agnostic** - Works with any blockchain (EVM, Solana, Bitcoin, etc.)
 
 ## Quick Start
 
@@ -19,7 +26,7 @@ User Request → Provider Selection → x402 Payment → Request Forwarding → 
 import { DinClient } from '@din-center/router';
 
 const din = new DinClient({
-  privateKey: process.env.PRIVATE_KEY!,
+  privateKey: process.env.PRIVATE_KEY!,  // Only needed for x402 payments
 });
 
 // Make a request to any DIN network
@@ -43,6 +50,7 @@ console.log('Payment:', response.paymentInfo?.amount);
 
 | Feature | Description |
 |---------|-------------|
+| **Permissionless** | No API keys for registry/watcher data access |
 | **Network-agnostic** | Works with any blockchain (EVM, Solana, Bitcoin, etc.) |
 | **Automatic payments** | x402 micropayments handled transparently |
 | **Smart routing** | Weighted selection based on provider quality scores |
@@ -66,18 +74,9 @@ console.log('Payment:', response.paymentInfo?.amount);
 ```json
 {
   "dependencies": {
-    "@din-center/registry": "^0.1.0",
     "x402-axios": "^0.1.0",
     "axios": "^1.6.0",
     "viem": "^2.0.0"
   }
 }
 ```
-
-## Design Principles
-
-1. **SDK makes requests** - User provides payload, SDK handles everything else
-2. **x402 is mandatory** - All requests include micropayments to providers
-3. **Network-agnostic** - SDK forwards payloads as-is, no protocol parsing
-4. **Protocol-agnostic** - Works with JSON-RPC, REST, or any HTTP API
-5. **Automatic lifecycle** - Client auto-starts on first request if needed

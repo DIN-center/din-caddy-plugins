@@ -2,30 +2,45 @@
 
 ## Overview
 
-The Registry Sync Manager maintains an up-to-date cache of network and provider data. It uses timer-based polling to periodically refresh data from two sources:
+The Registry Sync Manager maintains an up-to-date cache of network and provider data using a **two-phase approach**:
 
-1. **DIN Registry** (via `@din-center/registry`) - Network and provider information
-2. **Watcher API** - Provider quality scores
+### Phase 1: Bootstrap (Free)
+- Uses DIN-provided public Linea RPC for initial registry sync
+- No payment required - free bootstrap to lower barrier to entry
+- Gets initial list of networks and providers, including:
+  - **Linea RPC providers** (for ongoing registry syncs)
+  - **Watcher providers** (for ongoing score syncs)
+  - All other RPC providers
+
+### Phase 2: Ongoing Sync (All x402 USDC on Linea)
+- **Registry sync**: Linea providers from the network (x402 USDC payment)
+- **Score sync**: Watcher providers from the network (x402 USDC payment)
+- Sustainable model - all providers get paid for ongoing access
+
+**Key insight:** The Watcher is registered in the DIN Registry (network: `watchers`), accessed via x402 (USDC on Linea) just like RPC endpoints.
 
 ## Sync Strategy
 
 ### Timer-Based Polling
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      DinClient                               │
-│                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │ Registry     │    │ Score        │    │ Network      │   │
-│  │ Timer (60s)  │    │ Timer (30s)  │    │ Cache (Map)  │   │
-│  └──────┬───────┘    └──────┬───────┘    └──────────────┘   │
-│         │                   │                    ▲           │
-│         ▼                   ▼                    │           │
-│  ┌──────────────┐    ┌──────────────┐           │           │
-│  │ Registry SDK │    │ Watcher API  │───────────┘           │
-│  │ getNetworks()│    │ getScores()  │  (updates scores)     │
-│  └──────────────┘    └──────────────┘                       │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              DinClient                                   │
+│                                                                          │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────────────────────┐  │
+│  │ Registry     │    │ Score        │    │ Network Cache (Map)       │  │
+│  │ Timer (60s)  │    │ Timer (30s)  │    │ - Linea providers         │  │
+│  └──────┬───────┘    └──────┬───────┘    │ - Watcher providers       │  │
+│         │                   │            │ - All RPC providers       │  │
+│         │                   │            └───────────────────────────┘  │
+│         ▼                   ▼                         ▲                 │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                        Data Sources                               │  │
+│  │  BOOTSTRAP:  Free DIN RPC ───────────────────────────────────────►│  │
+│  │  ONGOING:    Linea Provider (x402 USDC) ─────────────────────────►│  │
+│  │              Watchers Provider (x402 USDC) ──────────────────────►│  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Configuration
@@ -40,21 +55,33 @@ The Registry Sync Manager maintains an up-to-date cache of network and provider 
 ### RegistrySyncManager Class
 
 ```typescript
-import { DinRegistryClient } from '@din-center/registry';
+import { createPublicClient, http } from 'viem';
+import { linea } from 'viem/chains';
 
 export class RegistrySyncManager {
   private registryCache: Map<string, Network> = new Map();
   private registryTimer: NodeJS.Timeout | null = null;
   private scoreTimer: NodeJS.Timeout | null = null;
+  private bootstrapClient: ReturnType<typeof createPublicClient>;
+  private x402Client: X402PaymentClient;
+  private isInitialized: boolean = false;
 
   constructor(
-    private registryClient: DinRegistryClient,
     private watcherClient: WatcherClient,
+    private x402PaymentClient: X402PaymentClient,
     private config: {
       registrySyncIntervalMs: number;
       scoreSyncIntervalMs: number;
+      bootstrapRpcUrl?: string;  // Free bootstrap RPC (init only)
     }
-  ) {}
+  ) {
+    // Bootstrap client - free DIN-provided RPC for initial sync only
+    this.bootstrapClient = createPublicClient({
+      chain: linea,
+      transport: http(config.bootstrapRpcUrl ?? 'https://linea.din.dev/rpc'),
+    });
+    this.x402Client = x402PaymentClient;
+  }
 
   async start(): Promise<void> {
     // Initial sync (blocking)
@@ -86,25 +113,49 @@ export class RegistrySyncManager {
 
 ```typescript
 private async syncRegistry(): Promise<void> {
-  // 1. Fetch all networks from registry SDK
-  const networks = await this.registryClient.getNetworks();
+  let registryData: Network[];
 
-  // 2. Process each network
-  for (const network of networks) {
-    if (network.status === 'Active') {
-      // 3. Fetch providers for active networks
-      const providers = await this.registryClient.getProviders(network.name);
-
-      // 4. Attach providers to network
-      network.providers = new Map(providers.map(p => [p.address, p]));
-
-      // 5. Update cache
-      this.registryCache.set(network.name, network);
-    } else {
-      // 6. Remove inactive networks
-      this.registryCache.delete(network.name);
-    }
+  if (!this.isInitialized) {
+    // PHASE 1: Bootstrap - use free DIN-provided RPC
+    registryData = await this.bootstrapSync();
+    this.isInitialized = true;
+  } else {
+    // PHASE 2: Ongoing - use x402 payment to Linea providers
+    registryData = await this.x402Sync();
   }
+
+  // Process and cache the data
+  this.processRegistryData(registryData);
+}
+
+// Phase 1: Free bootstrap sync
+private async bootstrapSync(): Promise<Network[]> {
+  // Use free DIN-provided Linea RPC
+  return await this.bootstrapClient.readContract({
+    address: DIN_REGISTRY_ADDRESS,
+    abi: dinRegistryAbi,
+    functionName: 'getNetworks',
+  });
+}
+
+// Phase 2: Paid ongoing sync via x402
+private async x402Sync(): Promise<Network[]> {
+  // Select a Linea provider from the cache (discovered during bootstrap)
+  const lineaNetwork = this.registryCache.get('linea-mainnet');
+  const lineaProvider = this.selectProvider(lineaNetwork.providers);
+
+  // Make x402 payment request to Linea provider
+  const response = await this.x402Client.makeRequest(lineaProvider.serviceUrl, {
+    method: 'POST',
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'eth_call',
+      params: [{ to: DIN_REGISTRY_ADDRESS, data: encodeGetNetworks() }],
+      id: 1,
+    }),
+  });
+
+  return decodeNetworks(response.data.result);
 }
 ```
 
@@ -112,13 +163,19 @@ private async syncRegistry(): Promise<void> {
 
 ```typescript
 private async syncScores(): Promise<void> {
-  // For each cached network
-  for (const [networkName, network] of this.registryCache) {
-    // 1. Fetch scores from watcher
-    const scores = await this.watcherClient.getScores(networkName);
+  // 1. Select a watcher provider from the registry (discovered during bootstrap)
+  const watcherNetwork = this.registryCache.get('watchers');
+  const watcherProvider = this.selectProvider(watcherNetwork.providers);
 
-    // 2. Update provider scores
-    for (const [providerId, score] of scores) {
+  // 2. For each cached network, fetch scores via x402 payment (USDC on Linea)
+  for (const [networkName, network] of this.registryCache) {
+    // Make x402 USDC payment to watcher provider
+    const response = await this.x402Client.makeRequest(
+      `${watcherProvider.serviceUrl}/scores/${networkName}`
+    );
+
+    // 3. Update provider scores
+    for (const [providerId, score] of response.data) {
       const provider = network.providers.get(providerId);
       if (provider) {
         provider.score = score.value;
@@ -130,33 +187,49 @@ private async syncScores(): Promise<void> {
 
 ## Data Sources
 
-### @din-center/registry SDK
+### DIN Registry (Linea Smart Contract)
 
-The router SDK expects the registry SDK to provide:
+The SDK reads from the DIN Registry smart contract on Linea using a **two-phase approach**:
 
+#### Phase 1: Bootstrap (Free)
 ```typescript
-interface DinRegistryClient {
-  getNetworks(): Promise<Network[]>;
-  getProviders(networkName: string): Promise<Provider[]>;
-  getNetwork(name: string): Promise<Network | null>;
-  getProvider(address: string): Promise<Provider | null>;
-}
+// DIN-provided free Linea RPC - for initial sync only
+const bootstrapClient = createPublicClient({
+  chain: linea,
+  transport: http('https://linea.din.dev/rpc'),
+});
+
+// Initial registry read (free)
+const networks = await bootstrapClient.readContract({
+  address: DIN_REGISTRY_ADDRESS,
+  abi: dinRegistryAbi,
+  functionName: 'getNetworks',
+});
+// Now we have Linea providers in cache!
 ```
 
-The registry SDK handles all smart contract complexity:
-- Contract ABIs
+#### Phase 2: Ongoing (x402 Payment)
+```typescript
+// After bootstrap, use Linea providers from the network
+const lineaProvider = selectProvider(cache.get('linea-mainnet').providers);
+
+// Make x402 payment to Linea provider for registry reads
+const response = await x402Client.makeRequest(lineaProvider.serviceUrl, {
+  method: 'POST',
+  body: { jsonrpc: '2.0', method: 'eth_call', params: [...] },
+});
+```
+
+Contract interactions are handled internally:
+- Contract ABIs bundled in SDK
 - Multi-contract traversal (Registry → Network → Provider → Service)
 - Data parsing and type conversion
 
-### Watcher API
+### Watcher (Registry Service via x402 USDC)
 
-The Watcher API provides quality metrics:
+The Watcher service is registered in the DIN Registry (network: `watchers`), accessed via x402 payments (USDC on Linea) just like RPC endpoints:
 
 ```typescript
-interface WatcherClient {
-  getScores(networkName: string): Promise<Map<string, Score>>;
-}
-
 interface Score {
   value: number;           // 0.0 to 1.0
   blockConsistency: number;
@@ -165,6 +238,22 @@ interface Score {
   updatedAt: Date;
 }
 ```
+
+```typescript
+// Watcher is a service in the registry - accessed via x402 USDC
+const watcherNetwork = cache.get('watchers');
+const watcherProvider = selectProvider(watcherNetwork.providers);
+
+// Make x402 USDC payment to watcher provider
+const response = await x402Client.makeRequest(
+  `${watcherProvider.serviceUrl}/scores/${networkName}`
+);
+```
+
+**Why x402 for Watcher?**
+- Watcher providers run infrastructure and deserve compensation
+- Same payment model as RPC providers - consistent architecture
+- Multiple watcher providers can compete on quality/price
 
 ## Cache Structure
 
@@ -199,11 +288,15 @@ private registryCache: Map<string, Network> = new Map();
 ```
 1. new DinClient(config)     → Constructor, no sync yet
 2. din.start()               → Or auto on first request
-   ├── await syncRegistry()  → Blocking initial sync
-   ├── await syncScores()    → Blocking initial sync
-   ├── startRegistryTimer()  → Background timer
-   └── startScoreTimer()     → Background timer
-3. din.request(...)          → Uses cached data
+   │
+   │  PHASE 1: BOOTSTRAP (FREE)
+   ├── await bootstrapSync()   → Use free DIN Linea RPC
+   │   └── Cache now includes: Linea providers, Watcher providers, all RPC providers
+   │
+   │  PHASE 2: ONGOING (ALL x402 USDC on Linea)
+   ├── startRegistryTimer()    → Background timer (Linea providers + x402 USDC)
+   └── startScoreTimer()       → Background timer (Watcher providers + x402 USDC)
+3. din.request(...)          → Uses cached data, x402 USDC payment to RPC provider
 ```
 
 ### Shutdown Sequence
