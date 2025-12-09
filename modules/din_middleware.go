@@ -530,6 +530,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// This means that DIN Registry cannot be enabled without a refactor of the middleware to protect the shared state at the granular level
 	d.mu.RLock()
 	networkObj, ok := d.Networks[networkPath]
+	d.mu.RUnlock()
 	if !ok {
 		// If the network is not defined, return a 404.
 		rw.WriteHeader(http.StatusNotFound)
@@ -537,7 +538,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		return fmt.Errorf("network undefined: %w", err)
 	}
-	d.mu.RUnlock()
 
 	// Ensure handler is available
 	if networkObj.handler == nil {
