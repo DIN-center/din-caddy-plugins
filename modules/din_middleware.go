@@ -525,7 +525,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Safely access the networks map for guaranteed consistency
-	// It assumes that the network object is immutable after the lock is released or that any internal shared state is protected by the lock
+	// It assumes that the network object is immutable after the lock is released or
+	// that any internal shared state in the network object is protected by a granular lock (at the shared state level)
 	// IMPORTANT NOTE: network objects are modified by the DIN Registry (e.g. adding/removing providers, methods, etc.)
 	// This means that DIN Registry cannot be enabled without a refactor of the middleware to protect the shared state at the granular level
 	d.mu.RLock()
