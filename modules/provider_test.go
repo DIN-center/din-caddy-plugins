@@ -92,8 +92,8 @@ func TestNewProvider(t *testing.T) {
 				if p != nil && len(p.Headers) != 0 {
 					t.Errorf("expected empty headers, but got %v", p.Headers)
 				}
-				if p != nil && p.Score != ws.EmptyScore {
-					t.Errorf("expected to be empty score, but got %v", p.Score)
+				if p != nil && p.SafeGetScore() != ws.EmptyScore {
+					t.Errorf("expected to be empty score, but got %v", p.SafeGetScore())
 				}
 			}
 		})

@@ -126,7 +126,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.NewEmptyScore(), // foo has no score, score will use default weight
+					score:    ws.NewEmptyScore(), // foo has no score, score will use default weight
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -140,7 +140,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(1.0, time.Now().UTC()),
+					score:    ws.MustCreateScore(1.0, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -154,7 +154,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -168,11 +168,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.0, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -186,11 +186,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -204,11 +204,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.67, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.67, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -223,11 +223,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
+					score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -242,11 +242,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.NewEmptyScore(), // bar has no score, score will be defaulted to 0.5
+					score:    ws.NewEmptyScore(), // bar has no score, score will be defaulted to 0.5
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
+					score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -261,11 +261,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod+(1*time.Minute))), // bar stale and grace period is not expired yet
+					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod+(1*time.Minute))), // bar stale and grace period is not expired yet
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -280,11 +280,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-(10*time.Minute))), // bar stale and elapsed time since grace period finished is 10 minutes ago
+					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-(10*time.Minute))), // bar stale and elapsed time since grace period finished is 10 minutes ago
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,
@@ -299,11 +299,11 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-StaleScoreConvergencePeriod)), // bar stale and elapsed time since grace period finished is 70 minutes ago
+					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-StaleScoreConvergencePeriod)), // bar stale and elapsed time since grace period finished is 70 minutes ago
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.8, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,

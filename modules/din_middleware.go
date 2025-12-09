@@ -492,7 +492,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	provider.logger = d.logger
 
 	// Initialize the score for the provider with an empty score
-	provider.Score = ws.EmptyScore
+	provider.SafeUpdateScore(ws.NewEmptyScore())
 
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
@@ -507,8 +507,6 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error { //nolint:gocyclo
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -526,6 +524,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return err
 	}
 
+	// Safely access the networks map for guaranteed consistency
+	// It assumes that the network object is immutable after the lock is released or that any internal shared state is protected by the lock
+	// IMPORTANT NOTE: network objects are modified by the DIN Registry (e.g. adding/removing providers, methods, etc.)
+	// This means that DIN Registry cannot be enabled without a refactor of the middleware to protect the shared state at the granular level
+	d.mu.RLock()
 	networkObj, ok := d.Networks[networkPath]
 	if !ok {
 		// If the network is not defined, return a 404.
@@ -534,6 +537,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 		return fmt.Errorf("network undefined: %w", err)
 	}
+	d.mu.RUnlock()
 
 	// Ensure handler is available
 	if networkObj.handler == nil {
