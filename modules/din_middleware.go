@@ -959,6 +959,9 @@ func (d *DinMiddleware) startWatcherScoreSync() chan struct{} {
 	syncQuit := make(chan struct{})
 
 	// Do immediate initial sync
+	// Note that syncing watcher scores immediately here may be a bit early if the score computation is not yet complete,
+	// but it's ok because the watcher score manager will return empty scores until the computation is complete
+	// and the middleware will not use these empty scores for load balancing
 	d.SyncMiddlewareWithLatestScores()
 
 	go func() {
