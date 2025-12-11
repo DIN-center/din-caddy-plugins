@@ -185,14 +185,13 @@ func PerformTraceBlockByNumberCheckViaJSONRPC(httpUrl string, headers map[string
 	var lastErr error
 	var lastResponseStatus int
 
-	for attempt := 0; attempt < requestAttempts; attempt++ {
-		// Use the provided function to create trace payload
-		payload, err := createPayloadFunc(blockHeight)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create trace payload: %w", err)
-			continue
-		}
+	// Create payload once outside the retry loop - it's deterministic
+	payload, err := createPayloadFunc(blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to create trace payload: %w", err)
+	}
 
+	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Make POST request with payload
 		resBytes, statusCode, err := httpClient.Post(httpUrl, headers, payload, authClient)
 		if statusCode != nil {

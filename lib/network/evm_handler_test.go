@@ -566,6 +566,11 @@ func TestEVMHandler_ParseTraceBlockByNumberResponse(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:        "json-rpc error -32000 block pruned",
+			response:    []byte(`{"jsonrpc":"2.0","id":0,"error":{"code":-32000,"message":"block pruned: 183392636 vs 179652199"}}`),
+			expectError: true,
+		},
+		{
 			name:        "invalid json",
 			response:    []byte(`not valid json`),
 			expectError: true,
