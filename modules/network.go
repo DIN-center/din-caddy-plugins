@@ -35,7 +35,8 @@ type caddyfileConfigFlags struct {
 	RequestAttemptCountSetInCaddyfile      bool
 	ProviderBlockHistorySizeSetInCaddyfile bool
 	NetworkBlockHistorySizeSetInCaddyfile  bool
-	ArchiveEnabledSetInCaddyfile           bool
+	ArchiveEnabledSetInCaddyfile                   bool
+	ArchiveTraceBlockByNumberSetInCaddyfile        bool
 }
 
 var _ json.Unmarshaler = (*network)(nil)
@@ -79,8 +80,9 @@ type network struct {
 	BlockLagLimit           int64 `json:"healthcheck_blocklag_limit"`
 	BlockJumpLimit          int64 `json:"healthcheck_blockjump_limit"`
 	MaxRequestPayloadSizeKB int64 `json:"max_request_payload_size_kb"`
-	RequestAttemptCount     int   `json:"request_attempt_count"`
-	ArchiveEnabled          bool  `json:"archive_enabled"`
+	RequestAttemptCount              int   `json:"request_attempt_count"`
+	ArchiveEnabled                   bool  `json:"archive_enabled"`
+	ArchiveTraceBlockByNumberEnabled bool  `json:"archive_trace_block_by_number"`
 
 	// Custom configuration passed from Caddyfile
 	CustomConfig map[string]interface{} `json:"custom_config,omitempty"`
@@ -104,9 +106,10 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 		RequestAttemptCount:      DefaultRequestAttemptCount,
 		ProviderBlockHistorySize: DefaultProviderBlockHistorySize,
 		NetworkBlockHistorySize:  DefaultNetworkBlockHistorySize,
-		blockHistory:             list.New(),
-		ArchiveEnabled:           DefaultArchiveEnabled,
-		Environment:              environment,
+		blockHistory:                     list.New(),
+		ArchiveEnabled:                   DefaultArchiveEnabled,
+		ArchiveTraceBlockByNumberEnabled: DefaultArchiveTraceBlockByNumberEnabled,
+		Environment:                      environment,
 		Providers:                make(map[string]*provider),
 		CaddyPort:                caddyPort,
 		// Initialize Caddyfile flags tracking
@@ -444,7 +447,26 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 	// Use handler method to format block height directly
 	quarterBlockHeightString := n.handler.FormatBlockHeight(quarterBlockHeight)
 
-	return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
+	// Perform the primary archive check (eth_getBalance)
+	if err := n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString); err != nil {
+		return err
+	}
+
+	// Additional trace check (EVM-specific, MetaMask requirement)
+	// Only runs if archive_trace_block_by_number flag is enabled
+	if n.ArchiveTraceBlockByNumberEnabled {
+		// Check if handler supports trace check via type assertion (EVM-specific)
+		type traceChecker interface {
+			PerformTraceBlockByNumberCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error
+		}
+		if traceHandler, ok := n.handler.(traceChecker); ok {
+			if err := traceHandler.PerformTraceBlockByNumberCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // isStalled checks if provider's block numbers haven't changed

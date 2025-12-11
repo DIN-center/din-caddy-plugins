@@ -482,3 +482,105 @@ func TestEVMHandler_ValidateRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestEVMHandler_CreateTraceBlockByNumberPayload(t *testing.T) {
+	handler := NewEVMHandler(&NetworkConfig{})
+
+	payload, err := handler.CreateTraceBlockByNumberPayload("0x64")
+	if err != nil {
+		t.Errorf("CreateTraceBlockByNumberPayload() error = %v", err)
+		return
+	}
+
+	// Parse the JSON payload to verify structure
+	var req map[string]interface{}
+	err = json.Unmarshal(payload, &req)
+	if err != nil {
+		t.Errorf("Failed to unmarshal trace payload: %v", err)
+		return
+	}
+
+	// Check JSONRPC version
+	if req["jsonrpc"] != "2.0" {
+		t.Errorf("Expected jsonrpc version '2.0', got %v", req["jsonrpc"])
+	}
+
+	// Check method
+	if req["method"] != "debug_traceBlockByNumber" {
+		t.Errorf("Expected method 'debug_traceBlockByNumber', got %v", req["method"])
+	}
+
+	// Check parameters
+	params, ok := req["params"].([]interface{})
+	if !ok || len(params) != 2 {
+		t.Errorf("Expected params to be array of length 2, got %v", req["params"])
+		return
+	}
+
+	// Check block number
+	if params[0] != "0x64" {
+		t.Errorf("Expected block number '0x64', got %v", params[0])
+	}
+
+	// Check tracer options
+	opts, ok := params[1].(map[string]interface{})
+	if !ok {
+		t.Errorf("Expected second param to be object, got %v", params[1])
+		return
+	}
+
+	if opts["tracer"] != "callTracer" {
+		t.Errorf("Expected tracer 'callTracer', got %v", opts["tracer"])
+	}
+
+	if opts["timeout"] != "30s" {
+		t.Errorf("Expected timeout '30s', got %v", opts["timeout"])
+	}
+
+	if opts["onlyTopCall"] != true {
+		t.Errorf("Expected onlyTopCall true, got %v", opts["onlyTopCall"])
+	}
+}
+
+func TestEVMHandler_ParseTraceBlockByNumberResponse(t *testing.T) {
+	handler := NewEVMHandler(&NetworkConfig{})
+
+	tests := []struct {
+		name        string
+		response    []byte
+		expectError bool
+	}{
+		{
+			name:        "successful response with result",
+			response:    []byte(`{"jsonrpc":"2.0","id":1,"result":[{"type":"CALL","from":"0x123","to":"0x456"}]}`),
+			expectError: false,
+		},
+		{
+			name:        "empty result array",
+			response:    []byte(`{"jsonrpc":"2.0","id":1,"result":[]}`),
+			expectError: false,
+		},
+		{
+			name:        "json-rpc error response",
+			response:    []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"method not found"}}`),
+			expectError: true,
+		},
+		{
+			name:        "invalid json",
+			response:    []byte(`not valid json`),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.ParseTraceBlockByNumberResponse(tt.response)
+			if tt.expectError && err == nil {
+				t.Errorf("Expected error for test '%s', but got none", tt.name)
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Expected no error for test '%s', but got: %v", tt.name, err)
+			}
+		})
+	}
+}

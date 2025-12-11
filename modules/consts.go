@@ -51,8 +51,9 @@ const (
 	DefaultBlockLagLimit           = int64(5)
 	DefaultBlockJumpLimit          = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
-	DefaultRequestAttemptCount     = 5
-	DefaultArchiveEnabled          = false
+	DefaultRequestAttemptCount               = 5
+	DefaultArchiveEnabled                    = false
+	DefaultArchiveTraceBlockByNumberEnabled  = false
 
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = int64(60)
