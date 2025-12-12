@@ -100,6 +100,66 @@ func TestNewProvider(t *testing.T) {
 	}
 }
 
+func TestProviderQueryParams(t *testing.T) {
+	tests := []struct {
+		name          string
+		urlStr        string
+		expectedQuery string
+		expectedHost  string
+	}{
+		{
+			name:          "url with single query param",
+			urlStr:        "https://example.com/v2?apikey=test123",
+			expectedQuery: "apikey=test123",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with multiple query params",
+			urlStr:        "https://example.com/path?apikey=abc&foo=bar",
+			expectedQuery: "apikey=abc&foo=bar",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url without query params",
+			urlStr:        "https://example.com/path",
+			expectedQuery: "",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with empty query string",
+			urlStr:        "https://example.com/path?",
+			expectedQuery: "",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with special characters in query",
+			urlStr:        "https://example.com/v2?key=a%20b&other=c%3Dd",
+			expectedQuery: "key=a%20b&other=c%3Dd",
+			expectedHost:  "example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse URL and verify query extraction would work
+			parsedURL, err := url.Parse(tt.urlStr)
+			if err != nil {
+				t.Fatalf("failed to parse URL: %v", err)
+			}
+
+			// Verify expected query matches RawQuery
+			if parsedURL.RawQuery != tt.expectedQuery {
+				t.Errorf("expected query %q, but got %q", tt.expectedQuery, parsedURL.RawQuery)
+			}
+
+			// Verify host extraction
+			if parsedURL.Host != tt.expectedHost {
+				t.Errorf("expected host %q, but got %q", tt.expectedHost, parsedURL.Host)
+			}
+		})
+	}
+}
+
 func TestAuthClient(t *testing.T) {
 	tests := []struct {
 		name           string

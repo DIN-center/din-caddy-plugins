@@ -463,6 +463,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	} else {
 		provider.path = parsedUrl.Path
 	}
+	provider.query = parsedUrl.RawQuery
 
 	// Note: Authentication credentials from URL (username@host) are preserved in the URL
 	// and handled during request construction, not converted to Authorization headers
@@ -494,7 +495,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	// Initialize the score for the provider with an empty score
 	provider.SafeUpdateScore(ws.NewEmptyScore())
 
-	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.String("Path", provider.path), zap.String("Query", provider.query))
 
 	// Make sure blockHistory is initialized
 	if provider.blockHistory == nil {

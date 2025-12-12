@@ -102,6 +102,16 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 		}
 	}
 
+	// Merge provider query params with request query params
+	// Provider query params take precedence (placed first)
+	if provider.query != "" {
+		if r.URL.RawQuery == "" {
+			r.URL.RawQuery = provider.query
+		} else {
+			r.URL.RawQuery = provider.query + "&" + r.URL.RawQuery
+		}
+	}
+
 	// Apply headers
 	for k, v := range provider.Headers {
 		r.Header.Add(k, v)
