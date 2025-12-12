@@ -102,7 +102,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 				if provider, exists := mapUpstreamProviders[upstream]; exists {
 
 					providerHost = provider.host
-					providerScore = provider.Score
+					providerScore = provider.SafeGetScore()
 
 					if providerScore.HasValue() {
 						s.logger.Debug("[DYNAMIC_LB] Score found for provider",
@@ -110,13 +110,13 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 							zap.Any("score", providerScore))
 
 						graceTimeStart := time.Now().UTC().Add(-StaleScoreGracePeriod)
-						if provider.Score.LastUpdated().After(graceTimeStart) {
+						if providerScore.LastUpdated().After(graceTimeStart) {
 							// If the score has a valid value and is not stale, we can use it to weight the selection
-							weight = int(provider.Score.Value() * ScoreBasedSelectionWeightBase)
+							weight = int(providerScore.Value() * ScoreBasedSelectionWeightBase)
 						} else {
 							//Score is stale, so we gradually pull the weight towards the default weight
-							timeSinceStale := graceTimeStart.Sub(provider.Score.LastUpdated())
-							staleScore := provider.Score.Value()
+							timeSinceStale := graceTimeStart.Sub(providerScore.LastUpdated())
+							staleScore := providerScore.Value()
 							adjustedStaleScore, err := ws.ExponentialPullToMidpoint(staleScore,
 								timeSinceStale,
 								StaleScoreConvergencePeriod,
@@ -128,7 +128,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 							weight = int(adjustedStaleScore * ScoreBasedSelectionWeightBase)
 							s.logger.Debug("[DYNAMIC_LB] Score is stale for provider, adjusted towards default weight",
 								zap.String("provider", providerHost),
-								zap.String("score_updated_at", provider.Score.LastUpdated().Format(time.RFC3339)),
+								zap.String("score_updated_at", providerScore.LastUpdated().Format(time.RFC3339)),
 								zap.String("grace_time_start", graceTimeStart.Format(time.RFC3339)),
 								zap.Float64("stale_score", staleScore),
 								zap.Float64("adjusted_stale_score", adjustedStaleScore),

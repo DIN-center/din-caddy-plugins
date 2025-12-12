@@ -38,7 +38,8 @@ type provider struct {
 	authClient auth.IAuthClient
 
 	// Watcher Score
-	Score *ws.Score
+	score   *ws.Score    // Immutable score object
+	scoreMu sync.RWMutex // Mutex to protect the access to the score object
 
 	consecutiveUnhealthyChecks int
 	blockHistory               *list.List
@@ -77,7 +78,7 @@ func NewProvider(urlStr string) (*provider, error) {
 		Name:         safeExtractMainDomainWithPSL(url),
 		Headers:      make(map[string]string),
 		blockHistory: list.New(),
-		Score:        ws.EmptyScore,
+		score:        ws.EmptyScore,
 	}
 	return p, nil
 }
@@ -243,4 +244,18 @@ func (p *provider) getLatestBlockEntry() *blockHistoryEntry {
 
 	entry := p.blockHistory.Back().Value.(blockHistoryEntry)
 	return &entry
+}
+
+// SafeGetScore returns the current score for the provider with a read lock to prevent reading while writing.
+func (p *provider) SafeGetScore() *ws.Score {
+	p.scoreMu.RLock()
+	defer p.scoreMu.RUnlock()
+	return p.score
+}
+
+// SafeUpdateScore updates the score for the provider with a write lock to prevent writing while reading.
+func (p *provider) SafeUpdateScore(score *ws.Score) {
+	p.scoreMu.Lock()
+	defer p.scoreMu.Unlock()
+	p.score = score
 }

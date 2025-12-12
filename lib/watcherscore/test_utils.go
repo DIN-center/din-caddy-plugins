@@ -33,6 +33,22 @@ func (m *MockWatcherAPIClient) GetLatency(params watcher.LatencyQueryParams) wat
 	return m.mockLatencyResponses[m.latencyCallsCount-1]
 }
 
+// DelayedProviderMetricGenerator is a mock implementation of the ProviderMetricGenerator interface to be used in tests
+// It is used to simulate a long-running computation
+type DelayedProviderMetricGenerator struct {
+	ProviderMetricGenerator ProviderMetricGenerator
+	Delay                   time.Duration
+}
+
+func (d *DelayedProviderMetricGenerator) GenerateMetrics(network string) ([]*ProviderMetric, error) {
+	time.Sleep(d.Delay)
+	return d.ProviderMetricGenerator.GenerateMetrics(network)
+}
+
+func (d *DelayedProviderMetricGenerator) MetricID() string {
+	return d.ProviderMetricGenerator.MetricID()
+}
+
 // Mock data for check response API
 var OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE = watcher.Ok(watcher.CheckResponse{
 	Providers: []watcher.CheckProviderData{

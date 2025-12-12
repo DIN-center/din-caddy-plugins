@@ -1,6 +1,7 @@
 package watcherscore
 
 import (
+	"maps"
 	"sync"
 	"time"
 
@@ -22,18 +23,20 @@ type ScoreFormula struct {
 // WatcherScoreManager is responsible for computing watcher scores for providers across networks
 // and providing a way to get the score for a specific provider on a specific network
 type WatcherScoreManager struct {
-	scores   map[string]map[string]*Score // map[network]map[providerID]*WatcherScore
-	formulas map[string]ScoreFormula      // map[network]ScoreFormula
-	logger   *zap.Logger
-	mu       sync.RWMutex
+	scores             map[string]map[string]*Score // map[network]map[providerID]*WatcherScore
+	formulas           map[string]ScoreFormula      // map[network]ScoreFormula
+	logger             *zap.Logger
+	mu                 sync.RWMutex
+	pendingComputation bool
 }
 
 func NewEmpty(logger *zap.Logger) *WatcherScoreManager {
 	return &WatcherScoreManager{
-		scores:   make(map[string]map[string]*Score),
-		formulas: make(map[string]ScoreFormula),
-		logger:   logger,
-		mu:       sync.RWMutex{},
+		scores:             make(map[string]map[string]*Score),
+		formulas:           make(map[string]ScoreFormula),
+		logger:             logger,
+		mu:                 sync.RWMutex{},
+		pendingComputation: false,
 	}
 }
 
@@ -56,13 +59,35 @@ func NewWithBuiltInFormula(networks []string, client watcher.IWatcherAPIClient, 
 }
 
 func (rm *WatcherScoreManager) ComputeScores() {
+	// Acquire a read lock to safely check if a computation is already in progress
+	rm.mu.RLock()
+	pendingComputation := rm.pendingComputation
+	rm.mu.RUnlock()
+
+	if pendingComputation {
+		rm.logger.Info("[WATCHER_SCORE] Watcher score computation is already in progress, skipping...")
+		return
+	}
+
+	// Acquire a write lock to update the pending computation flag and prevent multiple computations from happening concurrently
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
+	rm.pendingComputation = true
+	rm.mu.Unlock()
 
 	rm.logger.Info("[WATCHER_SCORE] Computing watcher scores...")
 
+	// Acquire a read lock to safely copy the formulas map then release it immediately
+	// a formula item is immutable, so we can safely use it without worrying about concurrent access
+	rm.mu.RLock()
+	formulasMap := make(map[string]ScoreFormula)
+	maps.Copy(formulasMap, rm.formulas)
+	rm.mu.RUnlock()
+
+	//Initialize a new map of scores for the network/provider pairs
+	newScores := make(map[string]map[string]*Score)
+
 	// Process each formula that defines how to compute the score for a network
-	for _, formula := range rm.formulas {
+	for _, formula := range formulasMap {
 		network := formula.network
 
 		// A score may be composed of multiple metrics, so we need to collect all metrics for each provider
@@ -117,12 +142,12 @@ func (rm *WatcherScoreManager) ComputeScores() {
 			continue
 		}
 
-		// Finally, update the manager with the new scores
+		// Finally, we create a new map of scores for the network and add the scores to it
 		for providerID, score := range transformedScores {
 
 			// Initialize the scores map for the network if it doesn't exist
-			if _, networkExists := rm.scores[network]; !networkExists {
-				rm.scores[network] = make(map[string]*Score)
+			if _, networkExists := newScores[network]; !networkExists {
+				newScores[network] = make(map[string]*Score)
 			}
 
 			// Add the final score to the scores map
@@ -132,9 +157,16 @@ func (rm *WatcherScoreManager) ComputeScores() {
 				zap.Bool("isValid", score.HasValue()),
 				zap.Float64("score", score.Value()),
 				zap.Time("lastUpdated", score.LastUpdated()))
-			rm.scores[network][providerID] = score
+			newScores[network][providerID] = score
 		}
 	}
+
+	// Acquire a write lock to update the scores map with the new brand new scores
+	// and release the pending computation flag
+	rm.mu.Lock()
+	rm.scores = newScores
+	rm.pendingComputation = false
+	rm.mu.Unlock()
 }
 
 func (rm *WatcherScoreManager) GetScore(network string, providerID string) *Score {
@@ -231,6 +263,10 @@ func (rm *WatcherScoreManager) AddNetworkFormula(network string, formula ScoreFo
 }
 
 func (rm *WatcherScoreManager) GetNetworkFormula(network string) *ScoreFormula {
+	// Acquire a read lock to prevent race condition when reading formulas
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
 	if formula, exists := rm.formulas[network]; exists {
 		return &formula
 	}

@@ -492,7 +492,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	provider.logger = d.logger
 
 	// Initialize the score for the provider with an empty score
-	provider.Score = ws.EmptyScore
+	provider.SafeUpdateScore(ws.NewEmptyScore())
 
 	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
 
@@ -507,8 +507,6 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
 func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error { //nolint:gocyclo
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -526,7 +524,14 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return err
 	}
 
+	// Safely access the networks map for guaranteed consistency
+	// It assumes that the network object is immutable after the lock is released or
+	// that any internal shared state in the network object is protected by a granular lock (at the shared state level)
+	// IMPORTANT NOTE: network objects are modified by the DIN Registry (e.g. adding/removing providers, methods, etc.)
+	// This means that DIN Registry cannot be enabled without a refactor of the middleware to protect the shared state at the granular level
+	d.mu.RLock()
 	networkObj, ok := d.Networks[networkPath]
+	d.mu.RUnlock()
 	if !ok {
 		// If the network is not defined, return a 404.
 		rw.WriteHeader(http.StatusNotFound)
@@ -954,6 +959,9 @@ func (d *DinMiddleware) startWatcherScoreSync() chan struct{} {
 	syncQuit := make(chan struct{})
 
 	// Do immediate initial sync
+	// Note that syncing watcher scores immediately here may be a bit early if the score computation is not yet complete,
+	// but it's ok because the watcher score manager will return empty scores until the computation is complete
+	// and the middleware will not use these empty scores for load balancing
 	d.SyncMiddlewareWithLatestScores()
 
 	go func() {

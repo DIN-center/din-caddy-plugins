@@ -113,11 +113,11 @@ func TestDinSelectSelect(t *testing.T) {
 			providers: map[string]*provider{
 				"bar": {
 					upstream: upstream_bar,
-					Score:    ws.MustCreateScore(0.92, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
 				},
 				"foo": {
 					upstream: upstream_foo,
-					Score:    ws.MustCreateScore(0.67, time.Now().UTC()),
+					score:    ws.MustCreateScore(0.67, time.Now().UTC()),
 				},
 			},
 			dynamicLoadBalancingEnabled: true,

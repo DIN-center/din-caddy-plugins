@@ -262,8 +262,8 @@ func TestInitialize(t *testing.T) {
 						assert.NotNil(t, provider.upstream)
 
 						// Assert provider score is initialized
-						assert.NotNil(t, provider.Score)
-						assert.Equal(t, ws.EmptyScore, provider.Score)
+						assert.NotNil(t, provider.SafeGetScore())
+						assert.Equal(t, ws.EmptyScore, provider.SafeGetScore())
 					}
 				}
 
@@ -285,7 +285,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "http://example2.com",
 				Auth:    nil,
-				Score:   ws.EmptyScore,
+				score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -295,7 +295,7 @@ func TestInitializeProvider(t *testing.T) {
 			provider: &provider{
 				HttpUrl: "https://example3.com",
 				Auth:    nil,
-				Score:   ws.EmptyScore,
+				score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -307,7 +307,7 @@ func TestInitializeProvider(t *testing.T) {
 				Auth: &siwe.SIWEClientAuth{
 					ProviderURL: "http://auth.example.com",
 				},
-				Score: ws.EmptyScore,
+				score: ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
@@ -325,7 +325,7 @@ func TestInitializeProvider(t *testing.T) {
 			}
 			err := dinMiddleware.initializeProvider("test-network", tt.provider, tt.httpClient, logger)
 			// Assert provider score is set to the empty score
-			assert.Equal(t, ws.EmptyScore, tt.provider.Score)
+			assert.Equal(t, ws.EmptyScore, tt.provider.SafeGetScore())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DinMiddleware.initializeProvider() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -1228,15 +1228,15 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 				Providers: map[string]*provider{
 					"provider1": {
 						host:  "provider1",
-						Score: ws.MustCreateScore(0.8, time.Now()),
+						score: ws.MustCreateScore(0.8, time.Now()),
 					},
 					"provider2": {
 						host:  "provider2",
-						Score: ws.MustCreateScore(0.2, time.Now()),
+						score: ws.MustCreateScore(0.2, time.Now()),
 					},
 					"non-monitored-provider": {
 						host:  "non-monitored-provider",
-						Score: markerForNonMonitoredProvider,
+						score: markerForNonMonitoredProvider,
 					},
 				},
 			},
@@ -1256,10 +1256,10 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 	mockMiddleware.SyncMiddlewareWithLatestScores()
 
 	//Verify if scores are updated correctly in the middleware
-	assert.Equal(t, 0.75, mockMiddleware.Networks["network1"].Providers["provider1"].Score.Value())
-	assert.Equal(t, 0.25, mockMiddleware.Networks["network1"].Providers["provider2"].Score.Value())
+	assert.Equal(t, 0.75, mockMiddleware.Networks["network1"].Providers["provider1"].SafeGetScore().Value())
+	assert.Equal(t, 0.25, mockMiddleware.Networks["network1"].Providers["provider2"].SafeGetScore().Value())
 	//assert memory address is the same
-	if markerForNonMonitoredProvider != mockMiddleware.Networks["network1"].Providers["non-monitored-provider"].Score {
+	if markerForNonMonitoredProvider != mockMiddleware.Networks["network1"].Providers["non-monitored-provider"].SafeGetScore() {
 		t.Errorf("Non-monitored provider score should be the same as the marker")
 	}
 }

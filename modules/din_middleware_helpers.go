@@ -799,21 +799,24 @@ func (d *DinMiddleware) GetOrCreateWatcherClient() watcher.IWatcherAPIClient {
 }
 
 // Fetches the latest score from the watcher score manager and updates the provider score for all active networks
+// Scores are already precomputed and stored in the watcher score manager internal state,
+// so this function is just a way to move the scores to the middleware object for use in the load balancing logic.
 func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
-	// Lock the middleware object to prevent race condition when updating provider scores
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	// Keep track of the last time the scores were synced to the middleware
 	d.DynamicLoadBalancing.WatcherScoreLastSyncTime = time.Now().UTC()
+
+	// Lock (read)the middleware object to prevent race condition when looping through the networks/providers map
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 
 	d.logger.Info("[DYNAMIC_LB] Syncing watcher scores to the middleware")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
 			newScore := d.DynamicLoadBalancing.watcherScoreManager.GetScore(network.Name, provider.host)
-
 			if newScore.HasValue() {
-				provider.Score = newScore
+				// As the name suggests, SafeUpdateScore is safe to use because it is protected by a write lock to only protect the score object (very fine-granular locking)
+				provider.SafeUpdateScore(newScore)
 				d.logger.Info("[DYNAMIC_LB] Synced watcher score",
 					zap.String("network", network.Name),
 					zap.String("provider", provider.host),

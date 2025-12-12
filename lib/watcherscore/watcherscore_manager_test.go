@@ -1,10 +1,12 @@
 package watcherscore
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
+	gomock "go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -537,5 +539,51 @@ func TestWatcherScoreManager(t *testing.T) {
 		if scoreNoProvidersNetwork.HasValue() {
 			t.Errorf("expected no score for network with no providers, got %f", scoreNoProvidersNetwork.Value())
 		}
+	})
+
+	t.Run("manager prevents multiple computations from happening concurrently", func(t *testing.T) {
+		logger := zaptest.NewLogger(t)
+		rm := NewEmpty(logger)
+
+		mockCtrl := gomock.NewController(t)
+		mockWatcherClient := watcher.NewMockIWatcherAPIClient(mockCtrl)
+
+		rm.AddNetworkFormula("slow-network", ScoreFormula{
+			network: "slow-network",
+			metricGenerators: []ProviderMetricGenerator{
+				// Add a metric generator that will simulate a long-running computation
+				&DelayedProviderMetricGenerator{
+					ProviderMetricGenerator: &WatcherBlockNumberConsistency{
+						WatcherClient: mockWatcherClient,
+						Logger:        logger,
+					},
+					Delay: 1 * time.Second,
+				},
+			},
+			metricCombiner: MustCreateWeightedCombiner(map[string]float64{
+				BlockNumberConsistencyMetricID: 1.0,
+			}, logger),
+			scoreTransformer: NewDefaultHighPassThroughTransformer(logger),
+		})
+
+		// Set up expectations for the mock watcher client
+		mockWatcherClient.EXPECT().GetCheck(gomock.Any()).Return(OK_CHECK_RESPONSE_ONE_PROVIDER_GOOD_SCORE).Times(1)
+
+		// Launch first ComputeScores in a separate goroutine this should be long running
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rm.ComputeScores()
+		}()
+
+		// Call a concurrent computation, it should return immediately (second computation suppressed)
+		rm.ComputeScores()
+
+		// Wait for the first computation to finish
+		wg.Wait()
+
+		// Verify expectations, only one call to GetCheck should be made
+		mockCtrl.Finish()
 	})
 }
