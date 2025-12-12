@@ -147,8 +147,19 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 }
 
 // ConfigureRequestPath configures the request path for JSON-RPC requests
-func (h *EVMHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *EVMHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureJSONRPCRequestPath(req, providerPath)
+
+	// Merge provider query params with request query params
+	// Provider query params take precedence (placed first)
+	if providerQuery != "" {
+		if req.URL.RawQuery == "" {
+			req.URL.RawQuery = providerQuery
+		} else {
+			req.URL.RawQuery = providerQuery + "&" + req.URL.RawQuery
+		}
+	}
+
 	return nil
 }
 

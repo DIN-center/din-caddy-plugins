@@ -51,7 +51,7 @@ func (m *MockHandler) ExtractMethod(req *http.Request, body []byte) (string, err
 	return "mock_method", nil
 }
 
-func (m *MockHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (m *MockHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	// Mock implementation - just return nil
 	return nil
 }
