@@ -89,8 +89,9 @@ func (h *BeaconChainHandler) ExtractMethod(req *http.Request, body []byte) (stri
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
-func (h *BeaconChainHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *BeaconChainHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureRESTRequestPath(req, providerPath, networkName)
+	// Note: providerQuery is not used for Beacon Chain currently. Can be implemented if needed.
 	return nil
 }
 

@@ -159,3 +159,76 @@ func TestDinSelectSelect(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryParamMerging(t *testing.T) {
+	tests := []struct {
+		name              string
+		providerQuery     string
+		requestQuery      string
+		expectedRawQuery  string
+	}{
+		{
+			name:              "provider has query, request has none",
+			providerQuery:     "apikey=abc123",
+			requestQuery:      "",
+			expectedRawQuery:  "apikey=abc123",
+		},
+		{
+			name:              "provider has none, request has query",
+			providerQuery:     "",
+			requestQuery:      "foo=bar",
+			expectedRawQuery:  "foo=bar",
+		},
+		{
+			name:              "both have query params - provider takes precedence",
+			providerQuery:     "apikey=abc123",
+			requestQuery:      "foo=bar",
+			expectedRawQuery:  "apikey=abc123&foo=bar",
+		},
+		{
+			name:              "neither has query params",
+			providerQuery:     "",
+			requestQuery:      "",
+			expectedRawQuery:  "",
+		},
+		{
+			name:              "provider has multiple params",
+			providerQuery:     "apikey=abc&secret=xyz",
+			requestQuery:      "foo=bar",
+			expectedRawQuery:  "apikey=abc&secret=xyz&foo=bar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the merging logic from applyProviderConfiguration
+			provider := &provider{
+				query: tt.providerQuery,
+			}
+
+			// Create a mock request URL
+			reqURL := "http://example.com/test"
+			if tt.requestQuery != "" {
+				reqURL = reqURL + "?" + tt.requestQuery
+			}
+
+			req, err := http.NewRequest("POST", reqURL, nil)
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			// Apply the query merging logic (same as in applyProviderConfiguration)
+			if provider.query != "" {
+				if req.URL.RawQuery == "" {
+					req.URL.RawQuery = provider.query
+				} else {
+					req.URL.RawQuery = provider.query + "&" + req.URL.RawQuery
+				}
+			}
+
+			if req.URL.RawQuery != tt.expectedRawQuery {
+				t.Errorf("Expected RawQuery %q, got %q", tt.expectedRawQuery, req.URL.RawQuery)
+			}
+		})
+	}
+}

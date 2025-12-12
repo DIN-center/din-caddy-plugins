@@ -20,6 +20,7 @@ import (
 type provider struct {
 	HttpUrl  string
 	path     string
+	query    string // URL query string (e.g., "apikey=xxx&foo=bar")
 	host     string
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream

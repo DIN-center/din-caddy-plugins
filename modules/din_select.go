@@ -92,12 +92,14 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 // applyProviderConfiguration applies provider-specific settings to the request
 func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, networkObj *network) {
 	// Use the network handler to configure the request path
+	// The handler is responsible for merging provider query params with request query params
 	if networkObj != nil && networkObj.handler != nil {
 		networkName := networkObj.Name
-		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, networkName); err != nil {
+		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, provider.query, networkName); err != nil {
 			d.logger.Error("Failed to configure request path",
 				zap.String("network", networkName),
 				zap.String("provider_path", provider.path),
+				zap.String("provider_query", provider.query),
 				zap.Error(err))
 		}
 	}

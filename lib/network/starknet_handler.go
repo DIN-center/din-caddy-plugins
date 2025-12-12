@@ -93,8 +93,9 @@ func (h *StarknetHandler) ExtractMethod(req *http.Request, body []byte) (string,
 }
 
 // ConfigureRequestPath configures the request path for JSON-RPC requests
-func (h *StarknetHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *StarknetHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureJSONRPCRequestPath(req, providerPath)
+	// Note: providerQuery is not used for Starknet currently. Can be implemented if needed.
 	return nil
 }
 

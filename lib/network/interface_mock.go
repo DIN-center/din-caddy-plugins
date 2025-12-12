@@ -45,17 +45,17 @@ func (m *MockNetworkHandler) EXPECT() *MockNetworkHandlerMockRecorder {
 }
 
 // ConfigureRequestPath mocks base method.
-func (m *MockNetworkHandler) ConfigureRequestPath(req *http0.Request, providerPath, networkName string) error {
+func (m *MockNetworkHandler) ConfigureRequestPath(req *http0.Request, providerPath, providerQuery, networkName string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ConfigureRequestPath", req, providerPath, networkName)
+	ret := m.ctrl.Call(m, "ConfigureRequestPath", req, providerPath, providerQuery, networkName)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ConfigureRequestPath indicates an expected call of ConfigureRequestPath.
-func (mr *MockNetworkHandlerMockRecorder) ConfigureRequestPath(req, providerPath, networkName any) *gomock.Call {
+func (mr *MockNetworkHandlerMockRecorder) ConfigureRequestPath(req, providerPath, providerQuery, networkName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigureRequestPath", reflect.TypeOf((*MockNetworkHandler)(nil).ConfigureRequestPath), req, providerPath, networkName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigureRequestPath", reflect.TypeOf((*MockNetworkHandler)(nil).ConfigureRequestPath), req, providerPath, providerQuery, networkName)
 }
 
 // CreateArchivePayload mocks base method.

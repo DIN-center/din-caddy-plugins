@@ -171,7 +171,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 					mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
 					mockHandler.EXPECT().ProcessRequest(gomock.Any()).Return(nil).AnyTimes()
 					mockHandler.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-					mockHandler.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+					mockHandler.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 				}
 			}
 

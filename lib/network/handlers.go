@@ -29,7 +29,7 @@ type NetworkHandler interface {
 	// ExtractMethod extracts the method name from the request for logging/metrics
 	ExtractMethod(req *http.Request, body []byte) (string, error)
 	// ConfigureRequestPath configures the request URL path based on the provider and network type
-	ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error
+	ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error
 
 	// === Response Handling ===
 	ParseResponse(body []byte, statusCode int) error
