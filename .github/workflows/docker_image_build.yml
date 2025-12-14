@@ -28,11 +28,6 @@ jobs:
         run: |
           yes | gcloud auth configure-docker ${{ secrets.GCP_ARTIFACT_REGION }}-docker.pkg.dev
 
-      - name: Verify docker registry auth
-        run: |
-          echo "Configured registries:"
-          cat ~/.docker/config.json
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -48,7 +43,7 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           path: deployment
 
-      - name: Set foobar to cool
+      - name: Update image version in deployment config
         uses: mikefarah/yq@master
         with:
           cmd: yq e -i ".image_version = env(GITHUB_SHA)" deployment/beta.yaml
