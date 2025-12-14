@@ -1,0 +1,74 @@
+name: Hotfix Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Docker image SHA to deploy (e.g., commit SHA from din-caddy-plugins)'
+        required: true
+        type: string
+      target_branch:
+        description: 'Target branch in din-gateway-deployment'
+        type: choice
+        options:
+          - main
+          - beta
+        default: main
+      reason:
+        description: 'Reason for hotfix (will be included in commit message)'
+        required: true
+        type: string
+
+jobs:
+  hotfix-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate image exists
+        run: |
+          echo "Deploying image version: ${{ inputs.image_version }}"
+          echo "Target branch: ${{ inputs.target_branch }}"
+          echo "Reason: ${{ inputs.reason }}"
+
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Verify image exists in registry
+        run: |
+          gcloud auth configure-docker ${{ secrets.GCP_ARTIFACT_REGION }}-docker.pkg.dev --quiet
+          IMAGE_PATH="${{ secrets.GCP_ARTIFACT_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_REPOSITORY_NAME }}/${{ secrets.IMAGE_NAME }}:${{ inputs.image_version }}"
+          if ! gcloud artifacts docker images describe "$IMAGE_PATH" > /dev/null 2>&1; then
+            echo "Error: Image $IMAGE_PATH does not exist in registry"
+            exit 1
+          fi
+          echo "Image verified: $IMAGE_PATH"
+
+      - name: Checkout deployment repo
+        uses: actions/checkout@v4
+        with:
+          repository: DIN-center/din-gateway-deployment
+          ref: ${{ inputs.target_branch }}
+          token: ${{ secrets.GH_PAT }}
+          path: deployment
+
+      - name: Update image version in deployment config
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i ".image_version = \"${{ inputs.image_version }}\"" deployment/config.yaml
+
+      - name: Commit and push changes
+        run: |
+          cd deployment
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add config.yaml
+          git commit -m "Hotfix: Update image_version to ${{ inputs.image_version }}
+
+          Reason: ${{ inputs.reason }}
+          Triggered by: ${{ github.actor }}
+          Source workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || echo "No changes to commit"
+          git push origin HEAD:${{ inputs.target_branch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
