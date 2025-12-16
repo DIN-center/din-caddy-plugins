@@ -417,3 +417,25 @@ func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[stri
 		h.ParseBlockResponse,  // Solana-specific block response parsing
 	)
 }
+
+// GetBlockTimestamp retrieves the Unix timestamp for a specific block (slot) number
+func (h *SolanaHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Parse timestamp from block response
+	blockResponse, ok := blockData.(dinHttp.JSONRPCSolanaBlockResponse)
+	if !ok {
+		return 0, fmt.Errorf("invalid block response type: %T", blockData)
+	}
+
+	// Solana's blockTime can be null for very old blocks
+	if blockResponse.Result.BlockTime == nil {
+		return 0, fmt.Errorf("block %d has no timestamp (blockTime is null)", blockNumber)
+	}
+
+	return *blockResponse.Result.BlockTime, nil
+}

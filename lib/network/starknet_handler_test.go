@@ -101,14 +101,14 @@ func TestStarknetHandler_GetDefaultMethods(t *testing.T) {
 		"starknet_blockNumber",
 		"starknet_chainId",
 		"starknet_call",
-		"starknet_getBlockByNumber",
+		"starknet_getBlockWithTxHashes",
+		"starknet_getBlockWithTxs",
 		"starknet_getBlockByHash",
 		"starknet_getTransactionByHash",
 		"starknet_getTransactionReceipt",
 		"starknet_getBalance",
 		"starknet_syncing",
 		"starknet_sendTransaction",
-		"starknet_getBlockWithTxs",
 	}
 
 	if len(methods) != len(expectedMethods) {

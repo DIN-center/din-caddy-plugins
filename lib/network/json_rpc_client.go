@@ -191,8 +191,15 @@ func PerformGetBlockByNumberViaJSONRPC(httpUrl string, headers map[string]string
 	var getBlockMethod string
 	for _, method := range supportedMethods {
 		methodLower := strings.ToLower(method)
+		// Match EVM-style "eth_getBlockByNumber", Starknet-style "starknet_getBlockWithTxs", or Solana-style "getBlock"
 		if strings.Contains(methodLower, "getblockbynumber") ||
-			strings.Contains(methodLower, "get_block_by_number") {
+			strings.Contains(methodLower, "get_block_by_number") ||
+			strings.Contains(methodLower, "getblockwith") {
+			getBlockMethod = method
+			break
+		}
+		// For Solana, match exact "getBlock" (but not "getBlockHeight")
+		if methodLower == "getblock" {
 			getBlockMethod = method
 			break
 		}

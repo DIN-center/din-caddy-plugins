@@ -124,8 +124,8 @@ func (n *network) SetHandler(handler networklib.NetworkHandler) error {
 
 func (n *network) startHealthcheck() {
 	// Start dynamic block lag limit calculation (runs once asynchronously)
-	go n.calculateDynamicBlockLagLimit(DefaultBlockMeasurementSeconds)
-	
+	go n.calculateDynamicBlockLagLimit()
+
 	n.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
 	go func() {

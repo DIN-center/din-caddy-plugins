@@ -174,9 +174,9 @@ func (h *StarknetHandler) FormatBlockHeight(blockNum int64) string {
 }
 
 func (h *StarknetHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	blockDecimal := h.FormatBlockHeight(blockNum)
-	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["%s",%t]}`,
-		method, blockDecimal, includeTransactions)
+	// Starknet uses {"block_number": N} format for block identifier
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[{"block_number":%d}]}`,
+		method, blockNum)
 	return []byte(payload), nil
 }
 
@@ -293,14 +293,14 @@ func (h *StarknetHandler) GetSupportedMethods() []string {
 		"starknet_blockNumber",
 		"starknet_chainId",
 		"starknet_call",
-		"starknet_getBlockByNumber",
+		"starknet_getBlockWithTxHashes",
+		"starknet_getBlockWithTxs",
 		"starknet_getBlockByHash",
 		"starknet_getTransactionByHash",
 		"starknet_getTransactionReceipt",
 		"starknet_getBalance",
 		"starknet_syncing",
 		"starknet_sendTransaction",
-		"starknet_getBlockWithTxs",
 	}
 }
 
@@ -458,6 +458,43 @@ func (h *StarknetHandler) PerformGetBlockByNumber(httpUrl string, headers map[st
 		h.CreateBlockRequest,  // Starknet-specific block request creation
 		h.ParseBlockResponse,  // Starknet-specific block response parsing
 	)
+}
+
+// GetBlockTimestamp retrieves the timestamp for a specific block number
+func (h *StarknetHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data using PerformGetBlockByNumber (reuses retry logic)
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Extract timestamp from block response (ParseBlockResponse returns map[string]interface{})
+	blockMap, ok := blockData.(map[string]interface{})
+	if !ok {
+		return 0, fmt.Errorf("unexpected block data type: %T", blockData)
+	}
+
+	// The result is nested under "result" key from JSON-RPC response
+	result, ok := blockMap["result"].(map[string]interface{})
+	if !ok {
+		return 0, fmt.Errorf("missing or invalid result in block response")
+	}
+
+	// Extract timestamp (Starknet returns Unix timestamp as integer)
+	timestamp, ok := result["timestamp"]
+	if !ok {
+		return 0, fmt.Errorf("missing timestamp in block response")
+	}
+
+	// Handle both float64 (JSON default) and int64
+	switch t := timestamp.(type) {
+	case float64:
+		return int64(t), nil
+	case int64:
+		return t, nil
+	default:
+		return 0, fmt.Errorf("invalid timestamp type: %T", timestamp)
+	}
 }
 
 // === COMPATIBILITY METHODS (keeping existing methods) ===

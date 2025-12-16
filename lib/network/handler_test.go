@@ -180,6 +180,11 @@ func (m *MockHandler) PerformGetBlockByNumber(httpUrl string, headers map[string
 	}, nil
 }
 
+func (m *MockHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Mock implementation for testing - return a fixed timestamp
+	return 1700000000, nil
+}
+
 func (m *MockHandler) ParseBlockNumberResponse(body []byte, statusCode int) (int64, error) {
 	if statusCode >= 400 {
 		return 0, fmt.Errorf("error status code: %d", statusCode)

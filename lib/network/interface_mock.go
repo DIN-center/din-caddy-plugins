@@ -523,6 +523,21 @@ func (mr *MockNetworkHandlerMockRecorder) SupportsDynamicBlockLag() *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsDynamicBlockLag", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsDynamicBlockLag))
 }
 
+// GetBlockTimestamp mocks base method.
+func (m *MockNetworkHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBlockTimestamp", httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBlockTimestamp indicates an expected call of GetBlockTimestamp.
+func (mr *MockNetworkHandlerMockRecorder) GetBlockTimestamp(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBlockTimestamp", reflect.TypeOf((*MockNetworkHandler)(nil).GetBlockTimestamp), httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+}
+
 // ValidateChainID mocks base method.
 func (m *MockNetworkHandler) ValidateChainID(chainID string) error {
 	m.ctrl.T.Helper()

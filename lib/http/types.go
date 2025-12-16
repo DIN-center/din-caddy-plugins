@@ -27,8 +27,9 @@ type JSONRPCResponse struct {
 }
 
 type EVMBlockResult struct {
-	Hash   string `json:"hash"`
-	Number string `json:"number"`
+	Hash      string `json:"hash"`
+	Number    string `json:"number"`
+	Timestamp string `json:"timestamp"` // Hex-encoded Unix timestamp
 }
 
 type JSONRPCEVMBlockResponse struct {
@@ -45,4 +46,5 @@ type JSONRPCSolanaBlockResponse struct {
 
 type SolanaBlockResult struct {
 	Blockhash string `json:"blockhash"`
+	BlockTime *int64 `json:"blockTime"` // Unix timestamp (can be null for old blocks)
 }

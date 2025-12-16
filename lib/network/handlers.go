@@ -91,6 +91,10 @@ type NetworkHandler interface {
 	// EVM, Starknet, Solana return true; Beacon, Bitcoin return false
 	SupportsDynamicBlockLag() bool
 
+	// GetBlockTimestamp retrieves the Unix timestamp (in seconds) for a specific block number
+	// This is used for deterministic block lag calculation based on immutable blockchain data
+	GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error)
+
 	// === Lifecycle ===
 	Initialize(config *NetworkConfig) error
 }

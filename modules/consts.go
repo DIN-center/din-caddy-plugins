@@ -44,10 +44,9 @@ const (
 	DefaultHCThreshold             = 2
 	DefaultHCTimeout               = 5
 	DefaultHCInterval              = 5
-	DefaultBlockLagLimit           = int64(5)
-	DefaultBlockLagPeriodMs        = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
-	DefaultBlockMeasurementSeconds = 10    // Duration in seconds to measure block production rate
-	DefaultBlockJumpLimit          = int64(100)
+	DefaultBlockLagLimit    = int64(5)
+	DefaultBlockLagPeriodMs = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
+	DefaultBlockJumpLimit   = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
 	DefaultArchiveEnabled          = false

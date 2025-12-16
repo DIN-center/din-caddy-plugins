@@ -81,101 +81,115 @@ func TestRoundUpToInterval(t *testing.T) {
 	}
 }
 
-// TestCalculateDynamicBlockLagLimit tests the dynamic block lag calculation
+// blockTimestampSimulator holds configuration for simulating block timestamps
+type blockTimestampSimulator struct {
+	latestBlock       int64
+	blockTimeSeconds  float64 // seconds per block (can be fractional for fast chains)
+	baseTimestamp     int64   // Unix timestamp of block 0
+	shouldFail        bool
+}
+
+// getTimestampForBlock calculates the timestamp for a given block number
+func (s *blockTimestampSimulator) getTimestampForBlock(blockNum int64) int64 {
+	// timestamp = baseTimestamp + (blockNum * blockTimeSeconds)
+	// Using float64 for calculation to handle sub-second block times properly
+	return s.baseTimestamp + int64(float64(blockNum)*s.blockTimeSeconds)
+}
+
+// TestCalculateDynamicBlockLagLimit tests the dynamic block lag calculation with timestamps
 func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 	tests := []struct {
-		name              string
-		providerRates     map[string]blockRateSimulator
-		expectedMinLimit  int64
-		expectedMaxLimit  int64
-		expectNoChange    bool
+		name             string
+		simulator        blockTimestampSimulator
+		expectedMinLimit int64
+		expectedMaxLimit int64
+		expectNoChange   bool
 	}{
 		{
 			name: "BSC-like network (3s blocks)",
-			providerRates: map[string]blockRateSimulator{
-				"provider1": {initialBlock: 1000, blocksPerSecond: 0.33}, // ~3s per block
-				"provider2": {initialBlock: 2000, blocksPerSecond: 0.33},
+			simulator: blockTimestampSimulator{
+				latestBlock:      1000,
+				blockTimeSeconds: 3.0, // 3 seconds per block
+				baseTimestamp:    1700000000,
 			},
-			expectedMinLimit: 5,  // In 1s: ~0.33 blocks, 13000ms / 3000ms = 4.33, rounds to 5
+			// 13000ms / 3000ms = 4.33, ceil = 5, round to 5
+			expectedMinLimit: 5,
 			expectedMaxLimit: 5,
 		},
 		{
 			name: "Ethereum-like network (12s blocks)",
-			providerRates: map[string]blockRateSimulator{
-				"provider1": {initialBlock: 1000, blocksPerSecond: 0.083}, // ~12s per block
-				"provider2": {initialBlock: 2000, blocksPerSecond: 0.083},
+			simulator: blockTimestampSimulator{
+				latestBlock:      1000,
+				blockTimeSeconds: 12.0, // 12 seconds per block
+				baseTimestamp:    1700000000,
 			},
-			expectedMinLimit: 5,  // In 1s: ~0.083 blocks, 13000ms / 12000ms = 1.08, rounds to 5
+			// 13000ms / 12000ms = 1.08, ceil = 2, but min is 5
+			expectedMinLimit: 5,
 			expectedMaxLimit: 5,
 		},
 		{
-			name: "Mixed speed providers - fastest wins",
-			providerRates: map[string]blockRateSimulator{
-				"slow":   {initialBlock: 1000, blocksPerSecond: 0.1},  // 10s per block
-				"medium": {initialBlock: 2000, blocksPerSecond: 0.5},  // 2s per block
-				"fast":   {initialBlock: 3000, blocksPerSecond: 1.0},  // 1s per block
+			name: "Fast network (1s blocks)",
+			simulator: blockTimestampSimulator{
+				latestBlock:      1000,
+				blockTimeSeconds: 1.0, // 1 second per block
+				baseTimestamp:    1700000000,
 			},
-			expectedMinLimit: 15, // In 1s: 1 block, 13000ms / 1000ms = 13, rounds to 15
+			// 13000ms / 1000ms = 13, round to 15
+			expectedMinLimit: 15,
 			expectedMaxLimit: 15,
 		},
 		{
-			name: "Very fast network (100ms blocks)",
-			providerRates: map[string]blockRateSimulator{
-				"provider1": {initialBlock: 1000, blocksPerSecond: 10}, // 100ms per block
+			name: "Very fast network (200ms blocks)",
+			simulator: blockTimestampSimulator{
+				latestBlock:      1000,
+				blockTimeSeconds: 0.2, // 200ms per block (for 10 blocks = 2 seconds)
+				baseTimestamp:    1700000000,
 			},
-			expectedMinLimit: 120, // Due to timing variations, might get 9-10 blocks
-			expectedMaxLimit: 130, // In 1s: 10 blocks, 13000ms / 100ms = 130
+			// 13000ms / 200ms = 65, round to 65
+			expectedMinLimit: 65,
+			expectedMaxLimit: 65,
 		},
 		{
-			name: "One provider fails - use working provider",
-			providerRates: map[string]blockRateSimulator{
-				"working": {initialBlock: 1000, blocksPerSecond: 0.5}, // 2s per block
-				"failing": {initialBlock: 0, shouldFail: true},
+			name: "Slow network (30s blocks)",
+			simulator: blockTimestampSimulator{
+				latestBlock:      1000,
+				blockTimeSeconds: 30.0, // 30 seconds per block
+				baseTimestamp:    1700000000,
 			},
-			expectedMinLimit: 5, // In 1s: 0.5 blocks might round, could get 5 or 10
-			expectedMaxLimit: 10,
+			// 13000ms / 30000ms = 0.43, ceil = 1, but min is 5
+			expectedMinLimit: 5,
+			expectedMaxLimit: 5,
 		},
 		{
-			name: "All providers fail - keep default",
-			providerRates: map[string]blockRateSimulator{
-				"fail1": {shouldFail: true},
-				"fail2": {shouldFail: true},
+			name: "Provider fails",
+			simulator: blockTimestampSimulator{
+				shouldFail: true,
 			},
 			expectNoChange: true,
-		},
-		{
-			name: "Stalled provider (no new blocks)",
-			providerRates: map[string]blockRateSimulator{
-				"stalled": {initialBlock: 1000, blocksPerSecond: 0}, // No progress
-				"working": {initialBlock: 2000, blocksPerSecond: 0.2}, // 5s per block
-			},
-			expectedMinLimit: 5, // 13000ms / 5000ms = 2.6, rounds to 5
-			expectedMaxLimit: 5,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create mock server for providers
-			server := createMockBlockServer(tt.providerRates)
+			// Create mock server
+			server := createMockTimestampServer(tt.simulator)
 			defer server.Close()
 
-			// Create network with providers
-			n := createTestNetworkWithProviders(t, server.URL, tt.providerRates)
+			// Create network with provider
+			n := createTestNetworkWithTimestampProvider(t, server.URL, tt.simulator)
 
 			// Store original limit
 			originalLimit := n.BlockLagLimit
 
-			// Run the calculation with shorter duration for tests (1 second instead of 10)
-			n.calculateDynamicBlockLagLimit(1)
+			// Run the calculation
+			n.calculateDynamicBlockLagLimit()
 
 			// Check results
 			if tt.expectNoChange {
 				assert.Equal(t, originalLimit, n.BlockLagLimit,
-					"Block lag limit should not change when all providers fail")
+					"Block lag limit should not change when provider fails")
 			} else {
 				actualLimit := atomic.LoadInt64(&n.BlockLagLimit)
-
 				assert.GreaterOrEqual(t, actualLimit, tt.expectedMinLimit,
 					"Block lag limit should be at least %d, got %d", tt.expectedMinLimit, actualLimit)
 				assert.LessOrEqual(t, actualLimit, tt.expectedMaxLimit,
@@ -187,17 +201,19 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 
 // TestCalculateDynamicBlockLagLimitConcurrency tests thread safety
 func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
-	// Create a network with mock providers
-	providerRates := map[string]blockRateSimulator{
-		"provider1": {initialBlock: 1000, blocksPerSecond: 1.0},
+	// Create a network with mock provider
+	simulator := blockTimestampSimulator{
+		latestBlock:      1000,
+		blockTimeSeconds: 1.0,
+		baseTimestamp:    1700000000,
 	}
-	server := createMockBlockServer(providerRates)
+	server := createMockTimestampServer(simulator)
 	defer server.Close()
 
-	n := createTestNetworkWithProviders(t, server.URL, providerRates)
+	n := createTestNetworkWithTimestampProvider(t, server.URL, simulator)
 
-	// Start the calculation with 1 second measurement for faster tests
-	go n.calculateDynamicBlockLagLimit(1)
+	// Start the calculation
+	go n.calculateDynamicBlockLagLimit()
 
 	// Concurrently read the BlockLagLimit many times
 	var wg sync.WaitGroup
@@ -207,16 +223,13 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			// Simulate concurrent reads during health checks
 			for j := 0; j < 10; j++ {
 				limit := atomic.LoadInt64(&n.BlockLagLimit)
-
 				if limit < 0 {
 					errors <- fmt.Errorf("invalid block lag limit: %d", limit)
 				}
-				
-				time.Sleep(time.Millisecond * 10)
 			}
 		}()
 	}
@@ -230,88 +243,163 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 	}
 }
 
-// TestCalculateDynamicBlockLagLimitIntegration tests with actual network simulation
-func TestCalculateDynamicBlockLagLimitIntegration(t *testing.T) {
-	// Skip in short mode as this test takes 10+ seconds
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+// TestDynamicBlockLagWithNoProviders tests behavior when no providers are available
+func TestDynamicBlockLagWithNoProviders(t *testing.T) {
+	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, "8080")
+	require.NoError(t, err)
+
+	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.BlockLagLimit = DefaultBlockLagLimit
+	n.Providers = make(map[string]*provider) // Empty providers
+
+	// Initialize handler to avoid nil pointer
+	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{
+		ChainID: "1",
+		Logger:  n.logger,
+	})
+	n.SetHandler(handler)
+
+	originalLimit := n.BlockLagLimit
+	n.calculateDynamicBlockLagLimit()
+
+	assert.Equal(t, originalLimit, n.BlockLagLimit,
+		"Block lag limit should remain unchanged with no providers")
+}
+
+// TestDynamicBlockLagWithUnsupportedHandler tests behavior with handlers that don't support dynamic block lag
+func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
+	n, err := NewNetwork("test-network", BeaconHandler, utils.EnvTest, "8080")
+	require.NoError(t, err)
+
+	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.BlockLagLimit = DefaultBlockLagLimit
+
+	// Initialize Beacon handler (doesn't support dynamic block lag)
+	handler := networklib.NewBeaconChainHandler(&networklib.NetworkConfig{
+		ChainID: "1",
+		Logger:  n.logger,
+	})
+	n.SetHandler(handler)
+
+	// Add a provider
+	n.Providers = make(map[string]*provider)
+	p, _ := NewProvider("http://localhost:8545")
+	n.Providers["test"] = p
+
+	originalLimit := n.BlockLagLimit
+	n.calculateDynamicBlockLagLimit()
+
+	assert.Equal(t, originalLimit, n.BlockLagLimit,
+		"Block lag limit should remain unchanged for unsupported handlers")
+}
+
+// TestDeterministicCalculation tests that same block data produces same result
+func TestDeterministicCalculation(t *testing.T) {
+	// Create identical simulators
+	simulator := blockTimestampSimulator{
+		latestBlock:      1000,
+		blockTimeSeconds: 2.0, // 2s blocks
+		baseTimestamp:    1700000000,
 	}
 
-	// Create a more realistic simulation with faster blocks to ensure limit changes
-	providerRates := map[string]blockRateSimulator{
-		"provider1": {initialBlock: 100000, blocksPerSecond: 0.5},  // 2s blocks
-		"provider2": {initialBlock: 100500, blocksPerSecond: 1.0},  // 1s blocks - fastest
-		"provider3": {initialBlock: 99800, blocksPerSecond: 0.33},  // 3s blocks
+	// Run calculation multiple times
+	var results []int64
+	for i := 0; i < 5; i++ {
+		server := createMockTimestampServer(simulator)
+		n := createTestNetworkWithTimestampProvider(t, server.URL, simulator)
+		n.calculateDynamicBlockLagLimit()
+		results = append(results, atomic.LoadInt64(&n.BlockLagLimit))
+		server.Close()
 	}
 
-	server := createMockBlockServer(providerRates)
+	// All results should be identical
+	for i := 1; i < len(results); i++ {
+		assert.Equal(t, results[0], results[i],
+			"Calculation should be deterministic - result %d differs from result 0", i)
+	}
+}
+
+// TestMeasureBlockTimeFromTimestamps tests the timestamp measurement directly
+func TestMeasureBlockTimeFromTimestamps(t *testing.T) {
+	sim := blockTimestampSimulator{
+		latestBlock:      1000,
+		blockTimeSeconds: 1.0, // 1 second per block
+		baseTimestamp:    1700000000,
+	}
+	server := createMockTimestampServer(sim)
 	defer server.Close()
 
-	n := createTestNetworkWithProviders(t, server.URL, providerRates)
-	
-	// Store initial limit
-	initialLimit := n.BlockLagLimit
+	n := createTestNetworkWithTimestampProvider(t, server.URL, sim)
 
-	// Run the calculation synchronously with shorter duration for testing
-	// This ensures it completes before we check the result
-	n.calculateDynamicBlockLagLimit(1)
-	
-	// Run health check after calculation is complete
-	n.healthCheck()
+	// Get the first provider
+	var p *provider
+	for _, prov := range n.Providers {
+		p = prov
+		break
+	}
+	require.NotNil(t, p, "Provider should not be nil")
 
-	// Verify the result
-	finalLimit := atomic.LoadInt64(&n.BlockLagLimit)
+	// Test measureBlockTimeFromTimestamps directly
+	blockTimeMs, err := n.measureBlockTimeFromTimestamps(p)
 
-	// Verify that the limit changed from initial value
-	assert.NotEqual(t, initialLimit, finalLimit, "Block lag limit should have been updated")
-	
-	// For 1s blocks (fastest provider), we expect: 13000ms / 1000ms = 13, rounds to 15
-	assert.Equal(t, int64(15), finalLimit, "Expected block lag limit for network with 1s blocks")
+	// Expected: 10 seconds for 10 blocks = 1000ms per block
+	assert.NoError(t, err)
+	assert.InDelta(t, 1000.0, blockTimeMs, 10.0, "Expected ~1000ms per block")
 }
 
-// Helper types and functions
+// Helper functions
 
-type blockRateSimulator struct {
-	initialBlock    int64
-	blocksPerSecond float64
-	shouldFail      bool
-	startTime       time.Time
-}
-
-func createMockBlockServer(simulators map[string]blockRateSimulator) *httptest.Server {
-	// Use a mutex to protect the shared start time map
-	var mu sync.Mutex
-	providerStartTimes := make(map[string]time.Time)
-
+func createMockTimestampServer(sim blockTimestampSimulator) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract provider name from URL path
-		providerName := r.URL.Path[1:] // Remove leading /
-		
-		sim, exists := simulators[providerName]
-		if !exists || sim.shouldFail {
+		if sim.shouldFail {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		// Thread-safe access to start times
-		mu.Lock()
-		startTime, hasStart := providerStartTimes[providerName]
-		if !hasStart {
-			// First request from this provider - record start time
-			startTime = time.Now()
-			providerStartTimes[providerName] = startTime
+		// Parse the JSON-RPC request
+		var rpcReq din_http.JSONRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&rpcReq); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
-		mu.Unlock()
 
-		// Calculate current block based on time elapsed since this provider's first request
-		elapsed := time.Since(startTime).Seconds()
-		currentBlock := sim.initialBlock + int64(elapsed*sim.blocksPerSecond)
+		var response din_http.JSONRPCResponse
+		response.JSONRPC = "2.0"
+		response.ID = json.RawMessage(`1`)
 
-		// Return JSON-RPC response
-		response := din_http.JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      json.RawMessage(`1`),
-			Result:  json.RawMessage(fmt.Sprintf(`"0x%x"`, currentBlock)),
+		switch rpcReq.Method {
+		case "eth_blockNumber":
+			// Return latest block number in hex
+			response.Result = json.RawMessage(fmt.Sprintf(`"0x%x"`, sim.latestBlock))
+
+		case "eth_getBlockByNumber":
+			// Parse block number from params
+			var params []interface{}
+			if err := json.Unmarshal(rpcReq.Params, &params); err != nil || len(params) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			blockNumStr, ok := params[0].(string)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Parse hex block number
+			var blockNum int64
+			fmt.Sscanf(blockNumStr, "0x%x", &blockNum)
+
+			// Calculate timestamp for this block
+			timestamp := sim.getTimestampForBlock(blockNum)
+
+			// Return block with timestamp
+			blockResult := fmt.Sprintf(`{"number":"0x%x","hash":"0xabc123","timestamp":"0x%x"}`, blockNum, timestamp)
+			response.Result = json.RawMessage(blockResult)
+
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -319,7 +407,7 @@ func createMockBlockServer(simulators map[string]blockRateSimulator) *httptest.S
 	}))
 }
 
-func createTestNetworkWithProviders(t *testing.T, serverURL string, providers map[string]blockRateSimulator) *network {
+func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim blockTimestampSimulator) *network {
 	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, "8080")
 	require.NoError(t, err)
 
@@ -330,92 +418,28 @@ func createTestNetworkWithProviders(t *testing.T, serverURL string, providers ma
 	n.HCInterval = 5
 	n.RequestAttemptCount = 1
 	n.quit = make(chan struct{})
-	
-	// Initialize PrometheusClient mock to avoid nil pointer in health check
+
+	// Initialize PrometheusClient mock
 	ctrl := gomock.NewController(t)
 	mockProm := prom.NewMockIPrometheusClient(ctrl)
-	// Set up expectations for the mock - allow any number of calls
 	mockProm.EXPECT().HandleHealthCheckMetric(gomock.Any()).AnyTimes()
 	mockProm.EXPECT().HandleNetworkHealthCheckMetric(gomock.Any()).AnyTimes()
 	mockProm.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	n.PrometheusClient = mockProm
 
-	// Initialize handler
+	// Initialize EVM handler
 	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{
 		ChainID: "1",
 		Logger:  n.logger,
 	})
 	n.SetHandler(handler)
 
-	// Add providers
+	// Add provider
 	n.Providers = make(map[string]*provider)
-	for name := range providers {
-		p, err := NewProvider(fmt.Sprintf("%s/%s", serverURL, name))
-		require.NoError(t, err)
-		p.logger = n.logger
-		n.Providers[name] = p
-	}
+	p, err := NewProvider(serverURL)
+	require.NoError(t, err)
+	p.logger = n.logger
+	n.Providers["test-provider"] = p
 
 	return n
-}
-
-// TestDynamicBlockLagWithNoProviders tests behavior when no providers are available
-func TestDynamicBlockLagWithNoProviders(t *testing.T) {
-	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, "8080")
-	require.NoError(t, err)
-
-	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-	n.BlockLagLimit = DefaultBlockLagLimit
-	n.Providers = make(map[string]*provider) // Empty providers
-	
-	// Initialize handler to avoid nil pointer
-	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{
-		ChainID: "1",
-		Logger:  n.logger,
-	})
-	n.SetHandler(handler)
-
-	originalLimit := n.BlockLagLimit
-	n.calculateDynamicBlockLagLimit(1) // Use 1 second for faster test
-
-	assert.Equal(t, originalLimit, n.BlockLagLimit,
-		"Block lag limit should remain unchanged with no providers")
-}
-
-// TestDynamicBlockLagErrorRecovery tests graceful handling of errors
-func TestDynamicBlockLagErrorRecovery(t *testing.T) {
-	// Create a server that returns errors initially then succeeds
-	var requestCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := requestCount.Add(1)
-		
-		// Fail first 2 requests, succeed on 3rd and beyond
-		if count <= 2 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		// Return a valid block number
-		response := din_http.JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      json.RawMessage(`1`),
-			Result:  json.RawMessage(fmt.Sprintf(`"0x%x"`, 1000+count*10)),
-		}
-		
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	n := createTestNetworkWithProviders(t, server.URL, map[string]blockRateSimulator{
-		"provider1": {}, // Will use server behavior
-	})
-
-	// Should handle errors gracefully (use 1 second for faster test)
-	n.calculateDynamicBlockLagLimit(1)
-
-	// Verify it either kept default or calculated based on partial data
-	limit := atomic.LoadInt64(&n.BlockLagLimit)
-
-	assert.Greater(t, limit, int64(0), "Block lag limit should be positive")
 }

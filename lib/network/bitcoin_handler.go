@@ -282,7 +282,7 @@ func (h *BitcoinHandler) SupportsGetBlockByNumber() bool {
 }
 
 func (h *BitcoinHandler) SupportsDynamicBlockLag() bool {
-	return false // Bitcoin has 10 min blocks, use configured limit
+	return true // Bitcoin ~10 min blocks, but dynamic calculation ensures accuracy
 }
 
 func (h *BitcoinHandler) GetSupportedMethods() []string {
@@ -522,4 +522,44 @@ func (h *BitcoinHandler) PerformGetBlockByNumber(httpUrl string, headers map[str
 	}
 
 	return nil, fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+}
+
+// GetBlockTimestamp retrieves the Unix timestamp for a specific block number
+func (h *BitcoinHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data using the two-step process (getblockhash -> getblock)
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Extract timestamp from block response
+	// Bitcoin's getblock returns a JSON object with a "time" field containing Unix timestamp
+	var blockMap map[string]interface{}
+
+	// Handle json.RawMessage
+	if rawMsg, ok := blockData.(json.RawMessage); ok {
+		if err := json.Unmarshal(rawMsg, &blockMap); err != nil {
+			return 0, fmt.Errorf("failed to parse block data: %w", err)
+		}
+	} else if m, ok := blockData.(map[string]interface{}); ok {
+		blockMap = m
+	} else {
+		return 0, fmt.Errorf("unexpected block data type: %T", blockData)
+	}
+
+	// Extract the "time" field (Unix timestamp)
+	timeValue, ok := blockMap["time"]
+	if !ok {
+		return 0, fmt.Errorf("missing time field in block response")
+	}
+
+	// Handle both float64 and int64 (JSON numbers are parsed as float64)
+	switch t := timeValue.(type) {
+	case float64:
+		return int64(t), nil
+	case int64:
+		return t, nil
+	default:
+		return 0, fmt.Errorf("invalid time field type: %T", timeValue)
+	}
 }
