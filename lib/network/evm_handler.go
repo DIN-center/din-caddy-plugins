@@ -489,19 +489,17 @@ func (h *EVMHandler) PerformTraceBlockByNumberCheck(httpUrl string, headers map[
 		authClient,
 		requestAttempts,
 		blockHeight,
-		h.CreateTraceBlockByNumberPayload,
-		h.ParseTraceBlockByNumberResponse,
 	)
 }
 
-// CreateTraceBlockByNumberPayload creates the debug_traceBlockByNumber request payload
-func (h *EVMHandler) CreateTraceBlockByNumberPayload(blockHeight string) ([]byte, error) {
+// createTraceBlockByNumberPayload creates the debug_traceBlockByNumber request payload
+func createTraceBlockByNumberPayload(blockHeight string) ([]byte, error) {
 	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","id":1,"params":["%s",{"tracer":"callTracer","timeout":"30s","onlyTopCall":true}]}`, blockHeight)
 	return []byte(payload), nil
 }
 
-// ParseTraceBlockByNumberResponse validates the debug_traceBlockByNumber response
-func (h *EVMHandler) ParseTraceBlockByNumberResponse(body []byte) error {
+// parseTraceBlockByNumberResponse validates the debug_traceBlockByNumber response
+func parseTraceBlockByNumberResponse(body []byte) error {
 	var respObject map[string]interface{}
 	if err := json.Unmarshal(body, &respObject); err != nil {
 		return fmt.Errorf("failed to unmarshal trace response: %w", err)

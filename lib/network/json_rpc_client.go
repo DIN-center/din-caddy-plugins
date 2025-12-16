@@ -181,12 +181,12 @@ func PerformArchiveCheckViaJSONRPC(httpUrl string, headers map[string]string, ht
 
 // PerformTraceBlockByNumberCheckViaJSONRPC performs a debug_traceBlockByNumber check via JSON-RPC
 // This is EVM-specific and verifies trace/debug capabilities for MetaMask compliance
-func PerformTraceBlockByNumberCheckViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string, createPayloadFunc func(string) ([]byte, error), parseResponseFunc func([]byte) error) error {
+func PerformTraceBlockByNumberCheckViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
 	var lastErr error
 	var lastResponseStatus int
 
 	// Create payload once outside the retry loop - it's deterministic
-	payload, err := createPayloadFunc(blockHeight)
+	payload, err := createTraceBlockByNumberPayload(blockHeight)
 	if err != nil {
 		return fmt.Errorf("failed to create trace payload: %w", err)
 	}
@@ -213,8 +213,8 @@ func PerformTraceBlockByNumberCheckViaJSONRPC(httpUrl string, headers map[string
 			continue
 		}
 
-		// Use the provided parse function to validate trace response
-		err = parseResponseFunc(resBytes)
+		// Validate the trace response
+		err = parseTraceBlockByNumberResponse(resBytes)
 		if err != nil {
 			lastErr = fmt.Errorf("trace block check failed: %w", err)
 			continue

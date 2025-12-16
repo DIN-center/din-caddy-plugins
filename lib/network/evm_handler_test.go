@@ -484,11 +484,9 @@ func TestEVMHandler_ValidateRequest(t *testing.T) {
 }
 
 func TestEVMHandler_CreateTraceBlockByNumberPayload(t *testing.T) {
-	handler := NewEVMHandler(&NetworkConfig{})
-
-	payload, err := handler.CreateTraceBlockByNumberPayload("0x64")
+	payload, err := createTraceBlockByNumberPayload("0x64")
 	if err != nil {
-		t.Errorf("CreateTraceBlockByNumberPayload() error = %v", err)
+		t.Errorf("createTraceBlockByNumberPayload() error = %v", err)
 		return
 	}
 
@@ -543,8 +541,6 @@ func TestEVMHandler_CreateTraceBlockByNumberPayload(t *testing.T) {
 }
 
 func TestEVMHandler_ParseTraceBlockByNumberResponse(t *testing.T) {
-	handler := NewEVMHandler(&NetworkConfig{})
-
 	tests := []struct {
 		name        string
 		response    []byte
@@ -579,7 +575,7 @@ func TestEVMHandler_ParseTraceBlockByNumberResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handler.ParseTraceBlockByNumberResponse(tt.response)
+			err := parseTraceBlockByNumberResponse(tt.response)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error for test '%s', but got none", tt.name)
 			}
