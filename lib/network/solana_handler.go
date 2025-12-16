@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
@@ -178,7 +177,7 @@ func (h *SolanaHandler) CreateBlockRequest(method string, blockNum int64, includ
 
 func (h *SolanaHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 	// First check for JSON-RPC errors using generic response
-	var genericResponse dinHttp.JSONRPCResponse
+	var genericResponse din_http.JSONRPCResponse
 	if err := json.Unmarshal(body, &genericResponse); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON-RPC response: %w", err)
 	}
@@ -189,7 +188,7 @@ func (h *SolanaHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 	}
 
 	// Parse as Solana-specific response if no errors
-	var response dinHttp.JSONRPCSolanaBlockResponse
+	var response din_http.JSONRPCSolanaBlockResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Solana block response: %w", err)
 	}
@@ -283,7 +282,7 @@ func (h *SolanaHandler) GetBlockByNumberMethod() string {
 
 // Data Format Conversions methods
 func (h *SolanaHandler) ExtractBlockHash(blockData interface{}) string {
-	if blockResponse, ok := blockData.(dinHttp.JSONRPCSolanaBlockResponse); ok {
+	if blockResponse, ok := blockData.(din_http.JSONRPCSolanaBlockResponse); ok {
 		return blockResponse.Result.Blockhash
 	}
 	return ""
@@ -427,7 +426,7 @@ func (h *SolanaHandler) GetBlockTimestamp(httpUrl string, headers map[string]str
 	}
 
 	// Parse timestamp from block response
-	blockResponse, ok := blockData.(dinHttp.JSONRPCSolanaBlockResponse)
+	blockResponse, ok := blockData.(din_http.JSONRPCSolanaBlockResponse)
 	if !ok {
 		return 0, fmt.Errorf("invalid block response type: %T", blockData)
 	}

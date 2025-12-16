@@ -8,6 +8,7 @@ require (
 	github.com/DIN-center/din-sc/apps/din-go v0.0.0-20250724082233-af541b593037
 	github.com/aws/aws-sdk-go v1.53.18
 	github.com/caddyserver/caddy/v2 v2.7.6
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/golang/mock v1.6.0
