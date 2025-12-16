@@ -90,8 +90,9 @@ func (h *SolanaHandler) ExtractMethod(req *http.Request, body []byte) (string, e
 }
 
 // ConfigureRequestPath configures the request path for JSON-RPC requests
-func (h *SolanaHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *SolanaHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureJSONRPCRequestPath(req, providerPath)
+	// Note: providerQuery is not used for Solana currently. Can be implemented if needed.
 	return nil
 }
 
