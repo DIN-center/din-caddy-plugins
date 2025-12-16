@@ -1,0 +1,39 @@
+run:
+  go: "1.24"
+  modules-download-mode: readonly
+linters:
+  enable:
+    - errname
+    - errorlint
+    - gocyclo
+    - misspell
+    - staticcheck
+    - gosec
+  settings:
+    misspell:
+      locale: US
+    gosec:
+      severity: low
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  fix: true
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DIN-center/din-caddy-plugins
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

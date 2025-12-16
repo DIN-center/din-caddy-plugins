@@ -4,14 +4,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/golang/mock/gomock"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 // TestLoopbackHealthCheck tests the loopback health check functionality
@@ -187,74 +188,92 @@ func TestSendHealthCheckMetric(t *testing.T) {
 
 	tests := []struct {
 		name           string
+		provider       string
 		providerName   string
 		responseStatus int
 		healthStatus   string
 		blockNumber    int64
+		priority       int
 		environment    string
 		expectedMetric *prom.PromHealthCheckMetricData
 	}{
 		{
 			name:           "send_healthy_metric",
-			providerName:   "provider1.com",
+			provider:       "provider1.com",
+			providerName:   "provider1",
 			responseStatus: 200,
 			healthStatus:   "Healthy",
 			blockNumber:    12345,
+			priority:       0,
 			environment:    "production",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
 				Provider:       "provider1.com",
+				ProviderName:   "provider1",
 				ResponseStatus: 200,
 				HealthStatus:   "Healthy",
 				BlockNumber:    12345,
+				Priority:       0,
 				Environment:    "production",
 			},
 		},
 		{
 			name:           "send_warning_metric",
-			providerName:   "provider2.com",
+			provider:       "provider2.com",
+			providerName:   "provider2",
 			responseStatus: 200,
 			healthStatus:   "Warning",
 			blockNumber:    12340,
+			priority:       1,
 			environment:    "staging",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
 				Provider:       "provider2.com",
+				ProviderName:   "provider2",
 				ResponseStatus: 200,
 				HealthStatus:   "Warning",
 				BlockNumber:    12340,
+				Priority:       1,
 				Environment:    "staging",
 			},
 		},
 		{
 			name:           "send_unhealthy_metric",
-			providerName:   "provider3.com",
+			provider:       "provider3.com",
+			providerName:   "provider3",
 			responseStatus: 500,
 			healthStatus:   "Unhealthy",
 			blockNumber:    0,
+			priority:       2,
 			environment:    "test",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
 				Provider:       "provider3.com",
+				ProviderName:   "provider3",
 				ResponseStatus: 500,
 				HealthStatus:   "Unhealthy",
 				BlockNumber:    0,
+				Priority:       2,
 				Environment:    "test",
 			},
 		},
 		{
 			name:           "send_rate_limit_metric",
-			providerName:   "provider4.com",
+			provider:       "provider4.com",
+			providerName:   "provider4",
 			responseStatus: 429,
 			healthStatus:   "Warning",
 			blockNumber:    12345,
+			priority:       0,
 			environment:    "production",
 			expectedMetric: &prom.PromHealthCheckMetricData{
 				Network:        "test-network",
 				Provider:       "provider4.com",
+				ProviderName:   "provider4",
 				ResponseStatus: 429,
 				HealthStatus:   "Warning",
 				BlockNumber:    12345,
+				Priority:       0,
 				Environment:    "production",
 			},
 		},
@@ -279,11 +298,12 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				assert.Equal(t, tt.expectedMetric.ResponseStatus, data.ResponseStatus)
 				assert.Equal(t, tt.expectedMetric.HealthStatus, data.HealthStatus)
 				assert.Equal(t, tt.expectedMetric.BlockNumber, data.BlockNumber)
+				assert.Equal(t, tt.expectedMetric.Priority, data.Priority)
 				assert.Equal(t, tt.expectedMetric.Environment, data.Environment)
 			})
 
 			// Execute
-			n.sendHealthCheckMetric(tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.environment)
+			n.sendHealthCheckMetric(tt.provider, tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.priority, tt.environment)
 		})
 	}
 }

@@ -10,6 +10,8 @@
           "cp ../../dist/apps/din-sc/*.abi pkg/dinregistry/abi",
           "mkdir -p pkg/dinregistry/sc_models",
           "cp ../../dist/apps/din-sc/go-bindings/*.go pkg/dinregistry/sc_models",
+          "echo 'Checking types.go file:' && ls -la pkg/dinregistry/sc_models/types.go",
+          "echo 'First 50 lines of types.go:' && head -50 pkg/dinregistry/sc_models/types.go",
           "make generate-mocks",
           "mkdir -p ../../dist/apps/din-go/bin",
           "go build -o ../../dist/apps/din-go/bin/din-cli ./cli/main.go"
@@ -27,7 +29,10 @@
         }
       ],
       "inputs": [
-        "{workspaceRoot}/dist/apps/din-sc/*.abi"
+        "{workspaceRoot}/dist/apps/din-sc/*.abi",
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/go.mod",
+        "{projectRoot}/go.sum"
       ]
     },
     "clean": {

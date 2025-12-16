@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -20,6 +21,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spruceid/siwe-go"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 )
 
 var (
@@ -37,8 +40,7 @@ var (
 
 func handleError(err error, rw http.ResponseWriter, code int) {
 	rw.WriteHeader(code)
-	rw.Write([]byte(fmt.Sprintf(`{"error": "%v"}`, err.Error())))
-	rw.Write([]byte("\n"))
+	_, _ = fmt.Fprintf(rw, `{"error": "%v"}\n`, err.Error()) // error is ignored as write failure here isn't recoverable
 }
 
 type SIWEAuthMiddleware struct {
@@ -61,7 +63,7 @@ func (d *SIWEAuthMiddleware) Provision(context caddy.Context) error {
 }
 
 func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Request) error {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		handleError(err, rw, 500)
 		return err
@@ -109,9 +111,9 @@ func (d *SIWEAuthMiddleware) createSession(rw http.ResponseWriter, r *http.Reque
 		return err
 	}
 	rw.WriteHeader(200)
-	rw.Write(data)
-	rw.Write([]byte("\n"))
-	return nil
+	_, err = rw.Write(append(data, '\n'))
+
+	return err
 }
 
 func (d *SIWEAuthMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -166,7 +168,7 @@ func (d *SIWEAuthMiddleware) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) 
 				if !dispenser.Args(&secretFilePath) {
 					return dispenser.ArgErr()
 				}
-				secret, err := ioutil.ReadFile(secretFilePath)
+				secret, err := os.ReadFile(filepath.Clean(secretFilePath))
 				if err != nil {
 					return dispenser.Errf("failed to read secret file: %v", err)
 				}

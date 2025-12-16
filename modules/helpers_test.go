@@ -444,7 +444,7 @@ func TestCheckRequestContext(t *testing.T) {
 			expectMsg:   "",
 		},
 		{
-			name: "Cancelled context should return client cancellation error",
+			name: "Canceled context should return client cancellation error",
 			setupCtx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel() // Cancel immediately
@@ -453,7 +453,7 @@ func TestCheckRequestContext(t *testing.T) {
 			networkPath: "ethereum-mainnet",
 			attempt:     1,
 			expectError: true,
-			expectMsg:   "request cancelled by client",
+			expectMsg:   "request canceled by client",
 		},
 		{
 			name: "Deadline exceeded context should return timeout error",
@@ -527,7 +527,7 @@ func TestHandleContextCancellation(t *testing.T) {
 	}{
 		{
 			name:        "Client cancellation should return 408",
-			errorMsg:    "request cancelled by client",
+			errorMsg:    "request canceled by client",
 			networkPath: "ethereum-mainnet",
 			attempt:     1,
 			setupReplacer: func(repl *caddy.Replacer) {
@@ -537,7 +537,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.ErrorLevel,
 			expectedLogMsg:     "Request attempt failed",
-			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+			expectedResponse:   `{"error": "Request canceled by client", "code": 408}`,
 		},
 		{
 			name:        "Deadline exceeded should return 504",
@@ -569,7 +569,7 @@ func TestHandleContextCancellation(t *testing.T) {
 		},
 		{
 			name:        "Long request body should be truncated in logs",
-			errorMsg:    "request cancelled by client",
+			errorMsg:    "request canceled by client",
 			networkPath: "ethereum-mainnet",
 			attempt:     0,
 			setupReplacer: func(repl *caddy.Replacer) {
@@ -582,7 +582,7 @@ func TestHandleContextCancellation(t *testing.T) {
 			expectedStatusCode: http.StatusRequestTimeout,
 			expectedLogLevel:   zapcore.ErrorLevel,
 			expectedLogMsg:     "Request attempt failed",
-			expectedResponse:   `{"error": "Request cancelled by client", "code": 408}`,
+			expectedResponse:   `{"error": "Request canceled by client", "code": 408}`,
 		},
 		{
 			name:        "Missing request body and provider should handle gracefully",
@@ -694,10 +694,13 @@ func TestLogFailedAttempt(t *testing.T) {
 			name:                   "basic log with no errors or complex params",
 			networkPath:            "test-network",
 			failedAttemptNumber:    1,
-			maxAttempts:            3,
-			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "test-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "test_method"},
+			maxAttempts:         3,
+			statusCodeOfFailure: 500,
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set(RequestProviderKey, "test-provider")
+				repl.Set(RequestProviderPriorityKey, 0)
+			},
+			parsedReqBody: &din_http.JSONRPCRequest{Method: "test_method"},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-network", "provider": "test-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(500), "request_method": "test_method", "reason": "Test failure"},
 		},
@@ -705,11 +708,14 @@ func TestLogFailedAttempt(t *testing.T) {
 			name:                   "with upstream error",
 			networkPath:            "test-network-err",
 			failedAttemptNumber:    2,
-			maxAttempts:            3,
-			statusCodeOfFailure:    503,
-			error:                  fmt.Errorf("connection refused"),
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "err-provider") },
-			parsedReqBody:          &din_http.JSONRPCRequest{Method: "error_method"},
+			maxAttempts:         3,
+			statusCodeOfFailure: 503,
+			error:               fmt.Errorf("connection refused"),
+			setupReplacer: func(repl *caddy.Replacer) {
+				repl.Set(RequestProviderKey, "err-provider")
+				repl.Set(RequestProviderPriorityKey, 1)
+			},
+			parsedReqBody: &din_http.JSONRPCRequest{Method: "error_method"},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-network-err", "provider": "err-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(503), "request_method": "error_method", "error": "connection refused", "reason": "Test failure"},
 		},
@@ -719,7 +725,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            3,
 			statusCodeOfFailure:    200,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "jsonrpc-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_getBalance"},
 			jsonRPCError:           &din_http.JSONRPCError{Code: -32601, Message: "Method not found"},
 			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error", "provider": "jsonrpc-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_getBalance", "reason": "Test failure"},
@@ -730,7 +736,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    2,
 			maxAttempts:            3,
 			statusCodeOfFailure:    200,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "jsonrpc-data-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "jsonrpc-data-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "eth_call"},
 			jsonRPCError:           &din_http.JSONRPCError{Code: -32603, Message: "Internal error", Data: map[string]interface{}{"details": "Server overloaded"}},
 			expectedErrorLogFields: map[string]interface{}{"network": "test-jsonrpc-error-data", "provider": "jsonrpc-data-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(200), "request_method": "eth_call", "reason": "Test failure"},
@@ -741,7 +747,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            2,
 			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "params-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "params-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_array_params", Params: json.RawMessage(`[1, "test", true]`)},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-params-array", "provider": "params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(2), "status_code": int64(400), "request_method": "method_array_params", "request_params": []interface{}{float64(1), "test", true}, "reason": "Test failure"},
@@ -752,7 +758,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            1,
 			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "params-obj-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "params-obj-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_obj_params", Params: json.RawMessage(`{"key":"value", "num":123}`)},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-params-obj", "provider": "params-obj-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_obj_params", "request_params": map[string]interface{}{"key": "value", "num": float64(123)}, "reason": "Test failure"},
@@ -763,7 +769,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:           1,
 			maxAttempts:                   1,
 			statusCodeOfFailure:           400,
-			setupReplacer:                 func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "malformed-provider") },
+			setupReplacer:                 func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "malformed-provider") },
 			parsedReqBody:                 &din_http.JSONRPCRequest{Method: "method_malformed", Params: json.RawMessage(`{"key":incomplete}`)},
 			jsonRPCError:                  nil,
 			expectedErrorLogFields:        map[string]interface{}{"network": "test-malformed-params", "provider": "malformed-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_malformed", "raw_request_params": `{"key":incomplete}`, "reason": "Test failure"},
@@ -776,7 +782,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            1,
 			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "null-params-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "null-params-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_null_params", Params: json.RawMessage(`null`)},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-null-params", "provider": "null-params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_null_params", "reason": "Test failure"},
@@ -787,7 +793,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            1,
 			statusCodeOfFailure:    400,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "empty-params-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "empty-params-provider") },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "method_empty_params", Params: json.RawMessage{}},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-empty-params", "provider": "empty-params-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(400), "request_method": "method_empty_params", "reason": "Test failure"},
@@ -799,8 +805,8 @@ func TestLogFailedAttempt(t *testing.T) {
 			maxAttempts:         1,
 			statusCodeOfFailure: 500,
 			setupReplacer: func(repl *caddy.Replacer) {
-				repl.Set(testRequestProviderKey, "nil-body-provider")
-				repl.Set(testRequestBodyKey, []byte("this is a raw request body snippet that is very long indeed and should be truncated"))
+				repl.Set(RequestProviderKey, "nil-body-provider")
+				repl.Set(RequestBodyKey, []byte("this is a raw request body snippet that is very long indeed and should be truncated"))
 			},
 			parsedReqBody:          nil,
 			jsonRPCError:           nil,
@@ -812,7 +818,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            1,
 			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, "no-snippet-provider") },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, "no-snippet-provider") },
 			parsedReqBody:          nil,
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-nil-parsedbody-no-snippet", "provider": "no-snippet-provider", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500), "reason": "Test failure"},
@@ -834,7 +840,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			failedAttemptNumber:    1,
 			maxAttempts:            1,
 			statusCodeOfFailure:    500,
-			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(testRequestProviderKey, 12345) },
+			setupReplacer:          func(repl *caddy.Replacer) { repl.Set(RequestProviderKey, 12345) },
 			parsedReqBody:          &din_http.JSONRPCRequest{Method: "another_method"},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-provider-not-string", "provider": "unknown", "failed_attempt_number": int64(1), "max_attempts": int64(1), "status_code": int64(500), "request_method": "another_method", "reason": "Test failure"},
@@ -865,7 +871,7 @@ func TestLogFailedAttempt(t *testing.T) {
 			}
 
 			// Extract method and params directly from JSONRPCRequest for the new logging structure
-			var method string = "unknown"
+			var method = "unknown"
 			var params json.RawMessage
 			if tt.parsedReqBody != nil {
 				method = tt.parsedReqBody.Method
@@ -933,6 +939,39 @@ func TestLogFailedAttempt(t *testing.T) {
 			require.True(t, foundErrorLog, "expected error log 'Request attempt failed' was not found")
 			if tt.expectDebugLogForParamFailure {
 				require.True(t, foundDebugLogForParamFailure, "expected debug log for param failure was not found")
+			}
+		})
+	}
+}
+
+func TestGetRequestAPIKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		apiKey  string
+		want       string
+	}{
+		{
+			name:      "Header present with value",
+			apiKey:    "abc123",
+			want:      "abc123",
+		},
+		{
+			name:      "Header absent entirely",
+			apiKey:    "",
+			want:      "unspecified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repl := caddy.NewReplacer()
+			if tt.apiKey != "" {
+				repl.Set("din_api_key", tt.apiKey)
+			}
+
+			got := getRequestAPIKey(repl)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}

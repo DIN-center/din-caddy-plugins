@@ -31,6 +31,8 @@ type BitcoinEsploraBlock struct {
 	Difficulty        float64 `json:"difficulty"`
 }
 
+var _ NetworkHandler = (*BitcoinEsploraHandler)(nil)
+
 // BitcoinEsploraHandler handles Bitcoin Esplora REST API requests
 type BitcoinEsploraHandler struct {
 	config              *NetworkConfig
@@ -98,12 +100,13 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 
 // ExtractMethod extracts the method name from the request for logging/metrics
 func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
-	return req.URL.Path, nil
+	return "REST", nil
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
-func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *BitcoinEsploraHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureRESTRequestPath(req, providerPath, networkName)
+	// Note: providerQuery is not used for Bitcoin Esplora currently. Can be implemented if needed.
 	return nil
 }
 
@@ -114,19 +117,7 @@ func (h *BitcoinEsploraHandler) NormalizeEndpoint(path string) string {
 }
 
 func (h *BitcoinEsploraHandler) ValidateRequest(req *http.Request) error {
-	// Block POST requests and return 405 Method Not Allowed
-	if req.Method == "POST" {
-		return &HTTPError{
-			StatusCode: http.StatusMethodNotAllowed,
-			Message:    "POST method not allowed for Bitcoin Esplora API",
-		}
-	}
-
-	// Check for valid HTTP methods - Bitcoin Esplora REST API now only supports GET
-	if req.Method != "GET" {
-		return fmt.Errorf("unsupported HTTP method for Bitcoin Esplora REST API: %s", req.Method)
-	}
-
+	// For now we let everything through
 	return nil
 }
 
@@ -170,7 +161,7 @@ func (h *BitcoinEsploraHandler) FormatBlockHeight(blockNum int64) string {
 }
 
 func (h *BitcoinEsploraHandler) CreateBlockRequest(method string, blockNum int64, includeTransactions bool) ([]byte, error) {
-	return nil, fmt.Errorf("Bitcoin Esplora uses REST API, not JSON-RPC")
+	return nil, fmt.Errorf("the Bitcoin Esplora uses REST API, not JSON-RPC")
 }
 
 func (h *BitcoinEsploraHandler) ParseBlockResponse(body []byte) (interface{}, error) {

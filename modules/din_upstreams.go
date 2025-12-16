@@ -60,20 +60,34 @@ func (d *DinUpstreams) Provision(ctx caddy.Context) error {
 
 // GetUpstreams returns the possible upstream endpoints for the request.
 func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
-	// Extract network name from request path
-	networkName := d.extractNetworkName(r.URL.Path)
-	if networkName == "" {
-		return nil, fmt.Errorf("no network name found in path")
+	var providers map[string]*provider
+
+	// Get upstreams from the replacer context
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if v, ok := repl.Get(DinUpstreamsContextKey); ok {
+		providers = v.(map[string]*provider)
 	}
 
-	// Get network configuration from global registry
-	networkConfig, exists := GetNetwork(networkName)
-	if !exists {
-		return nil, fmt.Errorf("network %s not found in registry", networkName)
+	if providers == nil {
+		// Extract network name from request path
+		networkName := d.extractNetworkName(r.URL.Path)
+		d.logger.Warn("Providers not available from replacer. Retrieving from network object.",
+			zap.String("network", networkName),
+		)
+		if networkName == "" {
+			return nil, fmt.Errorf("no network name found in path")
+		}
+
+		// Get network configuration from global registry
+		networkConfig, exists := GetNetwork(networkName)
+		if !exists {
+			return nil, fmt.Errorf("network %s not found in registry", networkName)
+		}
+		providers = networkConfig.Providers
 	}
 
 	// Convert providers to upstreams based on priority and health status
-	upstreamPool := d.buildUpstreamPool(networkConfig.Providers)
+	upstreamPool := d.buildUpstreamPool(providers)
 
 	return upstreamPool, nil
 }

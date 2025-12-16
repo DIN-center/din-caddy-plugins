@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
@@ -37,8 +38,16 @@ func (DinSelect) CaddyModule() caddy.ModuleInfo {
 func (d *DinSelect) Provision(context caddy.Context) error {
 	d.logger = context.Logger(d)
 
-	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id"}
-	selector.Provision(context)
+	selector := &reverseproxy.HeaderHashSelection{Field: "Din-Session-Id",
+		// Fallback to score based selector if no session affinity is found
+		FallbackRaw: caddyconfig.JSONModuleObject(DinScoreBasedSelector{}, "policy", "din_score_based_selector", nil)}
+
+	d.logger.Debug("Provisioning DinSelect", zap.Any("selector", selector))
+	err := selector.Provision(context)
+	if err != nil {
+		return err
+	}
+
 	d.selector = selector
 	return nil
 }
@@ -83,12 +92,14 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 // applyProviderConfiguration applies provider-specific settings to the request
 func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, networkObj *network) {
 	// Use the network handler to configure the request path
+	// The handler is responsible for merging provider query params with request query params
 	if networkObj != nil && networkObj.handler != nil {
 		networkName := networkObj.Name
-		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, networkName); err != nil {
+		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, provider.query, networkName); err != nil {
 			d.logger.Error("Failed to configure request path",
 				zap.String("network", networkName),
 				zap.String("provider_path", provider.path),
+				zap.String("provider_query", provider.query),
 				zap.Error(err))
 		}
 	}
@@ -110,6 +121,7 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 		rw.Header().Set(DinProviderInfo, provider.host)
 	}
 	repl.Set(RequestProviderKey, provider.host)
+	repl.Set(RequestProviderPriorityKey, provider.Priority)
 }
 
 func (d *DinSelect) UnmarshalCaddyfile(dispenser *caddyfile.Dispenser) error {

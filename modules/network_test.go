@@ -4,15 +4,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
+
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/golang/mock/gomock"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 func TestHandleErrorWithGracePeriod(t *testing.T) {
@@ -340,7 +341,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 				Type:    string(EVMHandler),
 				ChainID: "1",
 			}
-			n.SetHandler(networklib.NewEVMHandler(config))
+			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
 
 			var sc *int
 			if !tt.passNilStatusCode {
@@ -472,9 +473,9 @@ func TestArchiveModeCheck(t *testing.T) {
 				ChainID: "test-chain",
 			}
 			if networkType == string(EVMHandler) {
-				n.SetHandler(networklib.NewEVMHandler(config))
+				require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
 			} else {
-				n.SetHandler(networklib.NewStarknetHandler(config))
+				require.NoError(t, n.SetHandler(networklib.NewStarknetHandler(config)))
 			}
 
 			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
@@ -679,13 +680,6 @@ func TestBlockJumpBehavior(t *testing.T) {
 }
 
 func TestGetLatestBlockNumber(t *testing.T) {
-	type mockPostResponse struct {
-		resBytes          []byte
-		statusCodeVal     int
-		passNilStatusCode bool
-		err               error
-	}
-
 	tests := []struct {
 		name                 string
 		networkName          string
@@ -793,7 +787,9 @@ func TestGetLatestBlockNumber(t *testing.T) {
 	}
 }
 
-func newTestNetwork(name string, historySize int) *network {
+func newTestNetwork(t *testing.T, name string, historySize int) *network {
+	t.Helper()
+
 	n, _ := NewNetwork(name, EVMHandler, utils.Environment("test"), "8000")
 	n.NetworkBlockHistorySize = historySize
 	// Initialize logger to prevent panic
@@ -806,7 +802,8 @@ func newTestNetwork(name string, historySize int) *network {
 		Logger: n.logger,
 	}
 	handler := networklib.NewEVMHandler(config)
-	n.SetHandler(handler)
+	require.NoError(t, n.SetHandler(handler))
+
 	return n
 }
 
@@ -905,7 +902,7 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := newTestNetwork("test", tt.networkHistorySize)
+			n := newTestNetwork(t, "test", tt.networkHistorySize)
 
 			// Add initial entries
 			for _, blockNum := range tt.initialEntries {
@@ -960,7 +957,7 @@ func TestGetLatestBlockEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := newTestNetwork("test", 5)
+			n := newTestNetwork(t, "test", 5)
 
 			// Add entries
 			for _, blockNum := range tt.blockNumbers {
@@ -1229,7 +1226,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 				Type:    string(EVMHandler),
 				ChainID: "1",
 			}
-			n.SetHandler(networklib.NewEVMHandler(config))
+			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
 
 			blockNumber, healthStatus, err := n.processBlockNumberResponse(tt.resBytes, tt.statusCode)
 
@@ -1490,20 +1487,6 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 			assert.Equal(t, HandlerType(tt.expectedType), n.HandlerType)
 		})
 	}
-}
-
-func createMockProviderWithStatus(host string, entries []blockHistoryEntry) *provider {
-	p, err := NewProvider("http://" + host + ".com")
-	if err != nil {
-		panic(err) // This should not happen in tests
-	}
-
-	// Add entries using the proper AddBlockEntry method
-	for _, entry := range entries {
-		p.AddBlockEntry(entry.blockNumber, entry.healthStatus, 10)
-	}
-
-	return p
 }
 
 func TestNetworkSetHandler(t *testing.T) {

@@ -22,11 +22,6 @@ func TestRootCommand(t *testing.T) {
 		require.NotNil(t, rpcFlag)
 		assert.Equal(t, "string", rpcFlag.Value.Type())
 
-		// Test keystore-path flag
-		keystoreFlag := flags.Lookup("keystore-path")
-		require.NotNil(t, keystoreFlag)
-		assert.Equal(t, "string", keystoreFlag.Value.Type())
-
 		// Test json flag
 		jsonFlag := flags.Lookup("json")
 		require.NotNil(t, jsonFlag)

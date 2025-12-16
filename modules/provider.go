@@ -8,21 +8,25 @@ import (
 
 	"errors"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
 
 type provider struct {
 	HttpUrl  string
 	path     string
+	query    string // URL query string (e.g., "apikey=xxx&foo=bar")
 	host     string
 	Headers  map[string]string
 	upstream *reverseproxy.Upstream
 	logger   *logger.LoggerClient
 	Priority int
+	Name     string
 
 	// Registry Configuration Values
 	Methods map[string]struct{}  `json:"methods"`
@@ -33,6 +37,10 @@ type provider struct {
 
 	// Generic auth client for supporting multiple auth types
 	authClient auth.IAuthClient
+
+	// Watcher Score
+	score   *ws.Score    // Immutable score object
+	scoreMu sync.RWMutex // Mutex to protect the access to the score object
 
 	consecutiveUnhealthyChecks int
 	blockHistory               *list.List
@@ -68,8 +76,10 @@ func NewProvider(urlStr string) (*provider, error) {
 	p := &provider{
 		HttpUrl:      urlStr,
 		host:         url.Host,
+		Name:         safeExtractMainDomainWithPSL(url),
 		Headers:      make(map[string]string),
 		blockHistory: list.New(),
+		score:        ws.EmptyScore,
 	}
 	return p, nil
 }
@@ -235,4 +245,18 @@ func (p *provider) getLatestBlockEntry() *blockHistoryEntry {
 
 	entry := p.blockHistory.Back().Value.(blockHistoryEntry)
 	return &entry
+}
+
+// SafeGetScore returns the current score for the provider with a read lock to prevent reading while writing.
+func (p *provider) SafeGetScore() *ws.Score {
+	p.scoreMu.RLock()
+	defer p.scoreMu.RUnlock()
+	return p.score
+}
+
+// SafeUpdateScore updates the score for the provider with a write lock to prevent writing while reading.
+func (p *provider) SafeUpdateScore(score *ws.Score) {
+	p.scoreMu.Lock()
+	defer p.scoreMu.Unlock()
+	p.score = score
 }

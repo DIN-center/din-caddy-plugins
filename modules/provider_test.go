@@ -2,11 +2,13 @@ package modules
 
 import (
 	"container/list"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -90,6 +92,69 @@ func TestNewProvider(t *testing.T) {
 				if p != nil && len(p.Headers) != 0 {
 					t.Errorf("expected empty headers, but got %v", p.Headers)
 				}
+				if p != nil && p.SafeGetScore() != ws.EmptyScore {
+					t.Errorf("expected to be empty score, but got %v", p.SafeGetScore())
+				}
+			}
+		})
+	}
+}
+
+func TestProviderQueryParams(t *testing.T) {
+	tests := []struct {
+		name          string
+		urlStr        string
+		expectedQuery string
+		expectedHost  string
+	}{
+		{
+			name:          "url with single query param",
+			urlStr:        "https://example.com/v2?apikey=test123",
+			expectedQuery: "apikey=test123",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with multiple query params",
+			urlStr:        "https://example.com/path?apikey=abc&foo=bar",
+			expectedQuery: "apikey=abc&foo=bar",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url without query params",
+			urlStr:        "https://example.com/path",
+			expectedQuery: "",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with empty query string",
+			urlStr:        "https://example.com/path?",
+			expectedQuery: "",
+			expectedHost:  "example.com",
+		},
+		{
+			name:          "url with special characters in query",
+			urlStr:        "https://example.com/v2?key=a%20b&other=c%3Dd",
+			expectedQuery: "key=a%20b&other=c%3Dd",
+			expectedHost:  "example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse URL and verify query extraction would work
+			parsedURL, err := url.Parse(tt.urlStr)
+			if err != nil {
+				t.Fatalf("failed to parse URL: %v", err)
+			}
+
+			// Verify expected query matches RawQuery
+			if parsedURL.RawQuery != tt.expectedQuery {
+				t.Errorf("expected query %q, but got %q", tt.expectedQuery, parsedURL.RawQuery)
+			}
+
+			// Verify host extraction
+			if parsedURL.Host != tt.expectedHost {
+				t.Errorf("expected host %q, but got %q", tt.expectedHost, parsedURL.Host)
 			}
 		})
 	}
@@ -579,6 +644,64 @@ func TestProviderBlockHistory(t *testing.T) {
 						t.Errorf("BlockHistory()[%d].timestamp is not a deep copy, got same pointer", i)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestSafeExtractMainDomainWithPSL(t *testing.T) {
+	tests := []struct {
+		name         string
+		urlStr       string
+		expectedName string
+	}{
+		{
+			name:         "valid url",
+			urlStr:       "https://example.com",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with port",
+			urlStr:       "https://example.com:8545",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with path",
+			urlStr:       "https://example.com/path",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with query params",
+			urlStr:       "https://example.com/path?query=value",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with two level domain",
+			urlStr:       "https://example.com.au",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url multple subdomains and two level domain",
+			urlStr:       "https://subdomain.buying-spree.example.com.au",
+			expectedName: "example",
+		},
+		{
+			name:         "valid url with suffix",
+			urlStr:       "https://invalid.domain.io-XHG",
+			expectedName: "domain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, err := url.Parse(tt.urlStr)
+			if err != nil {
+				t.Errorf("failed to parse url: %v", err)
+			}
+
+			name := safeExtractMainDomainWithPSL(url)
+			if name != tt.expectedName {
+				t.Errorf("expected name %q, but got %q", tt.expectedName, name)
 			}
 		})
 	}

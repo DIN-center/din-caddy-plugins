@@ -288,66 +288,68 @@ func TestBuildNetworkConfigFromUserInput(t *testing.T) {
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
 
 		// Execute function being tested
-		config, err := buildNetworkConfigFromUserInput(`{"healthcheckMethod": "eth_blockNumber"}`, mockDinClient, "test://network")
+		config, err := buildNetworkConfigFromUserInput(`{"handler": "starknet"}`, mockDinClient, "test://network")
 
 		// Validate the result
 		assert.NoError(t, err)
-		assert.Equal(t, "eth_blockNumber", config.HealthcheckMethod) // Updated
-		assert.Equal(t, uint8(30), config.HealthcheckIntervalSec)    // Unchanged
-		assert.Equal(t, "0x1", config.ChainId)                       // Unchanged
+		assert.Equal(t, "starknet", config.Handler)               // Updated
+		assert.Equal(t, uint8(30), config.HealthcheckIntervalSec) // Unchanged
+		assert.Equal(t, "0x1", config.ChainId)                    // Unchanged
 	})
 
 	t.Run("Success call, update multiple fields", func(t *testing.T) {
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)
 
 		// Execute function being tested
-		config, err := buildNetworkConfigFromUserInput(`{"healthcheckMethod": "eth_blockNumber", "healthcheckIntervalSec": 60, "chainId": "0x5"}`, mockDinClient, "test://network")
+		config, err := buildNetworkConfigFromUserInput(`{"handler": "starknet", "health_check_interval_sec": 60, "chain_id": "0x5"}`, mockDinClient, "test://network")
 
 		// Validate the result
 		assert.NoError(t, err)
-		assert.Equal(t, "eth_blockNumber", config.HealthcheckMethod) // Updated
-		assert.Equal(t, uint8(60), config.HealthcheckIntervalSec)    // Updated
-		assert.Equal(t, "0x5", config.ChainId)                       // Updated
-		assert.Equal(t, "eth_chainId", config.ChainIdMethod)         // Unchanged
+		assert.Equal(t, "starknet", config.Handler)               // Updated
+		assert.Equal(t, uint8(60), config.HealthcheckIntervalSec) // Updated
+		assert.Equal(t, "0x5", config.ChainId)                    // Updated
+		assert.Equal(t, uint8(2), config.HealthcheckThreshold)    // Unchanged
 	})
 
 	t.Run("Failure call, invalid JSON", func(t *testing.T) {
 		// Execute function being tested with invalid JSON
-		_, err := buildNetworkConfigFromUserInput(`{"healthcheckMethod": "eth_blockNumber", invalid json}`, mockDinClient, "test://network")
+		_, err := buildNetworkConfigFromUserInput(`{"handler": "starknet", invalid json}`, mockDinClient, "test://network")
 
 		// Validate the result
 		assert.Error(t, err)
@@ -358,7 +360,7 @@ func TestBuildNetworkConfigFromUserInput(t *testing.T) {
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(nil, errors.New("network not found")).Times(1)
 
 		// Execute function being tested
-		_, err := buildNetworkConfigFromUserInput(`{"healthcheckMethod": "eth_blockNumber"}`, mockDinClient, "test://network")
+		_, err := buildNetworkConfigFromUserInput(`{"handler": "starknet"}`, mockDinClient, "test://network")
 
 		// Validate the result
 		assert.Error(t, err)
@@ -369,18 +371,19 @@ func TestBuildNetworkConfigFromUserInput(t *testing.T) {
 		// Mock GetNetworkByName to return existing config
 		existingNetwork := &din.Network{
 			NetworkConfig: &din.NetworkOperationsConfig{
-				HealthcheckMethod:       "eth_chainId",
-				HealthcheckIntervalSec:  30,
-				ChainIdMethod:           "eth_chainId",
-				GetBlockByNumberMethod:  "eth_getBlockByNumber",
-				CallContractMethod:      "eth_call",
-				BlockLagLimit:           5,
-				BlockJumpLimit:          100,
-				RequestAttemptCount:     3,
-				MaxRequestPayloadSizeKb: 512,
-				RegistryBlockEpoch:      2000,
-				ArchiveEnabled:          false,
-				ChainId:                 "0x1",
+				Handler:                  "evm",
+				HealthcheckIntervalSec:   30,
+				HealthcheckThreshold:     2,
+				HealthcheckTimeout:       5,
+				BlockLagLimit:            5,
+				BlockJumpLimit:           100,
+				RequestAttemptCount:      3,
+				MaxRequestPayloadSizeKb:  512,
+				RegistryBlockEpoch:       2000,
+				ArchiveEnabled:           false,
+				ProviderBlockHistorySize: 10,
+				NetworkBlockHistorySize:  128,
+				ChainId:                  "0x1",
 			},
 		}
 		mockDinClient.EXPECT().GetNetworkByName("test://network").Return(existingNetwork, nil).Times(1)

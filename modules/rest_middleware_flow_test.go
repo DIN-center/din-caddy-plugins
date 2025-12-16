@@ -194,12 +194,16 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 					}
 				} else {
 					w.WriteHeader(tt.expectedStatusCode)
-					if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
-						w.Write([]byte(`{"status":"ok"}`))
-					} else if tt.expectedStatusCode == 404 {
-						w.Write([]byte(`{"error":"not found"}`))
-					} else if tt.expectedStatusCode >= 500 {
-						w.Write([]byte(`{"error":"internal server error"}`))
+
+					body := `{"error":"internal server error"}`
+					if tt.expectedStatusCode >= http.StatusOK && tt.expectedStatusCode < http.StatusMultipleChoices {
+						body = `{"status":"ok"}`
+					} else if tt.expectedStatusCode == http.StatusNotFound {
+						body = `{"error":"not found"}`
+					}
+
+					if _, err := w.Write([]byte(body)); err != nil {
+						t.Logf("Error writing response body: %v", err)
 					}
 				}
 

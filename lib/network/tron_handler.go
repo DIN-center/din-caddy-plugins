@@ -141,8 +141,9 @@ func (h *TronHandler) ExtractMethod(req *http.Request, body []byte) (string, err
 }
 
 // ConfigureRequestPath implements the Handler interface.
-func (h *TronHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *TronHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureRESTRequestPath(req, providerPath, networkName)
+	// Note: providerQuery is not used for Tron currently. Can be implemented if needed.
 	return nil
 }
 
@@ -654,7 +655,7 @@ func (h *TronHandler) GetBlockTimestamp(httpUrl string, headers map[string]strin
 }
 
 //
-//
+// Private helper methods
 //
 
 func (h *TronHandler) parseBlockResponse(body []byte) (*TronBlock, error) {

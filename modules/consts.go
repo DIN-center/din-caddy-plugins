@@ -1,5 +1,7 @@
 package modules
 
+import "time"
+
 type HealthStatus int
 
 // HandlerType represents the type of network handler
@@ -13,6 +15,7 @@ const (
 	SolanaHandler         HandlerType = "solana"
 	BitcoinHandler        HandlerType = "bitcoin"
 	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
+	TronHandler           HandlerType = "tron-full-node"
 )
 
 const (
@@ -29,6 +32,7 @@ const (
 	// Module Context Key constants
 	DinUpstreamsContextKey          = "din.internal.upstreams"
 	RequestProviderKey              = "request_provider"
+	RequestProviderPriorityKey      = "request_provider_priority"
 	RequestBodyKey                  = "request_body"
 	RequestMethodKey                = "request_method"
 	HealthStatusKey                 = "health_status"
@@ -50,11 +54,18 @@ const (
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
 	DefaultArchiveEnabled          = false
+
 	// Registry constants
-	DefaultRegistryBlockCheckIntervalSec = uint64(60)
+	DefaultRegistryBlockCheckIntervalSec = int64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
-	DefaultPort                          = "8000"
+	DefaultRegistryRetryMaxAttempts      = 3
+	DefaultRegistryRetryDelay            = 2 * time.Second  // Fixed delay between retries
+	DefaultRegistryPanicRecoveryDelay    = 30 * time.Second // Delay before restarting after panic
+
+	// General constants
+	DefaultPort = "8000"
+
 	// Additional Status Codes
 	StatusOriginUnreachable = 523
 
@@ -75,6 +86,15 @@ const (
 	// Starknet
 	StarknetNamespace     = "starknet"
 	StarknetArchiveMethod = "starknet_getBlockWithTxs"
+
+	// Watcher score based dynamic load balancing constants
+	DinScoreBasedLoadBalancingContextKey     = "din.internal.score_based_load_balancing"
+	DinScoreBasedSelectionCaddyModuleKey     = "http.reverse_proxy.selection_policies.din_score_based_selector"
+	ScoreBasedSelectionProviderDefaultWeight = 50
+	StaleScoreGracePeriod                    = 60 * time.Minute
+	StaleScoreConvergencePeriod              = 60 * time.Minute
+	WatcherScoreUpdateInterval               = 1 * time.Minute
+	ScoreBasedSelectionWeightBase            = 100
 )
 
 // String method to convert MyEnum to string

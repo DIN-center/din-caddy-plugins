@@ -12,10 +12,13 @@ import (
 
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"go.uber.org/zap"
 )
+
+var _ NetworkHandler = (*EVMHandler)(nil)
 
 // EVMHandler handles EVM-compatible JSON-RPC networks
 type EVMHandler struct {
@@ -144,8 +147,19 @@ func (h *EVMHandler) ValidateRequest(req *http.Request) error {
 }
 
 // ConfigureRequestPath configures the request path for JSON-RPC requests
-func (h *EVMHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (h *EVMHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	ConfigureJSONRPCRequestPath(req, providerPath)
+
+	// Merge provider query params with request query params
+	// Provider query params take precedence (placed first)
+	if providerQuery != "" {
+		if req.URL.RawQuery == "" {
+			req.URL.RawQuery = providerQuery
+		} else {
+			req.URL.RawQuery = providerQuery + "&" + req.URL.RawQuery
+		}
+	}
+
 	return nil
 }
 
@@ -194,10 +208,7 @@ func (h *EVMHandler) ValidateChainID(chainID string) error {
 	}
 
 	// Validate the actual chain ID (with or without 0x prefix)
-	chainIDNum := actualChainID
-	if strings.HasPrefix(chainIDNum, "0x") {
-		chainIDNum = strings.TrimPrefix(chainIDNum, "0x")
-	}
+	chainIDNum := strings.TrimPrefix(actualChainID, "0x")
 
 	// Convert to ensure it's a valid number
 	if _, err := strconv.ParseInt(chainIDNum, 16, 64); err != nil {
@@ -284,11 +295,11 @@ func (h *EVMHandler) SupportsArchiveMode() bool {
 }
 
 func (h *EVMHandler) GetArchiveMethod() string {
-	return "eth_call"
+	return "eth_getBalance"
 }
 
 func (h *EVMHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
-	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":[{"input":"0x436000526004601cf3"},"%s"]}`,
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","id":1,"params":["0x0000000000000000000000000000000000000000","%s"]}`,
 		method, blockHeight)
 	return []byte(payload), nil
 }

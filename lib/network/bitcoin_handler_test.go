@@ -223,11 +223,11 @@ func TestBitcoinHandler_ParseChainIDResponse(t *testing.T) {
 	handler := NewBitcoinHandler(&NetworkConfig{})
 
 	tests := []struct {
-		name         string
-		response     string
-		statusCode   int
-		expectedID   string
-		expectError  bool
+		name        string
+		response    string
+		statusCode  int
+		expectedID  string
+		expectError bool
 	}{
 		{
 			name: "valid_mainnet_response",
@@ -241,8 +241,8 @@ func TestBitcoinHandler_ParseChainIDResponse(t *testing.T) {
 				},
 				"id": 1
 			}`,
-			statusCode: http.StatusOK,
-			expectedID: "main",
+			statusCode:  http.StatusOK,
+			expectedID:  "main",
 			expectError: false,
 		},
 		{
@@ -254,16 +254,16 @@ func TestBitcoinHandler_ParseChainIDResponse(t *testing.T) {
 				},
 				"id": 1
 			}`,
-			statusCode: http.StatusOK,
-			expectedID: "test",
+			statusCode:  http.StatusOK,
+			expectedID:  "test",
 			expectError: false,
 		},
 		{
-			name:         "http_error",
-			response:     `{}`,
-			statusCode:   http.StatusInternalServerError,
-			expectedID:   "",
-			expectError:  true,
+			name:        "http_error",
+			response:    `{}`,
+			statusCode:  http.StatusInternalServerError,
+			expectedID:  "",
+			expectError: true,
 		},
 		{
 			name: "json_rpc_error",
@@ -442,7 +442,7 @@ func TestBitcoinHandler_GetSupportedMethods(t *testing.T) {
 	handler := NewBitcoinHandler(&NetworkConfig{})
 
 	methods := handler.GetSupportedMethods()
-	
+
 	// Check that critical methods are included
 	expectedMethods := []string{
 		"getblockcount",
@@ -469,32 +469,32 @@ func TestBitcoinHandler_ParseBlockNumberResponse(t *testing.T) {
 	handler := NewBitcoinHandler(&NetworkConfig{})
 
 	tests := []struct {
-		name         string
-		response     string
-		statusCode   int
-		expectedNum  int64
-		expectError  bool
+		name        string
+		response    string
+		statusCode  int
+		expectedNum int64
+		expectError bool
 	}{
 		{
-			name:         "valid_response",
-			response:     `{"jsonrpc":"2.0","result":910901,"id":1}`,
-			statusCode:   http.StatusOK,
-			expectedNum:  910901,
-			expectError:  false,
+			name:        "valid_response",
+			response:    `{"jsonrpc":"2.0","result":910901,"id":1}`,
+			statusCode:  http.StatusOK,
+			expectedNum: 910901,
+			expectError: false,
 		},
 		{
-			name:         "rate_limit_error",
-			response:     `{}`,
-			statusCode:   429,
-			expectedNum:  0,
-			expectError:  true,
+			name:        "rate_limit_error",
+			response:    `{}`,
+			statusCode:  429,
+			expectedNum: 0,
+			expectError: true,
 		},
 		{
-			name:         "http_error",
-			response:     `{}`,
-			statusCode:   500,
-			expectedNum:  0,
-			expectError:  true,
+			name:        "http_error",
+			response:    `{}`,
+			statusCode:  500,
+			expectedNum: 0,
+			expectError: true,
 		},
 		{
 			name: "json_rpc_error",

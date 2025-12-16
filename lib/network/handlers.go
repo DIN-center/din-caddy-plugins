@@ -1,7 +1,7 @@
 // lib/network/handlers.go
 package network
 
-//go:generate mockgen -source=handlers.go -destination=interface_mock.go -package=network NetworkHandler
+//go:generate go tool mockgen -source=handlers.go -destination=interface_mock.go -package=network NetworkHandler
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ type NetworkHandler interface {
 	// ExtractMethod extracts the method name from the request for logging/metrics
 	ExtractMethod(req *http.Request, body []byte) (string, error)
 	// ConfigureRequestPath configures the request URL path based on the provider and network type
-	ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error
+	ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error
 
 	// === Response Handling ===
 	ParseResponse(body []byte, statusCode int) error
@@ -220,5 +220,12 @@ func RegisterBuiltinHandlers() {
 		return NewBitcoinEsploraHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Bitcoin Esplora handler: %v", err))
+	}
+
+	// Register Tron Full Node handler - matches modules.TronHandler constant
+	if err := DefaultRegistry.RegisterHandler("tron-full-node", func(config *NetworkConfig) (NetworkHandler, error) {
+		return NewTronHandler(config), nil
+	}); err != nil {
+		panic(fmt.Sprintf("Failed to register Tron Full Node handler: %v", err))
 	}
 }

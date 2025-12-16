@@ -2,6 +2,9 @@ package modules
 
 import (
 	"bytes"
+	"container/list"
+	"encoding/json"
+	stdliberrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,13 +13,9 @@ import (
 	"sync"
 	"time"
 
-	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
-	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/DIN-center/din-caddy-plugins/lib/web3"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	"github.com/DIN-center/din-sc/apps/din-go/lib/din"
+	"github.com/DIN-center/din-sc/apps/din-go/lib/watcher"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -24,11 +23,13 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
-	"container/list"
-
-	"encoding/json"
-
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
 var (
@@ -38,10 +39,59 @@ var (
 	// Din Middleware Module
 	_ caddy.Module                = (*DinMiddleware)(nil)
 	_ caddy.Provisioner           = (*DinMiddleware)(nil)
+	_ caddy.CleanerUpper          = (*DinMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinMiddleware)(nil)
-	// _ caddy.Validator			= (*mod.DinMiddleware)(nil)
+	_ caddy.CleanerUpper          = (*DinMiddleware)(nil)
+	// _ caddy.Validator            = (*mod.DinMiddleware)(nil)
 )
+
+// RegistryConfig contains all DIN Registry configuration settings
+type RegistryConfig struct {
+	// Core configuration
+	Enabled         bool   `json:"enabled"`
+	EndpointUrl     string `json:"endpoint_url"`
+	ContractAddress string `json:"contract_address"`
+
+	// Sync configuration
+	BlockCheckIntervalSec uint64 `json:"block_check_interval_sec"`
+	BlockEpoch            uint64 `json:"block_epoch"`
+	Priority              int    `json:"priority"`
+
+	// Retry and recovery configuration
+	RetryMaxAttempts   int           `json:"retry_max_attempts"`
+	RetryDelay         time.Duration `json:"retry_delay"`
+	PanicRecoveryDelay time.Duration `json:"panic_recovery_delay"`
+
+	// Internal state (not exposed in JSON)
+	lastUpdatedEpochBlockNumber uint64
+}
+
+type DynamicLoadBalancingConfig struct {
+	// The flag to enable or disable the dynamic load balancing
+	Enabled bool
+	// The endpoint of the watcher API
+	WatcherApiEndpoint string
+	// The API key for the watcher API
+	WatcherApiKey string
+
+	// Defines the interval in seconds to sync the watcher scores to the middleware
+	WatcherScoreSyncIntervalSec uint64
+	// The last time the watcher scores were synced to the middleware
+	WatcherScoreLastSyncTime time.Time
+
+	//The backend to manage score (Watcher score)
+	watcherScoreManager ws.IWatcherScoreManager
+
+	//The watcher client for dynamic load balancing
+	watcherClient watcher.IWatcherAPIClient
+
+	// The channel to quit the goroutine that computes the watcher scores
+	watcherScoreComputeQuit chan struct{}
+
+	// The channel to quit the goroutine that syncs the watcher scores to the middleware
+	watcherScoreSyncQuit chan struct{}
+}
 
 type DinMiddleware struct {
 	// A map of network paths to network objects
@@ -49,6 +99,9 @@ type DinMiddleware struct {
 	mu       sync.RWMutex
 	// The current environment (prod, beta, dev)
 	Env utils.Environment
+
+	// cleanupOnce ensures Cleanup is only executed once
+	cleanupOnce sync.Once
 
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
@@ -77,28 +130,24 @@ type DinMiddleware struct {
 	handlerRegistry *networklib.HandlerRegistry
 
 	// DIN Registry configuration
-	// The flag to enable or disable the din registry
-	RegistryEnabled bool
-	// The interval in seconds to check the latest block number from the registry
-	RegistryBlockCheckIntervalSec uint64
-	// The epoch in blocks to check the latest block number from the registry.
-	// For example, if the epoch is 10, then the din registry will be synced every 10 blocks.
-	RegistryBlockEpoch uint64
-	// The block number in which the registry was updated last
+	Registry RegistryConfig `json:"registry"`
+
+	// Internal registry tracking - this is not exposed in config
 	registryLastUpdatedEpochBlockNumber uint64
-	// The blockchain network to pull the registry data from. ie linea-mainnet or linea-sepolia
-	RegistryEndpointUrl string
-	// The contract address of the registry contract
-	RegistryContractAddress string
-	// The priority of the registry providers
-	RegistryPriority int
 
 	// The channel to quit the goroutines
 	quit chan struct{}
+
+	// Map for associating API keys with users
+	ApiKeys map[string]string
+	ApiSalt string
+
+	// Dynamic load balancing configuration
+	DynamicLoadBalancing DynamicLoadBalancingConfig
 }
 
 // CaddyModule returns the Caddy module information.
-func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
+func (*DinMiddleware) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.din",
 		New: func() caddy.Module { return new(DinMiddleware) },
@@ -107,15 +156,15 @@ func (DinMiddleware) CaddyModule() caddy.ModuleInfo {
 
 // Provision() is called by Caddy to prepare the middleware for use.
 // It is called only once, when the server is starting.
-func (d *DinMiddleware) Provision(context caddy.Context) error {
-	if len(d.Networks) == 0 && !d.RegistryEnabled {
+func (d *DinMiddleware) Provision(ctx caddy.Context) error {
+	if len(d.Networks) == 0 && !d.Registry.Enabled {
 		return fmt.Errorf("expected at least 1 network or registry to be defined")
 	}
 
 	// set the initialize the dinMiddlewareObject
-	err := d.initialize(context)
+	err := d.initialize(ctx)
 	if err != nil {
-		return fmt.Errorf("error initializing middleware: %v", err)
+		return fmt.Errorf("error initializing middleware: %w", err)
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -143,6 +192,24 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	// Initialize all networks
 	if err := d.initializeNetworks(); err != nil {
 		return fmt.Errorf("failed to initialize networks: %w", err)
+	}
+
+	// If dynamic load balancing is enabled, initialize the score backend
+	if d.DynamicLoadBalancing.Enabled {
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balancing activated, initializing watcher score manager")
+		d.logger.Debug("[DYNAMIC_LB] Dynamic load balancing settings:",
+			zap.Uint64("watcher_scores_sync_interval_secs", d.DynamicLoadBalancing.WatcherScoreSyncIntervalSec),
+			zap.String("watcher_endpoint", d.DynamicLoadBalancing.WatcherApiEndpoint))
+
+		//list of networks to compute scores
+		networks := make([]string, 0, len(d.Networks))
+		for network := range d.Networks {
+			networks = append(networks, network)
+		}
+
+		//initialize the watcher score manager for provisioned networks
+		d.DynamicLoadBalancing.watcherScoreManager = ws.NewWithBuiltInFormula(networks, d.GetOrCreateWatcherClient(), d.logger.Logger)
+
 	}
 
 	d.logger.Info("Din middleware provisioned")
@@ -180,31 +247,41 @@ func (d *DinMiddleware) initializeCoreServices(context caddy.Context) error {
 
 // initializeDefaults sets default values for configuration
 func (d *DinMiddleware) initializeDefaults() {
-	if d.RegistryBlockCheckIntervalSec == 0 {
-		d.RegistryBlockCheckIntervalSec = DefaultRegistryBlockCheckIntervalSec
+	if d.Registry.BlockCheckIntervalSec == 0 {
+		d.Registry.BlockCheckIntervalSec = uint64(DefaultRegistryBlockCheckIntervalSec)
 	}
-	if d.RegistryBlockEpoch == 0 {
-		d.RegistryBlockEpoch = DefaultRegistryBlockEpoch
+	if d.Registry.BlockEpoch == 0 {
+		d.Registry.BlockEpoch = DefaultRegistryBlockEpoch
 	}
-	if d.RegistryPriority == 0 {
-		d.RegistryPriority = DefaultRegistryPriority
+	if d.Registry.Priority == 0 {
+		d.Registry.Priority = DefaultRegistryPriority
 	}
 	if d.CaddyPort == "" {
 		d.CaddyPort = DefaultPort
+	}
+	// Set retry defaults
+	if d.Registry.RetryMaxAttempts == 0 {
+		d.Registry.RetryMaxAttempts = DefaultRegistryRetryMaxAttempts
+	}
+	if d.Registry.RetryDelay == 0 {
+		d.Registry.RetryDelay = DefaultRegistryRetryDelay
+	}
+	if d.Registry.PanicRecoveryDelay == 0 {
+		d.Registry.PanicRecoveryDelay = DefaultRegistryPanicRecoveryDelay
 	}
 }
 
 // initializeDinRegistryClient initializes the DIN registry client
 func (d *DinMiddleware) initializeDinRegistryClient() error {
-	if d.RegistryEnabled {
+	if d.Registry.Enabled {
 		// DinClient is only initialized if the registry is enabled
 		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry",
-			zap.String("registry_endpoint_url", d.RegistryEndpointUrl),
-			zap.String("registry_contract_address", d.RegistryContractAddress))
+			zap.String("registry_endpoint_url", d.Registry.EndpointUrl),
+			zap.String("registry_contract_address", d.Registry.ContractAddress))
 
-		client, err := din.NewDinClient(d.logger.Logger, d.RegistryEndpointUrl, d.RegistryContractAddress)
+		client, err := din.NewDinClient(d.logger.Logger, d.Registry.EndpointUrl, d.Registry.ContractAddress)
 		if err != nil {
-			return fmt.Errorf("error initializing DIN client: %v", err)
+			return fmt.Errorf("error initializing DIN client: %w", err)
 		}
 		d.DingoClient = client
 	}
@@ -308,7 +385,7 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 	// Initialize providers
 	for _, provider := range networkObj.Providers {
 		if err := d.initializeProvider(networkName, provider, httpClient, d.logger); err != nil {
-			return fmt.Errorf("error initializing provider: %v", err)
+			return fmt.Errorf("error initializing provider: %w", err)
 		}
 	}
 	return nil
@@ -340,13 +417,24 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 func (d *DinMiddleware) startBackgroundServices() error {
 	// Start health checks
 	if err := d.startHealthChecks(); err != nil {
-		return fmt.Errorf("error starting healthchecks: %v", err)
+		return fmt.Errorf("error starting healthchecks: %w", err)
 	}
 
 	// Start registry sync if enabled
-	if d.RegistryEnabled {
+	if d.Registry.Enabled {
 		d.logger.Info("Din registry is enabled, pulling data from the registry")
 		d.startRegistrySync()
+	}
+
+	// Check if we need to start the periodic updates for the watcher scores
+	if d.DynamicLoadBalancing.Enabled {
+		d.logger.Info("[DYNAMIC_LB] Dynamic load balancing enabled, starting periodic updates for watcher scores", zap.Duration("frequency_interval", WatcherScoreUpdateInterval))
+		d.DynamicLoadBalancing.watcherScoreComputeQuit = d.DynamicLoadBalancing.watcherScoreManager.StartPeriodicUpdates(WatcherScoreUpdateInterval)
+		// If the sync interval is greater than 0, start the watcher score sync goroutine
+		if d.DynamicLoadBalancing.WatcherScoreSyncIntervalSec > 0 {
+			d.logger.Info("[DYNAMIC_LB] Dynamic load balancing enabled, syncing watcher scores to the middleware", zap.Duration("frequency_interval", time.Duration(d.DynamicLoadBalancing.WatcherScoreSyncIntervalSec)*time.Second))
+			d.DynamicLoadBalancing.watcherScoreSyncQuit = d.startWatcherScoreSync()
+		}
 	}
 
 	return nil
@@ -360,7 +448,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		d.logger.Error("Error parsing provider URL",
 			zap.String("http_url", provider.HttpUrl),
 			zap.Error(err))
-		return fmt.Errorf("error parsing provider URL: %v", err)
+		return fmt.Errorf("error parsing provider URL: %w", err)
 	}
 
 	dialHost := parsedUrl.Host
@@ -375,6 +463,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	} else {
 		provider.path = parsedUrl.Path
 	}
+	provider.query = parsedUrl.RawQuery
 
 	// Note: Authentication credentials from URL (username@host) are preserved in the URL
 	// and handled during request construction, not converted to Authorization headers
@@ -402,7 +491,11 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		}
 	}
 	provider.logger = d.logger
-	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.Any("Path", provider.path))
+
+	// Initialize the score for the provider with an empty score
+	provider.SafeUpdateScore(ws.NewEmptyScore())
+
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.String("Path", provider.path), zap.String("Query", provider.query))
 
 	// Make sure blockHistory is initialized
 	if provider.blockHistory == nil {
@@ -414,10 +507,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 
 // ServeHTTP is the main handler for the middleware that is ran for every request.
 // It checks if the network path is defined in the networks map and sets the provider in the context.
-func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error { //nolint:gocyclo
 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -427,30 +517,47 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	pathSegments := strings.Split(fullPath, "/")
 	networkPath := pathSegments[0] // Get the first segment as network name
 
-	networkObj, ok := d.Networks[networkPath]
-	if !ok {
-		// If the network is not defined, return a 404. If the network path is empty, return an empty JSON object with a 200
-		if networkPath == "" {
-			rw.WriteHeader(200)
-			rw.Write([]byte("{}"))
-			return nil
-		}
+	// If the network path is empty, return an empty JSON object with a 200.
+	if networkPath == "" {
+		rw.WriteHeader(http.StatusOK)
+		_, err := rw.Write([]byte("{}"))
 
-		rw.WriteHeader(404)
-		rw.Write([]byte("Not Found\n"))
-		return fmt.Errorf("network undefined")
+		return err
+	}
+
+	// Safely access the networks map for guaranteed consistency
+	// It assumes that the network object is immutable after the lock is released or
+	// that any internal shared state in the network object is protected by a granular lock (at the shared state level)
+	// IMPORTANT NOTE: network objects are modified by the DIN Registry (e.g. adding/removing providers, methods, etc.)
+	// This means that DIN Registry cannot be enabled without a refactor of the middleware to protect the shared state at the granular level
+	d.mu.RLock()
+	networkObj, ok := d.Networks[networkPath]
+	d.mu.RUnlock()
+	if !ok {
+		// If the network is not defined, return a 404.
+		rw.WriteHeader(http.StatusNotFound)
+		_, err := rw.Write([]byte("Not Found\n"))
+
+		return fmt.Errorf("network undefined: %w", err)
 	}
 
 	// Ensure handler is available
 	if networkObj.handler == nil {
 		d.logger.Error("No handler available for network", zap.String("network", networkPath))
 		rw.WriteHeader(http.StatusInternalServerError)
-		rw.Write([]byte("Internal Server Error\n"))
-		return fmt.Errorf("no handler available for network %s", networkPath)
+		_, err := rw.Write([]byte("Internal Server Error\n"))
+
+		return fmt.Errorf("no handler available for network %s: %w", networkPath, err)
 	}
 
 	// Store network object in replacer for later use
 	repl.Set("network_object", networkObj)
+	if api_key := r.Header.Get("Din-Api-Key"); api_key != "" {
+		repl.Set("din_api_key", d.getAPIKeyId(api_key))
+		r.Header.Del("Din-Api-Key") // We don't want to pass this information to providers
+	} else {
+		repl.Set("din_api_key", "unspecified")
+	}
 
 	// Middleware focuses on request validation only
 	// DinSelect will handle all REST API path processing during provider configuration
@@ -459,15 +566,25 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if err := networkObj.handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 
+		var (
+			statusCode int
+			body       string
+		)
+
 		// Check if it's an HTTPError with specific status code
-		if httpErr, ok := err.(*networklib.HTTPError); ok {
-			rw.WriteHeader(httpErr.StatusCode)
-			rw.Write([]byte(httpErr.Message + "\n"))
+		httpErr := &networklib.HTTPError{}
+		if errors.As(err, &httpErr) {
+			statusCode = httpErr.StatusCode
+			body = httpErr.Message + "\n"
 		} else {
-			rw.WriteHeader(http.StatusBadRequest)
-			rw.Write([]byte("Bad Request\n"))
+			statusCode = http.StatusBadRequest
+			body = "Bad Request\n"
 		}
-		return fmt.Errorf("handler failed to process request: %w", err)
+
+		rw.WriteHeader(statusCode)
+		_, writeErr := rw.Write([]byte(body))
+
+		return stdliberrors.Join(fmt.Errorf("handler failed to process request: %w", err), writeErr)
 	}
 
 	// Read request body and save in context
@@ -483,7 +600,11 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if (len(bodyBytes) / 1024) > int(networkObj.MaxRequestPayloadSizeKB) {
 		// If the request payload is too large, return an error
 		rw.WriteHeader(http.StatusRequestEntityTooLarge)
-		rw.Write([]byte("Request payload too large\n"))
+		_, err := rw.Write([]byte("Request payload too large\n"))
+		if err != nil {
+			return errors.Wrap(err, "request payload too large")
+		}
+
 		return fmt.Errorf("request payload too large")
 	}
 
@@ -493,7 +614,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// if the request body is empty for JSON-RPC, do not increment the prometheus metric, return an error
 		// this is specifically for OPTIONS requests and invalid JSON-RPC payload bodies
 		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte("Request body is empty\n"))
+		_, err := rw.Write([]byte("Request body is empty\n"))
+		if err != nil {
+			return fmt.Errorf("error writing response: %w", err)
+		}
 		return fmt.Errorf("request body is empty")
 	}
 
@@ -525,6 +649,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
 	}
+
+	// Set if dynamic load balancing should be done
+	repl.Set(DinScoreBasedLoadBalancingContextKey, d.DynamicLoadBalancing.Enabled)
 
 	reqStartTime := time.Now()
 
@@ -668,6 +795,20 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			provider = v.(string)
 		}
 
+		// Get priority for metrics
+		priority := 0
+		if v, ok := repl.Get(RequestProviderPriorityKey); ok {
+			if pInt, ok := v.(int); ok {
+				priority = pInt
+			}
+		}
+
+		// Get provider name for metrics
+		providerName := "unknown"
+		if v, ok := networkObj.Providers[provider]; ok {
+			providerName = v.Name
+		}
+
 		duration := time.Since(reqStartTime)
 
 		// Determine appropriate status code for the failure
@@ -683,9 +824,12 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				Method:         method,
 				Network:        networkPath,
 				Provider:       provider,
+				ProviderName:   providerName,
+				ApiKey:         getRequestAPIKey(repl),
 				HostName:       r.Host,
 				ResponseStatus: statusCode,
 				HealthStatus:   "unhealthy", // All providers failed
+				Priority:       priority,
 				Environment:    string(d.Env),
 			}, duration, nil)
 		}
@@ -742,15 +886,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	return nil
 }
 
-// getNetworkNames returns a slice of available network names for debugging
-func (d *DinMiddleware) getNetworkNames() []string {
-	names := make([]string, 0, len(d.Networks))
-	for name := range d.Networks {
-		names = append(names, name)
-	}
-	return names
-}
-
 // StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
 func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks")
@@ -767,42 +902,121 @@ func (d *DinMiddleware) startHealthChecks() error {
 // the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
-	// Get the initial registry data
-	registryData, err := d.DingoClient.GetRegistryData()
+	// Get the initial registry data with retry
+	registryData, err := d.getRegistryData()
 	if err != nil {
-		d.logger.Error("Failed to initialize registry sync", zap.Error(err))
+		d.logger.Error("Failed to initialize registry sync after retries",
+			zap.Error(err),
+			zap.Int("max_retries", d.Registry.RetryMaxAttempts))
 	}
 	d.processRegistryData(registryData)
+
 	// Start a ticker to check the linea network latest block number on a time interval of 60 seconds by default.
-	ticker := time.NewTicker(time.Second * time.Duration(d.RegistryBlockCheckIntervalSec))
+	ticker := time.NewTicker(time.Second * time.Duration(d.Registry.BlockCheckIntervalSec))
 	go func() {
-		// Keep an index for RPC request IDs
-		for i := 0; ; i++ {
+		// CRITICAL: Panic recovery to prevent application crash
+		// If registry sync panics, log the error and continue running
+		defer func() {
+			if r := recover(); r != nil {
+				d.logger.Error("CRITICAL: Registry sync goroutine panicked and recovered. Application continues running.",
+					zap.Any("panic", r),
+					zap.Stack("stacktrace"))
+				// Clean up the ticker
+				ticker.Stop()
+
+				// Restart the sync after a configurable delay to recover from transient issues
+				// This prevents the sync from being permanently dead after a panic
+				time.Sleep(d.Registry.PanicRecoveryDelay)
+				d.logger.Info("Attempting to restart registry sync after panic recovery",
+					zap.Duration("recovery_delay", d.Registry.PanicRecoveryDelay))
+				d.startRegistrySync()
+			}
+		}()
+
+		for {
 			select {
 			case <-d.quit:
 				ticker.Stop()
+				d.logger.Info("Registry sync goroutine shutting down gracefully")
 				return
 			case <-ticker.C:
-				d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				// Wrap the sync call in a function that can recover from panics
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							d.logger.Error("Registry sync operation panicked during sync attempt",
+								zap.Any("panic", r))
+						}
+					}()
+					d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+				}()
 			}
 		}
 	}()
 }
 
-func (d *DinMiddleware) closeAll() {
-	for _, network := range d.Networks {
-		network.close()
-	}
-	d.close()
+// startWatcherScoreSync starts a background goroutine to sync the watcher scores to the middleware
+func (d *DinMiddleware) startWatcherScoreSync() chan struct{} {
+	syncQuit := make(chan struct{})
+
+	// Do immediate initial sync
+	// Note that syncing watcher scores immediately here may be a bit early if the score computation is not yet complete,
+	// but it's ok because the watcher score manager will return empty scores until the computation is complete
+	// and the middleware will not use these empty scores for load balancing
+	d.SyncMiddlewareWithLatestScores()
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(d.DynamicLoadBalancing.WatcherScoreSyncIntervalSec) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-syncQuit:
+				d.logger.Info("[DYNAMIC_LB] Watcher score sync goroutine shutting down gracefully")
+				return
+			case <-ticker.C:
+				d.SyncMiddlewareWithLatestScores()
+			}
+		}
+	}()
+	return syncQuit
 }
 
-func (d *DinMiddleware) close() {
-	close(d.quit)
-}
+// Cleanup implements caddy.CleanerUpper and is called when Caddy shuts down or reloads.
+// It ensures all goroutines are properly terminated and resources are cleaned up.
+func (d *DinMiddleware) Cleanup() error {
+	var cleanupErr error
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	d.cleanupOnce.Do(func() {
+		d.logger.Info("Starting graceful shutdown of DIN middleware")
+
+		// Close all network healthcheck goroutines
+		for name, network := range d.Networks {
+			d.logger.Debug("Closing network resources", zap.String("network", name))
+			if network.quit != nil {
+				close(network.quit)
+			}
+		}
+
+		// Close middleware-level goroutines (registry sync)
+		if d.quit != nil {
+			d.logger.Debug("Signaling shutdown to registry sync goroutine")
+			close(d.quit)
+		}
+
+		// Close middleware-level goroutine that syncs the watcher scores to the middleware
+		if d.DynamicLoadBalancing.watcherScoreSyncQuit != nil {
+			d.logger.Debug("Signaling shutdown to watcher score sync goroutine")
+			close(d.DynamicLoadBalancing.watcherScoreSyncQuit)
+		}
+
+		// Close middleware-level goroutine that computes the watcher scores
+		if d.DynamicLoadBalancing.watcherScoreComputeQuit != nil {
+			d.logger.Debug("Signaling shutdown to watcher score compute goroutine")
+			close(d.DynamicLoadBalancing.watcherScoreComputeQuit)
+		}
+
+		d.logger.Info("DIN middleware shutdown complete")
+	})
+
+	return cleanupErr
 }

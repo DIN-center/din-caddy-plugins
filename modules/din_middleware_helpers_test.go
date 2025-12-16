@@ -7,26 +7,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/pkg/errors"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 	"go.uber.org/zap/zaptest/observer"
-)
-
-// Constants for replacer keys used in tests, mirroring those in din_middleware.go
-const (
-	testRequestProviderKey = "request_provider"
-	testRequestBodyKey     = "request_body"
 )
 
 // MockWeb3Client is a mock implementation of web3.Web3Client for testing
@@ -43,11 +40,13 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockDingoClient := din.NewMockIDinClient(mockCtrl)
 	dinMiddleware := &DinMiddleware{
-		RegistryBlockEpoch:                  10,
-		registryLastUpdatedEpochBlockNumber: 40,
-		logger:                              logger,
-		DingoClient:                         mockDingoClient,
-		testMode:                            true,
+		Registry: RegistryConfig{
+			BlockEpoch:                  10,
+			lastUpdatedEpochBlockNumber: 40,
+		},
+		logger:      logger,
+		DingoClient: mockDingoClient,
+		testMode:    true,
 	}
 
 	tests := []struct {
@@ -91,7 +90,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset the middleware state
 			dinMiddleware.Networks = map[string]*network{}
-			dinMiddleware.registryLastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
+			dinMiddleware.Registry.lastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
 			// Create a mock Web3Client
 			mockWeb3Client := &MockWeb3Client{mockLatestBlockNumber: tt.latestBlockNumber}
@@ -105,9 +104,9 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			dinMiddleware.syncRegistryWithLatestBlock(mockWeb3Client)
 
 			// Validate that registryLastUpdatedEpochBlockNumber is updated correctly
-			if dinMiddleware.registryLastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
+			if dinMiddleware.Registry.lastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {
 				t.Errorf("Expected registryLastUpdatedEpochBlockNumber = %v, got %v",
-					tt.expectedBlockFloorByEpoch, dinMiddleware.registryLastUpdatedEpochBlockNumber)
+					tt.expectedBlockFloorByEpoch, dinMiddleware.Registry.lastUpdatedEpochBlockNumber)
 			}
 		})
 	}
@@ -139,7 +138,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 			},
 			expectedNetworkProviders: 1,
@@ -161,7 +160,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -219,7 +218,7 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
+			require.NoError(t, dinMiddleware.addNetworkWithRegistryData(tt.regNetwork))
 
 			// Verify the network is added
 			network, ok := dinMiddleware.Networks[tt.regNetwork.ProxyName]
@@ -229,6 +228,120 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 				// Verify the number of providers added to the network
 				assert.Equal(t, tt.expectedNetworkProviders, len(network.Providers))
 			}
+		})
+	}
+}
+
+func TestAddNetworkFromRegistryDataWorksWithDynamicLoadBalancing(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	tests := []struct {
+		name                        string
+		regNetwork                  *din.Network
+		dynamicLoadBalancingEnabled bool
+		networkAdded                bool
+	}{
+		{
+			name: "Network removed, and DLB enabled",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:    "http://new-provider.com",
+								Status: din.NetworkServiceStatusActive,
+							},
+						},
+					},
+				},
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: true,
+			networkAdded:                true,
+		},
+		{
+			name: "No network added, and DLB enabled",
+			regNetwork: &din.Network{
+				ProxyName:     "test-network",
+				Providers:     map[string]*din.Provider{},
+				Status:        din.NetworkStatusOnboarding,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: true,
+			networkAdded:                false,
+		},
+		{
+			name: "network added, and DLB disabled",
+			regNetwork: &din.Network{
+				ProxyName: "test-network",
+				Providers: map[string]*din.Provider{
+					"Provider1": {
+						NetworkServices: map[string]*din.NetworkService{
+							"http://new-provider.com": {
+								Url:    "http://new-provider.com",
+								Status: din.NetworkServiceStatusActive,
+							},
+						},
+					},
+				},
+				Status:        din.NetworkStatusActive,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: false,
+			networkAdded:                false,
+		},
+		{
+			name: "No network added, and DLB disabled",
+			regNetwork: &din.Network{
+				ProxyName:     "test-network",
+				Providers:     map[string]*din.Provider{},
+				Status:        din.NetworkStatusOnboarding,
+				NetworkConfig: &din.NetworkOperationsConfig{},
+			},
+			dynamicLoadBalancingEnabled: false,
+			networkAdded:                false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock DingoClient and other dependencies
+			mockDingoClient := din.NewMockIDinClient(mockCtrl)
+
+			// Create a mock WatcherScoreManager
+			mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
+
+			// Create logger
+			logger := logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test"))
+
+			// Create DinMiddleware instance with proper initialization
+			dinMiddleware := &DinMiddleware{
+				DingoClient: mockDingoClient,
+				logger:      logger,
+				Networks:    make(map[string]*network),
+				testMode:    true,
+				Env:         utils.Environment("test"),
+				CaddyPort:   "8080",
+				machineID:   "test-machine-id",
+				DynamicLoadBalancing: DynamicLoadBalancingConfig{
+					Enabled:             tt.dynamicLoadBalancingEnabled,
+					watcherScoreManager: mockWatcherScoreManager,
+				},
+			}
+
+			// Set up the expectations according to the test case
+			if tt.networkAdded && tt.dynamicLoadBalancingEnabled {
+				mockWatcherScoreManager.EXPECT().AddNetworkWithBuiltInFormula(tt.regNetwork.ProxyName, dinMiddleware.GetOrCreateWatcherClient()).Return(nil).
+					Times(1)
+			} else {
+				mockWatcherScoreManager.EXPECT().AddNetworkWithBuiltInFormula(tt.regNetwork.ProxyName, dinMiddleware.GetOrCreateWatcherClient()).Return(nil).
+					Times(0)
+			}
+
+			// Call the function being tested
+			dinMiddleware.addNetworkWithRegistryData(tt.regNetwork)
 		})
 	}
 }
@@ -263,7 +376,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 			},
 			newNetwork: &network{
@@ -291,7 +404,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 					},
 				},
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusOnboarding,
 			},
@@ -308,9 +421,9 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 		{
 			name: "Error syncing network config",
 			regNetwork: &din.Network{
-				Name: "test-network",
+				Name:          "test-network",
 				NetworkConfig: &din.NetworkOperationsConfig{
-					HealthcheckMethod: "eth_blockNumber",
+					// Method fields removed, handlers provide these now
 				},
 				Status: din.NetworkStatusActive,
 			},
@@ -347,7 +460,7 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 			}
 
 			// Call the function being tested
-			dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork)
+			require.NoError(t, dinMiddleware.updateNetworkWithRegistryData(tt.regNetwork, tt.newNetwork))
 
 			// Assert the number of providers after the update
 			assert.Equal(t, tt.expectedProviderCount, len(tt.newNetwork.Providers))
@@ -573,9 +686,11 @@ func TestCreateNewProvider(t *testing.T) {
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
-				DingoClient:       mockDingoClient,
-				SiweSignerClient:  mockSiweSignerClient,
-				RegistryPriority:  10,
+				DingoClient:      mockDingoClient,
+				SiweSignerClient: mockSiweSignerClient,
+				Registry: RegistryConfig{
+					Priority: 10,
+				},
 				logger:            logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 				testMode:          true,
 				DefaultSiweSigner: defaultSigner,
@@ -599,7 +714,7 @@ func TestCreateNewProvider(t *testing.T) {
 
 				// Verify that the provider was updated correctly
 				assert.Equal(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
-				assert.Equal(t, dinMiddleware.RegistryPriority, createdProvider.Priority)
+				assert.Equal(t, dinMiddleware.Registry.Priority, createdProvider.Priority)
 				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
 			}
 		})

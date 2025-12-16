@@ -52,7 +52,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 
 	var lastErr error
 	var lastResponseStatus int
-	var lastHealthStatus HealthStatus = Unhealthy
+	var lastHealthStatus = Unhealthy
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Make POST request with payload

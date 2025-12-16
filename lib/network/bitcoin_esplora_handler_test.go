@@ -52,26 +52,6 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 			path:      "/blocks/tip/height",
 			expectErr: false,
 		},
-		{
-			name:      "blocked POST request for tx broadcast",
-			method:    "POST",
-			path:      "/tx",
-			headers:   map[string]string{"Content-Type": "text/plain"},
-			expectErr: true,
-		},
-		{
-			name:      "invalid method PUT",
-			method:    "PUT",
-			path:      "/blocks/tip/height",
-			expectErr: true,
-		},
-		{
-			name:      "blocked POST request with invalid content type",
-			method:    "POST",
-			path:      "/tx",
-			headers:   map[string]string{"Content-Type": "application/json"},
-			expectErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -96,18 +76,12 @@ func TestBitcoinEsploraHandler_ValidateRequest(t *testing.T) {
 func TestBitcoinEsploraHandler_ValidateRequest_HTTPError(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
 
-	// Test that POST requests return HTTPError with 405 status code
+	// Test that POST requests no longer return HTTPError with 405 status code
 	req, err := http.NewRequest("POST", "https://example.com/tx", nil)
 	require.NoError(t, err)
 
 	err = handler.ValidateRequest(req)
-	require.Error(t, err)
-
-	// Check that it's an HTTPError with the correct status code
-	httpErr, ok := err.(*HTTPError)
-	require.True(t, ok, "Expected HTTPError type")
-	assert.Equal(t, http.StatusMethodNotAllowed, httpErr.StatusCode)
-	assert.Equal(t, "POST method not allowed for Bitcoin Esplora API", httpErr.Message)
+	require.NoError(t, err)
 }
 
 func TestBitcoinEsploraHandler_NormalizeEndpoint(t *testing.T) {

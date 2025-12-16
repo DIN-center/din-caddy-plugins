@@ -41,6 +41,7 @@ func TestGetCheck(t *testing.T) {
 					"total_providers": 1,
 					"providers": [{
 						"provider": "test-provider",
+						"provider_id": "test-provider-id",
 						"provider_location": "test-location",
 						"endpoint_url": "https://test.com",
 						"block_number_from": 1000,
@@ -121,6 +122,9 @@ func TestGetCheck(t *testing.T) {
 				}
 				if response.Providers[0].Provider != "test-provider" {
 					t.Errorf("Expected provider 'test-provider', got '%s'", response.Providers[0].Provider)
+				}
+				if response.Providers[0].ProviderID != "test-provider-id" {
+					t.Errorf("Expected provider_id 'test-provider-id', got '%s'", response.Providers[0].ProviderID)
 				}
 				if response.Providers[0].ProviderLocation != "test-location" {
 					t.Errorf("Expected provider_location 'test-location', got '%s'", response.Providers[0].ProviderLocation)
@@ -205,6 +209,7 @@ func TestGetLatency(t *testing.T) {
 					"total_providers": 1,
 					"providers": [{
 						"provider": "test-provider",
+						"provider_id": "test-provider-id",
 						"provider_location": "test-location",
 						"endpoint_url": "https://test.com",
 						"last_request_ts": "2024-01-01T01:00:00Z",
@@ -281,6 +286,9 @@ func TestGetLatency(t *testing.T) {
 				}
 				if response.Providers[0].Provider != "test-provider" {
 					t.Errorf("Expected provider 'test-provider', got '%s'", response.Providers[0].Provider)
+				}
+				if response.Providers[0].ProviderID != "test-provider-id" {
+					t.Errorf("Expected provider_id 'test-provider-id', got '%s'", response.Providers[0].ProviderID)
 				}
 				if response.Providers[0].ProviderLocation != "test-location" {
 					t.Errorf("Expected provider_location 'test-location', got '%s'", response.Providers[0].ProviderLocation)

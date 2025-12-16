@@ -2,6 +2,7 @@ package modules
 
 import (
 	"container/list"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -9,15 +10,36 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
+
+// caddyfileConfigFlags tracks which configuration fields were explicitly set via Caddyfile.
+// When a field's flag is true, it means the value was configured in the Caddyfile and should
+// not be overridden by registry sync. This ensures Caddyfile settings take priority.
+type caddyfileConfigFlags struct {
+	HandlerTypeSetInCaddyfile              bool
+	ChainIdSetInCaddyfile                  bool
+	HCIntervalSetInCaddyfile               bool
+	HCThresholdSetInCaddyfile              bool
+	HCTimeoutSetInCaddyfile                bool
+	BlockLagLimitSetInCaddyfile            bool
+	BlockJumpLimitSetInCaddyfile           bool
+	MaxRequestPayloadSizeKBSetInCaddyfile  bool
+	RequestAttemptCountSetInCaddyfile      bool
+	ProviderBlockHistorySizeSetInCaddyfile bool
+	NetworkBlockHistorySizeSetInCaddyfile  bool
+	ArchiveEnabledSetInCaddyfile           bool
+}
+
+var _ json.Unmarshaler = (*network)(nil)
 
 type network struct {
 	Name             string
@@ -32,6 +54,9 @@ type network struct {
 
 	// NEW: Handler reference for network-specific operations
 	handler networklib.NetworkHandler
+
+	// CaddyfileFlags tracks which fields were set via Caddyfile (not via registry)
+	CaddyfileFlags *caddyfileConfigFlags `json:"-"` // Don't serialize to JSON
 
 	// internal health check values
 	HCThreshold              int
@@ -69,6 +94,7 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
+		quit:        make(chan struct{}),
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
@@ -84,6 +110,11 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 		Environment:              environment,
 		Providers:                make(map[string]*provider),
 		CaddyPort:                caddyPort,
+		// Initialize Caddyfile flags tracking
+		CaddyfileFlags: &caddyfileConfigFlags{
+			// If handlerType is provided (not empty), mark it as set in Caddyfile
+			HandlerTypeSetInCaddyfile: handlerType != "",
+		},
 	}
 
 	// Note: Handler initialization is deferred to avoid duplicate initialization.
@@ -118,6 +149,23 @@ func (n *network) SetHandler(handler networklib.NetworkHandler) error {
 			zap.String("network", n.Name),
 			zap.String("handler_type", handler.GetType()))
 	}
+
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (n *network) UnmarshalJSON(data []byte) error {
+	type Alias network
+	alias := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(n),
+	}
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	n.quit = make(chan struct{})
 
 	return nil
 }
@@ -158,12 +206,13 @@ func (n *network) healthCheck() {
 	for _, provider := range n.Providers {
 
 		// Get latest block and initial health status
-		var healthStatus HealthStatus = Healthy
+		var healthStatus = Healthy
 		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient(), provider.host)
 		if err != nil {
 			n.logProviderWarning("Health check failed after all attempts for provider", provider,
 				zap.Int64("block_number", latestBlockResult.blockNumber),
 				zap.String("provider", provider.host),
+				zap.String("providerName", provider.Name),
 				zap.Int("response_status", latestBlockResult.responseStatus),
 				zap.String("health_status", latestBlockResult.healthStatus.String()),
 				zap.Int("total_attempts", n.RequestAttemptCount),
@@ -174,7 +223,7 @@ func (n *network) healthCheck() {
 			if healthStatus == Unhealthy {
 				// Add the block entry and send metric
 				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.ProviderBlockHistorySize)
-				n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+				n.sendHealthCheckMetric(provider.host, provider.Name, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
 			}
@@ -184,7 +233,7 @@ func (n *network) healthCheck() {
 
 		// Update metrics and history
 		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.ProviderBlockHistorySize)
-		n.sendHealthCheckMetric(provider.host, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, string(n.Environment))
+		n.sendHealthCheckMetric(provider.host, provider.Name, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 	}
 }
 
@@ -246,7 +295,9 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 func (n *network) logProviderWarning(msg string, provider *provider, fields ...zap.Field) {
 	baseFields := []zap.Field{
 		zap.String("provider", provider.host),
+		zap.String("providerName", provider.Name),
 		zap.String("network", n.Name),
+		zap.Int("priority", provider.Priority),
 	}
 
 	n.logger.Warn(msg, append(baseFields, fields...)...)
@@ -404,10 +455,6 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 	return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
 }
 
-func (n *network) close() {
-	close(n.quit)
-}
-
 // isStalled checks if provider's block numbers haven't changed
 func (n *network) isStalled(provider *provider) bool {
 	history := provider.BlockHistory()
@@ -477,13 +524,15 @@ func (n *network) getLatestHealthyBlock() int64 {
 	return latestBlockFromWarning
 }
 
-func (n *network) sendHealthCheckMetric(providerName string, responseStatus int, healthStatus string, blockNumber int64, environment string) {
+func (n *network) sendHealthCheckMetric(provider string, providerName string, responseStatus int, healthStatus string, blockNumber int64, priority int, environment string) {
 	n.PrometheusClient.HandleHealthCheckMetric(&prom.PromHealthCheckMetricData{
 		Network:        n.Name,
-		Provider:       providerName,
+		Provider:       provider,
+		ProviderName:   providerName,
 		ResponseStatus: responseStatus,
 		HealthStatus:   healthStatus,
 		BlockNumber:    blockNumber,
+		Priority:       priority,
 		Environment:    environment,
 	})
 }
@@ -720,13 +769,13 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	result, err := n.handler.GetLatestBlockNumber(loopbackURL, headers, n.HttpClient, nil, 1)
 	if err != nil {
 		// Extract method directly from GenericRequestContext - completely generic
-		var method string = "unknown"
+		var method = "unknown"
 		if genericContext != nil {
 			method = genericContext.Method
 		}
 
 		// Set default values for when result is nil
-		var statusCode int = 0
+		var statusCode = 0
 		if result != nil {
 			statusCode = result.ResponseStatus
 		}

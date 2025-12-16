@@ -25,6 +25,8 @@ func (m *MockProvider) GetPath() string               { return m.path }
 func (m *MockProvider) GetHost() string               { return m.host }
 func (m *MockProvider) GetPriority() int              { return m.priority }
 
+var _ NetworkHandler = (*MockHandler)(nil)
+
 // Mock handler for testing
 type MockHandler struct {
 	handlerType string
@@ -49,7 +51,7 @@ func (m *MockHandler) ExtractMethod(req *http.Request, body []byte) (string, err
 	return "mock_method", nil
 }
 
-func (m *MockHandler) ConfigureRequestPath(req *http.Request, providerPath string, networkName string) error {
+func (m *MockHandler) ConfigureRequestPath(req *http.Request, providerPath string, providerQuery string, networkName string) error {
 	// Mock implementation - just return nil
 	return nil
 }
@@ -464,7 +466,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "bitcoin", "bitcoin-esplora"}
+	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "bitcoin", "bitcoin-esplora", "tron-full-node"}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

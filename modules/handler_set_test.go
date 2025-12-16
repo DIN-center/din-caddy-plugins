@@ -3,14 +3,15 @@ package modules
 import (
 	"testing"
 
-	"github.com/DIN-center/din-caddy-plugins/lib/logger"
-	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
-	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
 // TestHandlerSetOnce verifies that handlers are only set once during the entire flow

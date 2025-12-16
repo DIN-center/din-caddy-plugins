@@ -24,28 +24,12 @@ type JSONRPCError struct {
 
 // JSONRPCErrorClassifier provides error classification logic for JSON-RPC errors
 type JSONRPCErrorClassifier struct {
-	retryablePatterns    []string
 	nonRetryablePatterns []string
 }
 
 // NewJSONRPCErrorClassifier creates a new error classifier with default patterns
 func NewJSONRPCErrorClassifier() *JSONRPCErrorClassifier {
 	return &JSONRPCErrorClassifier{
-		retryablePatterns: []string{
-			"timeout",
-			"connection",
-			"network",
-			"rate limit",
-			"server error",
-			"internal error",
-			"unavailable",
-			"socket hang up",
-			"connection reset",
-			"temporary failure",
-			"too many requests",
-			"service unavailable",
-			"gateway timeout",
-		},
 		nonRetryablePatterns: []string{
 			"method not found",   // -32601
 			"invalid params",     // -32602
@@ -89,22 +73,7 @@ func (c *JSONRPCErrorClassifier) IsRetryable(err error, statusCode int) bool {
 		}
 	}
 
-	// Common retryable error patterns
-	for _, pattern := range c.retryablePatterns {
-		if strings.Contains(errMsg, pattern) {
-			return true
-		}
-	}
-
-	// Check for retryable JSON-RPC error codes (after non-retryable pattern check)
-	// -32000 to -32099: Server errors (implementation defined)
-	// Only retry these if they don't match non-retryable patterns above
-	if strings.Contains(errMsg, "json-rpc error -320") {
-		return true
-	}
-
-	// Default to not retrying unknown errors
-	return false
+	return true
 }
 
 // Package-level functions for backward compatibility
