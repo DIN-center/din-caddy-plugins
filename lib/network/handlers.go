@@ -86,6 +86,11 @@ type NetworkHandler interface {
 	// This abstracts the entire get block by number process per network type
 	PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error)
 
+	// === Dynamic Block Lag ===
+	// SupportsDynamicBlockLag returns whether this chain type supports dynamic block lag calculation
+	// EVM, Starknet, Solana return true; Beacon, Bitcoin return false
+	SupportsDynamicBlockLag() bool
+
 	// === Lifecycle ===
 	Initialize(config *NetworkConfig) error
 }

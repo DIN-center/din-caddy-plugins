@@ -509,6 +509,20 @@ func (mr *MockNetworkHandlerMockRecorder) SupportsGetBlockByNumber() *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsGetBlockByNumber", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsGetBlockByNumber))
 }
 
+// SupportsDynamicBlockLag mocks base method.
+func (m *MockNetworkHandler) SupportsDynamicBlockLag() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SupportsDynamicBlockLag")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// SupportsDynamicBlockLag indicates an expected call of SupportsDynamicBlockLag.
+func (mr *MockNetworkHandlerMockRecorder) SupportsDynamicBlockLag() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsDynamicBlockLag", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsDynamicBlockLag))
+}
+
 // ValidateChainID mocks base method.
 func (m *MockNetworkHandler) ValidateChainID(chainID string) error {
 	m.ctrl.T.Helper()

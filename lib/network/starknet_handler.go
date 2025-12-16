@@ -284,6 +284,10 @@ func (h *StarknetHandler) SupportsGetBlockByNumber() bool {
 	return false // Starknet skips getBlockByNumber
 }
 
+func (h *StarknetHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
 func (h *StarknetHandler) GetSupportedMethods() []string {
 	return []string{
 		"starknet_blockNumber",

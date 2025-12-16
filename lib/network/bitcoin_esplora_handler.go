@@ -192,6 +192,10 @@ func (h *BitcoinEsploraHandler) SupportsGetBlockByNumber() bool {
 	return true // Bitcoin Esplora supports getting blocks by height
 }
 
+func (h *BitcoinEsploraHandler) SupportsDynamicBlockLag() bool {
+	return false // Bitcoin has 10 min blocks, use configured limit
+}
+
 func (h *BitcoinEsploraHandler) GetSupportedMethods() []string {
 	// These are REST endpoints from Esplora API documentation, not JSON-RPC methods
 	return []string{

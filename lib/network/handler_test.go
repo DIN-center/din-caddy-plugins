@@ -116,6 +116,10 @@ func (m *MockHandler) SupportsGetBlockByNumber() bool {
 	return true
 }
 
+func (m *MockHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
 func (m *MockHandler) GetSupportedMethods() []string {
 	return []string{"mockMethod"}
 }

@@ -260,6 +260,10 @@ func (h *SolanaHandler) SupportsGetBlockByNumber() bool {
 	return true
 }
 
+func (h *SolanaHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
 func (h *SolanaHandler) GetSupportedMethods() []string {
 	return []string{
 		"getBlockHeight",

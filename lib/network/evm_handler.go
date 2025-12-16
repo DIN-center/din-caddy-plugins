@@ -311,6 +311,10 @@ func (h *EVMHandler) SupportsGetBlockByNumber() bool {
 	return true
 }
 
+func (h *EVMHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
 func (h *EVMHandler) GetSupportedMethods() []string {
 	return []string{
 		"eth_blockNumber",

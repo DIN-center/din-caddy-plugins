@@ -285,6 +285,10 @@ func (h *BeaconChainHandler) SupportsGetBlockByNumber() bool {
 	return false // Beacon chain doesn't support getBlockByNumber
 }
 
+func (h *BeaconChainHandler) SupportsDynamicBlockLag() bool {
+	return false // Beacon chain uses slots/epochs, not standard block lag
+}
+
 func (h *BeaconChainHandler) GetSupportedMethods() []string {
 	// These are REST endpoints, not JSON-RPC methods
 	return []string{

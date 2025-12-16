@@ -281,6 +281,10 @@ func (h *BitcoinHandler) SupportsGetBlockByNumber() bool {
 	return true // Bitcoin supports it via two-step process
 }
 
+func (h *BitcoinHandler) SupportsDynamicBlockLag() bool {
+	return false // Bitcoin has 10 min blocks, use configured limit
+}
+
 func (h *BitcoinHandler) GetSupportedMethods() []string {
 	return []string{
 		"getblockcount",
