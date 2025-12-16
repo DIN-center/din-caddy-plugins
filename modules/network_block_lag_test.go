@@ -108,7 +108,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 		{
 			name: "BSC-like network (3s blocks)",
 			simulator: blockTimestampSimulator{
-				latestBlock:      1000,
+				latestBlock:      2000,
 				blockTimeSeconds: 3.0, // 3 seconds per block
 				baseTimestamp:    1700000000,
 			},
@@ -119,7 +119,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 		{
 			name: "Ethereum-like network (12s blocks)",
 			simulator: blockTimestampSimulator{
-				latestBlock:      1000,
+				latestBlock:      2000,
 				blockTimeSeconds: 12.0, // 12 seconds per block
 				baseTimestamp:    1700000000,
 			},
@@ -130,7 +130,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 		{
 			name: "Fast network (1s blocks)",
 			simulator: blockTimestampSimulator{
-				latestBlock:      1000,
+				latestBlock:      2000,
 				blockTimeSeconds: 1.0, // 1 second per block
 				baseTimestamp:    1700000000,
 			},
@@ -141,8 +141,8 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 		{
 			name: "Very fast network (200ms blocks)",
 			simulator: blockTimestampSimulator{
-				latestBlock:      1000,
-				blockTimeSeconds: 0.2, // 200ms per block (for 10 blocks = 2 seconds)
+				latestBlock:      2000,
+				blockTimeSeconds: 0.2, // 200ms per block
 				baseTimestamp:    1700000000,
 			},
 			// 13000ms / 200ms = 65, round to 65
@@ -152,7 +152,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 		{
 			name: "Slow network (30s blocks)",
 			simulator: blockTimestampSimulator{
-				latestBlock:      1000,
+				latestBlock:      2000,
 				blockTimeSeconds: 30.0, // 30 seconds per block
 				baseTimestamp:    1700000000,
 			},
@@ -203,7 +203,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 	// Create a network with mock provider
 	simulator := blockTimestampSimulator{
-		latestBlock:      1000,
+		latestBlock:      2000,
 		blockTimeSeconds: 1.0,
 		baseTimestamp:    1700000000,
 	}
@@ -297,7 +297,7 @@ func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
 func TestDeterministicCalculation(t *testing.T) {
 	// Create identical simulators
 	simulator := blockTimestampSimulator{
-		latestBlock:      1000,
+		latestBlock:      2000,
 		blockTimeSeconds: 2.0, // 2s blocks
 		baseTimestamp:    1700000000,
 	}
@@ -322,7 +322,7 @@ func TestDeterministicCalculation(t *testing.T) {
 // TestMeasureBlockTimeFromTimestamps tests the timestamp measurement directly
 func TestMeasureBlockTimeFromTimestamps(t *testing.T) {
 	sim := blockTimestampSimulator{
-		latestBlock:      1000,
+		latestBlock:      2000,
 		blockTimeSeconds: 1.0, // 1 second per block
 		baseTimestamp:    1700000000,
 	}

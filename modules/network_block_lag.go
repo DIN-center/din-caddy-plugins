@@ -10,8 +10,8 @@ import (
 // Block lag calculation constants
 const (
 	// BlockLagCalculationLookback is the number of blocks to look back when calculating block time
-	// Using 10 blocks provides a good balance between accuracy and speed
-	BlockLagCalculationLookback = 10
+	// Using 1024 blocks provides accurate measurement and makes reorgs/delays a rounding error
+	BlockLagCalculationLookback = 1024
 
 	// MinBlockLagLimit is the minimum block lag limit
 	MinBlockLagLimit = 5
