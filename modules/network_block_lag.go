@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -151,11 +152,8 @@ func (n *network) calculateDynamicBlockLagLimit(measurementSeconds int) {
 		// Round up to nearest interval of 5
 		newLimit = roundUpToInterval(newLimit, 5)
 
-		// Update the block lag limit with mutex protection
-		n.blockLagLimitMu.Lock()
-		oldLimit := n.BlockLagLimit
-		n.BlockLagLimit = newLimit
-		n.blockLagLimitMu.Unlock()
+		// Update the block lag limit atomically
+		oldLimit := atomic.SwapInt64(&n.BlockLagLimit, newLimit)
 
 		n.logger.Info("Dynamic block lag limit calculated and applied",
 			zap.String("network", n.Name),
@@ -167,7 +165,7 @@ func (n *network) calculateDynamicBlockLagLimit(measurementSeconds int) {
 	} else {
 		n.logger.Warn("Unable to calculate dynamic block lag limit, keeping default",
 			zap.String("network", n.Name),
-			zap.Int64("default_limit", n.BlockLagLimit),
+			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)),
 			zap.Int("providers_checked", len(n.Providers)),
 			zap.Int("successful_measurements", successfulMeasurements))
 	}

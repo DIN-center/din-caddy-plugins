@@ -174,9 +174,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 				assert.Equal(t, originalLimit, n.BlockLagLimit,
 					"Block lag limit should not change when all providers fail")
 			} else {
-				n.blockLagLimitMu.RLock()
-				actualLimit := n.BlockLagLimit
-				n.blockLagLimitMu.RUnlock()
+				actualLimit := atomic.LoadInt64(&n.BlockLagLimit)
 
 				assert.GreaterOrEqual(t, actualLimit, tt.expectedMinLimit,
 					"Block lag limit should be at least %d, got %d", tt.expectedMinLimit, actualLimit)
@@ -212,10 +210,8 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 			
 			// Simulate concurrent reads during health checks
 			for j := 0; j < 10; j++ {
-				n.blockLagLimitMu.RLock()
-				limit := n.BlockLagLimit
-				n.blockLagLimitMu.RUnlock()
-				
+				limit := atomic.LoadInt64(&n.BlockLagLimit)
+
 				if limit < 0 {
 					errors <- fmt.Errorf("invalid block lag limit: %d", limit)
 				}
@@ -264,9 +260,7 @@ func TestCalculateDynamicBlockLagLimitIntegration(t *testing.T) {
 	n.healthCheck()
 
 	// Verify the result
-	n.blockLagLimitMu.RLock()
-	finalLimit := n.BlockLagLimit
-	n.blockLagLimitMu.RUnlock()
+	finalLimit := atomic.LoadInt64(&n.BlockLagLimit)
 
 	// Verify that the limit changed from initial value
 	assert.NotEqual(t, initialLimit, finalLimit, "Block lag limit should have been updated")
@@ -421,9 +415,7 @@ func TestDynamicBlockLagErrorRecovery(t *testing.T) {
 	n.calculateDynamicBlockLagLimit(1)
 
 	// Verify it either kept default or calculated based on partial data
-	n.blockLagLimitMu.RLock()
-	limit := n.BlockLagLimit
-	n.blockLagLimitMu.RUnlock()
+	limit := atomic.LoadInt64(&n.BlockLagLimit)
 
 	assert.Greater(t, limit, int64(0), "Block lag limit should be positive")
 }

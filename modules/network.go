@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
@@ -38,9 +39,8 @@ type network struct {
 	HCEndpoint               string `json:"healthcheck_endpoint,omitempty"` // REST endpoint for health checks
 	ProviderBlockHistorySize int
 	NetworkBlockHistorySize  int
-	blockHistory             *list.List
-	blockHistoryMu           sync.RWMutex
-	blockLagLimitMu          sync.RWMutex // Protects BlockLagLimit during dynamic calculation
+	blockHistory   *list.List
+	blockHistoryMu sync.RWMutex
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
@@ -270,11 +270,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	// Check for block lag
 	var isLagged bool
 	var blockLag int64
-	
-	// Get block lag limit with mutex protection (used in multiple places below)
-	n.blockLagLimitMu.RLock()
-	blockLagLimit := n.BlockLagLimit
-	n.blockLagLimitMu.RUnlock()
+
+	// Get block lag limit atomically
+	blockLagLimit := atomic.LoadInt64(&n.BlockLagLimit)
 
 	if latestNetworkBlock > 0 {
 		blockLag = int64(latestNetworkBlock) - currentBlock
