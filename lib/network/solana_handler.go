@@ -9,11 +9,9 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	dinhttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
-
-var _ NetworkHandler = (*SolanaHandler)(nil)
 
 type SolanaHandler struct {
 	config  *NetworkConfig
@@ -79,7 +77,7 @@ func (h *SolanaHandler) ExtractMethod(req *http.Request, body []byte) (string, e
 		return "", fmt.Errorf("empty request body")
 	}
 
-	var rpcRequest dinhttp.JSONRPCRequest
+	var rpcRequest din_http.JSONRPCRequest
 	if err := json.Unmarshal(body, &rpcRequest); err != nil {
 		return "", fmt.Errorf("failed to parse JSON-RPC request: %w", err)
 	}
@@ -107,7 +105,7 @@ func (h *SolanaHandler) ValidateRequest(req *http.Request) error {
 
 	// Check method
 	if req.Method != "POST" {
-		return fmt.Errorf("the Solana JSON-RPC requires POST method, got %s", req.Method)
+		return fmt.Errorf("Solana JSON-RPC requires POST method, got %s", req.Method)
 	}
 
 	return nil
@@ -180,7 +178,7 @@ func (h *SolanaHandler) CreateBlockRequest(method string, blockNum int64, includ
 
 func (h *SolanaHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 	// First check for JSON-RPC errors using generic response
-	var genericResponse dinhttp.JSONRPCResponse
+	var genericResponse din_http.JSONRPCResponse
 	if err := json.Unmarshal(body, &genericResponse); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON-RPC response: %w", err)
 	}
@@ -191,7 +189,7 @@ func (h *SolanaHandler) ParseBlockResponse(body []byte) (interface{}, error) {
 	}
 
 	// Parse as Solana-specific response if no errors
-	var response dinhttp.JSONRPCSolanaBlockResponse
+	var response din_http.JSONRPCSolanaBlockResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Solana block response: %w", err)
 	}
@@ -235,7 +233,7 @@ func (h *SolanaHandler) GetBlockInfoMethod() string {
 }
 
 // GetChainID retrieves the chain ID from the Solana provider
-func (h *SolanaHandler) GetChainID(httpUrl string, headers map[string]string, httpClient dinhttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
+func (h *SolanaHandler) GetChainID(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
 	// Use the shared JSON-RPC logic with Solana-specific parsing
 	return GetChainIDViaJSONRPC(httpUrl, headers, httpClient, authClient, requestAttempts, h.GetChainIDMethod(), h.ParseChainIDResponse)
 }
@@ -250,15 +248,19 @@ func (h *SolanaHandler) GetArchiveMethod() string {
 }
 
 func (h *SolanaHandler) CreateArchivePayload(method string, blockHeight string) ([]byte, error) {
-	return nil, fmt.Errorf("the Solana does not support archive mode")
+	return nil, fmt.Errorf("Solana does not support archive mode")
 }
 
 func (h *SolanaHandler) ParseArchiveResponse(body []byte) error {
-	return fmt.Errorf("the Solana does not support archive mode")
+	return fmt.Errorf("Solana does not support archive mode")
 }
 
 // Network Capabilities methods
 func (h *SolanaHandler) SupportsGetBlockByNumber() bool {
+	return true
+}
+
+func (h *SolanaHandler) SupportsDynamicBlockLag() bool {
 	return true
 }
 
@@ -281,7 +283,7 @@ func (h *SolanaHandler) GetBlockByNumberMethod() string {
 
 // Data Format Conversions methods
 func (h *SolanaHandler) ExtractBlockHash(blockData interface{}) string {
-	if blockResponse, ok := blockData.(dinhttp.JSONRPCSolanaBlockResponse); ok {
+	if blockResponse, ok := blockData.(din_http.JSONRPCSolanaBlockResponse); ok {
 		return blockResponse.Result.Blockhash
 	}
 	return ""
@@ -371,7 +373,7 @@ func (h *SolanaHandler) ParseChainIDResponse(body []byte, statusCode int) (strin
 
 // GetLatestBlockNumber retrieves the latest block number for Solana chains
 // Uses the JSON-RPC method getBlockHeight to get the current block height
-func (h *SolanaHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient dinhttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+func (h *SolanaHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	// Use the shared JSON-RPC helper with Solana-specific numeric parsing
 	return GetLatestBlockNumberViaJSONRPC(
 		httpUrl,
@@ -385,7 +387,7 @@ func (h *SolanaHandler) GetLatestBlockNumber(httpUrl string, headers map[string]
 }
 
 // PerformArchiveCheck performs archive mode check for Solana chains using JSON-RPC
-func (h *SolanaHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient dinhttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+func (h *SolanaHandler) PerformArchiveCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
 	// Use the shared JSON-RPC helper for archive checks
 	return PerformArchiveCheckViaJSONRPC(
 		httpUrl,
@@ -401,7 +403,7 @@ func (h *SolanaHandler) PerformArchiveCheck(httpUrl string, headers map[string]s
 }
 
 // PerformGetBlockByNumber performs get block by number operation for Solana chains using JSON-RPC
-func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient dinhttp.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
+func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
 	// Use the shared JSON-RPC helper for get block by number operations
 	return PerformGetBlockByNumberViaJSONRPC(
 		httpUrl,
@@ -410,8 +412,30 @@ func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[stri
 		authClient,
 		requestAttempts,
 		blockNumber,
-		h.GetSupportedMethods, // Solana-specific supported methods
-		h.CreateBlockRequest,  // Solana-specific block request creation
-		h.ParseBlockResponse,  // Solana-specific block response parsing
+		h.GetBlockByNumberMethod(), // Solana block method
+		h.CreateBlockRequest,       // Solana-specific block request creation
+		h.ParseBlockResponse,       // Solana-specific block response parsing
 	)
+}
+
+// GetBlockTimestamp retrieves the Unix timestamp for a specific block (slot) number
+func (h *SolanaHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Parse timestamp from block response
+	blockResponse, ok := blockData.(din_http.JSONRPCSolanaBlockResponse)
+	if !ok {
+		return 0, fmt.Errorf("invalid block response type: %T", blockData)
+	}
+
+	// Solana's blockTime can be null for very old blocks
+	if blockResponse.Result.BlockTime == nil {
+		return 0, fmt.Errorf("block %d has no timestamp (blockTime is null)", blockNumber)
+	}
+
+	return *blockResponse.Result.BlockTime, nil
 }

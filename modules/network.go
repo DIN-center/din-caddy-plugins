@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -63,8 +64,8 @@ type network struct {
 	HCEndpoint               string `json:"healthcheck_endpoint,omitempty"` // REST endpoint for health checks
 	ProviderBlockHistorySize int
 	NetworkBlockHistorySize  int
-	blockHistory             *list.List
-	blockHistoryMu           sync.RWMutex
+	blockHistory   *list.List
+	blockHistoryMu sync.RWMutex
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
@@ -170,6 +171,9 @@ func (n *network) UnmarshalJSON(data []byte) error {
 }
 
 func (n *network) startHealthcheck() {
+	// Start dynamic block lag limit calculation (runs once asynchronously)
+	go n.calculateDynamicBlockLagLimit()
+
 	n.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
 	go func() {
@@ -318,16 +322,20 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	var isLagged bool
 	var blockLag int64
 
+	// Get block lag limit atomically
+	blockLagLimit := atomic.LoadInt64(&n.BlockLagLimit)
+
 	if latestNetworkBlock > 0 {
 		blockLag = int64(latestNetworkBlock) - currentBlock
+		
 		// If block lag is greater than limit, mark as warning and set isLagged flag
-		if blockLag > n.BlockLagLimit {
+		if blockLag > blockLagLimit {
 			isLagged = true
 			if Warning > worstStatus {
 				worstStatus = Warning
 			}
 			n.logProviderWarning("Provider is lagging behind network", provider,
-				zap.Int64("block_lag_limit", n.BlockLagLimit),
+				zap.Int64("block_lag_limit", blockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
@@ -373,7 +381,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if isStalled {
 			// Provider is both stalled and lagged - more serious issue
 			n.logProviderWarning("Provider is stalled and lagged", provider,
-				zap.Int64("block_lag_limit", n.BlockLagLimit),
+				zap.Int64("block_lag_limit", blockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),

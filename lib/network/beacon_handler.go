@@ -289,6 +289,10 @@ func (h *BeaconChainHandler) SupportsGetBlockByNumber() bool {
 	return false // Beacon chain doesn't support getBlockByNumber
 }
 
+func (h *BeaconChainHandler) SupportsDynamicBlockLag() bool {
+	return false // Beacon chain uses slots/epochs, not standard block lag
+}
+
 func (h *BeaconChainHandler) GetSupportedMethods() []string {
 	// These are REST endpoints, not JSON-RPC methods
 	return []string{
@@ -674,6 +678,11 @@ func (h *BeaconChainHandler) PerformGetBlockByNumber(httpUrl string, headers map
 	}
 
 	return blockResponse, nil
+}
+
+// GetBlockTimestamp returns an error as beacon chain doesn't support dynamic block lag
+func (h *BeaconChainHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	return 0, fmt.Errorf("beacon chain does not support dynamic block lag calculation")
 }
 
 // === EXISTING HELPER METHODS ===

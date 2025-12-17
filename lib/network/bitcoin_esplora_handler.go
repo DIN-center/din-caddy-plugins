@@ -183,6 +183,10 @@ func (h *BitcoinEsploraHandler) SupportsGetBlockByNumber() bool {
 	return true // Bitcoin Esplora supports getting blocks by height
 }
 
+func (h *BitcoinEsploraHandler) SupportsDynamicBlockLag() bool {
+	return false // Bitcoin has 10 min blocks, use configured limit
+}
+
 func (h *BitcoinEsploraHandler) GetSupportedMethods() []string {
 	// These are REST endpoints from Esplora API documentation, not JSON-RPC methods
 	return []string{
@@ -447,4 +451,9 @@ func (h *BitcoinEsploraHandler) PerformGetBlockByNumber(httpUrl string, headers 
 	}
 
 	return h.ParseBlockResponse(blockResp)
+}
+
+// GetBlockTimestamp returns an error as Bitcoin Esplora doesn't support dynamic block lag
+func (h *BitcoinEsploraHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	return 0, fmt.Errorf("bitcoin esplora does not support dynamic block lag calculation")
 }
