@@ -4,7 +4,6 @@ package network
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
@@ -181,35 +180,13 @@ func PerformArchiveCheckViaJSONRPC(httpUrl string, headers map[string]string, ht
 
 // PerformGetBlockByNumberViaJSONRPC performs a JSON-RPC get block by number request
 // This is shared logic for JSON-RPC based handlers (EVM, Starknet, Solana)
-func PerformGetBlockByNumberViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64, getSupportedMethodsFunc func() []string, createBlockRequestFunc func(string, int64, bool) ([]byte, error), parseBlockResponseFunc func([]byte) (interface{}, error)) (interface{}, error) {
-	// Find the appropriate get block by number method
-	supportedMethods := getSupportedMethodsFunc()
-	if len(supportedMethods) == 0 {
-		return nil, fmt.Errorf("no supported block methods available")
-	}
-
-	var getBlockMethod string
-	for _, method := range supportedMethods {
-		methodLower := strings.ToLower(method)
-		// Match EVM-style "eth_getBlockByNumber", Starknet-style "starknet_getBlockWithTxs", or Solana-style "getBlock"
-		if strings.Contains(methodLower, "getblockbynumber") ||
-			strings.Contains(methodLower, "get_block_by_number") ||
-			strings.Contains(methodLower, "getblockwith") {
-			getBlockMethod = method
-			break
-		}
-		// For Solana, match exact "getBlock" (but not "getBlockHeight")
-		if methodLower == "getblock" {
-			getBlockMethod = method
-			break
-		}
-	}
-
-	if getBlockMethod == "" {
-		return nil, fmt.Errorf("no getBlockByNumber method found")
+func PerformGetBlockByNumberViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64, blockMethod string, createBlockRequestFunc func(string, int64, bool) ([]byte, error), parseBlockResponseFunc func([]byte) (interface{}, error)) (interface{}, error) {
+	if blockMethod == "" {
+		return nil, fmt.Errorf("block method cannot be empty")
 	}
 
 	var lastErr error
+	getBlockMethod := blockMethod
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Use the provided function to create block request payload
 		payload, err := createBlockRequestFunc(getBlockMethod, blockNumber, false)

@@ -451,9 +451,9 @@ func (h *StarknetHandler) PerformGetBlockByNumber(httpUrl string, headers map[st
 		authClient,
 		requestAttempts,
 		blockNumber,
-		h.GetSupportedMethods, // Starknet-specific supported methods
-		h.CreateBlockRequest,  // Starknet-specific block request creation
-		h.ParseBlockResponse,  // Starknet-specific block response parsing
+		h.GetBlockByNumberMethod(), // Starknet block method
+		h.CreateBlockRequest,       // Starknet-specific block request creation
+		h.ParseBlockResponse,       // Starknet-specific block response parsing
 	)
 }
 

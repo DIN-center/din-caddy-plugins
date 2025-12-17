@@ -412,9 +412,9 @@ func (h *SolanaHandler) PerformGetBlockByNumber(httpUrl string, headers map[stri
 		authClient,
 		requestAttempts,
 		blockNumber,
-		h.GetSupportedMethods, // Solana-specific supported methods
-		h.CreateBlockRequest,  // Solana-specific block request creation
-		h.ParseBlockResponse,  // Solana-specific block response parsing
+		h.GetBlockByNumberMethod(), // Solana block method
+		h.CreateBlockRequest,       // Solana-specific block request creation
+		h.ParseBlockResponse,       // Solana-specific block response parsing
 	)
 }
 

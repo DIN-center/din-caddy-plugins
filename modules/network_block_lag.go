@@ -42,37 +42,36 @@ func (n *network) calculateDynamicBlockLagLimit() {
 		return
 	}
 
-	// Try each provider until we get successful timestamps
-	var avgBlockTimeMs float64
-	var successfulProvider string
-
-	for providerName, p := range n.Providers {
-		blockTimeMs, err := n.measureBlockTimeFromTimestamps(p)
-		if err != nil {
-			n.logger.Debug("Failed to measure block time from provider",
-				zap.String("network", n.Name),
-				zap.String("provider", providerName),
-				zap.Error(err))
-			continue
-		}
-
-		avgBlockTimeMs = blockTimeMs
-		successfulProvider = providerName
-		n.logger.Debug("Successfully measured block time",
-			zap.String("network", n.Name),
-			zap.String("provider", providerName),
-			zap.Float64("avg_block_time_ms", avgBlockTimeMs))
+	// Get first available provider - if timestamps disagree across providers, we have bigger problems
+	var firstProvider *provider
+	var providerName string
+	for name, p := range n.Providers {
+		firstProvider = p
+		providerName = name
 		break
 	}
 
-	// If no provider succeeded, keep the default
-	if avgBlockTimeMs <= 0 {
-		n.logger.Warn("Unable to measure block time from any provider, keeping default",
+	if firstProvider == nil {
+		n.logger.Warn("No providers available for block time measurement",
 			zap.String("network", n.Name),
-			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)),
-			zap.Int("providers_checked", len(n.Providers)))
+			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)))
 		return
 	}
+
+	avgBlockTimeMs, err := n.measureBlockTimeFromTimestamps(firstProvider)
+	if err != nil {
+		n.logger.Warn("Failed to measure block time, keeping default",
+			zap.String("network", n.Name),
+			zap.String("provider", providerName),
+			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)),
+			zap.Error(err))
+		return
+	}
+
+	n.logger.Debug("Successfully measured block time",
+		zap.String("network", n.Name),
+		zap.String("provider", providerName),
+		zap.Float64("avg_block_time_ms", avgBlockTimeMs))
 
 	// Calculate new limit: how many blocks fit in the default lag period
 	newLimit := int64(math.Ceil(float64(DefaultBlockLagPeriodMs) / avgBlockTimeMs))
@@ -92,7 +91,7 @@ func (n *network) calculateDynamicBlockLagLimit() {
 		zap.String("network", n.Name),
 		zap.Int64("old_limit", oldLimit),
 		zap.Int64("new_limit", newLimit),
-		zap.String("provider", successfulProvider),
+		zap.String("provider", providerName),
 		zap.Float64("avg_block_time_ms", avgBlockTimeMs),
 		zap.Int("lookback_blocks", BlockLagCalculationLookback))
 }

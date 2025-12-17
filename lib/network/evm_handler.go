@@ -493,9 +493,9 @@ func (h *EVMHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]
 		authClient,
 		requestAttempts,
 		blockNumber,
-		h.GetSupportedMethods, // EVM-specific supported methods
-		h.CreateBlockRequest,  // EVM-specific block request creation
-		h.ParseBlockResponse,  // EVM-specific block response parsing
+		h.GetBlockByNumberMethod(), // EVM block method
+		h.CreateBlockRequest,       // EVM-specific block request creation
+		h.ParseBlockResponse,       // EVM-specific block response parsing
 	)
 }
 
