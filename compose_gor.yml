@@ -1,0 +1,21 @@
+### This file is for LOCAL development purposes ONLY ###
+version: '3.7'
+
+# Define custom networks
+networks:
+  din-network:
+    driver: bridge
+
+# for local development
+services:
+  gor:
+    image: edaubert/goreplay:1.3.3
+    container_name: gor
+    restart: always
+    networks:
+      - din-network
+    #command: --input-raw :8001 --output-http="http://localhost:8002" --output-http-timeout 30s
+    command: --input-raw :8001 --output-stdout
+    environment:
+      - ENV=dev
+

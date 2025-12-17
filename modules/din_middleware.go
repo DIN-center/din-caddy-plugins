@@ -215,11 +215,11 @@ func (d *DinMiddleware) initialize(context caddy.Context) error {
 	d.logger.Info("Din middleware provisioned")
 
 	// Start background services if not in test mode
-	if !d.testMode {
-		if err := d.startBackgroundServices(); err != nil {
-			return fmt.Errorf("failed to start background services: %w", err)
-		}
-	}
+	// if !d.testMode {
+	// 	if err := d.startBackgroundServices(); err != nil {
+	// 		return fmt.Errorf("failed to start background services: %w", err)
+	// 	}
+	// }
 
 	return nil
 }
