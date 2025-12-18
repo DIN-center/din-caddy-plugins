@@ -208,6 +208,55 @@ Providers compete on:
 | **Coverage** | More services and methods supported |
 | **Mode support** | Supporting both modes captures more consumers |
 
+### Rate Card Price Snapshotting
+
+**Provider rate card prices are snapshotted at session start.** This ensures price predictability for consumers during active sessions.
+
+```
+PRICE SNAPSHOTTING
+==================
+
+Session Start (block N):
+- Consumer starts session
+- Current provider rate cards are snapshotted
+- Prices locked for this session
+
+During Session:
+- Provider updates rate card (block N+100)
+- New prices apply to NEW sessions only
+- This session continues using snapshotted prices
+
+Session End:
+- Settlement uses snapshotted prices
+- Consumer pays what they expected at session start
+```
+
+**Why snapshot prices?**
+
+| Benefit | Description |
+|---------|-------------|
+| **Predictability** | Consumers know their costs at session start |
+| **Protection** | Price increases don't affect active sessions |
+| **Fairness** | Providers can't surprise consumers mid-session |
+| **Simplicity** | No need to track price changes during session |
+
+**Implementation:**
+
+```solidity
+struct Session {
+    // ... existing fields ...
+    uint256 snapshotBlock;      // Block at which prices were snapshotted
+}
+
+// At session start:
+session.snapshotBlock = block.number;
+
+// For cost calculation during session:
+// Use rate card prices from snapshotBlock, not current prices
+```
+
+**Note:** The SDK caches the rate card snapshot locally and uses it for all cost calculations during the session. At settlement, both parties use the snapshotted prices.
+
 ---
 
 ## Request Routing

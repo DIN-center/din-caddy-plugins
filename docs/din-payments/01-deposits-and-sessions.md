@@ -221,12 +221,14 @@ contract DINProtocol {
     mapping(address => uint256) public deposits;
     mapping(address => uint256) public locked;
     mapping(bytes32 => Session) public sessions;
+    mapping(address => bytes32) public activeSession;  // One active session per consumer
 
     struct Session {
         address consumer;
         uint256 maxSpend;
         uint256 lockedAmount;
         uint64 validUntil;
+        uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
         bool active;
     }
 
@@ -241,6 +243,9 @@ contract DINProtocol {
         string calldata paymentMode,
         string calldata routingStrategy
     ) external returns (bytes32 sessionId) {
+        // Enforce one active session per consumer
+        require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
         // Check available balance
         uint256 available = deposits[msg.sender] - locked[msg.sender];
         require(available >= maxSpend, "Insufficient unlocked balance");
@@ -248,17 +253,35 @@ contract DINProtocol {
         // Lock funds
         locked[msg.sender] += maxSpend;
 
-        // Create session
+        // Create session ID (unique per consumer + timestamp + amount)
         sessionId = keccak256(abi.encodePacked(msg.sender, block.timestamp, maxSpend));
+
+        // Track active session
+        activeSession[msg.sender] = sessionId;
+
         sessions[sessionId] = Session({
             consumer: msg.sender,
             maxSpend: maxSpend,
             lockedAmount: maxSpend,
             validUntil: uint64(block.timestamp) + duration,
+            snapshotBlock: block.number,
             active: true
         });
 
         emit SessionStarted(sessionId, msg.sender, maxSpend, duration);
+    }
+
+    function endSession(bytes32 sessionId) external {
+        Session storage session = sessions[sessionId];
+        require(session.consumer == msg.sender, "Not session owner");
+        require(session.active, "Session not active");
+
+        session.active = false;
+
+        // Clear active session tracker (allows consumer to start new session)
+        activeSession[msg.sender] = bytes32(0);
+
+        emit SessionEnded(sessionId, msg.sender);
     }
 
     function withdraw(uint256 amount) external {

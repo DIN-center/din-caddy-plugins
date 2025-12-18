@@ -963,12 +963,14 @@ contract DINProtocol {
     mapping(address => uint256) public deposits;
     mapping(address => uint256) public locked;
     mapping(bytes32 => Session) public sessions;
+    mapping(address => bytes32) public activeSession;  // One active session per consumer
 
     struct Session {
         address consumer;
         uint256 maxSpend;
         uint256 lockedAmount;
         uint64 validUntil;
+        uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
         bool active;
     }
 
@@ -983,6 +985,9 @@ contract DINProtocol {
         string calldata paymentMode,
         string calldata routingStrategy
     ) external returns (bytes32 sessionId) {
+        // Enforce one active session per consumer
+        require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
         // Check available balance
         uint256 available = deposits[msg.sender] - locked[msg.sender];
         require(available >= maxSpend, "Insufficient unlocked balance");
@@ -990,13 +995,18 @@ contract DINProtocol {
         // Lock funds
         locked[msg.sender] += maxSpend;
 
-        // Create session
+        // Create session ID (unique per consumer + timestamp + amount)
         sessionId = keccak256(abi.encodePacked(msg.sender, block.timestamp, maxSpend));
+
+        // Track active session
+        activeSession[msg.sender] = sessionId;
+
         sessions[sessionId] = Session({
             consumer: msg.sender,
             maxSpend: maxSpend,
             lockedAmount: maxSpend,
             validUntil: uint64(block.timestamp) + duration,
+            snapshotBlock: block.number,  // Snapshot prices at session start
             active: true
         });
 
@@ -1526,6 +1536,7 @@ Checkpoints allow sessions to run indefinitely without locking large amounts upf
 ```solidity
 contract DINProtocol {
     // ... deposit and locked mappings ...
+    mapping(address => bytes32) public activeSession;  // One active session per consumer
 
     struct Session {
         address consumer;
@@ -1533,17 +1544,26 @@ contract DINProtocol {
         uint256 lockedAmount;
         uint256 totalSettled;      // Running total settled at checkpoints
         uint64 validUntil;
+        uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
         bool active;
     }
 
     // Start session - consumer pays gas
     function startSession(uint256 maxSpend, uint64 duration) external returns (bytes32 sessionId) {
+        // Enforce one active session per consumer
+        require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
         uint256 available = deposits[msg.sender] - locked[msg.sender];
         require(available >= maxSpend, "Insufficient balance");
 
         locked[msg.sender] += maxSpend;
 
+        // Create session ID (unique per consumer + timestamp)
         sessionId = keccak256(abi.encodePacked(msg.sender, block.timestamp));
+
+        // Track active session
+        activeSession[msg.sender] = sessionId;
+
         sessions[sessionId] = Session({
             consumer: msg.sender,
             maxSpend: maxSpend,
@@ -1607,6 +1627,9 @@ contract DINProtocol {
 
         session.active = false;
 
+        // Clear active session tracker (allows consumer to start new session)
+        activeSession[session.consumer] = bytes32(0);
+
         emit SessionEnded(sessionId, totalSpend, unused);
     }
 
@@ -1628,6 +1651,9 @@ contract DINProtocol {
 
         // Mark session as inactive
         session.active = false;
+
+        // Clear active session tracker (allows consumer to start new session)
+        activeSession[session.consumer] = bytes32(0);
 
         emit SessionReclaimed(sessionId, session.consumer, unsettled);
     }
@@ -2573,6 +2599,62 @@ Provider monthly AVS reward: $1,000
 ```
 
 **Escalation is rare** - auto-averaging handles 99% of cases. Escalation is only for repeated, significant abuse.
+
+### Edge Case Resolution
+
+**Provider Offline During Settlement:**
+
+If a provider is unresponsive during settlement:
+
+```
+Provider Offline Scenario
+─────────────────────────
+
+Checkpoint triggered (30 min or 60% spend)
+    │
+    │  Consumer submits usage claim
+    │  Provider fails to respond within 15 minutes
+    │
+    ▼
+Fallback: Settle based on consumer's claim
+    │
+    │  Provider can dispute later (within 7 days)
+    │  if they have evidence of higher usage
+    │
+    ▼
+Session continues with consumer's claimed amount
+```
+
+The session log (`~/.din/session-log.json`) is authoritative for the consumer's view.
+
+**Network Congestion Handling:**
+
+When network congestion prevents timely settlement:
+
+| Scenario | Action |
+|----------|--------|
+| Settlement tx pending > 10 min | Extend session validity by 30 min, retry with priority gas |
+| Settlement tx failed | Retry with increased gas, notify consumer |
+| Prolonged congestion (>1 hour) | Pause new sessions, complete existing |
+
+**Ambiguous Evidence Cases:**
+
+When both parties provide seemingly valid evidence and fault cannot be determined:
+- Neither party is penalized
+- Settlement at midpoint (split the difference)
+- Flag for monitoring (future sessions tracked closely)
+
+### Future Dispute Enhancements
+
+The following functionality is planned for future releases:
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Session Pause** | Temporarily pause a session during investigation | Planned |
+| **Provider Suspension** | Temporarily suspend a provider pending review | Planned |
+| **Consumer Blacklisting** | Block repeat bad actors across all wallets | Planned |
+| **Delegated Signing** | Allow consumers to delegate session signing to a hot wallet | Planned |
+| **Automated Pattern Detection** | ML-based detection of suspicious claim patterns | Future |
 
 ---
 

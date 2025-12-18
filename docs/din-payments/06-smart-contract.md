@@ -43,6 +43,7 @@ contract DINProtocol {
     // Session tracking
     mapping(bytes32 => Session) public sessions;
     mapping(bytes32 => bool) public sessionSettled;
+    mapping(address => bytes32) public activeSession;  // One active session per consumer
 
     // ============ Structs ============
 
@@ -59,6 +60,7 @@ contract DINProtocol {
         uint256 lockedAmount;
         uint256 spentAmount;
         uint64 validUntil;
+        uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
         bool active;
     }
 
@@ -103,6 +105,9 @@ contract DINProtocol {
         string calldata paymentMode,
         string calldata routingStrategy
     ) external returns (bytes32 sessionId) {
+        // Enforce one active session per consumer
+        require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
         ConsumerAccount storage account = consumers[msg.sender];
 
         // Check available balance
@@ -112,12 +117,15 @@ contract DINProtocol {
         // Lock funds
         account.locked += maxSpend;
 
-        // Create session
+        // Create session ID (unique per consumer + timestamp + amount)
         sessionId = keccak256(abi.encodePacked(
             msg.sender,
             block.timestamp,
             maxSpend
         ));
+
+        // Track active session
+        activeSession[msg.sender] = sessionId;
 
         sessions[sessionId] = Session({
             consumer: msg.sender,
@@ -125,6 +133,7 @@ contract DINProtocol {
             lockedAmount: maxSpend,
             spentAmount: 0,
             validUntil: uint64(block.timestamp) + duration,
+            snapshotBlock: block.number,  // Snapshot rate card prices at session start
             active: true
         });
 
@@ -222,6 +231,23 @@ contract DINProtocol {
         // Only protocol operator can settle disputes
         // ... implementation details
         emit DisputeResolved(sessionId, resolution.settledAmount);
+    }
+
+    function endSession(bytes32 sessionId) external {
+        Session storage session = sessions[sessionId];
+        require(session.consumer == msg.sender, "Not session owner");
+        require(session.active, "Session not active");
+
+        // Final settlement would happen here via coordinator
+        // ...
+
+        // Mark session inactive
+        session.active = false;
+
+        // Clear active session tracker (allows consumer to start new session)
+        activeSession[msg.sender] = bytes32(0);
+
+        emit SessionEnded(sessionId, msg.sender, session.spentAmount, session.lockedAmount - session.spentAmount);
     }
 
     // ============ View Functions ============

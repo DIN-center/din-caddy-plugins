@@ -426,3 +426,102 @@ Treated as admission of guilt:
 
 **Auto-averaging handles 99% of cases.** Escalation is only for repeated, significant abuse where there's a clear pattern of malicious behavior.
 
+---
+
+## Edge Case Resolution
+
+### Provider Offline During Settlement
+
+If a provider is unresponsive during settlement:
+
+```
+PROVIDER OFFLINE SCENARIO
+=========================
+
+Checkpoint triggered (30 min or 60% spend)
+    |
+    |  Consumer submits usage claim
+    |  Provider fails to respond within 15 minutes
+    |
+    v
+Fallback: Settle based on consumer's claim
+    |
+    |  Provider can dispute later (within 7 days)
+    |  if they have evidence of higher usage
+    |
+    v
+Session continues with consumer's claimed amount
+```
+
+**Rationale:** Consumers shouldn't be blocked from settling due to provider issues. The session log is authoritative for the consumer's view.
+
+### Network Congestion Handling
+
+When network congestion prevents timely settlement:
+
+```
+NETWORK CONGESTION OPTIONS
+==========================
+
+Option 1: Extend checkpoint window
+- If settlement tx is pending > 10 minutes
+- Extend session validity by 30 minutes
+- Retry settlement with higher gas priority
+
+Option 2: Optimistic continuation
+- Continue session with local tracking
+- Batch multiple checkpoint settlements
+- Settle when congestion clears
+
+Recommended: Option 1 for safety, Option 2 for UX
+```
+
+| Scenario | Action |
+|----------|--------|
+| Settlement tx pending | Extend session, retry with priority gas |
+| Settlement tx failed | Retry with increased gas, notify consumer |
+| Prolonged congestion (>1 hour) | Pause new sessions, complete existing |
+
+### Ambiguous Evidence Cases
+
+When both parties provide seemingly valid evidence:
+
+```
+AMBIGUOUS EVIDENCE RESOLUTION
+=============================
+
+Both parties submit logs showing different amounts
+    |
+    v
+DIN team reviews:
+1. Timestamp alignment between consumer and provider logs
+2. Request-response correlation
+3. Network evidence (if available)
+4. Pattern analysis (is this consistent with normal behavior?)
+    |
+    +--- Clear fault identified --> Standard penalty
+    |
+    +--- Genuinely ambiguous --> Split the difference
+            |
+            - Neither party penalized
+            - Settlement at midpoint
+            - Flag for monitoring (future sessions tracked closely)
+```
+
+**Split-the-difference principle:** When fault cannot be determined, neither party is penalized but the issue is logged for pattern detection.
+
+---
+
+## Future Enhancements
+
+The following functionality is planned for future releases to strengthen dispute resolution:
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Session Pause** | Temporarily pause a session during investigation | Planned |
+| **Provider Suspension** | Temporarily suspend a provider pending review | Planned |
+| **Consumer Blacklisting** | Block repeat bad actors across all wallets | Planned |
+| **Automated Pattern Detection** | ML-based detection of suspicious claim patterns | Future |
+
+These features will be implemented as the protocol matures and edge cases are better understood through production usage.
+

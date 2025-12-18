@@ -145,6 +145,10 @@ SESSION LIFECYCLE
    returned to consumer's available balance.
 ```
 
+**Price Snapshotting:**
+
+Provider rate card prices are snapshotted at session start. This means price changes during the session don't affect in-flight sessions - consumers pay what they expected when they started.
+
 **Why checkpoints?**
 
 Without checkpoints, a consumer could lock $50, use $45 worth of services, then disappear without settling. Checkpoints ensure:
@@ -484,6 +488,8 @@ This creates real cost and accountability for bad actors while keeping the syste
 ### 7. Settlement Coordinator
 
 The Settlement Coordinator is an off-chain service that orchestrates checkpoints and batches settlements on-chain.
+
+> **Note:** A protocol fee may be introduced in the future to fund Settlement Coordinator operations and protocol development. If implemented, it would be a small percentage (e.g., 2-5%) deducted from settlements. See [08 - Appendix](./08-appendix.md) for details.
 
 **Why off-chain coordination?**
 
