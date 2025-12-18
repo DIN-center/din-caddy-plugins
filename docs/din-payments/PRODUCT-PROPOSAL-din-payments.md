@@ -718,5 +718,5 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 
 ## Related Documents
 
-- [Technical RFC](./RFC-din-payments-v2.md) - Full implementation specification
+- [Technical RFC](./RFC-din-payments.md) - Full implementation specification
 - [DIN Protocol](/docs/din-protocol/) - Unified registry and payment system

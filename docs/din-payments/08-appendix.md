@@ -249,8 +249,8 @@ New service types can be added by:
 - [x402 Payment Protocol](https://github.com/coinbase/x402) - Underlying payment protocol
 - [DIN Router SDK](/docs/din-router-sdk/) - Router architecture
 - [DIN Protocol](/docs/din-protocol/) - Unified registry and payment system
-- [Product Proposal](./PRODUCT-PROPOSAL-din-payments-v2.md) - High-level product overview
-- [Technical RFC](./RFC-din-payments-v2.md) - Full technical specification
+- [Product Proposal](./PRODUCT-PROPOSAL-din-payments.md) - High-level product overview
+- [Technical RFC](./RFC-din-payments.md) - Full technical specification
 
 ---
 

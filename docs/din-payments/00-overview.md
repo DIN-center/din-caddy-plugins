@@ -226,5 +226,5 @@ This documentation is organized into the following sections:
 
 ## Related Documents
 
-- [Product Proposal](./PRODUCT-PROPOSAL-din-payments-v2.md) - High-level product overview
-- [Technical RFC](./RFC-din-payments-v2.md) - Full technical specification
+- [Product Proposal](./PRODUCT-PROPOSAL-din-payments.md) - High-level product overview
+- [Technical RFC](./RFC-din-payments.md) - Full technical specification
