@@ -167,12 +167,20 @@ Without checkpoints, a consumer could lock $50, use $45 worth of services, then 
 
 **Checkpoint triggers:**
 
-| Trigger | Threshold | Why |
-|---------|-----------|-----|
-| Time-based | Every 30 minutes | Predictable settlement cadence |
-| Spend-based | At 60% of locked amount | Protects providers from session exhaustion |
+| Trigger | Threshold | Initiated By | Why |
+|---------|-----------|--------------|-----|
+| Time-based | Every 30 minutes | Coordinator | Predictable settlement cadence |
+| Spend-based | At 60% of locked amount | Consumer SDK | Protects providers from session exhaustion |
 
 Whichever comes first triggers the checkpoint.
+
+**Checkpoint ownership:**
+
+Time-based checkpoints are triggered by the Settlement Coordinator on a fixed schedule. Spend-based checkpoints are triggered by the Consumer SDK. This is because only the consumer knows their total spend across all providers—individual providers only see their own portion.
+
+**Session abuse prevention:**
+
+To prevent abuse through rapid session creation (e.g., probing provider networks without paying), the protocol tracks abandonment rates. A session is considered "abandoned" if less than 5% of locked funds are used. Consumers with high abandonment rates face session creation rate limits. Legitimate users are unaffected; abusers are throttled automatically.
 
 ---
 
@@ -387,6 +395,16 @@ Protocol guarantees:
   - Neither party can unilaterally extract funds
   - Transparent, auditable reconciliation
 ```
+
+**Method attestation (cryptographic proof):**
+
+To strengthen bilateral reconciliation, providers cryptographically sign every response with attestation headers (`X-DIN-Method`, `X-DIN-CUs`, `X-DIN-Sig`). This locks in what the provider claims to have served at request time—not settlement time.
+
+Without attestation, a provider could serve a cheap method (1 CU) but claim an expensive method (50 CUs) at settlement. Auto-averaging would give them 25.5 CUs—a net win for lying.
+
+With attestation, the consumer holds the provider's own signature proving what was actually served. If the provider's settlement claim contradicts their signatures, they're caught lying and face penalties. This makes dishonest behavior provably detectable.
+
+Attestation adds minimal latency (~0.2ms per request) and no storage overhead—signatures are verified in memory and discarded. Only disputed requests are stored as evidence.
 
 ---
 
@@ -710,7 +728,7 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Provider over-reporting | Consumers overcharged | Bilateral reconciliation; consumer claim caps charge; cumulative pattern detection |
+| Provider over-reporting | Consumers overcharged | Bilateral reconciliation; method attestation; consumer claim caps charge; cumulative pattern detection |
 | Consumer under-reporting | Providers underpaid | Provider can dispute with server logs; escalation process |
 | Settlement delays | Provider cash flow issues | 30-minute checkpoint cycles; predictable settlement |
 | Coordinator downtime | Settlement delayed | Sessions continue working; funds remain secure in contract; forceUnlock after 24h |
@@ -718,6 +736,7 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 | Low provider adoption | Limited routing options | Competitive economics, easy integration, no billing overhead |
 | Provider exits network | Active sessions disrupted | 7-day exit cooldown; sessions complete before provider fully exits |
 | Coordinator centralization (Phase 1) | Single point of trust | No fund custody; consumers can forceUnlock; decentralization roadmap |
+| Session creation spam | Provider resource waste | Abandonment rate tracking; session creation rate limits based on usage patterns |
 
 ---
 
@@ -761,6 +780,8 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 | **ForceUnlock** | Consumer ability to reclaim locked funds 24 hours after session expiry if settlement hasn't occurred |
 | **Provider Sidecar** | Service that runs alongside provider nodes to handle session verification and usage tracking |
 | **TTL (Time To Live)** | How long cached data remains valid before expiring (30 minutes for session cache) |
+| **Method Attestation** | Cryptographic signature on each response proving what method/CUs were served; prevents providers from lying at settlement |
+| **Abandonment Rate** | Percentage of sessions created with less than 5% usage; used for rate limiting session creation abuse |
 
 ---
 

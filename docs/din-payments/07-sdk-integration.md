@@ -439,8 +439,111 @@ REQUEST PROCESSING
    - eth_call = 10 CUs
    - Update session usage: +10 CUs, +$0.0008
 
-6. Return response to consumer
+6. Sign attestation:
+   - Create attestation: hash(sessionId, method, CUs, timestamp)
+   - Sign with provider private key
+   - Add to response headers
+
+7. Return response to consumer with attestation headers
 ```
+
+### Method Attestation
+
+Every response includes a cryptographic attestation that commits the provider to what they served. This prevents providers from lying at settlement time.
+
+**Response Headers:**
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-DIN-Session: 0xabc123...
+X-DIN-Method: eth_call
+X-DIN-CUs: 10
+X-DIN-Timestamp: 1702857650
+X-DIN-Sig: 0x3a4b5c6d...
+
+{"jsonrpc":"2.0","result":"0x...","id":1}
+```
+
+**Header Definitions:**
+
+| Header | Description |
+|--------|-------------|
+| `X-DIN-Session` | Session ID for this request |
+| `X-DIN-Method` | The method that was served (must match request) |
+| `X-DIN-CUs` | CU cost charged for this request |
+| `X-DIN-Timestamp` | Unix timestamp of response |
+| `X-DIN-Sig` | Provider's ECDSA signature over `hash(sessionId, method, CUs, timestamp)` |
+
+**Why Attestation Matters:**
+
+```
+WITHOUT ATTESTATION
+===================
+Provider can lie at settlement:
+  - Serve eth_blockNumber (1 CU)
+  - Claim eth_getLogs (50 CUs) at settlement
+  - Auto-average: (1 + 50) / 2 = 25.5 CUs
+  - Provider profits by lying
+
+WITH ATTESTATION
+================
+Provider's signature locks in what they served:
+  - Serve eth_blockNumber (1 CU)
+  - Sign: "eth_blockNumber, 1 CU" in response header
+  - Claim eth_getLogs (50 CUs) at settlement
+  - Consumer shows provider's own signature
+  - Provider caught lying → escalation → penalty
+```
+
+**Latency Impact:**
+
+| Operation | Overhead |
+|-----------|----------|
+| Hash computation | ~0.01 ms |
+| ECDSA signing | ~0.1-0.2 ms |
+| Total attestation overhead | ~0.2 ms |
+
+Attestation adds minimal overhead to request processing.
+
+**Consumer SDK Verification:**
+
+The consumer SDK verifies attestations in memory and only stores flagged exceptions:
+
+```go
+// Verify response attestation
+func (sdk *SDK) verifyAttestation(resp *Response, expectedMethod string) error {
+    method := resp.Header.Get("X-DIN-Method")
+    cus := resp.Header.Get("X-DIN-CUs")
+    sig := resp.Header.Get("X-DIN-Sig")
+    timestamp := resp.Header.Get("X-DIN-Timestamp")
+
+    // 1. Method matches what we requested?
+    if method != expectedMethod {
+        sdk.flagDispute(resp, "method_mismatch")
+        return ErrMethodMismatch
+    }
+
+    // 2. CUs match rate card?
+    expectedCUs := sdk.rateCard.GetCUs(method)
+    if parseCUs(cus) != expectedCUs {
+        sdk.flagDispute(resp, "cu_mismatch")
+        return ErrCUMismatch
+    }
+
+    // 3. Signature valid from this provider?
+    message := hash(sdk.sessionID, method, cus, timestamp)
+    if !verifySignature(sig, message, sdk.providerAddress) {
+        sdk.flagDispute(resp, "invalid_signature")
+        return ErrInvalidSignature
+    }
+
+    return nil  // All good, discard signature, update counters
+}
+```
+
+Normal requests: Verify in memory, discard signature, update usage counters.
+Flagged requests: Store full response with signature for dispute evidence.
 
 ### Session Verification Flow
 

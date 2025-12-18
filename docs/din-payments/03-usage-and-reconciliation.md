@@ -257,6 +257,141 @@ Protocol guarantees:
 
 ---
 
+## Method Attestation
+
+Method attestation strengthens bilateral reconciliation by requiring providers to cryptographically commit to what they served at response time.
+
+### The Problem Without Attestation
+
+Without attestation, a provider can lie at settlement time:
+
+```
+WITHOUT METHOD ATTESTATION
+==========================
+
+Request time:
+  Consumer sends: eth_blockNumber (cheap, 1 CU)
+  Provider computes: eth_blockNumber
+  Provider returns: { "result": "0x123..." }
+
+Settlement time (30 min later):
+  Consumer claims: "I called eth_blockNumber, 1 CU"
+  Provider claims: "I served eth_getLogs, 50 CUs"
+
+Problem:
+  - Consumer knows what they SENT
+  - But can't prove what provider CLAIMED at request time
+  - It's he-said-she-said
+  - Auto-average: (1 + 50) / 2 = 25.5 CUs ← Provider wins by lying
+```
+
+### How Method Attestation Works
+
+Providers include a signed attestation in every response:
+
+```
+PROVIDER RESPONSE WITH ATTESTATION
+==================================
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-DIN-Method: eth_blockNumber
+X-DIN-CUs: 1
+X-DIN-Sig: 0x3a4b5c...  (provider signs: hash(sessionId, method, cus, timestamp))
+
+{"jsonrpc":"2.0","result":"0x123...","id":1}
+```
+
+The consumer SDK verifies the signature immediately:
+
+```typescript
+// Consumer SDK verification (in memory, no storage)
+function verifyResponse(response: Response, expectedMethod: string): boolean {
+  const method = response.headers.get('X-DIN-Method');
+  const cus = response.headers.get('X-DIN-CUs');
+  const sig = response.headers.get('X-DIN-Sig');
+
+  // 1. Method matches what we requested?
+  if (method !== expectedMethod) {
+    this.flagDispute(response);  // Store for dispute
+    return false;
+  }
+
+  // 2. CUs match rate card for this method?
+  const expectedCUs = this.rateCard.getCUs(method);
+  if (parseInt(cus) !== expectedCUs) {
+    this.flagDispute(response);
+    return false;
+  }
+
+  // 3. Signature valid from this provider?
+  const isValid = verifySignature(sig, method, cus, this.provider);
+  if (!isValid) {
+    this.flagDispute(response);
+    return false;
+  }
+
+  return true;  // All good, discard signature, update counters
+}
+```
+
+### How Attestation Strengthens Bilateral Reconciliation
+
+```
+WITH METHOD ATTESTATION
+=======================
+
+Request time:
+  Consumer sends: eth_blockNumber
+  Provider returns: { "result": "0x123..." }
+  Provider ALSO returns signed header:
+    X-DIN-Method: eth_blockNumber
+    X-DIN-CUs: 1
+    X-DIN-Sig: 0x... (provider's signature)
+
+Consumer verifies signature immediately. ✓
+
+Settlement time:
+  Provider claims: "I served eth_getLogs, 50 CUs"
+  Consumer claims: "I called eth_blockNumber, 1 CU"
+  Consumer ALSO submits: "Provider's own signature says eth_blockNumber, 1 CU"
+
+Result:
+  - Provider's signature contradicts their settlement claim
+  - Provider caught lying → escalation triggered automatically
+  - Consumer pays 1 CU, not 25.5
+  - Provider receives penalty
+```
+
+### Storage Efficiency
+
+Signatures are NOT stored for normal requests:
+
+| Data | Stored? | Where |
+|------|---------|-------|
+| Every signature | NO | Verified in memory, discarded |
+| Aggregated usage | YES | Consumer + Provider (counters only) |
+| Flagged requests | YES | Consumer only (disputed exceptions) |
+
+Normal operation adds zero storage overhead. Only disputed requests (rare) are stored as evidence.
+
+### What Attestation Prevents
+
+| Attack | Without Attestation | With Attestation |
+|--------|---------------------|------------------|
+| Claim expensive method, serve cheap | Provider lies at settlement, gets averaged | Provider's signature proves the lie |
+| Inflate CU count for method | He-said-she-said | Signature locks in CU count |
+| Deny serving a request | Provider can claim they didn't serve it | Signature proves they did |
+
+### What Attestation Does NOT Prevent
+
+- **Stale/cached data**: Provider could return old data. This is a quality issue caught by health scores, not billing.
+- **Computation shortcuts**: Provider could compute less than expected. Also a quality issue.
+
+These are service quality issues, not billing fraud, and are addressed through health scoring and consumer complaints.
+
+---
+
 ## Usage Claim Structure
 
 ### Consumer Usage Claim
@@ -380,12 +515,42 @@ session.spentAmount += actualCost;
 
 ### Checkpoint Triggers
 
-| Trigger | Threshold | Action |
-|---------|-----------|--------|
-| Time-based | Every 30 minutes | Initiate checkpoint |
-| Spend-based | 60% of locked amount used | Initiate checkpoint |
+| Trigger | Threshold | Initiated By | Action |
+|---------|-----------|--------------|--------|
+| Time-based | Every 30 minutes | Coordinator | Coordinator triggers checkpoint on schedule |
+| Spend-based | 60% of locked amount used | Consumer SDK | Consumer SDK triggers checkpoint |
 
 Whichever trigger hits first initiates the checkpoint.
+
+### Checkpoint Ownership
+
+**Time-based checkpoints:** Triggered by the Settlement Coordinator on a fixed schedule. No race condition since there's one coordinator.
+
+**Spend-based checkpoints:** Triggered by the Consumer SDK, not by providers.
+
+```
+SPEND-BASED CHECKPOINT OWNERSHIP
+================================
+
+Why consumer triggers (not providers):
+
+  Provider A tracks: $15 (their portion only)
+  Provider B tracks: $15 (their portion only)
+  Consumer SDK tracks: $30 total across ALL providers
+
+Only the consumer SDK knows the total spend across all providers.
+Only the consumer SDK can accurately determine when 60% is reached.
+
+Flow:
+  1. Consumer SDK tracks total spend across all providers
+  2. When total reaches 60% of locked amount, SDK triggers checkpoint
+  3. SDK sends checkpoint request to coordinator
+  4. Coordinator collects claims from SDK and all providers
+  5. Single checkpoint processed
+
+This prevents race conditions where multiple providers
+independently trigger checkpoints at the same threshold.
+```
 
 ### Why These Thresholds?
 
@@ -398,7 +563,83 @@ Whichever trigger hits first initiates the checkpoint.
 **60% spend (spend-based):**
 - Protects providers from session exhaustion
 - Ensures providers receive payment before consumer funds run low
-- Prevents race conditions when multiple providers serve one session
+- Consumer SDK is the single source of truth for total spend
+
+---
+
+## Abandonment Rate Tracking
+
+To prevent abuse through rapid session creation, the protocol tracks abandonment patterns per consumer.
+
+### What Counts as Abandonment?
+
+| Scenario | Abandonment? | Why |
+|----------|--------------|-----|
+| Session expires without any usage | Yes | Created but never used |
+| Session ends with < 5% of locked funds used | Yes | Minimal usage, likely testing/probing |
+| Session ends normally (> 5% usage) | No | Legitimate usage pattern |
+| Session ends early with significant usage | No | Consumer ended when done (good behavior) |
+| forceUnlock used after session expiry | Partial | May indicate coordinator issues OR abandonment |
+
+### Abandonment Rate Calculation
+
+```
+ABANDONMENT RATE
+================
+
+Calculation (30-day rolling window):
+
+  abandonmentRate = abandonedSessions / totalSessions
+
+Where:
+  abandonedSessions = sessions with < 5% usage
+  totalSessions = all sessions created by consumer
+
+Example:
+  Consumer created 20 sessions in past 30 days
+  - 15 sessions with normal usage (> 5%)
+  - 5 sessions with < 5% usage (abandoned)
+
+  abandonmentRate = 5 / 20 = 25%
+```
+
+### Rate Limiting Based on Abandonment
+
+| Abandonment Rate | Max New Sessions Per Hour | Action |
+|------------------|---------------------------|--------|
+| 0-10% | Unlimited | Normal behavior |
+| 10-25% | 5 sessions/hour | Light throttling |
+| 25-50% | 2 sessions/hour | Moderate throttling |
+| > 50% | 1 session/hour | Heavy throttling + review flag |
+
+### Why Track Abandonment?
+
+```
+ABUSE PREVENTION
+================
+
+Without abandonment tracking, bad actors could:
+
+1. Create many sessions rapidly
+2. Probe provider availability/pricing
+3. Never actually use the sessions
+4. Waste provider resources (session verification)
+5. Potentially DoS the checkpoint system
+
+With abandonment tracking:
+
+- Legitimate users unaffected (low abandonment)
+- Abusers quickly rate-limited
+- No on-chain changes needed (soft limit)
+- Coordinator can enforce without contract upgrades
+```
+
+### Implementation Notes
+
+- Abandonment rate is calculated by the Settlement Coordinator
+- Rate limits are enforced during `startSession` on-chain call
+- Consumers can view their abandonment rate via SDK
+- Rate resets after 30 days of normal usage
 
 ---
 
