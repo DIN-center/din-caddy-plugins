@@ -4,7 +4,7 @@
 # Ensure bash is used for all shell commands to guarantee cross-environment reproducibility
 SHELL := /bin/bash
 
-.PHONY: help build run test test-verbose test-coverage test-race clean secure dev-deps lint format check-deps benchmark profile docker-build docker-run
+.PHONY: help build run test test-verbose test-coverage test-race clean secure dev-deps lint format check-deps benchmark profile docker-build docker-run docker-compose
 
 # Default target
 .DEFAULT_GOAL := help
@@ -162,6 +162,10 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	@echo "$(GREEN)Running Docker container...$(NC)"
 	docker run -p 80:80 -p 8443:443 localhost/din-caddy
+
+docker-compose: ## Run Caddy monitored by the LGTM stack
+	@echo "$(GREEN)Running Docker container with LGTM stack...$(NC)"
+	UID=$(id -u) GID=$(id -g) docker-compose up -d
 
 ## Utility Commands
 clean: ## Clean build artifacts and test files

@@ -17,6 +17,7 @@ services:
     ports:
       - 2019:2019
       - 8000:8000
+    user: "${UID}:${GID}"
     volumes:
       - ./Caddyfile.private:/etc/caddy/Caddyfile
       - ./caddy-data:/srv
@@ -42,6 +43,7 @@ services:
     networks:
       - din-network
     command: ["--config=/etc/otel/config/config.yml"]
+    user: "${UID}:${GID}"
     volumes:
       - ./services/otel-collector/config.yml:/etc/otel/config/config.yml
       - ./caddy-data:/srv
