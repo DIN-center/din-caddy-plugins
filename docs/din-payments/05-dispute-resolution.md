@@ -53,6 +53,42 @@ Consumer                 Contract                  Provider
 | Minor discrepancy | < 5% difference | Average and settle |
 | Major discrepancy | >= 5% difference | Hold 48 hours for escalation |
 
+### Cumulative Discrepancy Tracking
+
+To prevent systematic gaming where a provider consistently over-reports just below the 5% threshold, the protocol tracks cumulative discrepancy patterns per provider.
+
+```
+CUMULATIVE DISCREPANCY DETECTION
+================================
+
+Provider A's recent settlements:
+  Checkpoint 1: Consumer claims $100, Provider claims $104 (4% over)
+  Checkpoint 2: Consumer claims $200, Provider claims $208 (4% over)
+  Checkpoint 3: Consumer claims $150, Provider claims $156 (4% over)
+  Checkpoint 4: Consumer claims $180, Provider claims $187 (3.9% over)
+  ...
+
+Cumulative analysis (rolling 30-day window):
+  - Average discrepancy: +3.8% (consistently provider-favoring)
+  - Number of settlements: 50
+  - Pattern detected: SYSTEMATIC_OVER_REPORTING
+
+Action triggered:
+  - Provider flagged for review
+  - Health score reduced by 10%
+  - Next 10 settlements held for manual verification
+```
+
+**Pattern Detection Rules:**
+
+| Pattern | Detection Criteria | Action |
+|---------|-------------------|--------|
+| Systematic over-reporting | >20 settlements with avg >2% provider-favoring discrepancy | Flag + health reduction |
+| Systematic under-reporting | >20 settlements with avg >2% consumer-favoring discrepancy | Flag for investigation |
+| High variance | Std deviation >3% across settlements | Quality review |
+
+The Settlement Coordinator maintains a rolling 30-day window of discrepancy data per provider to detect these patterns automatically.
+
 ### Major Discrepancy Hold
 
 When a major discrepancy is detected, settlement is **held for 48 hours** before defaulting to average:

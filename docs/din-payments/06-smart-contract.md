@@ -61,6 +61,7 @@ contract DINProtocol {
         uint256 spentAmount;
         uint64 validUntil;
         uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
+        bytes32 rateCardHash;      // Hash of provider rate cards at snapshot for on-chain verification
         bool active;
     }
 
@@ -99,14 +100,22 @@ contract DINProtocol {
         emit ConsumerWithdrawn(msg.sender, amount);
     }
 
+    // Maximum session duration (7 days). This value may be adjusted via governance.
+    uint64 public constant MAX_SESSION_DURATION = 7 days;
+
     function startSession(
         uint256 maxSpend,
         uint64 duration,
         string calldata paymentMode,
         string calldata routingStrategy
     ) external returns (bytes32 sessionId) {
-        // Enforce one active session per consumer
+        // Enforce one active session per consumer.
+        // This also prevents session ID collisions since the same consumer
+        // cannot create two sessions in the same block with the same maxSpend.
         require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
+        // Enforce maximum session duration
+        require(duration <= MAX_SESSION_DURATION, "Duration exceeds maximum");
 
         ConsumerAccount storage account = consumers[msg.sender];
 
@@ -117,7 +126,9 @@ contract DINProtocol {
         // Lock funds
         account.locked += maxSpend;
 
-        // Create session ID (unique per consumer + timestamp + amount)
+        // Create session ID (unique per consumer + timestamp + amount).
+        // Collision safety: The one-session-per-consumer rule above ensures
+        // uniqueness even if timestamp and maxSpend are identical.
         sessionId = keccak256(abi.encodePacked(
             msg.sender,
             block.timestamp,
@@ -171,6 +182,17 @@ contract DINProtocol {
         bytes providerSig;       // Provider signs their claim
     }
 
+    // Track failed settlements for retry
+    mapping(bytes32 => FailedSettlement) public failedSettlements;
+
+    struct FailedSettlement {
+        bytes32 sessionId;
+        address provider;
+        uint256 amount;
+        uint256 timestamp;
+        bool pending;
+    }
+
     // Settlement with bilateral reconciliation - pays provider directly
     function settleBatch(SignedClaim[] calldata claims) external {
         for (uint i = 0; i < claims.length; i++) {
@@ -217,11 +239,46 @@ contract DINProtocol {
             consumers[session.consumer].balance -= amount;
             consumers[session.consumer].totalSpent += amount;
 
-            // Direct transfer to provider - no withdrawal step needed
-            usdc.transfer(sc.claim.provider, amount);
-
-            emit UsageSettled(sc.claim.sessionId, sc.claim.provider, amount);
+            // Direct transfer to provider with error handling.
+            // If transfer fails (e.g., provider is blacklisted, contract reverts),
+            // record for retry rather than reverting entire batch.
+            try usdc.transfer(sc.claim.provider, amount) returns (bool success) {
+                if (success) {
+                    emit UsageSettled(sc.claim.sessionId, sc.claim.provider, amount);
+                } else {
+                    _recordFailedSettlement(sc.claim.sessionId, sc.claim.provider, amount);
+                }
+            } catch {
+                _recordFailedSettlement(sc.claim.sessionId, sc.claim.provider, amount);
+            }
         }
+    }
+
+    function _recordFailedSettlement(
+        bytes32 sessionId,
+        address provider,
+        uint256 amount
+    ) internal {
+        bytes32 failureId = keccak256(abi.encode(sessionId, provider, amount));
+        failedSettlements[failureId] = FailedSettlement({
+            sessionId: sessionId,
+            provider: provider,
+            amount: amount,
+            timestamp: block.timestamp,
+            pending: true
+        });
+        emit SettlementFailed(sessionId, provider, amount);
+    }
+
+    // Retry a failed settlement (provider can call with alternate address)
+    function retrySettlement(bytes32 failureId, address newRecipient) external {
+        FailedSettlement storage fs = failedSettlements[failureId];
+        require(fs.pending, "No pending settlement");
+        require(msg.sender == fs.provider, "Not original provider");
+
+        fs.pending = false;
+        usdc.transfer(newRecipient, fs.amount);
+        emit UsageSettled(fs.sessionId, newRecipient, fs.amount);
     }
 
     function settleDispute(
@@ -232,6 +289,9 @@ contract DINProtocol {
         // ... implementation details
         emit DisputeResolved(sessionId, resolution.settledAmount);
     }
+
+    // Grace period after session expiry before consumer can force unlock
+    uint64 public constant UNLOCK_GRACE_PERIOD = 24 hours;
 
     function endSession(bytes32 sessionId) external {
         Session storage session = sessions[sessionId];
@@ -248,6 +308,35 @@ contract DINProtocol {
         activeSession[msg.sender] = bytes32(0);
 
         emit SessionEnded(sessionId, msg.sender, session.spentAmount, session.lockedAmount - session.spentAmount);
+    }
+
+    /// @notice Force unlock remaining funds after session expiry + grace period.
+    /// @dev This protects consumers if the coordinator fails to process final settlement.
+    ///      After UNLOCK_GRACE_PERIOD (24 hours) past session expiry, the consumer can
+    ///      reclaim any remaining locked funds that weren't settled.
+    function forceUnlock(bytes32 sessionId) external {
+        Session storage session = sessions[sessionId];
+        require(session.consumer == msg.sender, "Not session owner");
+        require(session.active, "Session not active");
+
+        // Must be past expiry + grace period
+        require(
+            block.timestamp > session.validUntil + UNLOCK_GRACE_PERIOD,
+            "Grace period not elapsed"
+        );
+
+        // Calculate remaining locked funds
+        uint256 remaining = session.lockedAmount - session.spentAmount;
+
+        // Mark session inactive
+        session.active = false;
+        activeSession[msg.sender] = bytes32(0);
+
+        // Unlock remaining funds (move from locked back to available)
+        consumers[msg.sender].locked -= remaining;
+
+        emit SessionForceUnlocked(sessionId, msg.sender, remaining);
+        emit SessionEnded(sessionId, msg.sender, session.spentAmount, remaining);
     }
 
     // ============ View Functions ============
@@ -304,6 +393,16 @@ contract DINProtocol {
     );
     event DisputeRaised(bytes32 indexed sessionId, address indexed raiser);
     event DisputeResolved(bytes32 indexed sessionId, uint256 settledAmount);
+    event SettlementFailed(
+        bytes32 indexed sessionId,
+        address indexed provider,
+        uint256 amount
+    );
+    event SessionForceUnlocked(
+        bytes32 indexed sessionId,
+        address indexed consumer,
+        uint256 unlockedAmount
+    );
 }
 ```
 
@@ -489,10 +588,115 @@ function settleBatch(SignedClaim[] calldata claims) external onlyOperator {
 
 ### Upgrade Path
 
-For future upgrades:
-- Contract uses OpenZeppelin's UUPS or Transparent proxy pattern
-- State preserved across upgrades
-- Emergency pause functionality included
+The contract uses OpenZeppelin's UUPS (Universal Upgradeable Proxy Standard) pattern for upgrades:
+
+```solidity
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
+contract DINProtocol is UUPSUpgradeable, OwnableUpgradeable {
+    // ... contract implementation ...
+
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyOwner
+    {}
+}
+```
+
+**Upgrade Process:**
+
+1. **Proposal:** New implementation contract is deployed and verified
+2. **Timelock:** 48-hour timelock before upgrade can be executed
+3. **Execution:** Owner calls `upgradeTo(newImplementation)`
+4. **Verification:** Community can verify new implementation matches published source
+
+**Safety Guarantees:**
+- State is preserved across upgrades (storage layout compatibility required)
+- Emergency pause can halt operations during upgrade
+- Timelock prevents surprise upgrades
+- Implementation is verified on-chain before upgrade
+
+**Emergency Pause:**
+
+```solidity
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+
+function pause() external onlyOwner {
+    _pause();
+}
+
+function unpause() external onlyOwner {
+    _unpause();
+}
+
+// Critical functions check: whenNotPaused
+function startSession(...) external whenNotPaused { ... }
+function settleBatch(...) external whenNotPaused { ... }
+```
+
+---
+
+## Provider Deregistration
+
+Providers may leave the network. The deregistration process ensures orderly exit:
+
+```solidity
+// Provider states
+enum ProviderStatus { Active, PendingExit, Exited }
+
+mapping(address => ProviderStatus) public providerStatus;
+mapping(address => uint256) public exitRequestedAt;
+
+uint256 public constant EXIT_COOLDOWN = 7 days;
+
+function requestExit() external {
+    require(providerStatus[msg.sender] == ProviderStatus.Active, "Not active");
+    providerStatus[msg.sender] = ProviderStatus.PendingExit;
+    exitRequestedAt[msg.sender] = block.timestamp;
+    emit ProviderExitRequested(msg.sender);
+}
+
+function completeExit() external {
+    require(providerStatus[msg.sender] == ProviderStatus.PendingExit, "Not pending");
+    require(block.timestamp >= exitRequestedAt[msg.sender] + EXIT_COOLDOWN, "Cooldown not elapsed");
+
+    providerStatus[msg.sender] = ProviderStatus.Exited;
+    // Rate card remains for historical settlement reference
+    emit ProviderExited(msg.sender);
+}
+```
+
+**Deregistration Flow:**
+
+```
+PROVIDER EXIT FLOW
+==================
+
+Day 0: Provider calls requestExit()
+    |
+    |  Provider enters PendingExit state
+    |  - Still serves requests
+    |  - Still receives settlements
+    |  - Routing engine deprioritizes (health score reduced)
+    |
+    |  7-day cooldown period
+    |  - Allows active sessions to complete
+    |  - Pending settlements are processed
+    |
+Day 7: Provider calls completeExit()
+    |
+    |  Provider enters Exited state
+    |  - No longer routed traffic
+    |  - Rate card preserved for historical lookups
+    |  - Can re-register later with new rate card
+```
+
+**Why 7-day cooldown?**
+- Maximum session duration is 7 days
+- Ensures all active sessions complete before exit
+- Allows time for pending settlements to process
 
 ---
 

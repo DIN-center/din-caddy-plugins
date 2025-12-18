@@ -369,33 +369,77 @@ const stats = await provider.getStats({ period: '7d' });
 
 ## Provider Sidecar
 
-The Provider Sidecar is a Go service that runs alongside provider nodes to handle session verification and usage tracking.
+The Provider Sidecar is a Go service that runs alongside provider nodes to handle session verification, multi-service routing, and usage tracking. A single sidecar can route requests to multiple backend services (e.g., ethereum-mainnet, solana-mainnet, bitcoin-mainnet).
 
 ### Architecture
 
 ```
-PROVIDER SIDECAR
-================
+MULTI-SERVICE PROVIDER SIDECAR
+==============================
 
 Consumer Request
+  { service: "ethereum-mainnet", sessionId: "0x...", request: {...} }
       |
       v
-+------------------+
-|  Provider Node   |
-|  (RPC endpoint)  |
-+--------+---------+
-         |
-         v
-+------------------+
-|  DIN Sidecar     |
-|                  |
-|  - Session cache |
-|  - Usage tracking|
-|  - Proof verify  |
-+--------+---------+
-         |
-         v
-  Response to Consumer
++─────────────────────────────────────────────────────────────────────+
+|                        PROVIDER SIDECAR                              |
+|                                                                      |
+|  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐   |
+|  │   Session    │    │   Service    │    │    Usage Tracking    │   |
+|  │   Cache      │    │   Router     │    │    (per service)     │   |
+|  │              │    │              │    │                      │   |
+|  │  - Verify    │───>│  - Route by  │───>│  - Count requests    │   |
+|  │  - Cache     │    │    service   │    │  - Sum CUs           │   |
+|  │  - TTL 30min │    │  - Load rate │    │  - Calculate cost    │   |
+|  │              │    │    card      │    │                      │   |
+|  └──────────────┘    └──────┬───────┘    └──────────┬───────────┘   |
+|                             │                       │               |
+|          ┌──────────────────┼───────────────────┐   │               |
+|          │                  │                   │   │               |
+|          v                  v                   v   │               |
+|   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             |
+|   │  ethereum   │    │   solana    │    │   bitcoin   │             |
+|   │  :8545      │    │   :8899     │    │   :8332     │             |
+|   └─────────────┘    └─────────────┘    └─────────────┘             |
+|                                                 │               |
+|                                     ┌───────────▼───────────┐       |
+|                                     │  Checkpoint Submit    │       |
+|                                     │  (every 30 min)       │       |
+|                                     └───────────────────────┘       |
++─────────────────────────────────────────────────────────────────────+
+```
+
+### Request Flow
+
+```
+REQUEST PROCESSING
+==================
+
+1. Request arrives:
+   {
+     "service": "ethereum-mainnet",
+     "sessionId": "0xabc...",
+     "request": { "method": "eth_call", "params": [...] }
+   }
+
+2. Validate service:
+   - Is "ethereum-mainnet" in our config?
+   - NO → Return error 3002 "Service not supported"
+   - YES → Continue
+
+3. Verify session (see Session Verification below)
+
+4. Route to backend:
+   - Look up endpoint for "ethereum-mainnet" → localhost:8545
+   - Forward request to backend
+   - Get response
+
+5. Track usage:
+   - Look up rate card for "ethereum-mainnet"
+   - eth_call = 10 CUs
+   - Update session usage: +10 CUs, +$0.0008
+
+6. Return response to consumer
 ```
 
 ### Session Verification Flow
@@ -407,55 +451,129 @@ SESSION VERIFICATION
 1. Request arrives with sessionId
 
 2. Check cache:
-   - Cache hit? Serve request immediately
-   - Cache miss? Continue...
+   - Cache hit? Continue to routing
+   - Cache miss? Continue to verification...
 
 3. If cache miss, check if proof included:
-   - No proof? Return 401 + X-DIN-PROOF header
+   - No proof? Return error 1002 "Session proof required"
    - Has proof? Continue...
 
 4. Verify proof:
+   - Check timestamp (< 5 minutes old?)
    - Verify signature (recovers consumer address)
    - Query contract: isSessionActive(sessionId)?
-   - Valid? Cache session, serve request
-   - Invalid? Return 401 Unauthorized
+   - All valid? Cache session (TTL 30 min), continue
+   - Invalid? Return error 1003-1007 as appropriate
 
 5. Subsequent requests:
-   - Cache hit (no crypto, ~0.01ms)
-   - Until checkpoint expires cache
+   - Cache hit (~0.5ms overhead)
+   - Until TTL expires, then re-verify
 ```
 
 ### Sidecar Configuration
 
 ```yaml
 # sidecar.yaml
+provider:
+  private_key: "${PROVIDER_KEY}"
+  address: "0xProviderAddress"
+
 din:
   contract_address: "0x..."
   rpc_url: "https://mainnet.base.org"
 
-provider:
-  private_key: "${PROVIDER_KEY}"
+# Multiple services, one sidecar
+services:
+  ethereum-mainnet:
+    endpoint: "http://localhost:8545"
+    type: "evm"
+    rate_card:
+      supports_cu_pricing: true
+      supports_request_pricing: true
+      default_cu_cost: 5
+      method_cus:
+        eth_call: 10
+        eth_getLogs: 50
+        eth_getBalance: 5
+        eth_getBlockByNumber: 10
+        debug_traceCall: 500
+
+  solana-mainnet:
+    endpoint: "http://localhost:8899"
+    type: "solana"
+    rate_card:
+      supports_cu_pricing: true
+      supports_request_pricing: false
+      default_cu_cost: 1
+      method_cus:
+        getAccountInfo: 2
+        getBalance: 1
+        getTransaction: 3
+        getSlot: 1
+
+  bitcoin-mainnet:
+    endpoint: "http://localhost:8332"
+    type: "bitcoin"
+    rate_card:
+      supports_cu_pricing: true
+      supports_request_pricing: false
+      default_cu_cost: 5
+      method_cus:
+        getblock: 5
+        getrawtransaction: 3
+        getblockcount: 1
 
 cache:
   session_ttl: 1800  # 30 minutes
 
-usage:
-  checkpoint_interval: 1800  # 30 minutes
-  spend_threshold: 0.6       # 60% spend triggers checkpoint
+checkpoint:
+  interval: 1800      # 30 minutes
+  spend_threshold: 0.6  # 60% spend triggers early checkpoint
 ```
+
+### Session Cache
+
+Cache invalidation relies on TTL expiry aligned with checkpoint intervals.
+
+```
+CACHE INVALIDATION (TTL-BASED)
+==============================
+
+1. Sidecar caches session validity for 30 minutes (cache TTL)
+2. Checkpoints also occur every 30 minutes
+3. If session ends early:
+   - Requests may continue until cache expires (~30 min max)
+   - These requests are still tracked by the sidecar
+   - At next checkpoint, usage is reconciled and settled
+   - Provider still gets paid, consumer still pays
+
+This is acceptable because:
+- Checkpoint intervals align with cache TTL
+- No requests go untracked or unpaid
+- Simplicity over complexity for MVP
+```
+
+**Future enhancement:** If tighter invalidation is needed, sidecars can subscribe to `SessionEnded` blockchain events directly.
 
 ### Usage Tracking
 
-The sidecar tracks usage per session:
+The sidecar tracks usage per session, broken down by service:
 
 ```go
 type SessionUsage struct {
-    SessionID  string
-    Consumer   string
+    SessionID   string
+    Consumer    string
+    ByService   map[string]ServiceUsage  // Per-service breakdown
+    TotalCUs    uint64
+    TotalCost   uint64  // In USDC base units (6 decimals)
+    LastUpdate  time.Time
+}
+
+type ServiceUsage struct {
+    Service    string
     Methods    map[string]MethodUsage
     TotalCUs   uint64
-    TotalCost  uint64  // In USDC base units
-    LastUpdate time.Time
+    TotalCost  uint64
 }
 
 type MethodUsage struct {
@@ -464,6 +582,96 @@ type MethodUsage struct {
     Cost     uint64
 }
 ```
+
+**Example tracked state:**
+
+```json
+{
+  "sessionId": "0xabc...",
+  "consumer": "0x123...",
+  "byService": {
+    "ethereum-mainnet": {
+      "methods": {
+        "eth_call": { "requests": 150, "cus": 1500, "cost": 120000 },
+        "eth_getLogs": { "requests": 20, "cus": 1000, "cost": 80000 }
+      },
+      "totalCUs": 2500,
+      "totalCost": 200000
+    },
+    "solana-mainnet": {
+      "methods": {
+        "getBalance": { "requests": 50, "cus": 50, "cost": 4000 }
+      },
+      "totalCUs": 50,
+      "totalCost": 4000
+    }
+  },
+  "totalCUs": 2550,
+  "totalCost": 204000
+}
+```
+
+### Error Responses
+
+All errors follow a standardized JSON format with application error codes:
+
+```json
+{
+  "error": {
+    "code": 1002,
+    "message": "Session proof required",
+    "details": {
+      "sessionId": "0xabc...",
+      "hint": "Retry request with full session proof"
+    }
+  }
+}
+```
+
+**Error Code Catalog:**
+
+| Code | HTTP | Category | Message |
+|------|------|----------|---------|
+| **Session/Auth (1xxx)** ||||
+| 1001 | 401 | Auth | Session ID is required |
+| 1002 | 401 | Auth | Session proof required |
+| 1003 | 401 | Auth | Invalid session proof signature |
+| 1004 | 401 | Auth | Session proof expired |
+| 1005 | 401 | Auth | Session not found |
+| 1006 | 401 | Auth | Session expired |
+| 1007 | 401 | Auth | Session not active |
+| **Payment (2xxx)** ||||
+| 2001 | 402 | Payment | Session funds exhausted |
+| 2002 | 402 | Payment | Request exceeds remaining balance |
+| 2003 | 402 | Payment | Payment mode not supported |
+| **Routing (3xxx)** ||||
+| 3001 | 400 | Routing | Service identifier required |
+| 3002 | 404 | Routing | Service not supported |
+| 3003 | 400 | Routing | Invalid request format |
+| 3004 | 400 | Routing | Method not supported |
+| **Upstream (4xxx)** ||||
+| 4001 | 502 | Upstream | Upstream service unavailable |
+| 4002 | 504 | Upstream | Upstream request timeout |
+| 4003 | 502 | Upstream | Upstream service error |
+| 4004 | 503 | Upstream | Provider temporarily unavailable |
+| **Protocol (5xxx)** ||||
+| 5001 | 500 | Internal | Internal sidecar error |
+| 5002 | 500 | Internal | Cache error |
+| 5003 | 500 | Internal | Rate card configuration error |
+
+### Latency
+
+Expected latency overhead from the sidecar:
+
+| Scenario | Sidecar Overhead | Notes |
+|----------|------------------|-------|
+| Cache hit (typical) | ~0.5-1 ms | Parse, cache lookup, route, track |
+| Cache miss (first request) | ~50-200 ms | + blockchain query for session verification |
+| Proof verification | ~1-2 ms | ECDSA signature recovery |
+
+**Total request latency** = Sidecar overhead + Backend RPC latency
+
+For most requests (cache hit), sidecar adds < 1ms overhead.
 
 ### Checkpoint Submission
 

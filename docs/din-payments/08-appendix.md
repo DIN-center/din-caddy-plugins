@@ -295,3 +295,164 @@ New service types can be added by:
 | `INVALID_SIGNATURE` | Consumer signature verification failed | Check wallet key |
 | `PROVIDER_UNHEALTHY` | All providers below health threshold | Lower `minHealthThreshold` or wait |
 
+---
+
+## Error Handling Specification
+
+This section defines how errors are handled across the protocol layers.
+
+### SDK Error Handling
+
+The SDK implements retry logic with exponential backoff for transient errors:
+
+```typescript
+interface RetryConfig {
+  maxRetries: number;        // Default: 3
+  baseDelayMs: number;       // Default: 100ms
+  maxDelayMs: number;        // Default: 5000ms
+  retryableErrors: string[]; // Errors that trigger retry
+}
+
+const RETRYABLE_ERRORS = [
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_UNAVAILABLE',
+  'NETWORK_ERROR',
+  'RATE_LIMITED',
+];
+
+const NON_RETRYABLE_ERRORS = [
+  'INSUFFICIENT_FUNDS',
+  'SESSION_EXPIRED',
+  'INVALID_SIGNATURE',
+  'NO_PROVIDERS',
+];
+```
+
+**Error Flow:**
+
+```
+SDK REQUEST ERROR HANDLING
+==========================
+
+Request fails
+    |
+    +-- Is error retryable?
+    |       |
+    |       +-- YES: Retry with backoff (up to maxRetries)
+    |       |         |
+    |       |         +-- All retries failed?
+    |       |         |       |
+    |       |         |       v
+    |       |         |   Try alternate provider (failover)
+    |       |         |       |
+    |       |         |       +-- All providers failed?
+    |       |         |               |
+    |       |         |               v
+    |       |         |           Throw aggregated error
+    |       |         |
+    |       |         +-- Success: Return result
+    |       |
+    |       +-- NO: Throw immediately with actionable message
+    |
+    v
+Return error with:
+  - error.code: Machine-readable code
+  - error.message: Human-readable description
+  - error.suggestion: Recommended action
+  - error.retryable: Boolean
+```
+
+### Smart Contract Error Handling
+
+Contract functions revert with descriptive error messages:
+
+```solidity
+// Custom errors (gas-efficient)
+error InsufficientBalance(uint256 available, uint256 required);
+error SessionNotActive(bytes32 sessionId);
+error SessionAlreadyExists(address consumer);
+error DurationExceedsMaximum(uint64 duration, uint64 maximum);
+error GracePeriodNotElapsed(uint256 currentTime, uint256 unlockTime);
+error InvalidSignature(address expected, address recovered);
+
+// Usage
+function startSession(...) external {
+    if (activeSession[msg.sender] != bytes32(0)) {
+        revert SessionAlreadyExists(msg.sender);
+    }
+    if (duration > MAX_SESSION_DURATION) {
+        revert DurationExceedsMaximum(duration, MAX_SESSION_DURATION);
+    }
+    // ...
+}
+```
+
+### Provider Sidecar Error Handling
+
+Providers return standardized error responses:
+
+```json
+{
+  "error": {
+    "code": "SESSION_INVALID",
+    "message": "Session not found or expired",
+    "details": {
+      "sessionId": "0x123...",
+      "reason": "expired",
+      "expiredAt": 1702857600
+    }
+  }
+}
+```
+
+**HTTP Status Codes:**
+
+| Status | Meaning | Example |
+|--------|---------|---------|
+| 400 | Bad Request | Malformed request body |
+| 401 | Unauthorized | Invalid or missing session proof |
+| 402 | Payment Required | Session funds exhausted |
+| 404 | Not Found | Session not found |
+| 429 | Too Many Requests | Rate limited |
+| 500 | Internal Error | Provider node error |
+| 502 | Bad Gateway | Upstream RPC failure |
+| 503 | Service Unavailable | Provider maintenance |
+
+### Settlement Coordinator Error Handling
+
+The coordinator handles errors gracefully to avoid blocking settlements:
+
+```
+COORDINATOR ERROR HANDLING
+==========================
+
+1. Claim collection errors:
+   - Missing consumer claim: Wait 15 minutes, then settle at provider's claim
+   - Missing provider claim: Settle at consumer's claim (provider forfeit)
+   - Both missing: Skip settlement, retry next checkpoint
+
+2. Reconciliation errors:
+   - Major discrepancy: Hold for 48 hours (as per dispute flow)
+   - Invalid signatures: Reject claim, notify parties
+
+3. On-chain submission errors:
+   - Transaction reverts: Retry with higher gas
+   - Partial batch failure: Resubmit failed claims individually
+   - Persistent failure: Alert team, hold affected settlements
+
+4. Provider unreachable:
+   - During claim collection: Use consumer's claim
+   - Mark provider health score reduced
+   - Log for pattern detection
+```
+
+### Error Recovery Procedures
+
+| Scenario | Consumer Action | Provider Action | Coordinator Action |
+|----------|-----------------|-----------------|-------------------|
+| Session expired mid-request | Start new session | Clear cache | Process final settlement |
+| Provider goes offline | Automatic failover | N/A | Reduce health score |
+| Coordinator offline | Continue using session | Continue serving | Resume when online |
+| Settlement tx fails | Wait for retry | Wait for retry | Retry with backoff |
+| Disputed settlement | File escalation if >5% | Submit evidence | Hold pending review |
+

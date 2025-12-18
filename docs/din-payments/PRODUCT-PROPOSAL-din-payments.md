@@ -129,6 +129,7 @@ SESSION LIFECYCLE
    Consumer locks $50 from their deposit.
    This is an on-chain transaction (~$0.001-0.01 on Base).
    Funds move from "available" to "locked" in their account.
+   Sessions can last up to 7 days.
 
 2. USE SESSION
    Consumer makes RPC requests with a signed session proof.
@@ -144,6 +145,14 @@ SESSION LIFECYCLE
    Final settlement occurs. Unused locked funds are
    returned to consumer's available balance.
 ```
+
+**Session duration:**
+
+Sessions can last up to **7 days**—long enough for continuous applications without requiring frequent restarts. Consumers start a session once and use it for days without interruption. Checkpoints ensure providers get paid throughout the session, not just at the end.
+
+**Consumer protection:**
+
+If something goes wrong (e.g., coordinator is unresponsive), consumers aren't stuck with locked funds forever. After a session expires plus a 24-hour grace period, consumers can reclaim any remaining locked funds directly from the contract—no coordinator involvement needed.
 
 **Price Snapshotting:**
 
@@ -225,6 +234,14 @@ PER-REQUEST
 ```
 
 Providers can support one or both pricing models. More flexibility = more potential consumers routed to you.
+
+**Multi-service providers:**
+
+A single provider can offer multiple blockchain services. For example, one provider might support ethereum-mainnet, solana-mainnet, and bitcoin-mainnet—each with its own rate card. Consumers benefit from simplified access; providers benefit from serving more traffic through a single integration.
+
+**Price change notifications:**
+
+When providers update their rate cards, existing sessions continue at the original prices (price snapshotting protects consumers). New sessions use the updated prices. The protocol notifies consumers of price changes so they can make informed decisions about when to start new sessions.
 
 ---
 
@@ -396,6 +413,10 @@ Neither party gains significantly by lying:
 - The incentive to cheat is small relative to reputation damage
 - Fully automated—no human intervention needed
 
+**Cumulative pattern detection:**
+
+To prevent providers from systematically over-reporting just below the 5% threshold, the protocol tracks discrepancy patterns over time. If a provider consistently reports higher than consumers (e.g., average +3% across 50 settlements), they're flagged for review and their health score is reduced. This protects consumers from "death by a thousand cuts" gaming.
+
 **Escalation for suspected malicious behavior:**
 
 If a consumer believes a provider is systematically over-reporting, they can escalate. The timeline differs based on discrepancy size:
@@ -507,6 +528,15 @@ The Settlement Coordinator is an off-chain service that orchestrates checkpoints
 - Existing sessions continue working (providers verify on-chain state directly)
 - Settlement is delayed but not lost (claims can be submitted when coordinator returns)
 - Funds remain secure in the contract
+- After session expiry + 24 hours, consumers can reclaim locked funds directly
+
+**Phase 1 approach (known limitation):**
+
+In Phase 1, the DIN team operates the coordinator. This is an intentional trade-off for faster iteration and simpler deployment. The coordinator has no custody of funds—it only orchestrates. If compromised, the worst case is delayed or incorrect settlements, not fund loss.
+
+**Path to decentralization:**
+
+Future phases will explore decentralized coordination options including multi-coordinator consensus and keeper networks. The goal is to eliminate the single coordinator as a point of trust while maintaining the efficiency of off-chain reconciliation.
 
 **Coordinator responsibilities:**
 
@@ -680,12 +710,14 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Provider over-reporting | Consumers overcharged | Bilateral reconciliation; consumer claim caps charge |
+| Provider over-reporting | Consumers overcharged | Bilateral reconciliation; consumer claim caps charge; cumulative pattern detection |
 | Consumer under-reporting | Providers underpaid | Provider can dispute with server logs; escalation process |
 | Settlement delays | Provider cash flow issues | 30-minute checkpoint cycles; predictable settlement |
-| Coordinator downtime | Settlement delayed | Sessions continue working; funds remain secure in contract |
+| Coordinator downtime | Settlement delayed | Sessions continue working; funds remain secure in contract; forceUnlock after 24h |
 | Smart contract bugs | Potential fund loss | Audits, gradual rollout, bug bounties |
 | Low provider adoption | Limited routing options | Competitive economics, easy integration, no billing overhead |
+| Provider exits network | Active sessions disrupted | 7-day exit cooldown; sessions complete before provider fully exits |
+| Coordinator centralization (Phase 1) | Single point of trust | No fund custody; consumers can forceUnlock; decentralization roadmap |
 
 ---
 
@@ -701,6 +733,12 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 
 5. **Consumer UX:** How do we make deposits feel familiar to non-crypto-native developers?
 
+6. **Multi-session support:** Currently each consumer can have one active session at a time. Should we support multiple concurrent sessions (e.g., separate budgets for dev vs. prod)?
+
+7. **Coordinator decentralization timeline:** When should we prioritize moving from DIN-operated coordinator to a decentralized solution?
+
+8. **Session duration limits:** Is 7 days the right maximum session duration, or should it be longer/shorter?
+
 ---
 
 ## Glossary
@@ -709,7 +747,7 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 |------|------------|
 | **Consumer** | Developer or application using RPC services |
 | **Provider** | Node operator serving RPC requests |
-| **Session** | A usage period with locked funds; enables requests without per-call payments |
+| **Session** | A usage period with locked funds; enables requests without per-call payments (max 7 days) |
 | **Deposit** | USDC transferred to the protocol contract; can be used across any provider |
 | **Locked** | Funds reserved for an active session; cannot be withdrawn until session ends |
 | **Rate Card** | Provider's published pricing structure for their services |
@@ -719,6 +757,10 @@ New service types can be added as the ecosystem grows—layer 2s, indexing servi
 | **Settlement Coordinator** | Off-chain service that orchestrates checkpoints and batches on-chain settlements |
 | **Escalation** | Formal dispute process when a party suspects malicious behavior |
 | **USDC** | USD-pegged stablecoin used for all payments in the protocol |
+| **Price Snapshotting** | Prices are locked at session start; mid-session rate card changes don't affect active sessions |
+| **ForceUnlock** | Consumer ability to reclaim locked funds 24 hours after session expiry if settlement hasn't occurred |
+| **Provider Sidecar** | Service that runs alongside provider nodes to handle session verification and usage tracking |
+| **TTL (Time To Live)** | How long cached data remains valid before expiring (30 minutes for session cache) |
 
 ---
 

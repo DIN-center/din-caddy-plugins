@@ -360,6 +360,88 @@ Session: ${sessionId}
 Timestamp: ${timestamp}`;
 ```
 
+### Session Proof Security Considerations
+
+**Threat Model:**
+
+Session proofs are bearer tokens - anyone with a valid proof can make requests against the session until it expires. If a session proof is leaked (e.g., logged in plaintext, intercepted), an attacker could:
+- Make requests using the consumer's locked funds
+- Exhaust the session's spending limit
+
+**Mitigations:**
+
+1. **Short Proof Validity Windows:** The `timestamp` in the proof is validated by providers. Proofs older than 5 minutes are rejected, requiring the SDK to generate fresh proofs periodically.
+
+2. **TLS Required:** All communication between SDK and providers must use HTTPS to prevent interception.
+
+3. **Session Spending Limits:** Even if a proof is leaked, damage is bounded by the session's `maxSpend`. Checkpoints every 30 minutes further limit exposure.
+
+4. **Provider Caching:** Providers cache session verification, not the proof itself. The proof is only transmitted on first request or cache miss.
+
+5. **Monitoring:** The SDK can detect unusual spending patterns (rapid requests from unknown IPs) and alert the consumer.
+
+**Best Practice:** Treat session proofs like API keys - don't log them, transmit only over TLS, and use the minimum necessary `maxSpend` for each session.
+
+### Session Duration vs Proof Validity
+
+These are two separate concepts that work together:
+
+| Concept | Duration | What It Controls |
+|---------|----------|------------------|
+| **Session** | Up to 7 days | How long funds are locked; how long you can make requests |
+| **Proof** | 5 minutes | How long a single signed authentication token is accepted |
+
+**How they work together:**
+
+```
+SESSION LIFETIME (UP TO 7 DAYS)
+===============================
+
+Day 1, 10:00 AM - Consumer starts session (locks funds on-chain)
+    |
+    |  SDK signs proof: "session ABC, timestamp 10:00"
+    |  Proof valid for 5 minutes
+    |
+Day 1, 10:05 AM - Proof expires
+    |  SDK automatically signs NEW proof: "session ABC, timestamp 10:05"
+    |  (Consumer doesn't notice - SDK handles this)
+    |
+    |  ... SDK keeps rotating proofs every ~5 minutes ...
+    |
+Day 7, 10:00 AM - Session expires on-chain
+    |  Even fresh proofs are rejected (session no longer active)
+```
+
+**The SDK handles proof refresh automatically:**
+
+```typescript
+// SDK internal logic (transparent to consumer)
+class DinClient {
+  private currentProof: SessionProof;
+  private proofValidityMs = 5 * 60 * 1000; // 5 minutes
+
+  async request(service: string, params: any) {
+    // Refresh proof if expiring soon (within 30 seconds)
+    if (this.proofExpiresSoon()) {
+      this.currentProof = this.signFreshProof();
+    }
+
+    return this.sendRequest(service, params, this.currentProof);
+  }
+
+  private proofExpiresSoon(): boolean {
+    const age = Date.now() - this.currentProof.timestamp * 1000;
+    return age > (this.proofValidityMs - 30000);
+  }
+}
+```
+
+**Why this design?**
+
+- **Long sessions (7 days):** Convenient for consumers - start once, use for days without interruption
+- **Short proofs (5 minutes):** Secure - if a proof leaks, attacker has very limited time to exploit it
+- **Automatic refresh:** Best of both worlds - security without user friction
+
 ### Request Format
 
 ```typescript
@@ -552,3 +634,33 @@ const session = await din.startSession({
 | `duration` | Session duration in seconds | 3600 |
 
 See [02 - Pricing and Routing](./02-pricing-and-routing.md) for details on pricing modes and routing strategies.
+
+---
+
+## Future Considerations
+
+### Multiple Sessions Per Consumer
+
+Currently, each consumer can have only one active session at a time. This simplifies session ID collision prevention and fund accounting. However, future versions may support multiple concurrent sessions for use cases like:
+
+- **Different routing preferences:** Cost-optimized session for batch jobs, health-optimized for production
+- **Isolated budgets:** Separate spending limits for different applications using the same wallet
+- **Multi-environment:** Dev, staging, and prod sessions with different configurations
+
+**Potential Implementation:**
+
+```solidity
+// Instead of single active session:
+// mapping(address => bytes32) public activeSession;
+
+// Support multiple sessions per consumer:
+mapping(address => bytes32[]) public activeSessions;
+uint256 public constant MAX_CONCURRENT_SESSIONS = 5;
+
+function startSession(...) external returns (bytes32 sessionId) {
+    require(activeSessions[msg.sender].length < MAX_CONCURRENT_SESSIONS, "Max sessions reached");
+    // ... rest of implementation
+}
+```
+
+This enhancement is planned for a future protocol version based on user demand.

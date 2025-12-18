@@ -257,6 +257,53 @@ session.snapshotBlock = block.number;
 
 **Note:** The SDK caches the rate card snapshot locally and uses it for all cost calculations during the session. At settlement, both parties use the snapshotted prices.
 
+### Rate Card Change Notifications
+
+When providers update their rate cards, the protocol provides advance notice to affected parties:
+
+```
+RATE CARD UPDATE FLOW
+=====================
+
+1. Provider submits rate card update
+   - New prices take effect for NEW sessions only
+   - Existing sessions continue using snapshotted prices
+
+2. Protocol emits RateCardUpdated event
+   - Contains: providerId, oldPrices, newPrices, effectiveBlock
+
+3. SDKs receive notification
+   - Can display price change alerts to consumers
+   - Can suggest starting new session to get better/worse rates
+
+4. Grace period (optional, provider-configurable)
+   - Provider can set a delay before new prices take effect
+   - Allows consumers to adjust or start sessions at old rates
+```
+
+**Events:**
+
+```solidity
+event RateCardUpdated(
+    address indexed provider,
+    uint256 indexed serviceId,
+    uint256 oldDefaultCUCost,
+    uint256 newDefaultCUCost,
+    uint256 effectiveBlock
+);
+
+event RateCardGracePeriodSet(
+    address indexed provider,
+    uint256 gracePeriodBlocks
+);
+```
+
+**Consumer Notifications:**
+
+The SDK can subscribe to `RateCardUpdated` events for providers the consumer frequently uses and alert them to price changes. This allows consumers to:
+- Start a new session before a price increase takes effect
+- Wait for a price decrease before starting a new session
+
 ---
 
 ## Request Routing

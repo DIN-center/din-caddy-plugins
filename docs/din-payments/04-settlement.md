@@ -48,6 +48,30 @@ SETTLEMENT COORDINATOR
 - Any node can trigger checkpoints and collect claims
 - Redundancy eliminates single point of failure
 
+### Known Limitations (Phase 1)
+
+> **Note:** The Settlement Coordinator is a known centralization point in Phase 1. This is an intentional trade-off for faster iteration and simpler initial deployment.
+
+**Centralization Risks:**
+- Single point of failure for settlement timing
+- Coordinator performs averaging calculations off-chain
+- Consumers and providers must trust the coordinator's math
+
+**Mitigations:**
+- Coordinator has **no custody** of funds - it only orchestrates
+- Both parties sign claims - coordinator cannot forge signatures
+- All settlements are on-chain and auditable
+- If coordinator is compromised, worst case is delayed/incorrect settlements, not fund loss
+- `forceUnlock()` allows consumers to reclaim funds if coordinator is unresponsive
+
+**Path to Decentralization:**
+The DIN team is actively researching decentralization approaches including:
+- Multi-coordinator consensus (require N-of-M coordinators to agree)
+- Keeper networks (Chainlink Automation, Gelato)
+- Full on-chain reconciliation (higher gas but trustless)
+
+Community input on decentralization priorities is welcome.
+
 ### Why Off-Chain?
 
 Off-chain reconciliation provides significant advantages over fully on-chain approaches:

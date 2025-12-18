@@ -209,8 +209,8 @@ The system supports many consumers (SDKs, Routers) and many providers:
 │        └─────────────────────────────────────────┘            │
 │                ▲                         ▲                     │
 │                │                         │                     │
-│   Router #1 ───┼──┘                         └───┼─── Provider D  │
-│   Router #2 ───┘                               └─── Provider N  │
+│   Router #1 ───┼──┘                     └──┼─── Provider D     │
+│   Router #2 ───┘                           └─── Provider N     │
 │                                                                │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -965,12 +965,20 @@ contract DINProtocol {
     mapping(bytes32 => Session) public sessions;
     mapping(address => bytes32) public activeSession;  // One active session per consumer
 
+    // Maximum session duration (7 days). This value may be adjusted via governance.
+    uint64 public constant MAX_SESSION_DURATION = 7 days;
+
+    // Grace period after session expiry before consumer can force unlock
+    uint64 public constant UNLOCK_GRACE_PERIOD = 24 hours;
+
     struct Session {
         address consumer;
         uint256 maxSpend;
         uint256 lockedAmount;
+        uint256 spentAmount;       // Track spent amount for settlement
         uint64 validUntil;
         uint256 snapshotBlock;     // Block at which rate card prices were snapshotted
+        bytes32 rateCardHash;      // Hash of provider rate cards at snapshot for verification
         bool active;
     }
 
@@ -985,8 +993,13 @@ contract DINProtocol {
         string calldata paymentMode,
         string calldata routingStrategy
     ) external returns (bytes32 sessionId) {
-        // Enforce one active session per consumer
+        // Enforce one active session per consumer.
+        // This also prevents session ID collisions since the same consumer
+        // cannot create two sessions in the same block with the same maxSpend.
         require(activeSession[msg.sender] == bytes32(0), "Session already active");
+
+        // Enforce maximum session duration
+        require(duration <= MAX_SESSION_DURATION, "Duration exceeds maximum");
 
         // Check available balance
         uint256 available = deposits[msg.sender] - locked[msg.sender];
@@ -995,7 +1008,8 @@ contract DINProtocol {
         // Lock funds
         locked[msg.sender] += maxSpend;
 
-        // Create session ID (unique per consumer + timestamp + amount)
+        // Create session ID (unique per consumer + timestamp + amount).
+        // Collision safety: The one-session-per-consumer rule ensures uniqueness.
         sessionId = keccak256(abi.encodePacked(msg.sender, block.timestamp, maxSpend));
 
         // Track active session
@@ -1005,12 +1019,33 @@ contract DINProtocol {
             consumer: msg.sender,
             maxSpend: maxSpend,
             lockedAmount: maxSpend,
+            spentAmount: 0,
             validUntil: uint64(block.timestamp) + duration,
             snapshotBlock: block.number,  // Snapshot prices at session start
+            rateCardHash: _computeRateCardHash(),  // Store for verification
             active: true
         });
 
         emit SessionStarted(sessionId, msg.sender, maxSpend, duration);
+    }
+
+    /// @notice Force unlock remaining funds after session expiry + grace period.
+    /// @dev Protects consumers if the coordinator fails to process final settlement.
+    function forceUnlock(bytes32 sessionId) external {
+        Session storage session = sessions[sessionId];
+        require(session.consumer == msg.sender, "Not session owner");
+        require(session.active, "Session not active");
+        require(
+            block.timestamp > session.validUntil + UNLOCK_GRACE_PERIOD,
+            "Grace period not elapsed"
+        );
+
+        uint256 remaining = session.lockedAmount - session.spentAmount;
+        session.active = false;
+        activeSession[msg.sender] = bytes32(0);
+        locked[msg.sender] -= remaining;
+
+        emit SessionForceUnlocked(sessionId, msg.sender, remaining);
     }
 
     function withdraw(uint256 amount) external {
@@ -2008,6 +2043,28 @@ Checkpoints are triggered by **whichever comes first**:
 - Any node can trigger checkpoints and collect claims
 - Redundancy eliminates single point of failure
 
+### Known Limitations (Phase 1)
+
+> **Note:** The Settlement Coordinator is a known centralization point in Phase 1. This is an intentional trade-off for faster iteration and simpler initial deployment.
+
+**Centralization Risks:**
+- Single point of failure for settlement timing
+- Coordinator performs averaging calculations off-chain
+- Consumers and providers must trust the coordinator's math
+
+**Mitigations:**
+- Coordinator has **no custody** of funds - it only orchestrates
+- Both parties sign claims - coordinator cannot forge signatures
+- All settlements are on-chain and auditable
+- If coordinator is compromised, worst case is delayed/incorrect settlements, not fund loss
+- `forceUnlock()` allows consumers to reclaim funds if coordinator is unresponsive
+
+**Path to Decentralization:**
+The DIN team is actively researching decentralization approaches including:
+- Multi-coordinator consensus (require N-of-M coordinators to agree)
+- Keeper networks (Chainlink Automation, Gelato)
+- Full on-chain reconciliation (higher gas but trustless)
+
 ### Why Off-Chain?
 
 Off-chain reconciliation provides significant advantages over fully on-chain approaches:
@@ -2323,6 +2380,38 @@ Settlement: $13.50 (average)
 - If provider lies high: gains at most half the difference
 - Small incentive to lie, not worth reputation damage
 - Fully automated, no arbitration overhead
+
+### Cumulative Discrepancy Tracking
+
+To prevent systematic gaming where a provider consistently over-reports just below the threshold, the coordinator tracks cumulative discrepancy patterns per provider over a rolling 30-day window.
+
+**Pattern Detection Rules:**
+
+| Pattern | Detection Criteria | Action |
+|---------|-------------------|--------|
+| Systematic over-reporting | >20 settlements with avg >2% provider-favoring discrepancy | Flag + health score reduction |
+| Systematic under-reporting | >20 settlements with avg >2% consumer-favoring discrepancy | Flag for investigation |
+| High variance | Std deviation >3% across settlements | Quality review |
+
+**Example Detection:**
+
+```
+Provider A's recent settlements (rolling 30-day window):
+  Checkpoint 1: Consumer $100, Provider $104 (4% over)
+  Checkpoint 2: Consumer $200, Provider $208 (4% over)
+  Checkpoint 3: Consumer $150, Provider $156 (4% over)
+  ...
+
+Analysis:
+  - Average discrepancy: +3.8% (consistently provider-favoring)
+  - Number of settlements: 50
+  - Pattern: SYSTEMATIC_OVER_REPORTING
+
+Actions triggered:
+  - Provider flagged for review
+  - Health score reduced by 10%
+  - Next 10 settlements held for manual verification
+```
 
 ```
                          Auto-Average Settlement
