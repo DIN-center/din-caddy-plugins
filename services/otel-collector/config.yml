@@ -23,7 +23,7 @@ receivers:
             - "http://*"
             - "https://*"
   filelog:
-    include: [/srv/caddy.log]
+    include: [/srv/caddy.log*]
     start_at: beginning
     operators:
       - type: json_parser
@@ -48,6 +48,46 @@ processors:
       - action: insert
         key: service.name
         value: "din-caddy"
+  transform/normalize_attributes:
+    log_statements:
+      - context: log
+        statements:
+          # Coalesce status code fields into a single 'status_code' attribute
+          - set(attributes["status_code"], attributes["response_status"]) where attributes["status_code"] == nil and attributes["response_status"] != nil
+          - set(attributes["status_code"], attributes["status"]) where attributes["status_code"] == nil and attributes["status"] != nil
+          - set(attributes["status_code"], attributes["statusCode"]) where attributes["status_code"] == nil and attributes["statusCode"] != nil
+          # Coalesce network fields into a single 'network' attribute
+          - set(attributes["network"], attributes["networkName"]) where attributes["network"] == nil and attributes["networkName"] != nil
+          # Coalesce provider fields into a single 'provider' attribute
+          - set(attributes["provider"], attributes["upstream"]) where attributes["provider"] == nil and attributes["upstream"] != nil
+          # Finally, ensure the unified status_code is a string for Prometheus labels
+          - set(attributes["status_code"], String(attributes["status_code"])) where attributes["status_code"] != nil
+
+connectors:
+  # Count JSONRPC errors from logs and convert to metrics
+  # Matches: network EXISTS AND provider EXISTS AND status_code EXISTS
+  # AND ((status_code = 200 AND error EXISTS) OR status_code != 200)
+  count/jsonrpc_errors:
+    logs:
+      jsonrpc_error_count:
+        description: "Count of JSONRPC errors from logs"
+        conditions:
+          - |
+            attributes["network"] != nil and
+            attributes["provider"] != nil and
+            attributes["status_code"] != nil and
+            attributes["status_code"] != "0" and
+            (
+              (attributes["status_code"] == "200" and attributes["error"] != nil) or
+              (attributes["status_code"] != "200")
+            )
+        attributes:
+          - key: network
+          - key: provider
+          - key: status_code
+          - key: error
+          - key: request_method
+          - key: environment
 
 exporters:
   otlp:
@@ -81,10 +121,29 @@ service:
       receivers: [prometheus, otlp]
       processors: [batch, resource]
       exporters: [otlp, prometheus]
+    # Metrics generated from log counts
+    metrics/from_logs:
+      receivers: [count/jsonrpc_errors]
+      processors: [batch, resource]
+      exporters: [otlp, prometheus]
+    # The following pipeline can be uncommented to debug the output of the transform/normalize_attributes processor.
+    # It will print the transformed logs to the console.
+    # logs/debug:
+    #   receivers: [filelog]
+    #   processors: [transform/normalize_attributes]
+    #   exporters: [logging]
+
+    # Pipeline for generating metrics from logs
+    logs/for_metrics:
+      receivers: [filelog, otlp]
+      processors: [transform/normalize_attributes]
+      exporters: [count/jsonrpc_errors]
+
+    # Pipeline for exporting raw logs
     logs:
       receivers: [filelog, otlp]
       processors: [resource, memory_limiter, batch]
-      exporters: [otlp, loki, logging]
+      exporters: [logging, otlp, loki]
   telemetry:
     logs:
       level: debug
