@@ -150,7 +150,7 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			mockHandler := networklib.NewMockNetworkHandler(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), "")
+			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Configure network

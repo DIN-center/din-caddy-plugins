@@ -154,7 +154,7 @@ func (d *DinMiddleware) processRegistryData(registryData *din.DinRegistryData) {
 func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) error {
 	// Step 2: Create a new network without type - will be set via Caddyfile configuration
 	// Registry networks must have explicit 'type' configuration in Caddyfile like all other networks
-	network, err := NewNetwork(regNetwork.ProxyName, "", d.Env, d.CaddyPort)
+	network, err := NewNetwork(regNetwork.ProxyName, "", d.Env, d.LoopbackConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create network '%s': %w", regNetwork.ProxyName, err)
 	}

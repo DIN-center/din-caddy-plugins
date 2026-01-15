@@ -213,7 +213,10 @@ func TestAddNetworkWithRegistryData(t *testing.T) {
 				Networks:    make(map[string]*network),
 				testMode:    true,
 				Env:         utils.Environment("test"),
-				CaddyPort:   "8080",
+				LoopbackConfig: LoopbackConfig{
+					Port:   "8080",
+					ApiKey: DefaultLoopbackApiKey,
+				},
 				machineID:   "test-machine-id",
 			}
 
@@ -323,7 +326,10 @@ func TestAddNetworkFromRegistryDataWorksWithDynamicLoadBalancing(t *testing.T) {
 				Networks:    make(map[string]*network),
 				testMode:    true,
 				Env:         utils.Environment("test"),
-				CaddyPort:   "8080",
+				LoopbackConfig: LoopbackConfig{
+					Port:   "8080",
+					ApiKey: DefaultLoopbackApiKey,
+				},
 				machineID:   "test-machine-id",
 				DynamicLoadBalancing: DynamicLoadBalancingConfig{
 					Enabled:             tt.dynamicLoadBalancingEnabled,
@@ -455,7 +461,10 @@ func TestUpdateNetworkWithRegistryData(t *testing.T) {
 				},
 				testMode:  true,
 				Env:       utils.Environment("test"),
-				CaddyPort: "8080",
+				LoopbackConfig: LoopbackConfig{
+					Port:   "8080",
+					ApiKey: DefaultLoopbackApiKey,
+				},
 				machineID: "test-machine-id",
 			}
 
@@ -997,7 +1006,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
 			// Create test network with proper handler initialization
-			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8080")
+			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			network.logger = loggerClient
 			network.Name = "test/eth" // Update name to match test expectations
