@@ -1,5 +1,6 @@
 Caddyfile*
 caddy.log
+router.log
 .vscode/
 data/
 caddy
@@ -23,6 +24,10 @@ services/.DS_Store
 coverage.out
 Claude.md
 PR_DESCRIPTION.md
+
+# Planning and documentation (local only)
+plans/
+docs/din-sdk-v2/
 
 # Environment files with secrets
 .env.local
