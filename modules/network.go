@@ -455,11 +455,8 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 	// Additional trace check (EVM-specific, MetaMask requirement)
 	// Only runs if archive_trace_block_by_number flag is enabled
 	if n.ArchiveTraceBlockByNumberEnabled {
-		// Check if handler supports trace check via type assertion (EVM-specific)
-		type traceChecker interface {
-			PerformTraceBlockByNumberCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error
-		}
-		if traceHandler, ok := n.handler.(traceChecker); ok {
+		// Check if handler supports trace check via type assertion
+		if traceHandler, ok := n.handler.(networklib.TraceChecker); ok {
 			if err := traceHandler.PerformTraceBlockByNumberCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString); err != nil {
 				return err
 			}
