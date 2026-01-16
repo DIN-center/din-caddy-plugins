@@ -322,6 +322,10 @@ func (h *EVMHandler) SupportsGetBlockByNumber() bool {
 	return true
 }
 
+func (h *EVMHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
 func (h *EVMHandler) GetSupportedMethods() []string {
 	return []string{
 		"eth_blockNumber",
@@ -489,8 +493,36 @@ func (h *EVMHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]
 		authClient,
 		requestAttempts,
 		blockNumber,
-		h.GetSupportedMethods, // EVM-specific supported methods
-		h.CreateBlockRequest,  // EVM-specific block request creation
-		h.ParseBlockResponse,  // EVM-specific block response parsing
+		h.GetBlockByNumberMethod(), // EVM block method
+		h.CreateBlockRequest,       // EVM-specific block request creation
+		h.ParseBlockResponse,       // EVM-specific block response parsing
 	)
+}
+
+// GetBlockTimestamp retrieves the Unix timestamp for a specific block number
+func (h *EVMHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Parse timestamp from block response
+	blockResponse, ok := blockData.(din_http.JSONRPCEVMBlockResponse)
+	if !ok {
+		return 0, fmt.Errorf("invalid block response type: %T", blockData)
+	}
+
+	// Parse hex timestamp (format: "0x...")
+	timestampHex := blockResponse.Result.Timestamp
+	if !strings.HasPrefix(timestampHex, "0x") {
+		return 0, fmt.Errorf("invalid timestamp format: %s", timestampHex)
+	}
+
+	timestamp, err := strconv.ParseInt(timestampHex[2:], 16, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse timestamp %s: %w", timestampHex, err)
+	}
+
+	return timestamp, nil
 }

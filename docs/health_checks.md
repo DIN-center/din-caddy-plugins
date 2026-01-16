@@ -63,6 +63,57 @@ din {
 - **Warning**: Block lag > `block_lag_limit`
 - **Unhealthy**: Block lag + stalled state
 
+#### Dynamic Block Lag Calculation
+
+The system can automatically calculate optimal `block_lag_limit` values based on the blockchain's actual block time, making configuration network-agnostic and adaptive to each chain's characteristics.
+
+**How It Works:**
+1. **Timestamp-Based Measurement**: On startup, the system measures average block time by comparing timestamps from blocks that are 1024 blocks apart
+2. **Deterministic Results**: Uses immutable blockchain timestamps, so all server instances calculate the same value
+3. **Automatic Adjustment**: Calculates how many blocks fit within a 13-second tolerance period (configurable via `DefaultBlockLagPeriodMs`)
+4. **Safe Defaults**: Enforces minimum limit of 5 blocks and rounds up to nearest interval of 5
+
+**Formula:**
+```
+block_lag_limit = ceil(13000ms / avg_block_time_ms)
+```
+
+**Example Calculations:**
+- **Ethereum (12s blocks)**: 13000ms / 12000ms = ~2 blocks → rounded to 5 blocks minimum
+- **Polygon (2s blocks)**: 13000ms / 2000ms = ~7 blocks → rounded to 10 blocks
+- **BSC (3s blocks)**: 13000ms / 3000ms = ~5 blocks → stays at 5 blocks
+- **Monad (1s blocks)**: 13000ms / 1000ms = 13 blocks → rounded to 15 blocks
+
+**Configuration:**
+Dynamic block lag is automatically enabled for supported networks (EVM, Beacon Chain, Tron, Starknet). No manual configuration required.
+
+```go
+// The system uses these constants:
+DefaultBlockLagPeriodMs = 13000          // 13 seconds tolerance
+BlockLagCalculationLookback = 1024       // Blocks to look back for measurement
+MinBlockLagLimit = 5                     // Minimum allowed limit
+```
+
+**Benefits:**
+- **Network-Agnostic**: Same configuration works across all blockchain networks
+- **Accurate**: Based on actual on-chain data, not estimates
+- **Consistent**: All instances calculate identical values from blockchain timestamps
+- **Adaptive**: Automatically adjusts to network conditions without manual tuning
+
+**Supported Networks:**
+- ✅ EVM chains (Ethereum, Polygon, BSC, Arbitrum, etc.)
+- ✅ Beacon Chain (Ethereum consensus layer)
+- ✅ Tron
+- ✅ Starknet
+- ❌ Bitcoin (uses default/configured value)
+- ❌ Bitcoin Esplora (uses default/configured value)
+- ❌ Solana (uses default/configured value)
+
+**Fallback Behavior:**
+If dynamic calculation fails (network too young, API errors, etc.), the system falls back to:
+1. Manually configured `block_lag_limit` if set in Caddyfile
+2. Default value of 15 blocks (`DefaultBlockLagLimit`)
+
 ### 3. Block Jump Detection
 - Identifies providers reporting blocks too far ahead
 - Helps detect potential chain forks or misconfigured nodes
@@ -165,7 +216,7 @@ din {
   services {
     ethereum {
       # Health Check Settings
-      block_lag_limit 10          # Maximum acceptable block lag
+      block_lag_limit 10          # Maximum acceptable block lag (optional - auto-calculated for supported networks)
       block_jump_limit 5          # Maximum acceptable block jump
       block_history_size 10       # Number of historical entries to keep
       health_check_interval 15s   # Check frequency
@@ -175,6 +226,11 @@ din {
   }
 }
 ```
+
+**Note on `block_lag_limit`:**
+- For EVM, Beacon Chain, Tron, and Starknet networks, this value is automatically calculated based on actual block times
+- Manual configuration is optional and will be used as fallback if auto-calculation fails
+- For Bitcoin and Solana, manual configuration is required (or defaults to 15 blocks)
 
 ## Troubleshooting Guide
 

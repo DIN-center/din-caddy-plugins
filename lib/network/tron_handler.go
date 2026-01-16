@@ -623,7 +623,39 @@ func (h *TronHandler) PerformArchiveCheck(_ string, _ map[string]string, _ din_h
 }
 
 //
+// Dynamic block lag methods
 //
+
+// SupportsDynamicBlockLag implements the Handler interface.
+func (h *TronHandler) SupportsDynamicBlockLag() bool {
+	return true
+}
+
+// GetBlockTimestamp retrieves the Unix timestamp for a specific block number.
+func (h *TronHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	// Get block data using PerformGetBlockByNumber
+	blockData, err := h.PerformGetBlockByNumber(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block %d: %w", blockNumber, err)
+	}
+
+	// Extract timestamp from block response
+	block, ok := blockData.(*TronBlock)
+	if !ok {
+		return 0, fmt.Errorf("unexpected block data type: %T", blockData)
+	}
+
+	// Tron timestamps are in milliseconds, convert to seconds
+	timestampMs := block.BlockHeader.RawData.Timestamp
+	if timestampMs == 0 {
+		return 0, fmt.Errorf("block %d has no timestamp", blockNumber)
+	}
+
+	return timestampMs / 1000, nil
+}
+
+//
+// Private helper methods
 //
 
 func (h *TronHandler) parseBlockResponse(body []byte) (*TronBlock, error) {
