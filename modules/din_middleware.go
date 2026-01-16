@@ -559,6 +559,12 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		repl.Set("din_api_key", "unspecified")
 	}
 
+	// Strip Authorization header from client requests
+	// The proxy handles all authentication internally
+	if r.Header.Get("Authorization") != "" {
+		r.Header.Del("Authorization")
+	}
+
 	// Middleware focuses on request validation only
 	// DinSelect will handle all REST API path processing during provider configuration
 
