@@ -1263,3 +1263,114 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 		t.Errorf("Non-monitored provider score should be the same as the marker")
 	}
 }
+
+func TestMiddlewareStripsAuthorizationHeader(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	dinMiddleware := new(DinMiddleware)
+	dinMiddleware.testMode = true
+	dinMiddleware.logger = logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest)
+	dinMiddleware.handlerRegistry = networklib.DefaultRegistry
+
+	// Set up a mock network handler
+	mockHandler := networklib.NewMockNetworkHandler(mockCtrl)
+	mockHandler.EXPECT().ProcessRequest(gomock.Any()).Return(nil).AnyTimes()
+	mockHandler.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil).AnyTimes()
+	mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+	mockHandler.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHandler.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHandler.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+
+	// Set up network with provider
+	dinMiddleware.Networks = map[string]*network{
+		"eth": {
+			Name:                    "eth",
+			handler:                 mockHandler,
+			MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
+			RequestAttemptCount:     1,
+			Providers: map[string]*provider{
+				"localhost:8000": {
+					blockHistory: func() *list.List {
+						l := list.New()
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						return l
+					}(),
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name              string
+		authHeader        string
+		shouldBeStripped  bool
+	}{
+		{
+			name:             "Bearer token should be stripped",
+			authHeader:       "Bearer test-token-12345",
+			shouldBeStripped: true,
+		},
+		{
+			name:             "Basic auth should be stripped",
+			authHeader:       "Basic dXNlcjpwYXNz",
+			shouldBeStripped: true,
+		},
+		{
+			name:             "No auth header",
+			authHeader:       "",
+			shouldBeStripped: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create request with Authorization header
+			req := httptest.NewRequest("POST", "http://localhost:8000/eth", strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+
+			// Verify header is present before middleware (if set)
+			if tt.authHeader != "" {
+				assert.Equal(t, tt.authHeader, req.Header.Get("Authorization"), "Authorization header should be present before middleware")
+			}
+
+			// Add Caddy Replacer to request context (required by middleware)
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(RequestProviderKey, "localhost:8000")
+
+			rw := httptest.NewRecorder()
+
+			// Create a mock next handler that captures the request
+			var capturedRequest *http.Request
+			nextHandler := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				capturedRequest = r
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"jsonrpc":"2.0","result":"0x1","id":1}`))
+				return nil
+			})
+
+			// Call the middleware
+			err := dinMiddleware.ServeHTTP(rw, req, nextHandler)
+
+			// Verify no error
+			if err != nil {
+				t.Fatalf("ServeHTTP returned error: %v", err)
+			}
+
+			// Verify capturedRequest is not nil
+			if capturedRequest == nil {
+				t.Fatal("capturedRequest is nil - next handler was not called")
+			}
+
+			// Verify Authorization header was stripped
+			if tt.shouldBeStripped {
+				assert.Empty(t, capturedRequest.Header.Get("Authorization"), "Authorization header should be stripped by middleware")
+			}
+		})
+	}
+}
