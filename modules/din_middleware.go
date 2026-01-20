@@ -561,6 +561,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Strip Authorization header from client requests
 	// The proxy handles all authentication internally
+	// NOTE: This removes clients' ability to pass their own Authorization headers to providers.
+	// While there is no current use case for this capability, if future requirements emerge
+	// for client-controlled authentication (e.g., provider-specific bearer tokens),
+	// this behavior will need to be re-evaluated.
 	if r.Header.Get("Authorization") != "" {
 		r.Header.Del("Authorization")
 	}
