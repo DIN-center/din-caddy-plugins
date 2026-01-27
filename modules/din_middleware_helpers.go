@@ -16,7 +16,6 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
-	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
 // getRegistryData retrieves registry data with retry logic
@@ -43,14 +42,14 @@ func (d *DinMiddleware) getRegistryData() (*din.DinRegistryData, error) {
 		d.Registry.RetryMaxAttempts, lastErr)
 }
 
-// syncRegistryWithLatestBlock checks the latest block number from the linea network and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
-func (d *DinMiddleware) syncRegistryWithLatestBlock(web3Client web3.Web3Client) {
+// syncRegistryWithLatestBlock checks the latest block number from the registry source and updates the middleware object with the latest registry data if the block number difference is greater than or equal to the epoch
+func (d *DinMiddleware) syncRegistryWithLatestBlock(dinReader din.IDinReader) {
 	// Get latest block number with retry
 	var latestBlockNumber uint64
 	var err error
 
 	for attempt := 0; attempt <= d.Registry.RetryMaxAttempts; attempt++ {
-		latestBlockNumber, err = web3Client.LatestBlockNumber()
+		latestBlockNumber, err = dinReader.GetLatestBlockNumber()
 		if err == nil {
 			break
 		}

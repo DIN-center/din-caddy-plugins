@@ -29,7 +29,6 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
 var (
@@ -52,6 +51,7 @@ type RegistryConfig struct {
 	Enabled         bool   `json:"enabled"`
 	EndpointUrl     string `json:"endpoint_url"`
 	ContractAddress string `json:"contract_address"`
+	ClientType      string `json:"client_type"`
 
 	// Sync configuration
 	BlockCheckIntervalSec uint64 `json:"block_check_interval_sec"`
@@ -116,7 +116,7 @@ type DinMiddleware struct {
 	PrometheusClient *prom.PrometheusClient
 
 	// The dingo client object
-	DingoClient din.IDinClient
+	DingoClient din.IDinReader
 
 	logger *logger.LoggerClient
 
@@ -256,6 +256,9 @@ func (d *DinMiddleware) initializeDefaults() {
 	if d.Registry.Priority == 0 {
 		d.Registry.Priority = DefaultRegistryPriority
 	}
+	if d.Registry.ClientType == "" {
+		d.Registry.ClientType = DefaultRegistryClientType
+	}
 	if d.CaddyPort == "" {
 		d.CaddyPort = DefaultPort
 	}
@@ -274,16 +277,39 @@ func (d *DinMiddleware) initializeDefaults() {
 // initializeDinRegistryClient initializes the DIN registry client
 func (d *DinMiddleware) initializeDinRegistryClient() error {
 	if d.Registry.Enabled {
-		// DinClient is only initialized if the registry is enabled
-		d.logger.Info("DIN registry is enabled, initializing DIN client to connect to the registry",
-			zap.String("registry_endpoint_url", d.Registry.EndpointUrl),
-			zap.String("registry_contract_address", d.Registry.ContractAddress))
-
-		client, err := din.NewDinClient(d.logger.Logger, d.Registry.EndpointUrl, d.Registry.ContractAddress)
-		if err != nil {
-			return fmt.Errorf("error initializing DIN client: %w", err)
+		registryClientType := strings.TrimSpace(strings.ToLower(d.Registry.ClientType))
+		if registryClientType == "" {
+			registryClientType = DefaultRegistryClientType
 		}
-		d.DingoClient = client
+		d.Registry.ClientType = registryClientType
+
+		switch registryClientType {
+		case RegistryClientTypeContract:
+			if d.Registry.EndpointUrl == "" {
+				return fmt.Errorf("registry endpoint url is required for contract registry client")
+			}
+			if d.Registry.ContractAddress == "" {
+				return fmt.Errorf("registry contract address is required for contract registry client")
+			}
+			d.logger.Info("DIN registry is enabled, initializing registry contract client",
+				zap.String("registry_endpoint_url", d.Registry.EndpointUrl),
+				zap.String("registry_contract_address", d.Registry.ContractAddress))
+
+			client, err := din.NewDinClient(d.logger.Logger, d.Registry.EndpointUrl, d.Registry.ContractAddress)
+			if err != nil {
+				return fmt.Errorf("error initializing DIN contract client: %w", err)
+			}
+			d.DingoClient = client
+		case RegistryClientTypeAPI:
+			if d.Registry.EndpointUrl == "" {
+				return fmt.Errorf("registry endpoint url is required for api registry client")
+			}
+			d.logger.Info("DIN registry is enabled, initializing registry API client",
+				zap.String("registry_endpoint_url", d.Registry.EndpointUrl))
+			d.DingoClient = din.NewApiDingoClient(d.Registry.EndpointUrl, nil)
+		default:
+			return fmt.Errorf("unsupported registry client type: %s", d.Registry.ClientType)
+		}
 	}
 
 	return nil
@@ -898,7 +924,7 @@ func (d *DinMiddleware) startHealthChecks() error {
 
 // startRegistrySync initiates a periodic synchronization process with the registry. It retrieves data from the
 // registry and processes it immediately. A ticker is started to poll the latest block number from the
-// Linea network at regular intervals (default 60 seconds). If the latest block number has moved beyond
+// registry source at regular intervals (default 60 seconds). If the latest block number has moved beyond
 // the defined block epoch, it retrieves new registry data and processes it. The function runs in a separate
 // goroutine and will terminate when a quit signal is received.
 func (d *DinMiddleware) startRegistrySync() {
@@ -948,7 +974,7 @@ func (d *DinMiddleware) startRegistrySync() {
 								zap.Any("panic", r))
 						}
 					}()
-					d.syncRegistryWithLatestBlock(web3.NewEVMClient(d.DingoClient.GetEthereumRpcClient()))
+					d.syncRegistryWithLatestBlock(d.DingoClient)
 				}()
 			}
 		}

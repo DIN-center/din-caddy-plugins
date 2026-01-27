@@ -604,6 +604,10 @@ func (p *caddyfileParser) parseDinRegistry() error {
 			if err := p.parseIntField(&p.middleware.Registry.Priority, "registry priority"); err != nil {
 				return err
 			}
+		case "registry_client_type":
+			if err := p.parseStringField(&p.middleware.Registry.ClientType); err != nil {
+				return err
+			}
 		default:
 			return p.dispenser.Errf("unrecognized registry option: %s", p.dispenser.Val())
 		}

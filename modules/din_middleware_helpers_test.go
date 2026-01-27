@@ -26,15 +26,6 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// MockWeb3Client is a mock implementation of web3.Web3Client for testing
-type MockWeb3Client struct {
-	mockLatestBlockNumber uint64
-}
-
-func (m *MockWeb3Client) LatestBlockNumber() (uint64, error) {
-	return m.mockLatestBlockNumber, nil
-}
-
 func TestSyncRegistryWithLatestBlock(t *testing.T) {
 	logger := logger.NewLoggerClient(zap.NewNop(), utils.Environment("test"))
 	mockCtrl := gomock.NewController(t)
@@ -92,8 +83,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			dinMiddleware.Networks = map[string]*network{}
 			dinMiddleware.Registry.lastUpdatedEpochBlockNumber = tt.registryLastUpdatedEpochBlockNumber
 
-			// Create a mock Web3Client
-			mockWeb3Client := &MockWeb3Client{mockLatestBlockNumber: tt.latestBlockNumber}
+			mockDingoClient.EXPECT().GetLatestBlockNumber().Return(tt.latestBlockNumber, nil).Times(1)
 
 			// Set up expectations for GetRegistryData only if we expect an update
 			if tt.expectedUpdateCall {
@@ -101,7 +91,7 @@ func TestSyncRegistryWithLatestBlock(t *testing.T) {
 			}
 
 			// Call the function being tested using the mock middleware
-			dinMiddleware.syncRegistryWithLatestBlock(mockWeb3Client)
+			dinMiddleware.syncRegistryWithLatestBlock(mockDingoClient)
 
 			// Validate that registryLastUpdatedEpochBlockNumber is updated correctly
 			if dinMiddleware.Registry.lastUpdatedEpochBlockNumber != tt.expectedBlockFloorByEpoch {

@@ -339,6 +339,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 		networks            map[string]*network
 		registryEnabled     bool
 		registryEndpointUrl string
+		registryClientType  string
 		initializeErr       error
 		expectedError       error
 	}{
@@ -353,6 +354,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 			name:                "network not found but registry is enabled",
 			registryEnabled:     true,
 			registryEndpointUrl: "http://example1.com",
+			registryClientType:  RegistryClientTypeAPI,
 			networks:            map[string]*network{},
 			expectedError:       nil,
 		},
@@ -373,6 +375,7 @@ func TestDinMiddlewareProvision(t *testing.T) {
 				Registry: RegistryConfig{
 					EndpointUrl: tt.registryEndpointUrl,
 					Enabled:     tt.registryEnabled,
+					ClientType:  tt.registryClientType,
 				},
 			}
 
@@ -1140,11 +1143,16 @@ func TestStartRegistrySyncPanicRecovery(t *testing.T) {
 		GetRegistryData().
 		Return(mockData, nil).
 		AnyTimes()
+	mockDingoClient.EXPECT().
+		GetLatestBlockNumber().
+		Return(uint64(100), nil).
+		AnyTimes()
 
 	d := &DinMiddleware{
 		Registry: RegistryConfig{
 			Enabled:               true,
 			BlockCheckIntervalSec: 1, // 1 second for faster test
+			BlockEpoch:            10,
 			RetryMaxAttempts:      1,
 			RetryDelay:            10 * time.Millisecond,
 			PanicRecoveryDelay:    50 * time.Millisecond,
@@ -1184,6 +1192,7 @@ func TestRegistryConfigDefaults(t *testing.T) {
 	assert.Equal(t, uint64(DefaultRegistryBlockCheckIntervalSec), d.Registry.BlockCheckIntervalSec)
 	assert.Equal(t, DefaultRegistryBlockEpoch, d.Registry.BlockEpoch)
 	assert.Equal(t, DefaultRegistryPriority, d.Registry.Priority)
+	assert.Equal(t, DefaultRegistryClientType, d.Registry.ClientType)
 	assert.Equal(t, DefaultRegistryRetryMaxAttempts, d.Registry.RetryMaxAttempts)
 	assert.Equal(t, DefaultRegistryRetryDelay, d.Registry.RetryDelay)
 	assert.Equal(t, DefaultRegistryPanicRecoveryDelay, d.Registry.PanicRecoveryDelay)
@@ -1196,6 +1205,7 @@ func TestRegistryConfigCustomValues(t *testing.T) {
 			BlockCheckIntervalSec: 120,
 			BlockEpoch:            5000,
 			Priority:              5,
+			ClientType:            RegistryClientTypeAPI,
 			RetryMaxAttempts:      10,
 			RetryDelay:            5 * time.Second,
 			PanicRecoveryDelay:    60 * time.Second,
@@ -1210,6 +1220,7 @@ func TestRegistryConfigCustomValues(t *testing.T) {
 	assert.Equal(t, uint64(120), d.Registry.BlockCheckIntervalSec)
 	assert.Equal(t, uint64(5000), d.Registry.BlockEpoch)
 	assert.Equal(t, 5, d.Registry.Priority)
+	assert.Equal(t, RegistryClientTypeAPI, d.Registry.ClientType)
 	assert.Equal(t, 10, d.Registry.RetryMaxAttempts)
 	assert.Equal(t, 5*time.Second, d.Registry.RetryDelay)
 	assert.Equal(t, 60*time.Second, d.Registry.PanicRecoveryDelay)

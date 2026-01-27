@@ -58,6 +58,9 @@ const (
 	DefaultRegistryBlockCheckIntervalSec = int64(60)
 	DefaultRegistryBlockEpoch            = uint64(2000)
 	DefaultRegistryPriority              = 0
+	RegistryClientTypeContract           = "contract"
+	RegistryClientTypeAPI                = "api"
+	DefaultRegistryClientType            = RegistryClientTypeContract
 	DefaultRegistryRetryMaxAttempts      = 3
 	DefaultRegistryRetryDelay            = 2 * time.Second  // Fixed delay between retries
 	DefaultRegistryPanicRecoveryDelay    = 30 * time.Second // Delay before restarting after panic
