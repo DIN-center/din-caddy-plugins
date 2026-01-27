@@ -7,7 +7,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type IDinClient interface {
+// IDinReader defines read-only methods for interacting with a DIN registry.
+type IDinReader interface {
+	// GetLatestBlockNumber retrieves the latest block number for the registry source.
+	// Returns the latest block number, or an error if the operation fails.
+	GetLatestBlockNumber() (uint64, error)
+
 	// GetRegistryData retrieves all registry data including networks and providers.
 	// Returns a DinRegistryData struct containing the complete registry state, or an error if the operation fails.
 	GetRegistryData() (*DinRegistryData, error)
@@ -32,6 +37,17 @@ type IDinClient interface {
 	// Returns a NetworkService pointer if found, or an error if the network service doesn't exist or the operation fails.
 	GetNetworkServiceByAddress(networkServiceAddress common.Address) (*NetworkService, error)
 
+	// GetAllProvidersByNetwork retrieves all providers that serve a specific network.
+	// Returns a slice of Provider pointers filtered by network, or an error if the operation fails.
+	GetAllProvidersByNetwork(networkURI string) ([]*Provider, error)
+
+	// GetAllProviders retrieves all providers registered in the DIN registry.
+	// Returns a slice of Provider pointers, or an error if the operation fails.
+	GetAllProviders() ([]*Provider, error)
+}
+
+// IDinWriter defines write methods for interacting with a DIN registry.
+type IDinWriter interface {
 	// SetNetworkStatus updates the status of a network in the registry.
 	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
 	SetNetworkStatus(auth *bind.TransactOpts, networkURI string, networkStatus NetworkStatus) (tx *types.Transaction, err error)
@@ -43,14 +59,6 @@ type IDinClient interface {
 	// CreateAuthorizedTransactor creates an authorized transaction signer from keystore credentials.
 	// Returns a TransactOpts pointer for signing transactions, or an error if authentication fails.
 	CreateAuthorizedTransactor(keystorePath, password string) (*bind.TransactOpts, error)
-
-	// GetAllProvidersByNetwork retrieves all providers that serve a specific network.
-	// Returns a slice of Provider pointers filtered by network, or an error if the operation fails.
-	GetAllProvidersByNetwork(networkURI string) ([]*Provider, error)
-
-	// GetAllProviders retrieves all providers registered in the DIN registry.
-	// Returns a slice of Provider pointers, or an error if the operation fails.
-	GetAllProviders() ([]*Provider, error)
 
 	// RemoveProvider removes a provider from the registry by its contract address.
 	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
@@ -67,6 +75,12 @@ type IDinClient interface {
 	// SetNetworkServiceStatus updates the status of a network service in the registry.
 	// Returns the submitted transaction so caller can wait for confirmation, or an error if the operation fails.
 	SetNetworkServiceStatus(auth *bind.TransactOpts, networkServiceAddr common.Address, networkServiceStatus NetworkServiceStatus) (tx *types.Transaction, err error)
+}
+
+// IDinClient combines read and write methods for interacting with a DIN registry.
+type IDinClient interface {
+	IDinReader
+	IDinWriter
 
 	// GetEthereumRpcClient returns the Ethereum RPC client.
 	GetEthereumRpcClient() *ethclient.Client

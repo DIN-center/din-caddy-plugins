@@ -34,6 +34,9 @@ The `IDinClient` interface is the primary way to interact with the DIN Registry.
 GetRegistryData() (*DinRegistryData, error)
     // Retrieves the current DIN Registry data from the blockchain.
 
+GetLatestBlockNumber() (uint64, error)
+    // Retrieves the latest block number for the registry source.
+
 GetAllNetworks() ([]*Network, error)
     // Returns a list of all registered networks.
 

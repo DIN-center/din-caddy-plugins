@@ -103,6 +103,21 @@ func (mr *MockIDinClientMockRecorder) GetAllProvidersByNetwork(networkURI any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllProvidersByNetwork", reflect.TypeOf((*MockIDinClient)(nil).GetAllProvidersByNetwork), networkURI)
 }
 
+// GetLatestBlockNumber mocks base method.
+func (m *MockIDinClient) GetLatestBlockNumber() (uint64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLatestBlockNumber")
+	ret0, _ := ret[0].(uint64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLatestBlockNumber indicates an expected call of GetLatestBlockNumber.
+func (mr *MockIDinClientMockRecorder) GetLatestBlockNumber() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestBlockNumber", reflect.TypeOf((*MockIDinClient)(nil).GetLatestBlockNumber))
+}
+
 // GetEthereumRpcClient mocks base method.
 func (m *MockIDinClient) GetEthereumRpcClient() *ethclient.Client {
 	m.ctrl.T.Helper()

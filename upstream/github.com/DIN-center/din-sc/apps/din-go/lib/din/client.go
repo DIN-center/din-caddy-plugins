@@ -43,6 +43,12 @@ func NewDinClient(logger *zap.Logger, rpcEndpointUrl string, registryContractAdd
 	}, nil
 }
 
+// GetLatestBlockNumber retrieves the latest block number for the registry source.
+// Returns the latest block number, or an error if the operation fails.
+func (d *DinClient) GetLatestBlockNumber() (uint64, error) {
+	return d.rpcConnection.BlockNumber(context.Background())
+}
+
 // GetRegistryData returns all networks, including their providers and services, in the registry
 func (d *DinClient) GetRegistryData() (*DinRegistryData, error) {
 	registryData := &DinRegistryData{
