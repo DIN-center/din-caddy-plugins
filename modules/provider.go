@@ -11,8 +11,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
@@ -29,13 +27,9 @@ type provider struct {
 	Name     string
 
 	// Registry Configuration Values
-	Methods map[string]struct{}  `json:"methods"`
-	Auth    *siwe.SIWEClientAuth `json:"auth"`
+	Methods map[string]struct{} `json:"methods"`
 
-	// OIDC client for OAuth2/OIDC authentication
-	OIDCClient *oidc.OIDCClient `json:"oidc_client"`
-
-	// Generic auth client for supporting multiple auth types
+	// Auth client (SIWE, OIDC, or other auth types via factory)
 	authClient auth.IAuthClient
 
 	// Watcher Score
@@ -95,19 +89,7 @@ func (p *provider) IsAvailableWithWarning() bool {
 }
 
 func (p *provider) AuthClient() auth.IAuthClient {
-	// Return generic auth client if available
-	if p.authClient != nil {
-		return p.authClient
-	}
-	// Return OIDC client if available
-	if p.OIDCClient != nil {
-		return p.OIDCClient
-	}
-	// Fall back to SIWE auth if available
-	if p.Auth != nil {
-		return p.Auth
-	}
-	return nil
+	return p.authClient
 }
 
 // SetAuthClient sets the generic auth client for this provider

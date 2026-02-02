@@ -478,16 +478,10 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	}
 
 	// Initialize authentication
-	if provider.OIDCClient != nil {
-		// Initialize OIDC client
-		if err := provider.OIDCClient.Start(logger.Logger); err != nil {
-			d.logger.Error("Failed to start OIDC client", zap.String("provider", provider.HttpUrl), zap.Error(err))
+	if authClient := provider.AuthClient(); authClient != nil {
+		if err := authClient.Start(logger.Logger); err != nil {
+			d.logger.Error("Failed to start auth client", zap.String("provider", provider.HttpUrl), zap.Error(err))
 			return err
-		}
-	} else if provider.Auth != nil {
-		// Initialize SIWE auth
-		if err := provider.Auth.Start(logger.Logger); err != nil {
-			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
 		}
 	}
 	provider.logger = d.logger
@@ -495,7 +489,7 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 	// Initialize the score for the provider with an empty score
 	provider.SafeUpdateScore(ws.NewEmptyScore())
 
-	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Any("Auth", provider.Auth), zap.Any("Upstream", provider.upstream), zap.String("Path", provider.path), zap.String("Query", provider.query))
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Bool("HasAuth", provider.AuthClient() != nil), zap.Any("Upstream", provider.upstream), zap.String("Path", provider.path), zap.String("Query", provider.query))
 
 	// Make sure blockHistory is initialized
 	if provider.blockHistory == nil {

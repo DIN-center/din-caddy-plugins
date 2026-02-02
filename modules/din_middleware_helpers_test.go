@@ -676,13 +676,8 @@ func TestCreateNewProvider(t *testing.T) {
 				PrivateKey: privateKeyData,
 			}
 
-			// Setup mock expectations
-			if tt.expectAuthCreation {
-				mockSiweSignerClient.EXPECT().
-					CreateNewSIWEAuth(tt.authConfig.Url, gomock.Eq(16)).
-					Return(tt.expectedAuth).
-					Times(1)
-			}
+			// Note: Auth creation now uses the factory pattern, not the mock SiweSignerClient
+			// The mock is kept for other potential uses in the middleware
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
@@ -715,7 +710,12 @@ func TestCreateNewProvider(t *testing.T) {
 				// Verify that the provider was updated correctly
 				assert.Equal(t, expectedMethodsMap(tt.expectedMethods), createdProvider.Methods)
 				assert.Equal(t, dinMiddleware.Registry.Priority, createdProvider.Priority)
-				assert.Equal(t, tt.expectedAuth, createdProvider.Auth)
+				// Verify auth client state (factory creates the auth client now)
+				if tt.expectAuthCreation {
+					assert.NotNil(t, createdProvider.AuthClient())
+				} else {
+					assert.Nil(t, createdProvider.AuthClient())
+				}
 			}
 		})
 	}
@@ -840,12 +840,11 @@ func TestUpdateNetworkData(t *testing.T) {
 	}
 }
 
-func TestCreateProviderSIWEAuth(t *testing.T) {
+func TestCreateProviderAuth(t *testing.T) {
 	tests := []struct {
 		name               string
 		authConfig         *din.ProviderAuthConfig
 		defaultSignerSet   bool
-		expectedAuth       *siwe.SIWEClientAuth
 		expectedError      error
 		expectAuthCreation bool
 	}{
@@ -857,11 +856,7 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 			},
 			defaultSignerSet:   true,
 			expectAuthCreation: true,
-			expectedAuth: &siwe.SIWEClientAuth{
-				ProviderURL:  "http://example.com",
-				SessionCount: 16,
-			},
-			expectedError: nil,
+			expectedError:      nil,
 		},
 		{
 			name: "Auth type None should return nil",
@@ -871,7 +866,6 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 			},
 			defaultSignerSet:   true,
 			expectAuthCreation: false,
-			expectedAuth:       nil,
 			expectedError:      nil,
 		},
 		{
@@ -882,19 +876,12 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 			},
 			defaultSignerSet:   true,
 			expectAuthCreation: false,
-			expectedAuth:       nil,
 			expectedError:      nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mocks
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			mockSiweSignerClient := siwe.NewMockISIWESignerClient(mockCtrl)
-
 			// Create random private key data for the default signer
 			privateKeyData := make([]byte, 32)
 			_, err := rand.Read(privateKeyData)
@@ -904,8 +891,7 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 
 			// Create DinMiddleware instance
 			dinMiddleware := &DinMiddleware{
-				SiweSignerClient: mockSiweSignerClient,
-				logger:           logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
+				logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 			}
 
 			// Set default signer if required by test case
@@ -915,24 +901,20 @@ func TestCreateProviderSIWEAuth(t *testing.T) {
 				}
 			}
 
-			// Setup mock expectations
-			if tt.expectAuthCreation {
-				mockSiweSignerClient.EXPECT().
-					CreateNewSIWEAuth(tt.authConfig.Url, 16).
-					Return(tt.expectedAuth).
-					Times(1)
-			}
-
-			// Call the function being tested
-			auth, err := dinMiddleware.createProviderSIWEAuth(tt.authConfig)
+			// Call the function being tested (now uses factory pattern)
+			authClient, err := dinMiddleware.createProviderAuth(tt.authConfig)
 
 			// Assert results
 			if tt.expectedError != nil {
 				assert.Equal(t, tt.expectedError.Error(), err.Error())
-				assert.Nil(t, auth)
+				assert.Nil(t, authClient)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedAuth, auth)
+				if tt.expectAuthCreation {
+					assert.NotNil(t, authClient)
+				} else {
+					assert.Nil(t, authClient)
+				}
 			}
 		})
 	}

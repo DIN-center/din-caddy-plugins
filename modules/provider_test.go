@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
@@ -163,25 +164,26 @@ func TestProviderQueryParams(t *testing.T) {
 func TestAuthClient(t *testing.T) {
 	tests := []struct {
 		name           string
-		auth           *siwe.SIWEClientAuth
+		authClient     auth.IAuthClient
 		expectedResult bool
 	}{
 		{
 			name:           "auth client configured",
-			auth:           &siwe.SIWEClientAuth{},
+			authClient:     &siwe.SIWEClientAuth{},
 			expectedResult: true,
 		},
 		{
 			name:           "no auth client",
-			auth:           nil,
+			authClient:     nil,
 			expectedResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &provider{
-				Auth: tt.auth,
+			p := &provider{}
+			if tt.authClient != nil {
+				p.SetAuthClient(tt.authClient)
 			}
 
 			result := p.AuthClient()

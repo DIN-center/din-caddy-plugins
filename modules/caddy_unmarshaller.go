@@ -15,6 +15,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -364,15 +365,18 @@ func (p *caddyfileParser) parseProviderMethods(provider *provider) error {
 	return nil
 }
 
-// parseProviderAuth parses authentication configuration (SIWE or OIDC)
+// parseProviderAuth parses authentication configuration using the auth factory pattern.
+// Supports SIWE (default) and OIDC auth types.
 func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting int) error {
-	var authType string
-	var siweAuth *siwe.SIWEClientAuth
-	var oidcClient *oidc.OIDCClient
-
 	// Default to SIWE for backward compatibility
-	siweAuth = p.siweSignerClient.CreateNewSIWEAuth(
-		strings.TrimSuffix(provider.HttpUrl, "/")+"/auth", 16)
+	authType := "siwe"
+	cfg := auth.AuthConfig{
+		siwe.ConfigKeyURL:      strings.TrimSuffix(provider.HttpUrl, "/") + "/auth",
+		siwe.ConfigKeySessions: siwe.DefaultSessionCount,
+	}
+
+	// Track whether signer was explicitly set (for SIWE)
+	var signerKey []byte
 
 	// Parse auth configuration
 	for p.dispenser.NextBlock(parentNesting + 1) {
@@ -380,41 +384,33 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 		case "type":
 			p.dispenser.NextBlock(parentNesting + 1)
 			authType = p.dispenser.Val()
-			// Initialize based on auth type
-			switch authType {
-			case "siwe":
-				// Already initialized above as default
-			case "oidc":
-				// Switch to OIDC
-				siweAuth = nil
-				oidcClient = &oidc.OIDCClient{
-					Scope: "openid", // default scope
-				}
-			default:
-				return fmt.Errorf("unknown auth type: %s (supported: siwe, oidc)", authType)
+			// Validate auth type is registered
+			if auth.GetFactory(authType) == nil {
+				return fmt.Errorf("unknown auth type: %s (registered: %v)", authType, auth.RegisteredTypes())
+			}
+			// Reset config for new type (keep url if already set)
+			if urlVal, ok := cfg[siwe.ConfigKeyURL]; ok {
+				cfg = auth.AuthConfig{siwe.ConfigKeyURL: urlVal}
+			} else {
+				cfg = auth.AuthConfig{}
 			}
 		case "url":
 			p.dispenser.NextBlock(parentNesting + 1)
-			urlVal := p.dispenser.Val()
-			if siweAuth != nil {
-				siweAuth.ProviderURL = urlVal
-			} else if oidcClient != nil {
-				oidcClient.TokenURL = urlVal
-			}
+			cfg[siwe.ConfigKeyURL] = p.dispenser.Val()
 		case "client_id":
-			if oidcClient == nil {
+			if authType != "oidc" {
 				return fmt.Errorf("client_id is only valid for OIDC auth type")
 			}
 			p.dispenser.NextBlock(parentNesting + 1)
-			oidcClient.ClientID = p.dispenser.Val()
+			cfg[oidc.ConfigKeyClientID] = p.dispenser.Val()
 		case "client_secret":
-			if oidcClient == nil {
+			if authType != "oidc" {
 				return fmt.Errorf("client_secret is only valid for OIDC auth type")
 			}
 			p.dispenser.NextBlock(parentNesting + 1)
-			oidcClient.ClientSecret = p.dispenser.Val()
+			cfg[oidc.ConfigKeyClientSecret] = p.dispenser.Val()
 		case "duration_seconds":
-			if oidcClient == nil {
+			if authType != "oidc" {
 				return fmt.Errorf("duration_seconds is only valid for OIDC auth type")
 			}
 			p.dispenser.NextBlock(parentNesting + 1)
@@ -422,9 +418,9 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 			if err != nil {
 				return fmt.Errorf("invalid duration_seconds: %w", err)
 			}
-			oidcClient.DurationSeconds = duration
+			cfg[oidc.ConfigKeyDurationSeconds] = duration
 		case "sessions":
-			if siweAuth == nil {
+			if authType != "siwe" {
 				return fmt.Errorf("sessions is only valid for SIWE auth type")
 			}
 			p.dispenser.NextBlock(parentNesting + 1)
@@ -432,50 +428,44 @@ func (p *caddyfileParser) parseProviderAuth(provider *provider, parentNesting in
 			if err != nil {
 				return fmt.Errorf("invalid session count: %w", err)
 			}
-			siweAuth.SessionCount = sessionCount
+			cfg[siwe.ConfigKeySessions] = sessionCount
 		case "signer":
-			if siweAuth == nil {
+			if authType != "siwe" {
 				return fmt.Errorf("signer is only valid for SIWE auth type")
 			}
-			signerKey, err := p.parseProviderSigner(parentNesting + 2)
+			var err error
+			signerKey, err = p.parseProviderSigner(parentNesting + 2)
 			if err != nil {
 				return err
-			}
-			siweAuth.Signer = &siwe.SigningConfig{
-				PrivateKey: signerKey,
-			}
-			if err := p.siweSignerClient.GenPrivKey(siweAuth.Signer); err != nil {
-				return fmt.Errorf("failed to generate private key: %w", err)
 			}
 		default:
 			return p.dispenser.Errf("unrecognized auth option: %s", p.dispenser.Val())
 		}
 	}
 
-	// Validate and set the appropriate auth
-	if siweAuth != nil {
-		// Use default signer if not specified
-		if siweAuth.Signer == nil {
-			if p.middleware.DefaultSiweSigner == nil {
-				return p.dispenser.Errf("signer must be set for SIWE auth")
+	// For SIWE, handle signer configuration
+	if authType == "siwe" {
+		var signerConfig *siwe.SigningConfig
+		if signerKey != nil {
+			signerConfig = &siwe.SigningConfig{PrivateKey: signerKey}
+			if err := p.siweSignerClient.GenPrivKey(signerConfig); err != nil {
+				return fmt.Errorf("failed to generate private key: %w", err)
 			}
-			siweAuth.Signer = p.middleware.DefaultSiweSigner
+		} else if p.middleware.DefaultSiweSigner != nil {
+			signerConfig = p.middleware.DefaultSiweSigner
+		} else {
+			return p.dispenser.Errf("signer must be set for SIWE auth")
 		}
-		provider.Auth = siweAuth
-	} else if oidcClient != nil {
-		// Validate OIDC configuration
-		if oidcClient.ClientID == "" {
-			return p.dispenser.Errf("client_id is required for OIDC auth")
-		}
-		if oidcClient.ClientSecret == "" {
-			return p.dispenser.Errf("client_secret is required for OIDC auth")
-		}
-		if oidcClient.TokenURL == "" {
-			return p.dispenser.Errf("url is required for OIDC auth")
-		}
-		provider.OIDCClient = oidcClient
+		cfg[siwe.ConfigKeySigner] = signerConfig
 	}
 
+	// Create auth client via factory
+	authClient, err := auth.Create(authType, cfg)
+	if err != nil {
+		return p.dispenser.Errf("failed to create %s auth: %v", authType, err)
+	}
+
+	provider.SetAuthClient(authClient)
 	return nil
 }
 

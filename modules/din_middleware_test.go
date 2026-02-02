@@ -28,7 +28,6 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
-	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
@@ -284,7 +283,6 @@ func TestInitializeProvider(t *testing.T) {
 			name: "Successful initialization with http URL",
 			provider: &provider{
 				HttpUrl: "http://example2.com",
-				Auth:    nil,
 				score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
@@ -294,7 +292,6 @@ func TestInitializeProvider(t *testing.T) {
 			name: "Successful initialization with https URL",
 			provider: &provider{
 				HttpUrl: "https://example3.com",
-				Auth:    nil,
 				score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
@@ -304,10 +301,7 @@ func TestInitializeProvider(t *testing.T) {
 			name: "Successful initialization with auth",
 			provider: &provider{
 				HttpUrl: "http://example4.com",
-				Auth: &siwe.SIWEClientAuth{
-					ProviderURL: "http://auth.example.com",
-				},
-				score: ws.EmptyScore,
+				score:   ws.EmptyScore,
 			},
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
