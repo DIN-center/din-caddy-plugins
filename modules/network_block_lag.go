@@ -10,6 +10,8 @@ import (
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 )
 
 // getLatestBlockNumberResult holds the result of a block number query
@@ -38,8 +40,8 @@ func (n *network) calculateDynamicBlockLagLimit() {
 		zap.String("network", n.Name),
 		zap.Int("provider_count", len(n.Providers)))
 
-	// Check if handler supports dynamic block lag
-	if n.handler == nil || !n.handler.SupportsDynamicBlockLag() {
+	// Check if handler supports dynamic block lag using capability interface
+	if n.handler == nil || !networklib.SupportsDynamicBlockLag(n.handler) {
 		n.logger.Debug("Handler does not support dynamic block lag, keeping default",
 			zap.String("network", n.Name),
 			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)))
@@ -112,6 +114,13 @@ func (n *network) calculateDynamicBlockLagLimit() {
 // using immutable blockchain timestamps from two blocks (N and N-lookback).
 // This is deterministic - all servers querying the same blocks get the same result.
 func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
+	// Get the dynamic block lag support capability
+	// This function is only called after verifying the handler supports dynamic block lag
+	dblSupport, ok := n.handler.(networklib.DynamicBlockLagSupport)
+	if !ok {
+		return 0, errors.New("handler does not support dynamic block lag")
+	}
+
 	// Get the latest block number
 	latestResult, err := n.getLatestBlockNumber(
 		p.HttpUrl,
@@ -135,8 +144,8 @@ func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
 
 	oldBlock := latestBlock - BlockLagCalculationLookback
 
-	// Get timestamp for the latest block
-	latestTimestamp, err := n.handler.GetBlockTimestamp(
+	// Get timestamp for the latest block using capability interface
+	latestTimestamp, err := dblSupport.GetBlockTimestamp(
 		p.HttpUrl,
 		p.Headers,
 		n.HttpClient,
@@ -149,7 +158,7 @@ func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
 	}
 
 	// Get timestamp for the older block
-	oldTimestamp, err := n.handler.GetBlockTimestamp(
+	oldTimestamp, err := dblSupport.GetBlockTimestamp(
 		p.HttpUrl,
 		p.Headers,
 		n.HttpClient,
@@ -318,8 +327,13 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
 	}
 
-	// Delegate to handler for network-specific parsing
-	blockNumber, err := n.handler.ParseBlockNumberResponse(resBytes, *statusCode)
+	// Use BlockNumberParser capability interface
+	parser, ok := n.handler.(networklib.BlockNumberParser)
+	if !ok {
+		return 0, Unhealthy, errors.New("handler does not implement BlockNumberParser")
+	}
+
+	blockNumber, err := parser.ParseBlockNumberResponse(resBytes, *statusCode)
 	if err != nil {
 		// Determine health status based on error type
 		if *statusCode == 429 {
@@ -374,19 +388,19 @@ func (n *network) AddNetworkBlockEntry(blockNumber int64, blockData interface{})
 		}
 	}
 
-	// Extract block hash from blockData using handler
+	// Extract block hash from blockData using BlockFetcher capability
 	blockHash := ""
 	if blockData != nil {
 		switch data := blockData.(type) {
 		case string:
 			blockHash = data
 		default:
-			// Use handler to extract block hash if available
-			if n.handler != nil {
-				blockHash = n.handler.ExtractBlockHash(blockData)
+			// Use BlockFetcher capability to extract block hash if available
+			if blockFetcher, ok := n.handler.(networklib.BlockFetcher); ok {
+				blockHash = blockFetcher.ExtractBlockHash(blockData)
 			} else {
-				// If no handler available, log warning but continue
-				n.logger.Warn("No handler available to extract block hash from blockData",
+				// If BlockFetcher not supported, log warning but continue
+				n.logger.Warn("Handler does not support BlockFetcher capability",
 					zap.String("dataType", reflect.TypeOf(blockData).String()),
 					zap.String("network", n.Name))
 			}
@@ -447,8 +461,9 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.New("Caddy port is not set")
 	}
 
-	// Check if handler supports get block by number
-	if n.handler == nil || !n.handler.SupportsGetBlockByNumber() {
+	// Check if handler supports BlockFetcher capability
+	blockFetcher, ok := n.handler.(networklib.BlockFetcher)
+	if !ok || !blockFetcher.SupportsGetBlockByNumber() {
 		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
 		return nil, nil
 	}
@@ -464,14 +479,14 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		"Content-Type": "application/json",
 	}
 
-	// Get the block by number method directly from the handler
-	getBlockMethod := n.handler.GetBlockByNumberMethod()
+	// Get the block by number method directly from the BlockFetcher capability
+	getBlockMethod := blockFetcher.GetBlockByNumberMethod()
 	if getBlockMethod == "" {
 		return nil, errors.New("handler does not provide a getBlockByNumber method")
 	}
 
-	// Use handler to create the block request payload
-	payload, err := n.handler.CreateBlockRequest(getBlockMethod, blockNumber, false)
+	// Use BlockFetcher to create the block request payload
+	payload, err := blockFetcher.CreateBlockRequest(getBlockMethod, blockNumber, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create block request")
 	}
@@ -494,8 +509,8 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 		return nil, errors.New("Error getting block from response")
 	}
 
-	// Use handler to parse the block response
-	blockData, err := n.handler.ParseBlockResponse(resBytes)
+	// Use BlockFetcher to parse the block response
+	blockData, err := blockFetcher.ParseBlockResponse(resBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error parsing block response")
 	}

@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 )
 
@@ -223,9 +224,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	}
 
 	// chainId check health check
-	// Use handler's GetChainID method for all network types
-	if n.handler != nil {
-		chainId, err := n.handler.GetChainID(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount)
+	// Only perform if handler supports chain ID validation
+	if chainIdentifier, ok := n.handler.(networklib.ChainIdentifier); ok {
+		chainId, err := chainIdentifier.GetChainID(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount)
 		if err != nil {
 			n.logProviderWarning("Error getting chain ID", provider,
 				zap.String("expected_chain_id", n.ChainId),
@@ -234,7 +235,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 			return Unhealthy
 		}
 
-		if err := n.handler.ValidateChainID(chainId); err != nil {
+		if err := chainIdentifier.ValidateChainID(chainId); err != nil {
 			n.logProviderWarning("Provider has incorrect chain ID", provider,
 				zap.String("chain_id", chainId),
 				zap.String("expected_chain_id", n.ChainId),
@@ -258,13 +259,14 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 // performArchiveCheck performs archive mode check for a provider if archive mode is enabled
 func (n *network) performArchiveCheck(provider *provider, currentBlock int64) error {
-	// Check if archive mode is enabled and supported
+	// Check if archive mode is enabled
 	if !n.ArchiveEnabled {
 		return nil // Archive mode disabled, skip check
 	}
 
-	// Check if handler supports archive mode
-	if !n.handler.SupportsArchiveMode() {
+	// Check if handler supports archive mode using capability interface
+	archiveChecker, ok := n.handler.(networklib.ArchiveChecker)
+	if !ok || !archiveChecker.SupportsArchiveMode() {
 		return nil // Handler doesn't support archive mode, skip check
 	}
 
@@ -275,10 +277,16 @@ func (n *network) performArchiveCheck(provider *provider, currentBlock int64) er
 
 	quarterBlockHeight := currentBlock / 4
 
-	// Use handler method to format block height directly
-	quarterBlockHeightString := n.handler.FormatBlockHeight(quarterBlockHeight)
+	// Use BlockFetcher capability to format block height
+	var quarterBlockHeightString string
+	if blockFetcher, ok := n.handler.(networklib.BlockFetcher); ok {
+		quarterBlockHeightString = blockFetcher.FormatBlockHeight(quarterBlockHeight)
+	} else {
+		// Fallback to string format if BlockFetcher not supported
+		quarterBlockHeightString = fmt.Sprintf("%d", quarterBlockHeight)
+	}
 
-	return n.handler.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
+	return archiveChecker.PerformArchiveCheck(provider.HttpUrl, provider.Headers, n.HttpClient, provider.AuthClient(), n.RequestAttemptCount, quarterBlockHeightString)
 }
 
 // checkSelfLoopbackHealth performs a health check on the router's own endpoint (loopback)

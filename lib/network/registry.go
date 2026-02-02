@@ -42,17 +42,18 @@ func (r *HandlerRegistry) RegisterHandler(networkType string, constructor Handle
 	return nil
 }
 
+// handlerCacheKey creates a compound cache key from network name and type
+func handlerCacheKey(networkName, networkType string) string {
+	return networkName + ":" + networkType
+}
+
 // GetHandler retrieves or creates a handler for the given network type
 func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) (NetworkHandler, error) {
+	cacheKey := handlerCacheKey(config.Name, networkType)
+
 	r.mu.RLock()
 	// Check if handler already exists
-	if handler, exists := r.handlers[config.Name]; exists {
-		// Validate that the cached handler matches the requested type
-		if handler.GetType() != networkType {
-			r.mu.RUnlock()
-			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'",
-				config.Name, handler.GetType(), networkType)
-		}
+	if handler, exists := r.handlers[cacheKey]; exists {
 		if config.Logger != nil {
 			config.Logger.Debug("Returning cached handler from registry",
 				zap.String("network", config.Name),
@@ -68,12 +69,7 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	defer r.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if handler, exists := r.handlers[config.Name]; exists {
-		// Validate that the cached handler matches the requested type
-		if handler.GetType() != networkType {
-			return nil, fmt.Errorf("cached handler type mismatch for network '%s': cached type '%s', requested type '%s'",
-				config.Name, handler.GetType(), networkType)
-		}
+	if handler, exists := r.handlers[cacheKey]; exists {
 		if config.Logger != nil {
 			config.Logger.Debug("Returning cached handler from registry (after lock)",
 				zap.String("network", config.Name),
@@ -111,7 +107,7 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 		return nil, fmt.Errorf("failed to initialize handler for network type '%s': %w", networkType, err)
 	}
 
-	r.handlers[config.Name] = handler
+	r.handlers[cacheKey] = handler
 
 	if config.Logger != nil {
 		config.Logger.Debug("Created and cached new handler in registry",
@@ -136,13 +132,12 @@ func (r *HandlerRegistry) ListHandlers() []string {
 }
 
 // RemoveHandler removes a specific handler from the registry
-func (r *HandlerRegistry) RemoveHandler(networkName string) error {
+func (r *HandlerRegistry) RemoveHandler(networkName, networkType string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Just remove the handler from the map
-	// No shutdown needed since we removed the Shutdown method
-	delete(r.handlers, networkName)
+	cacheKey := handlerCacheKey(networkName, networkType)
+	delete(r.handlers, cacheKey)
 	return nil
 }
 
