@@ -13,6 +13,8 @@ import (
 	"os"
 	reflect "reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1026,22 +1028,27 @@ func TestCleanup(t *testing.T) {
 			}
 
 			// Track which channels are closed
-			closedCount := 0
+			var closedCount atomic.Int32
+			var wg sync.WaitGroup
 
 			// Monitor channels in goroutines
 			for _, network := range d.Networks {
 				if network.Quit != nil {
+					wg.Add(1)
 					go func(ch chan struct{}) {
+						defer wg.Done()
 						<-ch
-						closedCount++
+						closedCount.Add(1)
 					}(network.Quit)
 				}
 			}
 
 			if d.quit != nil {
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					<-d.quit
-					closedCount++
+					closedCount.Add(1)
 				}()
 			}
 
@@ -1049,11 +1056,11 @@ func TestCleanup(t *testing.T) {
 			err := d.Cleanup()
 			assert.NoError(t, err)
 
-			// Give goroutines time to detect closed channels
-			time.Sleep(50 * time.Millisecond)
+			// Wait for all monitor goroutines to complete
+			wg.Wait()
 
 			// Verify expected number of channels were closed
-			assert.Equal(t, tt.expectedClosed, closedCount)
+			assert.Equal(t, tt.expectedClosed, int(closedCount.Load()))
 		})
 	}
 }
@@ -1075,23 +1082,26 @@ func TestCleanupConcurrency(t *testing.T) {
 		logger: logger.NewLoggerClient(zaptest.NewLogger(t), utils.Environment("test")),
 	}
 
-	// Track if channels are closed
-	network1Closed := false
-	network2Closed := false
-	quitClosed := false
+	// Track if channels are closed using atomics
+	var network1Closed, network2Closed, quitClosed atomic.Bool
+	var wg sync.WaitGroup
 
 	// Monitor channels
+	wg.Add(3)
 	go func() {
+		defer wg.Done()
 		<-d.Networks["network1"].Quit
-		network1Closed = true
+		network1Closed.Store(true)
 	}()
 	go func() {
+		defer wg.Done()
 		<-d.Networks["network2"].Quit
-		network2Closed = true
+		network2Closed.Store(true)
 	}()
 	go func() {
+		defer wg.Done()
 		<-d.quit
-		quitClosed = true
+		quitClosed.Store(true)
 	}()
 
 	// Start multiple goroutines trying to cleanup simultaneously
@@ -1108,13 +1118,13 @@ func TestCleanupConcurrency(t *testing.T) {
 		assert.NoError(t, err, "Cleanup should not return an error")
 	}
 
-	// Give time for channel monitors to detect closure
-	time.Sleep(50 * time.Millisecond)
+	// Wait for all monitor goroutines to complete
+	wg.Wait()
 
 	// Verify channels were closed exactly once (no panic from double close)
-	assert.True(t, network1Closed, "network1 quit channel should be closed")
-	assert.True(t, network2Closed, "network2 quit channel should be closed")
-	assert.True(t, quitClosed, "main quit channel should be closed")
+	assert.True(t, network1Closed.Load(), "network1 quit channel should be closed")
+	assert.True(t, network2Closed.Load(), "network2 quit channel should be closed")
+	assert.True(t, quitClosed.Load(), "main quit channel should be closed")
 }
 
 // TestStartRegistrySyncPanicRecovery tests panic recovery in startRegistrySync
