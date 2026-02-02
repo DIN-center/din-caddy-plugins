@@ -140,12 +140,12 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 						Providers: map[string]*provider{
 							"test-provider": {
 								HttpUrl:  "http://test-provider",
-								host:     "test-provider",
-								path:     tt.providerPath,
+								Host:     "test-provider",
+								Path:     tt.providerPath,
 								Priority: 1,
-								blockHistory: func() *list.List {
+								BlockHistory: func() *list.List {
 									l := list.New()
-									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+									l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 									return l
 								}(),
 							},
@@ -313,10 +313,10 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 					Providers: map[string]*provider{
 						"test-provider": {
 							HttpUrl: "http://test-provider",
-							host:    "test-provider",
-							blockHistory: func() *list.List {
+							Host:    "test-provider",
+							BlockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 								return l
 							}(),
 						},
@@ -398,21 +398,21 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 				Providers: map[string]*provider{
 					"provider1": {
 						HttpUrl:  "http://provider1",
-						host:     "provider1",
+						Host:     "provider1",
 						Priority: 1,
-						blockHistory: func() *list.List {
+						BlockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 							return l
 						}(),
 					},
 					"provider2": {
 						HttpUrl:  "http://provider2",
-						host:     "provider2",
+						Host:     "provider2",
 						Priority: 2,
-						blockHistory: func() *list.List {
+						BlockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 							return l
 						}(),
 					},
@@ -487,7 +487,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 				require.True(t, ok, "Network object should be set in context")
 
 				networkObj := networkObjVal.(*network)
-				assert.Equal(t, networklib.RequestTypeREST, networkObj.handler.GetRequestType())
+				assert.Equal(t, networklib.RequestTypeREST, networkObj.Handler.GetRequestType())
 				assert.Equal(t, string(BeaconHandler), string(networkObj.HandlerType))
 				// The method is now stored in RequestMethodKey
 				methodVal, _ := repl.Get(RequestMethodKey)
@@ -537,7 +537,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 				require.True(t, ok, "Network object should be set in context")
 
 				networkObj := networkObjVal.(*network)
-				assert.Equal(t, networklib.RequestTypeRPC, networkObj.handler.GetRequestType())
+				assert.Equal(t, networklib.RequestTypeRPC, networkObj.Handler.GetRequestType())
 				assert.Equal(t, string(EVMHandler), string(networkObj.HandlerType))
 			},
 		},
@@ -604,10 +604,10 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			tt.network.Providers = map[string]*provider{
 				"mock-provider": {
 					HttpUrl: "http://mock-provider",
-					host:    "mock-provider",
-					blockHistory: func() *list.List {
+					Host:    "mock-provider",
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -720,12 +720,12 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 						Providers: map[string]*provider{
 							"test-provider": {
 								HttpUrl:  "http://test-provider",
-								host:     "test-provider",
-								path:     tt.providerPath,
+								Host:     "test-provider",
+								Path:     tt.providerPath,
 								Priority: 1,
-								blockHistory: func() *list.List {
+								BlockHistory: func() *list.List {
 									l := list.New()
-									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+									l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 									return l
 								}(),
 							},
@@ -777,7 +777,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 				require.NoError(t, err)
 				// The path might not be captured if the request doesn't reach the handler
 				// due to provider selection. This is OK for this test.
-				t.Logf("Original path: %s, Provider path: %s, Captured path: %s",
+				t.Logf("Original Path: %s, Provider Path: %s, Captured Path: %s",
 					tt.requestPath, tt.providerPath, capturedPath)
 			}
 		})
@@ -802,10 +802,10 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 				Providers: map[string]*provider{
 					"test-provider": {
 						HttpUrl: "http://test-provider",
-						host:    "test-provider",
-						blockHistory: func() *list.List {
+						Host:    "test-provider",
+						BlockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 							return l
 						}(),
 					},
@@ -836,7 +836,7 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 		networkObjVal, ok := repl.Get("network_object")
 		assert.True(t, ok)
 		networkObj := networkObjVal.(*network)
-		assert.Equal(t, networklib.RequestTypeREST, networkObj.handler.GetRequestType())
+		assert.Equal(t, networklib.RequestTypeREST, networkObj.Handler.GetRequestType())
 
 		// Check method
 		method, ok := repl.Get(RequestMethodKey)

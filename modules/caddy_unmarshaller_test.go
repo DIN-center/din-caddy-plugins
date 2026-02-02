@@ -259,7 +259,7 @@ func TestCaddyUnmarshallerProviders(t *testing.T) {
 			expectedProviders: map[string]*provider{
 				"test.com": {
 					HttpUrl:  "http://test.com/eth",
-					host:     "test.com",
+					Host:     "test.com",
 					Name:     "test",
 					Priority: 0,
 				},
@@ -281,7 +281,7 @@ func TestCaddyUnmarshallerProviders(t *testing.T) {
 			expectedProviders: map[string]*provider{
 				"subdomain.test.com": {
 					HttpUrl:  "http://subdomain.test.com/eth",
-					host:     "subdomain.test.com",
+					Host:     "subdomain.test.com",
 					Name:     "MyCustomProvider",
 					Priority: 1,
 				},
@@ -307,12 +307,12 @@ func TestCaddyUnmarshallerProviders(t *testing.T) {
 
 			// Check providers
 			for _, expectedProvider := range tt.expectedProviders {
-				actualProvider, exists := network.Providers[expectedProvider.host]
-				assert.True(t, exists, "Provider %s should exist", expectedProvider.host)
-				assert.Equal(t, expectedProvider.HttpUrl, actualProvider.HttpUrl, "Provider %s should have the correct HTTP URL", expectedProvider.host)
-				assert.Equal(t, expectedProvider.host, actualProvider.host, "Provider %s should have the correct host", expectedProvider.host)
-				assert.Equal(t, expectedProvider.Name, actualProvider.Name, "Provider %s should have the correct name", expectedProvider.host)
-				assert.Equal(t, expectedProvider.Priority, actualProvider.Priority, "Provider %s should have the correct priority", expectedProvider.host)
+				actualProvider, exists := network.Providers[expectedProvider.Host]
+				assert.True(t, exists, "Provider %s should exist", expectedProvider.Host)
+				assert.Equal(t, expectedProvider.HttpUrl, actualProvider.HttpUrl, "Provider %s should have the correct HTTP URL", expectedProvider.Host)
+				assert.Equal(t, expectedProvider.Host, actualProvider.Host, "Provider %s should have the correct host", expectedProvider.Host)
+				assert.Equal(t, expectedProvider.Name, actualProvider.Name, "Provider %s should have the correct name", expectedProvider.Host)
+				assert.Equal(t, expectedProvider.Priority, actualProvider.Priority, "Provider %s should have the correct priority", expectedProvider.Host)
 			}
 		})
 	}

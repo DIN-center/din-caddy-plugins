@@ -1,28 +1,31 @@
 package modules
 
-import "time"
+import (
+	"time"
 
-type HealthStatus int
-
-// HandlerType represents the type of network handler
-type HandlerType string
-
-const (
-	// Handler types
-	EVMHandler            HandlerType = "evm"
-	BeaconHandler         HandlerType = "beacon-chain"
-	StarknetHandler       HandlerType = "starknet"
-	SolanaHandler         HandlerType = "solana"
-	BitcoinHandler        HandlerType = "bitcoin"
-	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
-	TronHandler           HandlerType = "tron-full-node"
+	internalnetwork "github.com/DIN-center/din-caddy-plugins/internal/network"
 )
 
+// Re-export types from internal/network for backward compatibility
+type HealthStatus = internalnetwork.HealthStatus
+type HandlerType = internalnetwork.HandlerType
+
+// Re-export handler type constants from internal/network
 const (
-	// Health status enums
-	Healthy HealthStatus = iota
-	Warning
-	Unhealthy
+	EVMHandler            = internalnetwork.EVMHandler
+	BeaconHandler         = internalnetwork.BeaconHandler
+	StarknetHandler       = internalnetwork.StarknetHandler
+	SolanaHandler         = internalnetwork.SolanaHandler
+	BitcoinHandler        = internalnetwork.BitcoinHandler
+	BitcoinEsploraHandler = internalnetwork.BitcoinEsploraHandler
+	TronHandler           = internalnetwork.TronHandler
+)
+
+// Re-export health status constants from internal/network
+const (
+	Healthy   = internalnetwork.Healthy
+	Warning   = internalnetwork.Warning
+	Unhealthy = internalnetwork.Unhealthy
 )
 
 const (
@@ -48,9 +51,9 @@ const (
 	DefaultHCThreshold             = 2
 	DefaultHCTimeout               = 5
 	DefaultHCInterval              = 5
-	DefaultBlockLagLimit    = int64(15)
-	DefaultBlockLagPeriodMs = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
-	DefaultBlockJumpLimit   = int64(100)
+	DefaultBlockLagLimit           = int64(15)
+	DefaultBlockLagPeriodMs        = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
+	DefaultBlockJumpLimit          = int64(100)
 	DefaultMaxRequestPayloadSizeKB = int64(4096)
 	DefaultRequestAttemptCount     = 5
 	DefaultArchiveEnabled          = false
@@ -96,17 +99,3 @@ const (
 	WatcherScoreUpdateInterval               = 1 * time.Minute
 	ScoreBasedSelectionWeightBase            = 100
 )
-
-// String method to convert MyEnum to string
-func (h HealthStatus) String() string {
-	switch h {
-	case Healthy:
-		return "Healthy"
-	case Warning:
-		return "Warning"
-	case Unhealthy:
-		return "Unhealthy"
-	default:
-		return "Unknown"
-	}
-}

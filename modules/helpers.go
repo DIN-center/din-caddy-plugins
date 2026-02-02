@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
-	"golang.org/x/net/publicsuffix"
 
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
+	internalnetwork "github.com/DIN-center/din-caddy-plugins/internal/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
@@ -383,7 +382,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		params.DinMiddleware.logger.Warn("Failed to get request method for HCMethod check; skipping async HC processing.", zap.Error(errGetMethod), zap.String("network", params.NetworkPath))
 	} else {
 		// Pass the request method to let processHCMethodResponseAsync handle method matching
-		if params.NetworkObj != nil && params.NetworkObj.handler != nil {
+		if params.NetworkObj != nil && params.NetworkObj.Handler != nil {
 			go params.DinMiddleware.processHCMethodResponseAsync(params.NetworkObj, params.NetworkPath, processedResponseBody, effectiveStatusCode, requestMethod)
 		}
 	}
@@ -396,9 +395,9 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		// Look up the provider in the network's provider map.
 		if providerObj, ok := params.NetworkObj.Providers[params.Provider]; ok && providerObj != nil {
 			// Get the latest block entry for the provider to determine its health.
-			latestBlock := providerObj.getLatestBlockEntry()
+			latestBlock := providerObj.GetLatestBlockEntry()
 			if latestBlock != nil {
-				healthStatus = latestBlock.healthStatus.String()
+				healthStatus = internalnetwork.HealthStatusString(latestBlock.HealthStatus)
 			} else {
 				// Log if the provider has no block entries yet.
 				params.DinMiddleware.logger.Debug("Provider has no block entries yet for metrics.", zap.String("provider", params.Provider), zap.String("network", params.NetworkPath))
@@ -480,13 +479,13 @@ func createHealthCheckRequestContext(networkName, providerHost, method string, n
 	repl.Set(RequestProviderKey, providerHost)
 
 	// Require handler to create the payload - no fallbacks
-	if networkObj == nil || networkObj.handler == nil {
+	if networkObj == nil || networkObj.Handler == nil {
 		// Return empty values if no handler available - let caller handle the error
 		return repl, nil, nil
 	}
 
 	// Let the handler create the network-specific health check payload
-	payload, err := networkObj.handler.CreateHealthCheckPayload(method)
+	payload, err := networkObj.Handler.CreateHealthCheckPayload(method)
 	if err != nil {
 		// Return empty values if handler fails - let caller handle the error
 		return repl, nil, nil
@@ -495,8 +494,8 @@ func createHealthCheckRequestContext(networkName, providerHost, method string, n
 	repl.Set(RequestBodyKey, payload)
 
 	// Create generic request context - let handler determine all details
-	requestType := networkObj.handler.GetRequestType()
-	httpMethod := networkObj.handler.GetHealthCheckHTTPMethod()
+	requestType := networkObj.Handler.GetRequestType()
+	httpMethod := networkObj.Handler.GetHealthCheckHTTPMethod()
 
 	// Handler is responsible for creating the appropriate context
 	requestContext := map[string]interface{}{
@@ -521,13 +520,13 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	repl.Set(RequestProviderKey, providerHost)
 
 	// Require handler to create the payload - no fallbacks
-	if networkObj == nil || networkObj.handler == nil {
+	if networkObj == nil || networkObj.Handler == nil {
 		// Return empty values if no handler available - let caller handle the error
 		return repl, nil, nil
 	}
 
 	// Let the handler create the network-specific payload
-	payload, err := networkObj.handler.CreateBlockRequest(method, blockNumber, false)
+	payload, err := networkObj.Handler.CreateBlockRequest(method, blockNumber, false)
 	if err != nil {
 		// Return empty values if handler fails - let caller handle the error
 		return repl, nil, nil
@@ -536,7 +535,7 @@ func createGetBlockByNumberRequestContext(networkName, providerHost, method stri
 	repl.Set(RequestBodyKey, payload)
 
 	// Create generic request context - let handler determine all details
-	requestType := networkObj.handler.GetRequestType()
+	requestType := networkObj.Handler.GetRequestType()
 	httpMethod := "POST" // Most block requests are POST, but this could be made configurable
 
 	// Handler is responsible for creating the appropriate context
@@ -679,20 +678,3 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 	}
 }
 
-// SafeExtractMainDomainWithPSL extracts the main domain from the URL using the Public Suffix List
-// if this fails, return the hostname
-func safeExtractMainDomainWithPSL(url *url.URL) string {
-	// Get the eTLD+1 (effective TLD plus one label)
-	domain, err := publicsuffix.EffectiveTLDPlusOne(url.Hostname())
-	if err != nil {
-		return url.Hostname()
-	}
-
-	// Split and get the main part (before the TLD)
-	parts := strings.Split(domain, ".")
-	if len(parts) > 0 {
-		return parts[0]
-	}
-
-	return domain
-}

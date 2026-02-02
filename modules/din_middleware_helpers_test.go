@@ -738,7 +738,7 @@ func TestUpdateNetworkData(t *testing.T) {
 				RequestAttemptCount:     3,
 				Providers: map[string]*provider{
 					"existing-host": {
-						host: "existing-host",
+						Host: "existing-host",
 					},
 				},
 			},
@@ -750,7 +750,7 @@ func TestUpdateNetworkData(t *testing.T) {
 				RequestAttemptCount:     5,
 				Providers: map[string]*provider{
 					"new-host": {
-						host: "new-host",
+						Host: "new-host",
 					},
 				},
 			},
@@ -762,10 +762,10 @@ func TestUpdateNetworkData(t *testing.T) {
 				RequestAttemptCount:     5,
 				Providers: map[string]*provider{
 					"existing-host": {
-						host: "existing-host",
+						Host: "existing-host",
 					},
 					"new-host": {
-						host: "new-host",
+						Host: "new-host",
 					},
 				},
 			},
@@ -780,7 +780,7 @@ func TestUpdateNetworkData(t *testing.T) {
 				RequestAttemptCount:     3,
 				Providers: map[string]*provider{
 					"existing-host": {
-						host: "existing-host",
+						Host: "existing-host",
 					},
 				},
 			},
@@ -800,7 +800,7 @@ func TestUpdateNetworkData(t *testing.T) {
 				RequestAttemptCount:     5,
 				Providers: map[string]*provider{
 					"existing-host": {
-						host: "existing-host",
+						Host: "existing-host",
 					},
 				},
 			},
@@ -834,7 +834,7 @@ func TestUpdateNetworkData(t *testing.T) {
 			assert.Equal(t, len(tt.expectedNetwork.Providers), len(updatedNetwork.Providers))
 
 			for host, provider := range tt.expectedNetwork.Providers {
-				assert.Equal(t, provider.host, updatedNetwork.Providers[host].host)
+				assert.Equal(t, provider.Host, updatedNetwork.Providers[host].Host)
 			}
 		})
 	}
@@ -981,7 +981,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			// Create test network with proper handler initialization
 			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8080")
 			assert.NoError(t, err)
-			network.logger = loggerClient
+			network.Logger = loggerClient
 			network.Name = "test/eth" // Update name to match test expectations
 
 			// Create test middleware
@@ -1334,7 +1334,7 @@ func TestEnsureUniqueProviderHostConcurrent(t *testing.T) {
 		// Update the provider map to simulate real usage
 		d.Networks["test-net"].Providers[result] = &provider{
 			HttpUrl: urlStr,
-			host:    result,
+			Host:    result,
 		}
 
 		// For the first provider, it should get base name initially
@@ -1446,7 +1446,7 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	// Add first provider to the map
 	d.Networks["test-net"].Providers[host1] = &provider{
 		HttpUrl: url1.String(),
-		host:    host1,
+		Host:    host1,
 	}
 
 	// Test case 2: Add second provider with same base host - should trigger retroactive update
@@ -1464,13 +1464,13 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	if firstProvider, exists := d.Networks["test-net"].Providers["validation.cloud-1234"]; !exists {
 		t.Error("First provider not found with expected suffix after retroactive update")
 	} else {
-		assert.Equal(t, "validation.cloud-1234", firstProvider.host, "First provider host field should be updated")
+		assert.Equal(t, "validation.cloud-1234", firstProvider.Host, "First provider host field should be updated")
 	}
 
 	// Add second provider to the map
 	d.Networks["test-net"].Providers[host2] = &provider{
 		HttpUrl: url2.String(),
-		host:    host2,
+		Host:    host2,
 	}
 
 	// Test case 3: Add third provider - should NOT trigger another retroactive update
@@ -1495,7 +1495,7 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	// Add third provider
 	d.Networks["test-net"].Providers[host3] = &provider{
 		HttpUrl: url3.String(),
-		host:    host3,
+		Host:    host3,
 	}
 
 	// Test case 4: Add fourth provider - should also NOT trigger retroactive updates
@@ -1524,7 +1524,7 @@ func TestEnsureUniqueProviderHostRetroactiveUpdate(t *testing.T) {
 	// Add fourth provider to the map
 	d.Networks["test-net"].Providers[host4] = &provider{
 		HttpUrl: url4.String(),
-		host:    host4,
+		Host:    host4,
 	}
 
 	// Verify all four providers have unique suffixed names

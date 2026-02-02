@@ -58,7 +58,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Ensure handler is available
-	if networkObj.handler == nil {
+	if networkObj.Handler == nil {
 		d.logger.Error("No handler available for network", zap.String("network", networkPath))
 		rw.WriteHeader(http.StatusInternalServerError)
 		_, err := rw.Write([]byte("Internal Server Error\n"))
@@ -87,7 +87,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// DinSelect will handle all REST API path processing during provider configuration
 
 	// Process the request using the handler for validation only
-	if err := networkObj.handler.ProcessRequest(r); err != nil {
+	if err := networkObj.Handler.ProcessRequest(r); err != nil {
 		d.logger.Error("Handler failed to process request", zap.String("network", networkPath), zap.Error(err))
 
 		var (
@@ -134,7 +134,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	// Check to see if the request is empty (only for JSON-RPC requests)
 	// REST APIs like beacon chain can have empty bodies for GET requests
-	if len(bodyBytes) == 0 && networkObj.handler.GetRequestType() == networklib.RequestTypeRPC {
+	if len(bodyBytes) == 0 && networkObj.Handler.GetRequestType() == networklib.RequestTypeRPC {
 		// if the request body is empty for JSON-RPC, do not increment the prometheus metric, return an error
 		// this is specifically for OPTIONS requests and invalid JSON-RPC payload bodies
 		rw.WriteHeader(http.StatusBadRequest)
@@ -146,7 +146,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	}
 
 	// Extract the method using the handler
-	method, err := networkObj.handler.ExtractMethod(r, bodyBytes)
+	method, err := networkObj.Handler.ExtractMethod(r, bodyBytes)
 	if err != nil {
 		d.logger.Error("Failed to extract method", zap.String("network", networkPath), zap.Error(err))
 		// Don't fail the request, just set method to unknown for metrics
@@ -161,14 +161,19 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// For method filtering, we need to parse the JSON-RPC request
 		// Only do this if we have a body and it's a JSON-RPC request
 		var parsedRequest *dinHttp.JSONRPCRequest
-		if len(bodyBytes) > 0 && networkObj.handler.GetRequestType() == networklib.RequestTypeRPC {
+		if len(bodyBytes) > 0 && networkObj.Handler.GetRequestType() == networklib.RequestTypeRPC {
 			var rpcReq dinHttp.JSONRPCRequest
 			if err := json.Unmarshal(bodyBytes, &rpcReq); err == nil {
 				parsedRequest = &rpcReq
 			}
 		}
 		// Set the upstreams in the context for the request
-		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(parsedRequest, networkObj.Providers))
+		// Type assert MethodFilter to ProviderFilter interface
+		if filter, ok := networkObj.MethodFilter.(ProviderFilter); ok {
+			repl.Set(DinUpstreamsContextKey, filter.FilterProviders(parsedRequest, networkObj.Providers))
+		} else {
+			repl.Set(DinUpstreamsContextKey, networkObj.Providers)
+		}
 	} else {
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
@@ -225,7 +230,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			var appError error
 			if rww.statusCode >= 200 && rww.statusCode < 300 {
 				// For successful HTTP responses, check for application-level errors
-				appError = networkObj.handler.ParseResponse(responseBody, rww.statusCode)
+				appError = networkObj.Handler.ParseResponse(responseBody, rww.statusCode)
 			} else {
 				// For non-2xx responses, create an HTTP error
 				appError = fmt.Errorf("HTTP error: %d", rww.statusCode)
@@ -240,7 +245,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			var params json.RawMessage
 
 			// Check if the error is retryable using the handler
-			if !networkObj.handler.IsRetryableError(appError, rww.statusCode) {
+			if !networkObj.Handler.IsRetryableError(appError, rww.statusCode) {
 				// Non-retryable error
 				// Log this for debugging purposes since we won't retry
 				logFailedAttempt(LogFailedAttemptParams{

@@ -102,11 +102,11 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			latestNetworkBlock: 100,
 			initialStatus:      Healthy,
 			providerHistory: []blockHistoryEntry{
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
+				{BlockNumber: 95, HealthStatus: Healthy},
+				{BlockNumber: 95, HealthStatus: Healthy},
+				{BlockNumber: 95, HealthStatus: Healthy},
+				{BlockNumber: 95, HealthStatus: Healthy},
+				{BlockNumber: 95, HealthStatus: Healthy},
 			},
 			chainIDValid:     true,
 			archiveSupported: false,
@@ -125,11 +125,11 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			latestNetworkBlock: 100,
 			initialStatus:      Healthy,
 			providerHistory: []blockHistoryEntry{
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
+				{BlockNumber: 85, HealthStatus: Healthy},
+				{BlockNumber: 85, HealthStatus: Healthy},
+				{BlockNumber: 85, HealthStatus: Healthy},
+				{BlockNumber: 85, HealthStatus: Healthy},
+				{BlockNumber: 85, HealthStatus: Healthy},
 			},
 			chainIDValid:     true,
 			archiveSupported: false,
@@ -162,8 +162,8 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			n.ArchiveEnabled = false
 
 			// Set dependencies
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
-			n.handler = mockHandler
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Handler = mockHandler
 
 			// Create provider
 			provider, err := NewProvider("http://test-provider.com")
@@ -172,7 +172,7 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			// Pre-populate history if specified
 			if len(tt.providerHistory) > 0 {
 				for _, entry := range tt.providerHistory {
-					provider.AddBlockEntry(entry.blockNumber, entry.healthStatus, n.ProviderBlockHistorySize)
+					provider.AddBlockEntry(entry.BlockNumber, entry.HealthStatus, n.ProviderBlockHistorySize)
 				}
 			} else {
 				// Add at least one entry for the test
@@ -205,11 +205,11 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			mockHandler.EXPECT().SupportsArchiveMode().Return(tt.archiveSupported).AnyTimes()
 
 			// Call the method under test
-			result := n.evaluateProviderHealth(provider, tt.currentBlock, tt.initialStatus, tt.latestNetworkBlock)
+			result := n.EvaluateProviderHealth(provider, tt.currentBlock, tt.initialStatus, tt.latestNetworkBlock)
 
 			// Verify the result
 			assert.Equal(t, tt.expectedStatus, result,
-				"Expected status %s but got %s", tt.expectedStatus.String(), result.String())
+				"Expected status %d but got %d", tt.expectedStatus, result)
 		})
 	}
 }

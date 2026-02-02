@@ -163,9 +163,9 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	httpClient := din_http.NewHTTPClient(time.Duration(network.HCTimeout) * time.Second)
 	network.HttpClient = httpClient
-	network.logger = d.logger
+	network.Logger = d.logger
 	network.PrometheusClient = d.PrometheusClient
-	network.machineID = d.machineID
+	network.MachineID = d.machineID
 
 	for _, regProvider := range regNetwork.Providers {
 		for _, networkService := range regProvider.NetworkServices {
@@ -187,13 +187,13 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 			}
 
 			// Add the provider to the network object
-			network.Providers[provider.host] = provider
+			network.Providers[provider.Host] = provider
 
 			// Debug logging
 			if d.logger != nil {
 				d.logger.Debug("Registry: Added provider to network map",
 					zap.String("network", network.Name),
-					zap.String("providerHost", provider.host),
+					zap.String("providerHost", provider.Host),
 					zap.String("providerName", provider.Name),
 					zap.String("providerUrl", provider.HttpUrl))
 			}
@@ -218,7 +218,7 @@ func (d *DinMiddleware) addNetworkWithRegistryData(regNetwork *din.Network) erro
 
 	// Start the healthcheck for the network if the middleware is not in test mode
 	if !d.testMode {
-		network.startHealthcheck()
+		network.StartHealthcheck()
 		d.logger.Info("Starting healthcheck for registry network", zap.String("network", network.Name))
 	}
 	return nil
@@ -240,7 +240,7 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 			}
 
 			// check to see if the provider exists in the local network object
-			_, ok := newNetwork.Providers[newProvider.host]
+			_, ok := newNetwork.Providers[newProvider.Host]
 			if !ok {
 				// if the provider doesn't exist
 				// check if the network service is active, if not, skip the provider
@@ -256,12 +256,12 @@ func (d *DinMiddleware) updateNetworkWithRegistryData(regNetwork *din.Network, n
 				}
 
 				// add the new provider to the copied network object
-				newNetwork.Providers[newProvider.host] = newProvider
+				newNetwork.Providers[newProvider.Host] = newProvider
 			} else {
 				// if the provider exists in the copied network object,
 				// check if the network service is active, if not, don't update the provider data and remove the provider from the copied network object
 				if networkService.Status != din.NetworkServiceStatusActive {
-					delete(newNetwork.Providers, newProvider.host)
+					delete(newNetwork.Providers, newProvider.Host)
 					d.logger.Debug("Network service is not active", zap.String("network_service", networkService.Url))
 					continue
 				}
@@ -483,7 +483,7 @@ func (d *DinMiddleware) updateNetworkData(network *network) {
 
 	// add the new providers to the middleware network.Providers map
 	for _, p := range network.Providers {
-		d.Networks[network.Name].Providers[p.host] = p
+		d.Networks[network.Name].Providers[p.Host] = p
 	}
 }
 
@@ -610,7 +610,7 @@ func (d *DinMiddleware) retroactivelyUpdateFirstProvider(networkName, baseHost s
 	}
 
 	// Update the provider
-	firstProvider.host = newHost
+	firstProvider.Host = newHost
 	delete(d.Networks[networkName].Providers, baseHost)
 	d.Networks[networkName].Providers[newHost] = firstProvider
 
@@ -669,12 +669,12 @@ func (d *DinMiddleware) providerHostExists(networkName string, host string) bool
 // to the network's block history. This information is crucial for tracking the network's current state
 // and ensuring proper synchronization across providers.
 func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networkPath string, respBody []byte, respStatus int, requestMethod string) {
-	if len(respBody) == 0 || networkObj == nil || networkObj.handler == nil {
+	if len(respBody) == 0 || networkObj == nil || networkObj.Handler == nil {
 		return
 	}
 
 	// Only process if the request method matches the network's health check method
-	if requestMethod != networkObj.handler.GetHealthCheckMethod() {
+	if requestMethod != networkObj.Handler.GetHealthCheckMethod() {
 		return
 	}
 
@@ -699,7 +699,7 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 
 	// Pass the address of respStatus to processBlockNumberResponse
 	// processBlockNumberResponse checks for respStatus >= 400
-	blockNumber, _, processingError := networkObj.processBlockNumberResponse(respBody, &respStatus)
+	blockNumber, _, processingError := networkObj.ProcessBlockNumberResponse(respBody, &respStatus)
 	if processingError != nil {
 		// Extract method directly from GenericRequestContext - completely generic
 		var method = "unknown"
@@ -724,11 +724,11 @@ func (d *DinMiddleware) processHCMethodResponseAsync(networkObj *network, networ
 		return
 	}
 
-	block, err := networkObj.getBlockByNumber(blockNumber)
+	block, err := networkObj.GetBlockByNumber(blockNumber)
 	if err != nil {
 		// Create a new context specifically for the getBlockByNumber call that failed
 		// This ensures the logging shows the correct method and parameters for the failed call
-		getBlockMethod := networkObj.handler.GetBlockByNumberMethod()
+		getBlockMethod := networkObj.Handler.GetBlockByNumberMethod()
 		if getBlockMethod == "" {
 			getBlockMethod = "getBlockByNumber" // Default fallback method name for logging
 		}
@@ -816,13 +816,13 @@ func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 	d.logger.Info("[DYNAMIC_LB] Syncing watcher scores to the middleware")
 	for _, network := range d.Networks {
 		for _, provider := range network.Providers {
-			newScore := d.DynamicLoadBalancing.watcherScoreManager.GetScore(network.Name, provider.host)
+			newScore := d.DynamicLoadBalancing.watcherScoreManager.GetScore(network.Name, provider.Host)
 			if newScore.HasValue() {
 				// As the name suggests, SafeUpdateScore is safe to use because it is protected by a write lock to only protect the score object (very fine-granular locking)
 				provider.SafeUpdateScore(newScore)
 				d.logger.Info("[DYNAMIC_LB] Synced watcher score",
 					zap.String("network", network.Name),
-					zap.String("provider", provider.host),
+					zap.String("provider", provider.Host),
 					zap.Float64("score_value", newScore.Value()),
 					zap.String("score_updated_at", newScore.LastUpdated().Format(time.RFC3339)),
 					zap.String("middleware_synced_at", d.DynamicLoadBalancing.WatcherScoreLastSyncTime.Format(time.RFC3339)),
@@ -831,7 +831,7 @@ func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 			} else {
 				d.logger.Info("[DYNAMIC_LB] No score found for provider",
 					zap.String("network", network.Name),
-					zap.String("provider", provider.host))
+					zap.String("provider", provider.Host))
 			}
 		}
 	}

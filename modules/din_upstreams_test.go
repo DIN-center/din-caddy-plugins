@@ -8,6 +8,7 @@ import (
 	reflect "reflect"
 	"testing"
 
+	internalnetwork "github.com/DIN-center/din-caddy-plugins/internal/network"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
@@ -46,13 +47,9 @@ func TestGetDinUpstreams(t *testing.T) {
 		Name:      "ethereum",
 		Providers: make(map[string]*provider),
 	}
-	globalNetworkMutex.Lock()
-	globalNetworkRegistry["ethereum"] = testNetwork
-	globalNetworkMutex.Unlock()
+	internalnetwork.RegisterNetwork("ethereum", testNetwork)
 	defer func() {
-		globalNetworkMutex.Lock()
-		delete(globalNetworkRegistry, "ethereum")
-		globalNetworkMutex.Unlock()
+		internalnetwork.UnregisterNetwork("ethereum")
 	}()
 
 	dinUpstreams := new(DinUpstreams)
@@ -77,20 +74,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -104,20 +101,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -131,20 +128,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Warning})
 						return l
 					}(),
 				},
@@ -158,20 +155,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Warning})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Warning})
 						return l
 					}(),
 				},
@@ -185,20 +182,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Warning})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
 						return l
 					}(),
 				},
@@ -212,20 +209,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 1,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 1,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -239,20 +236,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 1,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -266,20 +263,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Warning})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 1,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},
@@ -293,20 +290,20 @@ func TestGetDinUpstreams(t *testing.T) {
 			},
 			replacerProviders: map[string]*provider{
 				upstream1.Dial: {
-					upstream: upstream1,
+					Upstream: upstream1,
 					Priority: 0,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
 						return l
 					}(),
 				},
 				upstream2.Dial: {
-					upstream: upstream2,
+					Upstream: upstream2,
 					Priority: 1,
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
 						return l
 					}(),
 				},
@@ -325,9 +322,7 @@ func TestGetDinUpstreams(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Update the test network with the providers for this test case
-			globalNetworkMutex.Lock()
 			testNetwork.Providers = tt.replacerProviders
-			globalNetworkMutex.Unlock()
 
 			tt.request = tt.request.WithContext(context.WithValue(tt.request.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 			repl := tt.request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -352,13 +347,13 @@ func TestGetDinUpstreams(t *testing.T) {
 				// Compare the maps instead of the ordered slices
 				for dial := range expectedDials {
 					if !actualDials[dial] {
-						t.Errorf("GetUpstreams() missing expected upstream: %v", dial)
+						t.Errorf("GetUpstreams() missing expected Upstream: %v", dial)
 					}
 				}
 
 				for dial := range actualDials {
 					if !expectedDials[dial] {
-						t.Errorf("GetUpstreams() contains unexpected upstream: %v", dial)
+						t.Errorf("GetUpstreams() contains unexpected Upstream: %v", dial)
 					}
 				}
 			}

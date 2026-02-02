@@ -75,7 +75,7 @@ func TestRoundUpToInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := roundUpToInterval(tt.value, tt.interval)
+			result := RoundUpToInterval(tt.value, tt.interval)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -182,7 +182,7 @@ func TestCalculateDynamicBlockLagLimit(t *testing.T) {
 			originalLimit := n.BlockLagLimit
 
 			// Run the calculation
-			n.calculateDynamicBlockLagLimit()
+			n.CalculateDynamicBlockLagLimit()
 
 			// Check results
 			if tt.expectNoChange {
@@ -213,7 +213,7 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 	n := createTestNetworkWithTimestampProvider(t, server.URL, simulator)
 
 	// Start the calculation
-	go n.calculateDynamicBlockLagLimit()
+	go n.CalculateDynamicBlockLagLimit()
 
 	// Concurrently read the BlockLagLimit many times
 	var wg sync.WaitGroup
@@ -248,19 +248,19 @@ func TestDynamicBlockLagWithNoProviders(t *testing.T) {
 	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, "8080")
 	require.NoError(t, err)
 
-	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 	n.BlockLagLimit = DefaultBlockLagLimit
 	n.Providers = make(map[string]*provider) // Empty providers
 
 	// Initialize handler to avoid nil pointer
 	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{
 		ChainID: "1",
-		Logger:  n.logger,
+		Logger:  n.Logger,
 	})
 	n.SetHandler(handler)
 
 	originalLimit := n.BlockLagLimit
-	n.calculateDynamicBlockLagLimit()
+	n.CalculateDynamicBlockLagLimit()
 
 	assert.Equal(t, originalLimit, n.BlockLagLimit,
 		"Block lag limit should remain unchanged with no providers")
@@ -271,13 +271,13 @@ func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
 	n, err := NewNetwork("test-network", BeaconHandler, utils.EnvTest, "8080")
 	require.NoError(t, err)
 
-	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 	n.BlockLagLimit = DefaultBlockLagLimit
 
 	// Initialize Beacon handler (doesn't support dynamic block lag)
 	handler := networklib.NewBeaconChainHandler(&networklib.NetworkConfig{
 		ChainID: "1",
-		Logger:  n.logger,
+		Logger:  n.Logger,
 	})
 	n.SetHandler(handler)
 
@@ -287,7 +287,7 @@ func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
 	n.Providers["test"] = p
 
 	originalLimit := n.BlockLagLimit
-	n.calculateDynamicBlockLagLimit()
+	n.CalculateDynamicBlockLagLimit()
 
 	assert.Equal(t, originalLimit, n.BlockLagLimit,
 		"Block lag limit should remain unchanged for unsupported handlers")
@@ -307,7 +307,7 @@ func TestDeterministicCalculation(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		server := createMockTimestampServer(simulator)
 		n := createTestNetworkWithTimestampProvider(t, server.URL, simulator)
-		n.calculateDynamicBlockLagLimit()
+		n.CalculateDynamicBlockLagLimit()
 		results = append(results, atomic.LoadInt64(&n.BlockLagLimit))
 		server.Close()
 	}
@@ -340,7 +340,7 @@ func TestMeasureBlockTimeFromTimestamps(t *testing.T) {
 	require.NotNil(t, p, "Provider should not be nil")
 
 	// Test measureBlockTimeFromTimestamps directly
-	blockTimeMs, err := n.measureBlockTimeFromTimestamps(p)
+	blockTimeMs, err := n.MeasureBlockTimeFromTimestamps(p)
 
 	// Expected: 10 seconds for 10 blocks = 1000ms per block
 	assert.NoError(t, err)
@@ -412,12 +412,12 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	require.NoError(t, err)
 
 	// Initialize network dependencies
-	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 	n.HttpClient = din_http.NewHTTPClient(5 * time.Second)
 	n.BlockLagLimit = DefaultBlockLagLimit
 	n.HCInterval = 5
 	n.RequestAttemptCount = 1
-	n.quit = make(chan struct{})
+	n.Quit = make(chan struct{})
 
 	// Initialize PrometheusClient mock
 	ctrl := gomock.NewController(t)
@@ -430,7 +430,7 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	// Initialize EVM handler
 	handler := networklib.NewEVMHandler(&networklib.NetworkConfig{
 		ChainID: "1",
-		Logger:  n.logger,
+		Logger:  n.Logger,
 	})
 	n.SetHandler(handler)
 
@@ -438,7 +438,7 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	n.Providers = make(map[string]*provider)
 	p, err := NewProvider(serverURL)
 	require.NoError(t, err)
-	p.logger = n.logger
+	p.Logger = n.Logger
 	n.Providers["test-provider"] = p
 
 	return n

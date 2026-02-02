@@ -77,7 +77,7 @@ func (e *testEnv) createMockServer(blockNumber int64, shouldFail bool) *httptest
 func createProvider(url string, priority int, status HealthStatus) *provider {
 	p, _ := NewProvider(url)
 	p.Priority = priority
-	p.blockHistory = list.New()
+	p.BlockHistory = list.New()
 	p.AddBlockEntry(100, status, 5)
 	return p
 }
@@ -85,11 +85,11 @@ func createProvider(url string, priority int, status HealthStatus) *provider {
 // createProviderWithUpstream creates a provider with upstream for DinUpstreams testing
 func createProviderWithUpstream(dial string, priority int, status HealthStatus) *provider {
 	p := &provider{
-		upstream:     &reverseproxy.Upstream{Dial: dial},
+		Upstream:     &reverseproxy.Upstream{Dial: dial},
 		Priority:     priority,
-		blockHistory: list.New(),
+		BlockHistory: list.New(),
 	}
-	p.blockHistory.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: status})
+	p.BlockHistory.PushBack(BlockHistoryEntry{BlockNumber: 100, HealthStatus: status})
 	return p
 }
 

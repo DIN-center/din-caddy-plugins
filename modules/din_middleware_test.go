@@ -104,12 +104,12 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name:    "eth",
-					handler: networklib.NewMockNetworkHandler(mockCtrl),
+					Handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							blockHistory: func() *list.List {
+							BlockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(BlockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 								return l
 							}(),
 						},
@@ -130,12 +130,12 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 			networks: map[string]*network{
 				"eth": {
 					Name:    "eth",
-					handler: networklib.NewMockNetworkHandler(mockCtrl),
+					Handler: networklib.NewMockNetworkHandler(mockCtrl),
 					Providers: map[string]*provider{
 						"localhost:8000": {
-							blockHistory: func() *list.List {
+							BlockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(BlockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 								return l
 							}(),
 						},
@@ -165,7 +165,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up mock handler expectations if network has a handler
 			for _, net := range tt.networks {
-				if mockHandler, ok := net.handler.(*networklib.MockNetworkHandler); ok {
+				if mockHandler, ok := net.Handler.(*networklib.MockNetworkHandler); ok {
 					mockHandler.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil).AnyTimes()
 					mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
 					mockHandler.EXPECT().ProcessRequest(gomock.Any()).Return(nil).AnyTimes()
@@ -252,13 +252,13 @@ func TestInitialize(t *testing.T) {
 				// // Assert networks and providers are initialized
 				for networkName, network := range dinMiddleware.Networks {
 					assert.NotNil(t, network.HttpClient)
-					assert.NotNil(t, network.logger)
+					assert.NotNil(t, network.Logger)
 
 					//Asset each network has a formula
 					assert.NotNil(t, dinMiddleware.DynamicLoadBalancing.watcherScoreManager.GetNetworkFormula(networkName))
 
 					for _, provider := range network.Providers {
-						assert.NotNil(t, provider.upstream)
+						assert.NotNil(t, provider.Upstream)
 
 						// Assert provider score is initialized
 						assert.NotNil(t, provider.SafeGetScore())
@@ -281,28 +281,31 @@ func TestInitializeProvider(t *testing.T) {
 	}{
 		{
 			name: "Successful initialization with http URL",
-			provider: &provider{
-				HttpUrl: "http://example2.com",
-				score:   ws.EmptyScore,
-			},
+			provider: func() *provider {
+				p := &provider{HttpUrl: "http://example2.com"}
+				p.SafeUpdateScore(ws.EmptyScore)
+				return p
+			}(),
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
 		},
 		{
 			name: "Successful initialization with https URL",
-			provider: &provider{
-				HttpUrl: "https://example3.com",
-				score:   ws.EmptyScore,
-			},
+			provider: func() *provider {
+				p := &provider{HttpUrl: "https://example3.com"}
+				p.SafeUpdateScore(ws.EmptyScore)
+				return p
+			}(),
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
 		},
 		{
 			name: "Successful initialization with auth",
-			provider: &provider{
-				HttpUrl: "http://example4.com",
-				score:   ws.EmptyScore,
-			},
+			provider: func() *provider {
+				p := &provider{HttpUrl: "http://example4.com"}
+				p.SafeUpdateScore(ws.EmptyScore)
+				return p
+			}(),
 			httpClient: &din_http.HTTPClient{},
 			wantErr:    false,
 		},
@@ -713,13 +716,13 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create network: %v", err)
 			}
-			netw.logger = dm.logger
+			netw.Logger = dm.logger
 			netw.HttpClient = nil // Initialize as nil; setupNetwork can override for specific tests
 
 			// Create and set handler for the network since it's not created until Provision
 			mockCtrl := gomock.NewController(t)
 			mockHandler := networklib.NewMockNetworkHandler(mockCtrl)
-			netw.handler = mockHandler
+			netw.Handler = mockHandler
 
 			// Set up default expectations for the mock handler
 			mockHandler.EXPECT().GetHealthCheckMethod().Return("eth_blockNumber").AnyTimes()
@@ -969,15 +972,15 @@ func TestCleanup(t *testing.T) {
 				return map[string]*network{
 					"network1": {
 						Name: "network1",
-						quit: make(chan struct{}),
+						Quit: make(chan struct{}),
 					},
 					"network2": {
 						Name: "network2",
-						quit: make(chan struct{}),
+						Quit: make(chan struct{}),
 					},
 					"network3": {
 						Name: "network3",
-						quit: make(chan struct{}),
+						Quit: make(chan struct{}),
 					},
 				}
 			},
@@ -998,11 +1001,11 @@ func TestCleanup(t *testing.T) {
 				return map[string]*network{
 					"network1": {
 						Name: "network1",
-						quit: nil, // nil channel
+						Quit: nil, // nil channel
 					},
 					"network2": {
 						Name: "network2",
-						quit: make(chan struct{}),
+						Quit: make(chan struct{}),
 					},
 				}
 			},
@@ -1027,11 +1030,11 @@ func TestCleanup(t *testing.T) {
 
 			// Monitor channels in goroutines
 			for _, network := range d.Networks {
-				if network.quit != nil {
+				if network.Quit != nil {
 					go func(ch chan struct{}) {
 						<-ch
 						closedCount++
-					}(network.quit)
+					}(network.Quit)
 				}
 			}
 
@@ -1061,11 +1064,11 @@ func TestCleanupConcurrency(t *testing.T) {
 		Networks: map[string]*network{
 			"network1": {
 				Name: "network1",
-				quit: make(chan struct{}),
+				Quit: make(chan struct{}),
 			},
 			"network2": {
 				Name: "network2",
-				quit: make(chan struct{}),
+				Quit: make(chan struct{}),
 			},
 		},
 		quit:   make(chan struct{}),
@@ -1079,11 +1082,11 @@ func TestCleanupConcurrency(t *testing.T) {
 
 	// Monitor channels
 	go func() {
-		<-d.Networks["network1"].quit
+		<-d.Networks["network1"].Quit
 		network1Closed = true
 	}()
 	go func() {
-		<-d.Networks["network2"].quit
+		<-d.Networks["network2"].Quit
 		network2Closed = true
 	}()
 	go func() {
@@ -1215,23 +1218,25 @@ func TestSyncMiddlewareWithLatestScores(t *testing.T) {
 	mockWatcherScoreManager := ws.NewMockIWatcherScoreManager(mockCtrl)
 
 	markerForNonMonitoredProvider := ws.NewEmptyScore()
+
+	// Create providers with scores using SafeUpdateScore
+	provider1 := &provider{Host: "provider1"}
+	provider1.SafeUpdateScore(ws.MustCreateScore(0.8, time.Now()))
+
+	provider2 := &provider{Host: "provider2"}
+	provider2.SafeUpdateScore(ws.MustCreateScore(0.2, time.Now()))
+
+	nonMonitoredProvider := &provider{Host: "non-monitored-provider"}
+	nonMonitoredProvider.SafeUpdateScore(markerForNonMonitoredProvider)
+
 	mockMiddleware := &DinMiddleware{
 		Networks: map[string]*network{
 			"network1": {
 				Name: "network1",
 				Providers: map[string]*provider{
-					"provider1": {
-						host:  "provider1",
-						score: ws.MustCreateScore(0.8, time.Now()),
-					},
-					"provider2": {
-						host:  "provider2",
-						score: ws.MustCreateScore(0.2, time.Now()),
-					},
-					"non-monitored-provider": {
-						host:  "non-monitored-provider",
-						score: markerForNonMonitoredProvider,
-					},
+					"provider1":              provider1,
+					"provider2":              provider2,
+					"non-monitored-provider": nonMonitoredProvider,
 				},
 			},
 		},
@@ -1280,14 +1285,14 @@ func TestMiddlewareStripsAuthorizationHeader(t *testing.T) {
 	dinMiddleware.Networks = map[string]*network{
 		"eth": {
 			Name:                    "eth",
-			handler:                 mockHandler,
+			Handler:                 mockHandler,
 			MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			RequestAttemptCount:     1,
 			Providers: map[string]*provider{
 				"localhost:8000": {
-					blockHistory: func() *list.List {
+					BlockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(BlockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 						return l
 					}(),
 				},

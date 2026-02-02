@@ -13,7 +13,7 @@ func (d *DinMiddleware) startHealthChecks() error {
 	d.logger.Info("Starting healthchecks")
 	for _, network := range d.Networks {
 		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name))
-		network.startHealthcheck()
+		network.StartHealthcheck()
 	}
 	return nil
 }

@@ -202,7 +202,7 @@ func (d *DinMiddleware) initializeNetworkHandler(networkName string, networkObj 
 	// Handler may be nil if:
 	// 1. Configuration was loaded from JSON (handlers are not serialized)
 	// 2. Network was created programmatically without going through UnmarshalCaddyfile
-	if networkObj.handler == nil && networkObj.HandlerType != "" {
+	if networkObj.Handler == nil && networkObj.HandlerType != "" {
 		d.logger.Debug("Initializing handler during provision",
 			zap.String("network", networkName),
 			zap.String("handler_type", string(networkObj.HandlerType)))
@@ -227,7 +227,7 @@ func (d *DinMiddleware) initializeNetworkHandler(networkName string, networkObj 
 		if err := networkObj.SetHandler(handler); err != nil {
 			return fmt.Errorf("failed to set handler for network '%s': %w", networkName, err)
 		}
-	} else if networkObj.handler != nil {
+	} else if networkObj.Handler != nil {
 		d.logger.Debug("Handler already initialized, skipping",
 			zap.String("network", networkName),
 			zap.String("handler_type", string(networkObj.HandlerType)))
@@ -244,9 +244,9 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 
 	// Set network dependencies
 	networkObj.HttpClient = httpClient
-	networkObj.logger = d.logger
+	networkObj.Logger = d.logger
 	networkObj.PrometheusClient = d.PrometheusClient
-	networkObj.machineID = d.machineID
+	networkObj.MachineID = d.machineID
 
 	// Initialize providers
 	for _, provider := range networkObj.Providers {
@@ -261,18 +261,21 @@ func (d *DinMiddleware) initializeNetworkServices(networkName string, networkObj
 func (d *DinMiddleware) validateNetworkConfiguration(networkName string, networkObj *network) error {
 	// Validate that all routed methods are offered by at least one provider
 	if networkObj.MethodFilter != nil {
-		for method := range networkObj.MethodFilter.FilteredMethods {
-			match := false
-			for _, provider := range networkObj.Providers {
-				if _, ok := provider.Methods[method]; ok {
-					match = true
-					break
+		// Type assert to *methodFilter to access FilteredMethods
+		if mf, ok := networkObj.MethodFilter.(*methodFilter); ok {
+			for method := range mf.FilteredMethods {
+				match := false
+				for _, provider := range networkObj.Providers {
+					if _, ok := provider.Methods[method]; ok {
+						match = true
+						break
+					}
 				}
-			}
-			if !match {
-				d.logger.Warn("Method marked as routed, but not offered by any providers",
-					zap.String("network", networkName),
-					zap.String("method", method))
+				if !match {
+					d.logger.Warn("Method marked as routed, but not offered by any providers",
+						zap.String("network", networkName),
+						zap.String("method", method))
+				}
 			}
 		}
 	}
@@ -322,25 +325,25 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		dialHost = parsedUrl.Host + ":443"
 	}
 
-	provider.upstream = &reverseproxy.Upstream{Dial: dialHost}
+	provider.Upstream = &reverseproxy.Upstream{Dial: dialHost}
 	// For providers with no path or root path, we want to send requests to root
 	if parsedUrl.Path == "" {
-		provider.path = "/"
+		provider.Path = "/"
 	} else {
-		provider.path = parsedUrl.Path
+		provider.Path = parsedUrl.Path
 	}
-	provider.query = parsedUrl.RawQuery
+	provider.Query = parsedUrl.RawQuery
 
 	// Note: Authentication credentials from URL (username@host) are preserved in the URL
 	// and handled during request construction, not converted to Authorization headers
 
 	// Only set host if it hasn't been set already
 	// This should have been set in UnmarshalCaddyfile, but set it here as a fallback
-	if provider.host == "" {
+	if provider.Host == "" {
 		d.logger.Warn("Provider host was empty in initializeProvider, setting it now",
 			zap.String("network", networkName),
 			zap.String("url", provider.HttpUrl))
-		provider.host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
+		provider.Host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
 	}
 
 	// Initialize authentication
@@ -350,16 +353,16 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 			return err
 		}
 	}
-	provider.logger = d.logger
+	provider.Logger = d.logger
 
 	// Initialize the score for the provider with an empty score
 	provider.SafeUpdateScore(ws.NewEmptyScore())
 
-	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Bool("HasAuth", provider.AuthClient() != nil), zap.Any("Upstream", provider.upstream), zap.String("Path", provider.path), zap.String("Query", provider.query))
+	d.logger.Debug("Provider provisioned", zap.String("Provider", provider.HttpUrl), zap.String("Host", provider.Host), zap.String("Name", provider.Name), zap.Int("Priority", provider.Priority), zap.Any("Headers", provider.Headers), zap.Bool("HasAuth", provider.AuthClient() != nil), zap.Any("Upstream", provider.Upstream), zap.String("Path", provider.Path), zap.String("Query", provider.Query))
 
 	// Make sure blockHistory is initialized
-	if provider.blockHistory == nil {
-		provider.blockHistory = list.New()
+	if provider.BlockHistory == nil {
+		provider.BlockHistory = list.New()
 	}
 
 	return nil
@@ -376,8 +379,8 @@ func (d *DinMiddleware) Cleanup() error {
 		// Close all network healthcheck goroutines
 		for name, network := range d.Networks {
 			d.logger.Debug("Closing network resources", zap.String("network", name))
-			if network.quit != nil {
-				close(network.quit)
+			if network.Quit != nil {
+				close(network.Quit)
 			}
 		}
 

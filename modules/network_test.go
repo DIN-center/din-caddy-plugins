@@ -68,19 +68,19 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 			n.HCThreshold = tt.hcThreshold
 
 			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Create a test provider
 			provider, err := NewProvider("http://test-provider.com")
 			assert.NoError(t, err)
-			provider.consecutiveUnhealthyChecks = tt.consecutiveUnhealthy
+			provider.ConsecutiveUnhealthyChecks = tt.consecutiveUnhealthy
 
 			// Call the method under test
-			result := n.handleErrorWithGracePeriod(provider, tt.healthStatus, 123)
+			result := n.HandleErrorWithGracePeriod(provider, tt.healthStatus, 123)
 
 			// Verify the results
 			assert.Equal(t, tt.expectedHealthStatus, result)
-			assert.Equal(t, tt.expectedConsecutive, provider.consecutiveUnhealthyChecks)
+			assert.Equal(t, tt.expectedConsecutive, provider.ConsecutiveUnhealthyChecks)
 		})
 	}
 }
@@ -131,7 +131,7 @@ func TestIsStalled(t *testing.T) {
 				provider.AddBlockEntry(blockNum, Healthy, tt.historySize)
 			}
 
-			result := n.isStalled(provider)
+			result := n.IsStalled(provider)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -242,7 +242,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 				n.Providers[providerData.host] = p
 			}
 
-			result := n.getLatestHealthyBlock()
+			result := n.GetLatestHealthyBlock()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -349,7 +349,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 				sc = &statusCodeVal
 			}
 
-			blockNumber, healthStatus, err := n.processBlockNumberResponse(tt.resBytes, sc)
+			blockNumber, healthStatus, err := n.ProcessBlockNumberResponse(tt.resBytes, sc)
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -464,7 +464,7 @@ func TestArchiveModeCheck(t *testing.T) {
 			n.RequestAttemptCount = 1
 
 			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Set the handler
 			config := &networklib.NetworkConfig{
@@ -478,7 +478,7 @@ func TestArchiveModeCheck(t *testing.T) {
 				require.NoError(t, n.SetHandler(networklib.NewStarknetHandler(config)))
 			}
 
-			err = n.handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
+			err = n.Handler.PerformArchiveCheck("http://test.com", map[string]string{}, n.HttpClient, nil, n.RequestAttemptCount, tt.quarterBlock)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -588,7 +588,7 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 				}
 			}
 
-			result := n.hasOtherHealthyProviders(testProvider)
+			result := n.HasOtherHealthyProviders(testProvider)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -649,7 +649,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			n.ChainId = "0x1" // Set expected chain ID to match mock response
 
 			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Initialize mock HTTP client to prevent panic
 			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
@@ -673,7 +673,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 				n.Providers["other-provider"] = otherProvider
 			}
 
-			result := n.evaluateProviderHealth(testProvider, tt.currentBlock, Healthy, tt.latestNetworkBlock)
+			result := n.EvaluateProviderHealth(testProvider, tt.currentBlock, Healthy, tt.latestNetworkBlock)
 			assert.Equal(t, tt.expectedStatus, result)
 		})
 	}
@@ -760,7 +760,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), tt.caddyPort)
 			assert.NoError(t, err)
 			n.HttpClient = mockHTTPClient
-			n.logger = mockLogger
+			n.Logger = mockLogger
 			n.RequestAttemptCount = 1
 
 			// Create and set handler for test since it's not created in NewNetwork anymore
@@ -773,7 +773,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			err = n.SetHandler(handler)
 			assert.NoError(t, err)
 
-			result, err := n.getLatestBlockNumber("http://test.com", map[string]string{}, nil, "test-provider")
+			result, err := n.GetLatestBlockNumber("http://test.com", map[string]string{}, nil, "test-provider")
 
 			if tt.expectedErr {
 				assert.Error(t, err)
@@ -781,8 +781,8 @@ func TestGetLatestBlockNumber(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			assert.Equal(t, tt.expectedBlockNum, result.blockNumber)
-			assert.Equal(t, tt.expectedHealthStatus, result.healthStatus)
+			assert.Equal(t, tt.expectedBlockNum, result.BlockNumber)
+			assert.Equal(t, tt.expectedHealthStatus, result.HealthStatus)
 		})
 	}
 }
@@ -793,13 +793,13 @@ func newTestNetwork(t *testing.T, name string, historySize int) *network {
 	n, _ := NewNetwork(name, EVMHandler, utils.Environment("test"), "8000")
 	n.NetworkBlockHistorySize = historySize
 	// Initialize logger to prevent panic
-	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 	// Create and set handler for test since it's not created in NewNetwork anymore
 	config := &networklib.NetworkConfig{
 		Name:   name,
 		Type:   string(EVMHandler),
-		Logger: n.logger,
+		Logger: n.Logger,
 	}
 	handler := networklib.NewEVMHandler(config)
 	require.NoError(t, n.SetHandler(handler))
@@ -913,16 +913,16 @@ func TestAddNetworkBlockEntry(t *testing.T) {
 			n.AddNetworkBlockEntry(tt.newBlockNumber, tt.newBlockData)
 
 			// Check the length
-			n.blockHistoryMu.RLock()
-			actualLength := n.blockHistory.Len()
-			n.blockHistoryMu.RUnlock()
+			n.BlockHistoryMu.RLock()
+			actualLength := n.BlockHistory.Len()
+			n.BlockHistoryMu.RUnlock()
 			assert.Equal(t, tt.expectedLength, actualLength)
 
 			// Check the latest block if entries exist
 			if tt.expectedLength > 0 {
-				latestEntry := n.getLatestBlockEntry()
+				latestEntry := n.GetLatestNetworkBlockEntry()
 				assert.NotNil(t, latestEntry)
-				assert.Equal(t, tt.expectedLatestBlock, latestEntry.blockNumber)
+				assert.Equal(t, tt.expectedLatestBlock, latestEntry.BlockNumber)
 			}
 		})
 	}
@@ -964,13 +964,13 @@ func TestGetLatestBlockEntry(t *testing.T) {
 				n.AddNetworkBlockEntry(blockNum, "0x"+strings.Repeat("a", 8))
 			}
 
-			result := n.getLatestBlockEntry()
+			result := n.GetLatestNetworkBlockEntry()
 
 			if tt.expectNil {
 				assert.Nil(t, result)
 			} else {
 				assert.NotNil(t, result)
-				assert.Equal(t, tt.expectedBlock, result.blockNumber)
+				assert.Equal(t, tt.expectedBlock, result.BlockNumber)
 			}
 		})
 	}
@@ -1049,31 +1049,31 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			}
 
 			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Create and set handler for test since it's not created in NewNetwork anymore
 			config := &networklib.NetworkConfig{
 				Name:   tt.networkName,
 				Type:   string(EVMHandler),
-				Logger: n.logger,
+				Logger: n.Logger,
 			}
 			handler := networklib.NewEVMHandler(config)
 			err = n.SetHandler(handler)
 			assert.NoError(t, err)
 
-			result, err := n.checkSelfLoopbackHealth()
+			result, err := n.CheckSelfLoopbackHealth()
 
 			if tt.expectedErr {
 				assert.Error(t, err)
 				if result != nil {
-					assert.Equal(t, tt.expectedBlockNum, result.blockNumber)
-					assert.Equal(t, tt.expectedHealthStatus, result.healthStatus)
+					assert.Equal(t, tt.expectedBlockNum, result.BlockNumber)
+					assert.Equal(t, tt.expectedHealthStatus, result.HealthStatus)
 				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, result)
-				assert.Equal(t, tt.expectedBlockNum, result.blockNumber)
-				assert.Equal(t, tt.expectedHealthStatus, result.healthStatus)
+				assert.Equal(t, tt.expectedBlockNum, result.BlockNumber)
+				assert.Equal(t, tt.expectedHealthStatus, result.HealthStatus)
 			}
 		})
 	}
@@ -1228,7 +1228,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			}
 			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
 
-			blockNumber, healthStatus, err := n.processBlockNumberResponse(tt.resBytes, tt.statusCode)
+			blockNumber, healthStatus, err := n.ProcessBlockNumberResponse(tt.resBytes, tt.statusCode)
 
 			assert.Equal(t, tt.expectedBlock, blockNumber)
 			assert.Equal(t, tt.expectedHealth, healthStatus)
@@ -1257,11 +1257,11 @@ func TestNetwork_isStalled(t *testing.T) {
 	assert.NoError(t, err)
 	provider.AddBlockEntry(100, Healthy, 3)
 	provider.AddBlockEntry(101, Healthy, 3)
-	assert.False(t, n.isStalled(provider))
+	assert.False(t, n.IsStalled(provider))
 
 	// Test with full history but different block numbers (not stalled)
 	provider.AddBlockEntry(102, Healthy, 3)
-	assert.False(t, n.isStalled(provider))
+	assert.False(t, n.IsStalled(provider))
 
 	// Test with full history and same block numbers (stalled)
 	provider2, err := NewProvider("http://test2.com")
@@ -1269,7 +1269,7 @@ func TestNetwork_isStalled(t *testing.T) {
 	provider2.AddBlockEntry(100, Healthy, 3)
 	provider2.AddBlockEntry(100, Healthy, 3)
 	provider2.AddBlockEntry(100, Healthy, 3)
-	assert.True(t, n.isStalled(provider2))
+	assert.True(t, n.IsStalled(provider2))
 }
 
 func TestNetwork_allProvidersStalled(t *testing.T) {
@@ -1295,11 +1295,11 @@ func TestNetwork_allProvidersStalled(t *testing.T) {
 		"provider1": provider1,
 		"provider2": provider2,
 	}
-	assert.True(t, n.allProvidersStalled())
+	assert.True(t, n.AllProvidersStalled())
 
 	// Test one not stalled
 	provider2.AddBlockEntry(102, Healthy, 3)
-	assert.False(t, n.allProvidersStalled())
+	assert.False(t, n.AllProvidersStalled())
 }
 
 func TestNetwork_getLatestHealthyBlock(t *testing.T) {
@@ -1308,7 +1308,7 @@ func TestNetwork_getLatestHealthyBlock(t *testing.T) {
 
 	// Test empty providers
 	n.Providers = map[string]*provider{}
-	assert.Equal(t, int64(0), n.getLatestHealthyBlock())
+	assert.Equal(t, int64(0), n.GetLatestHealthyBlock())
 
 	// Test with healthy and warning providers
 	provider1, err := NewProvider("http://provider1.com")
@@ -1324,7 +1324,7 @@ func TestNetwork_getLatestHealthyBlock(t *testing.T) {
 		"provider2": provider2,
 	}
 
-	assert.Equal(t, int64(105), n.getLatestHealthyBlock())
+	assert.Equal(t, int64(105), n.GetLatestHealthyBlock())
 }
 
 func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
@@ -1340,12 +1340,12 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 	provider2.AddBlockEntry(101, Healthy, 5)
 
 	n.Providers = map[string]*provider{
-		provider1.host: provider1,
-		provider2.host: provider2,
+		provider1.Host: provider1,
+		provider2.Host: provider2,
 	}
 
 	// Test that provider1 has other healthy providers
-	assert.True(t, n.hasOtherHealthyProviders(provider1))
+	assert.True(t, n.HasOtherHealthyProviders(provider1))
 
 	// Test with no other healthy providers - add enough unhealthy entries to clear the healthy history
 	provider2.AddBlockEntry(102, Unhealthy, 5)
@@ -1353,7 +1353,7 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 	provider2.AddBlockEntry(104, Unhealthy, 5)
 	provider2.AddBlockEntry(105, Unhealthy, 5)
 	provider2.AddBlockEntry(106, Unhealthy, 5)
-	assert.False(t, n.hasOtherHealthyProviders(provider1))
+	assert.False(t, n.HasOtherHealthyProviders(provider1))
 }
 
 func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
@@ -1363,20 +1363,20 @@ func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
 
 	// Test adding valid entries
 	n.AddNetworkBlockEntry(100, "hash100")
-	assert.Equal(t, 1, n.blockHistory.Len())
+	assert.Equal(t, 1, n.BlockHistory.Len())
 
 	n.AddNetworkBlockEntry(101, "hash101")
-	assert.Equal(t, 2, n.blockHistory.Len())
+	assert.Equal(t, 2, n.BlockHistory.Len())
 
 	// Test that history is trimmed when it exceeds size
 	n.AddNetworkBlockEntry(102, "hash102")
 	n.AddNetworkBlockEntry(103, "hash103")
-	assert.Equal(t, 3, n.blockHistory.Len())
+	assert.Equal(t, 3, n.BlockHistory.Len())
 
 	// Test that the latest entry is correct
-	latest := n.getLatestBlockEntry()
+	latest := n.GetLatestNetworkBlockEntry()
 	assert.NotNil(t, latest)
-	assert.Equal(t, int64(103), latest.blockNumber)
+	assert.Equal(t, int64(103), latest.BlockNumber)
 }
 
 func TestNetwork_getLatestBlockEntry(t *testing.T) {
@@ -1384,13 +1384,13 @@ func TestNetwork_getLatestBlockEntry(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test empty history
-	assert.Nil(t, n.getLatestBlockEntry())
+	assert.Nil(t, n.GetLatestNetworkBlockEntry())
 
 	// Test with entries
 	n.AddNetworkBlockEntry(100, "hash100")
-	latest := n.getLatestBlockEntry()
+	latest := n.GetLatestNetworkBlockEntry()
 	assert.NotNil(t, latest)
-	assert.Equal(t, int64(100), latest.blockNumber)
+	assert.Equal(t, int64(100), latest.BlockNumber)
 }
 
 func TestNetwork_ExtractBlockHashByNetworkType(t *testing.T) {
@@ -1432,13 +1432,13 @@ func TestNetwork_ExtractBlockHashByNetworkType(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Initialize logger to prevent panic
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// We'll test this through AddNetworkBlockEntry since the extraction logic is internal
 			n.AddNetworkBlockEntry(100, tt.blockData)
 
 			if tt.expected != "" {
-				latest := n.getLatestBlockEntry()
+				latest := n.GetLatestNetworkBlockEntry()
 				assert.NotNil(t, latest)
 				// The block hash extraction is tested indirectly through the network entry logic
 			}
@@ -1517,7 +1517,7 @@ func TestNetworkSetHandler(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.expectedError)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.handler, n.handler)
+				assert.Equal(t, tt.handler, n.Handler)
 			}
 		})
 	}
@@ -1536,5 +1536,5 @@ func TestNetworkSetHandler_AvoidDuplicates(t *testing.T) {
 	// Set same handler again - should not error and should be a no-op
 	err = n.SetHandler(handler)
 	assert.NoError(t, err)
-	assert.Equal(t, handler, n.handler)
+	assert.Equal(t, handler, n.Handler)
 }

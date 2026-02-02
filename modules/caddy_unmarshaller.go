@@ -315,14 +315,14 @@ func (p *caddyfileParser) parseProvider(network *network, providerUrl string, pa
 	}
 
 	// Initialize provider with a unique host
-	providerObj.host = p.middleware.ensureUniqueProviderHost(network.Name, parsedUrl, providerObj.Headers)
-	network.Providers[providerObj.host] = providerObj
+	providerObj.Host = p.middleware.ensureUniqueProviderHost(network.Name, parsedUrl, providerObj.Headers)
+	network.Providers[providerObj.Host] = providerObj
 
 	// Debug logging
 	if p.middleware.logger != nil {
 		p.middleware.logger.Debug("Added provider to network map",
 			zap.String("network", network.Name),
-			zap.String("providerHost", providerObj.host),
+			zap.String("providerHost", providerObj.Host),
 			zap.String("providerName", providerObj.Name),
 			zap.String("providerUrl", providerObj.HttpUrl))
 	}

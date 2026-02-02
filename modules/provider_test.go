@@ -84,8 +84,8 @@ func TestNewProvider(t *testing.T) {
 				if p != nil && p.HttpUrl != tt.expectedURL {
 					t.Errorf("expected URL %q, but got %q", tt.expectedURL, p.HttpUrl)
 				}
-				if p != nil && p.host != tt.expectedHost {
-					t.Errorf("expected host %q, but got %q", tt.expectedHost, p.host)
+				if p != nil && p.Host != tt.expectedHost {
+					t.Errorf("expected host %q, but got %q", tt.expectedHost, p.Host)
 				}
 				if p != nil && p.Headers == nil {
 					t.Errorf("expected non-nil headers, but got nil")
@@ -224,10 +224,10 @@ func TestHealthy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
 			p := &provider{
-				blockHistory: list.New(),
+				BlockHistory: list.New(),
 			}
-			entry := blockHistoryEntry{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now}
-			p.blockHistory.PushBack(entry)
+			entry := blockHistoryEntry{BlockNumber: 100, HealthStatus: tt.healthStatus, Timestamp: &now}
+			p.BlockHistory.PushBack(entry)
 
 			result := p.Healthy()
 			if result != tt.expectedResult {
@@ -264,10 +264,10 @@ func TestWarning(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
 			p := &provider{
-				blockHistory: list.New(),
+				BlockHistory: list.New(),
 			}
-			entry := blockHistoryEntry{blockNumber: 100, healthStatus: tt.healthStatus, timestamp: &now}
-			p.blockHistory.PushBack(entry)
+			entry := blockHistoryEntry{BlockNumber: 100, HealthStatus: tt.healthStatus, Timestamp: &now}
+			p.BlockHistory.PushBack(entry)
 
 			result := p.Warning()
 			if result != tt.expectedResult {
@@ -305,7 +305,7 @@ func TestAddBlockEntry(t *testing.T) {
 			name: "add within size limit",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy, Timestamp: &now})
 				return l
 			},
 			newBlock:       101,
@@ -319,9 +319,9 @@ func TestAddBlockEntry(t *testing.T) {
 			name: "exceed size limit",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Healthy, timestamp: &now})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy, Timestamp: &now})
+				l.PushBack(blockHistoryEntry{BlockNumber: 101, HealthStatus: Healthy, Timestamp: &now})
+				l.PushBack(blockHistoryEntry{BlockNumber: 102, HealthStatus: Healthy, Timestamp: &now})
 				return l
 			},
 			newBlock:       103,
@@ -336,24 +336,24 @@ func TestAddBlockEntry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &provider{
-				blockHistory: tt.setupHistory(),
+				BlockHistory: tt.setupHistory(),
 			}
 
 			p.AddBlockEntry(tt.newBlock, tt.newStatus, tt.historySize)
 
-			result := p.BlockHistory()
+			result := p.GetBlockHistory()
 			if len(result) != tt.expectedLength {
 				t.Errorf("expected length %v, but got %v", tt.expectedLength, len(result))
 			}
 
 			if len(result) > 0 {
-				if result[0].blockNumber != tt.expectedFirst {
-					t.Errorf("expected first block number %v, but got %v", tt.expectedFirst, result[0].blockNumber)
+				if result[0].BlockNumber != tt.expectedFirst {
+					t.Errorf("expected first block number %v, but got %v", tt.expectedFirst, result[0].BlockNumber)
 				}
-				if result[len(result)-1].blockNumber != tt.expectedLast {
-					t.Errorf("expected last block number %v, but got %v", tt.expectedLast, result[len(result)-1].blockNumber)
+				if result[len(result)-1].BlockNumber != tt.expectedLast {
+					t.Errorf("expected last block number %v, but got %v", tt.expectedLast, result[len(result)-1].BlockNumber)
 				}
-				if result[len(result)-1].timestamp == nil {
+				if result[len(result)-1].Timestamp == nil {
 					t.Errorf("expected non-nil timestamp, but got nil")
 				}
 			}
@@ -378,16 +378,16 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "single healthy entry returns that entry",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 100, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy},
 		},
 		{
 			name: "single unhealthy entry returns nil",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
 				return l
 			},
 			expectedBlock: nil,
@@ -396,21 +396,21 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "multiple entries returns latest healthy",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 103, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 101, HealthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 102, HealthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 103, HealthStatus: Unhealthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{BlockNumber: 102, HealthStatus: Healthy},
 		},
 		{
 			name: "all unhealthy entries returns nil",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 101, HealthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 102, HealthStatus: Unhealthy})
 				return l
 			},
 			expectedBlock: nil,
@@ -419,22 +419,22 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "latest entry is healthy returns that entry",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 100, HealthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 101, HealthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{BlockNumber: 102, HealthStatus: Healthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{BlockNumber: 102, HealthStatus: Healthy},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &provider{
-				blockHistory: tt.setupHistory(),
+				BlockHistory: tt.setupHistory(),
 			}
 
-			got := p.getLatestHealthyBlockEntry()
+			got := p.GetLatestHealthyBlockEntry()
 
 			if tt.expectedBlock == nil {
 				if got != nil {
@@ -448,14 +448,14 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 				return
 			}
 
-			if got.blockNumber != tt.expectedBlock.blockNumber {
+			if got.BlockNumber != tt.expectedBlock.BlockNumber {
 				t.Errorf("getLatestHealthyBlockEntry() blockNumber = %v, want %v",
-					got.blockNumber, tt.expectedBlock.blockNumber)
+					got.BlockNumber, tt.expectedBlock.BlockNumber)
 			}
 
-			if got.healthStatus != tt.expectedBlock.healthStatus {
+			if got.HealthStatus != tt.expectedBlock.HealthStatus {
 				t.Errorf("getLatestHealthyBlockEntry() healthStatus = %v, want %v",
-					got.healthStatus, tt.expectedBlock.healthStatus)
+					got.HealthStatus, tt.expectedBlock.HealthStatus)
 			}
 		})
 	}
@@ -489,17 +489,17 @@ func TestProviderBlockHistory(t *testing.T) {
 			blockHistory: func() *list.List {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  100,
-					healthStatus: Healthy,
-					timestamp:    timePtr(now),
+					BlockNumber:  100,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(now),
 				})
 				return l
 			},
 			expectedItems: []blockHistoryEntry{
 				{
-					blockNumber:  100,
-					healthStatus: Healthy,
-					timestamp:    timePtr(now),
+					BlockNumber:  100,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(now),
 				},
 			},
 		},
@@ -508,17 +508,17 @@ func TestProviderBlockHistory(t *testing.T) {
 			blockHistory: func() *list.List {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  200,
-					healthStatus: Unhealthy,
-					timestamp:    nil,
+					BlockNumber:  200,
+					HealthStatus: Unhealthy,
+					Timestamp:    nil,
 				})
 				return l
 			},
 			expectedItems: []blockHistoryEntry{
 				{
-					blockNumber:  200,
-					healthStatus: Unhealthy,
-					timestamp:    nil,
+					BlockNumber:  200,
+					HealthStatus: Unhealthy,
+					Timestamp:    nil,
 				},
 			},
 		},
@@ -527,37 +527,37 @@ func TestProviderBlockHistory(t *testing.T) {
 			blockHistory: func() *list.List {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  100,
-					healthStatus: Healthy,
-					timestamp:    timePtr(pastTime3),
+					BlockNumber:  100,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(pastTime3),
 				})
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  101,
-					healthStatus: Warning,
-					timestamp:    nil,
+					BlockNumber:  101,
+					HealthStatus: Warning,
+					Timestamp:    nil,
 				})
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  102,
-					healthStatus: Unhealthy,
-					timestamp:    timePtr(pastTime1),
+					BlockNumber:  102,
+					HealthStatus: Unhealthy,
+					Timestamp:    timePtr(pastTime1),
 				})
 				return l
 			},
 			expectedItems: []blockHistoryEntry{
 				{
-					blockNumber:  100,
-					healthStatus: Healthy,
-					timestamp:    timePtr(pastTime3),
+					BlockNumber:  100,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(pastTime3),
 				},
 				{
-					blockNumber:  101,
-					healthStatus: Warning,
-					timestamp:    nil,
+					BlockNumber:  101,
+					HealthStatus: Warning,
+					Timestamp:    nil,
 				},
 				{
-					blockNumber:  102,
-					healthStatus: Unhealthy,
-					timestamp:    timePtr(pastTime1),
+					BlockNumber:  102,
+					HealthStatus: Unhealthy,
+					Timestamp:    timePtr(pastTime1),
 				},
 			},
 		},
@@ -566,37 +566,37 @@ func TestProviderBlockHistory(t *testing.T) {
 			blockHistory: func() *list.List {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  200,
-					healthStatus: Healthy,
-					timestamp:    timePtr(pastTime3),
+					BlockNumber:  200,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(pastTime3),
 				})
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  201,
-					healthStatus: Warning,
-					timestamp:    timePtr(pastTime2),
+					BlockNumber:  201,
+					HealthStatus: Warning,
+					Timestamp:    timePtr(pastTime2),
 				})
 				l.PushBack(blockHistoryEntry{
-					blockNumber:  202,
-					healthStatus: Unhealthy,
-					timestamp:    timePtr(pastTime1),
+					BlockNumber:  202,
+					HealthStatus: Unhealthy,
+					Timestamp:    timePtr(pastTime1),
 				})
 				return l
 			},
 			expectedItems: []blockHistoryEntry{
 				{
-					blockNumber:  200,
-					healthStatus: Healthy,
-					timestamp:    timePtr(pastTime3),
+					BlockNumber:  200,
+					HealthStatus: Healthy,
+					Timestamp:    timePtr(pastTime3),
 				},
 				{
-					blockNumber:  201,
-					healthStatus: Warning,
-					timestamp:    timePtr(pastTime2),
+					BlockNumber:  201,
+					HealthStatus: Warning,
+					Timestamp:    timePtr(pastTime2),
 				},
 				{
-					blockNumber:  202,
-					healthStatus: Unhealthy,
-					timestamp:    timePtr(pastTime1),
+					BlockNumber:  202,
+					HealthStatus: Unhealthy,
+					Timestamp:    timePtr(pastTime1),
 				},
 			},
 		},
@@ -605,10 +605,10 @@ func TestProviderBlockHistory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &provider{
-				blockHistory: tt.blockHistory(),
+				BlockHistory: tt.blockHistory(),
 			}
 
-			history := p.BlockHistory()
+			history := p.GetBlockHistory()
 
 			// Check if the length matches
 			if len(history) != len(tt.expectedItems) {
@@ -621,29 +621,29 @@ func TestProviderBlockHistory(t *testing.T) {
 				got := history[i]
 
 				// Check block number
-				if got.blockNumber != expected.blockNumber {
-					t.Errorf("BlockHistory()[%d].blockNumber = %d, expected %d", i, got.blockNumber, expected.blockNumber)
+				if got.BlockNumber != expected.BlockNumber {
+					t.Errorf("BlockHistory()[%d].BlockNumber = %d, expected %d", i, got.BlockNumber, expected.BlockNumber)
 				}
 
 				// Check health status
-				if got.healthStatus != expected.healthStatus {
-					t.Errorf("BlockHistory()[%d].healthStatus = %v, expected %v", i, got.healthStatus, expected.healthStatus)
+				if got.HealthStatus != expected.HealthStatus {
+					t.Errorf("BlockHistory()[%d].HealthStatus = %v, expected %v", i, got.HealthStatus, expected.HealthStatus)
 				}
 
 				// Check timestamp
-				if (expected.timestamp == nil && got.timestamp != nil) ||
-					(expected.timestamp != nil && got.timestamp == nil) {
-					t.Errorf("BlockHistory()[%d].timestamp nil status doesn't match: got %v, expected %v",
-						i, got.timestamp != nil, expected.timestamp != nil)
-				} else if expected.timestamp != nil && got.timestamp != nil {
-					if !expected.timestamp.Equal(*got.timestamp) {
-						t.Errorf("BlockHistory()[%d].timestamp = %v, expected %v",
-							i, *got.timestamp, *expected.timestamp)
+				if (expected.Timestamp == nil && got.Timestamp != nil) ||
+					(expected.Timestamp != nil && got.Timestamp == nil) {
+					t.Errorf("BlockHistory()[%d].Timestamp nil status doesn't match: got %v, expected %v",
+						i, got.Timestamp != nil, expected.Timestamp != nil)
+				} else if expected.Timestamp != nil && got.Timestamp != nil {
+					if !expected.Timestamp.Equal(*got.Timestamp) {
+						t.Errorf("BlockHistory()[%d].Timestamp = %v, expected %v",
+							i, *got.Timestamp, *expected.Timestamp)
 					}
 
 					// Verify deep copy by checking the pointer addresses are different
-					if reflect.ValueOf(got.timestamp).Pointer() == reflect.ValueOf(expected.timestamp).Pointer() {
-						t.Errorf("BlockHistory()[%d].timestamp is not a deep copy, got same pointer", i)
+					if reflect.ValueOf(got.Timestamp).Pointer() == reflect.ValueOf(expected.Timestamp).Pointer() {
+						t.Errorf("BlockHistory()[%d].Timestamp is not a deep copy, got same pointer", i)
 					}
 				}
 			}

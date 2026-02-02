@@ -4,33 +4,25 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"go.uber.org/zap"
+
+	internalnetwork "github.com/DIN-center/din-caddy-plugins/internal/network"
 )
 
-// Global registry for sharing network configurations between modules
-var (
-	globalNetworkRegistry = make(map[string]*network)
-	globalNetworkMutex    sync.RWMutex
-)
-
-// RegisterNetwork registers a network configuration in the global registry
+// RegisterNetwork registers a network configuration in the global registry.
+// This delegates to the internal/network package.
 func RegisterNetwork(name string, net *network) {
-	globalNetworkMutex.Lock()
-	defer globalNetworkMutex.Unlock()
-	globalNetworkRegistry[name] = net
+	internalnetwork.RegisterNetwork(name, net)
 }
 
-// GetNetwork retrieves a network configuration from the global registry
+// GetNetwork retrieves a network configuration from the global registry.
+// This delegates to the internal/network package.
 func GetNetwork(name string) (*network, bool) {
-	globalNetworkMutex.RLock()
-	defer globalNetworkMutex.RUnlock()
-	net, exists := globalNetworkRegistry[name]
-	return net, exists
+	return internalnetwork.GetNetwork(name)
 }
 
 // Compile-time check for interface implementations
@@ -121,7 +113,7 @@ func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider) []*reve
 	for priority := 0; priority < MaxPriority; priority++ {
 		for _, p := range providers {
 			if p.Priority == priority && p.Available() {
-				upstreamPool = append(upstreamPool, p.upstream)
+				upstreamPool = append(upstreamPool, p.Upstream)
 			}
 		}
 		if len(upstreamPool) > 0 {
@@ -135,7 +127,7 @@ func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider) []*reve
 		for priority := 0; priority < MaxPriority; priority++ {
 			for _, p := range providers {
 				if p.Priority == priority && p.IsAvailableWithWarning() {
-					upstreamPool = append(upstreamPool, p.upstream)
+					upstreamPool = append(upstreamPool, p.Upstream)
 				}
 			}
 			if len(upstreamPool) > 0 {

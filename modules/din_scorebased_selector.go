@@ -88,7 +88,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 			// Create a map of upstreams and associated providers
 			mapUpstreamProviders := make(map[*reverseproxy.Upstream]*provider)
 			for _, p := range providers {
-				mapUpstreamProviders[p.upstream] = p
+				mapUpstreamProviders[p.Upstream] = p
 			}
 
 			// Prepare the weights for the selection
@@ -101,7 +101,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 
 				if provider, exists := mapUpstreamProviders[upstream]; exists {
 
-					providerHost = provider.host
+					providerHost = provider.Host
 					providerScore = provider.SafeGetScore()
 
 					if providerScore.HasValue() {
@@ -136,7 +136,7 @@ func (s *DinScoreBasedSelector) Select(pool reverseproxy.UpstreamPool, r *http.R
 						}
 					} else {
 						s.logger.Debug("[DYNAMIC_LB] No score found for provider",
-							zap.String("provider", provider.host))
+							zap.String("provider", provider.Host))
 					}
 
 				}

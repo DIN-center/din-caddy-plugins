@@ -75,6 +75,13 @@ func (m *mockSelector) Select(_ reverseproxy.UpstreamPool, _ *http.Request, _ ht
 	return m.alwaysReturnUpstream
 }
 
+// createProviderWithScore creates a provider with the given upstream and score
+func createProviderWithScore(upstream *reverseproxy.Upstream, score *ws.Score) *provider {
+	p := &provider{Upstream: upstream}
+	p.SafeUpdateScore(score)
+	return p
+}
+
 func TestDinScoreBasedSelectorSelect(t *testing.T) {
 
 	//Markers for the tests
@@ -124,10 +131,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_foo},
 			providers: map[string]*provider{
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.NewEmptyScore(), // foo has no score, score will use default weight
-				},
+				"foo": createProviderWithScore(upstream_foo, ws.NewEmptyScore()), // foo has no score, score will use default weight
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
@@ -138,10 +142,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(1.0, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(1.0, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
@@ -152,10 +153,7 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.0, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
@@ -166,14 +164,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.0, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.0, time.Now().UTC())),
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.0, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1,
@@ -184,14 +176,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.8, time.Now().UTC())),
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.8, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
@@ -202,14 +188,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.67, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.92, time.Now().UTC())),
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.67, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
@@ -221,14 +201,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.92, time.Now().UTC())),
+				"foo": createProviderWithScore(upstream_foo, ws.NewEmptyScore()), // foo has no score, score will be defaulted to 0.5
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
@@ -240,14 +214,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.NewEmptyScore(), // bar has no score, score will be defaulted to 0.5
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.NewEmptyScore(), // foo has no score, score will be defaulted to 0.5
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.NewEmptyScore()), // bar has no score, score will be defaulted to 0.5
+				"foo": createProviderWithScore(upstream_foo, ws.NewEmptyScore()), // foo has no score, score will be defaulted to 0.5
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      2000, // required to get a stable result
@@ -259,14 +227,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod+(1*time.Minute))), // bar stale and grace period is not expired yet
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod+(1*time.Minute)))), // bar stale and grace period is not expired yet
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.8, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
@@ -278,14 +240,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-(10*time.Minute))), // bar stale and elapsed time since grace period finished is 10 minutes ago
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-(10*time.Minute)))), // bar stale and elapsed time since grace period finished is 10 minutes ago
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.8, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,
@@ -297,14 +253,8 @@ func TestDinScoreBasedSelectorSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-StaleScoreConvergencePeriod)), // bar stale and elapsed time since grace period finished is 70 minutes ago
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.8, time.Now().UTC()),
-				},
+				"bar": createProviderWithScore(upstream_bar, ws.MustCreateScore(0.8, time.Now().UTC().Add(-StaleScoreGracePeriod-StaleScoreConvergencePeriod))), // bar stale and elapsed time since grace period finished is 70 minutes ago
+				"foo": createProviderWithScore(upstream_foo, ws.MustCreateScore(0.8, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      1000,

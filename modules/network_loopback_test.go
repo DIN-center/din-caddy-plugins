@@ -158,9 +158,9 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Set dependencies
-			n.handler = mockHandler
+			n.Handler = mockHandler
 			n.PrometheusClient = mockProm
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Setup mocks
 			if tt.mockHandlerSetup != nil {
@@ -303,7 +303,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			})
 
 			// Execute
-			n.sendHealthCheckMetric(tt.provider, tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.priority, tt.environment)
+			n.SendHealthCheckMetric(tt.provider, tt.providerName, tt.responseStatus, tt.healthStatus, tt.blockNumber, tt.priority, tt.environment)
 		})
 	}
 }

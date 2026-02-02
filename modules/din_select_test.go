@@ -52,6 +52,13 @@ func TestDinSelectUnmarshalCaddyfile(t *testing.T) {
 	}
 }
 
+// createTestProviderWithScore creates a provider with the given upstream and score for tests
+func createTestProviderWithScore(upstream *reverseproxy.Upstream, score *ws.Score) *provider {
+	p := &provider{Upstream: upstream}
+	p.SafeUpdateScore(score)
+	return p
+}
+
 func TestDinSelectSelect(t *testing.T) {
 
 	// Register the DinScoreBasedSelector module
@@ -111,14 +118,8 @@ func TestDinSelectSelect(t *testing.T) {
 			request: &http.Request{},
 			pool:    reverseproxy.UpstreamPool{upstream_bar, upstream_foo},
 			providers: map[string]*provider{
-				"bar": {
-					upstream: upstream_bar,
-					score:    ws.MustCreateScore(0.92, time.Now().UTC()),
-				},
-				"foo": {
-					upstream: upstream_foo,
-					score:    ws.MustCreateScore(0.67, time.Now().UTC()),
-				},
+				"bar": createTestProviderWithScore(upstream_bar, ws.MustCreateScore(0.92, time.Now().UTC())),
+				"foo": createTestProviderWithScore(upstream_foo, ws.MustCreateScore(0.67, time.Now().UTC())),
 			},
 			dynamicLoadBalancingEnabled: true,
 			repeat:                      10000,
@@ -203,7 +204,7 @@ func TestQueryParamMerging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Simulate the merging logic from applyProviderConfiguration
 			provider := &provider{
-				query: tt.providerQuery,
+				Query: tt.providerQuery,
 			}
 
 			// Create a mock request URL
@@ -218,11 +219,11 @@ func TestQueryParamMerging(t *testing.T) {
 			}
 
 			// Apply the query merging logic (same as in applyProviderConfiguration)
-			if provider.query != "" {
+			if provider.Query != "" {
 				if req.URL.RawQuery == "" {
-					req.URL.RawQuery = provider.query
+					req.URL.RawQuery = provider.Query
 				} else {
-					req.URL.RawQuery = provider.query + "&" + req.URL.RawQuery
+					req.URL.RawQuery = provider.Query + "&" + req.URL.RawQuery
 				}
 			}
 

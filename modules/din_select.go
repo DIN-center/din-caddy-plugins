@@ -80,7 +80,7 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 	// Apply provider-specific configuration (path, headers, auth)
 	for _, provider := range providers {
 		// If the upstream is found in the providers, set the path and headers for the request
-		if selectedUpstream == provider.upstream {
+		if selectedUpstream == provider.Upstream {
 			d.applyProviderConfiguration(provider, r, rw, repl, networkObj)
 			break
 		}
@@ -93,13 +93,13 @@ func (d *DinSelect) Select(pool reverseproxy.UpstreamPool, r *http.Request, rw h
 func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Request, rw http.ResponseWriter, repl *caddy.Replacer, networkObj *network) {
 	// Use the network handler to configure the request path
 	// The handler is responsible for merging provider query params with request query params
-	if networkObj != nil && networkObj.handler != nil {
+	if networkObj != nil && networkObj.Handler != nil {
 		networkName := networkObj.Name
-		if err := networkObj.handler.ConfigureRequestPath(r, provider.path, provider.query, networkName); err != nil {
+		if err := networkObj.Handler.ConfigureRequestPath(r, provider.Path, provider.Query, networkName); err != nil {
 			d.logger.Error("Failed to configure request path",
 				zap.String("network", networkName),
-				zap.String("provider_path", provider.path),
-				zap.String("provider_query", provider.query),
+				zap.String("provider_path", provider.Path),
+				zap.String("provider_query", provider.Query),
 				zap.Error(err))
 		}
 	}
@@ -118,9 +118,9 @@ func (d *DinSelect) applyProviderConfiguration(provider *provider, r *http.Reque
 
 	// Set provider info header
 	if v := r.Header.Get(DinProviderInfo); v != "" {
-		rw.Header().Set(DinProviderInfo, provider.host)
+		rw.Header().Set(DinProviderInfo, provider.Host)
 	}
-	repl.Set(RequestProviderKey, provider.host)
+	repl.Set(RequestProviderKey, provider.Host)
 	repl.Set(RequestProviderPriorityKey, provider.Priority)
 }
 

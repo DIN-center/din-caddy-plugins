@@ -29,7 +29,7 @@ func TestHandlerSetOnce(t *testing.T) {
 			chain_id "0x1"
 			handler evm
 			providers {
-				http://localhost:8545
+				http://localHost:8545
 			}
 		}
 	}`
@@ -42,7 +42,7 @@ func TestHandlerSetOnce(t *testing.T) {
 	ethNetwork := d.Networks["ethereum-mainnet"]
 	require.NotNil(t, ethNetwork)
 	// Handler should NOT be set yet after UnmarshalCaddyfile
-	require.Nil(t, ethNetwork.handler)
+	require.Nil(t, ethNetwork.Handler)
 
 	// Simulate Provision
 	d.testMode = true // Use test mode to skip external dependencies
@@ -51,7 +51,7 @@ func TestHandlerSetOnce(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify handler is now set after Provision
-	require.NotNil(t, ethNetwork.handler, "Handler should be set after Provision")
+	require.NotNil(t, ethNetwork.Handler, "Handler should be set after Provision")
 }
 
 // TestHandlerSetForJSONLoadedConfig verifies handlers are properly initialized for JSON-loaded configs
@@ -70,16 +70,16 @@ func TestHandlerSetForJSONLoadedConfig(t *testing.T) {
 		HandlerType: EVMHandler,
 		ChainId:     "0x1",
 		Providers: map[string]*provider{
-			"localhost:8545": {
-				HttpUrl: "http://localhost:8545",
-				host:    "localhost:8545",
+			"localHost:8545": {
+				HttpUrl: "http://localHost:8545",
+				Host:    "localHost:8545",
 			},
 		},
 	}
 	d.Networks["ethereum-mainnet"] = network
 
 	// Verify no handler initially
-	assert.Nil(t, network.handler)
+	assert.Nil(t, network.Handler)
 
 	// Run Provision
 	ctx := caddy.Context{}
@@ -87,8 +87,8 @@ func TestHandlerSetForJSONLoadedConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify handler was set during Provision
-	assert.NotNil(t, network.handler)
-	assert.Equal(t, string(EVMHandler), network.handler.GetType())
+	assert.NotNil(t, network.Handler)
+	assert.Equal(t, string(EVMHandler), network.Handler.GetType())
 }
 
 // TestHandlerNotSetForEmptyType verifies no handler is set for networks without type
@@ -106,9 +106,9 @@ func TestHandlerNotSetForEmptyType(t *testing.T) {
 		HandlerType: "", // No handler type specified
 		ChainId:     "unknown:1",
 		Providers: map[string]*provider{
-			"localhost:8545": {
-				HttpUrl: "http://localhost:8545",
-				host:    "localhost:8545",
+			"localHost:8545": {
+				HttpUrl: "http://localHost:8545",
+				Host:    "localHost:8545",
 			},
 		},
 	}
@@ -120,5 +120,5 @@ func TestHandlerNotSetForEmptyType(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify no handler was set
-	assert.Nil(t, network.handler)
+	assert.Nil(t, network.Handler)
 }

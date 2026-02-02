@@ -187,15 +187,15 @@ func TestGetBlockByNumber(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Set dependencies
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 			n.HttpClient = mockHTTP
 
 			// Set handler only if test expects it
 			if tt.name == "no_handler_available" {
 				// Explicitly set handler to nil for this test
-				n.handler = nil
+				n.Handler = nil
 			} else {
-				n.handler = mockHandler
+				n.Handler = mockHandler
 			}
 
 			// Setup mocks
@@ -204,7 +204,7 @@ func TestGetBlockByNumber(t *testing.T) {
 			}
 
 			// Execute
-			result, err := n.getBlockByNumber(tt.blockNumber)
+			result, err := n.GetBlockByNumber(tt.blockNumber)
 
 			// Verify
 			if tt.expectError {
@@ -280,9 +280,9 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Set dependencies
-			n.handler = mockHandler
+			n.Handler = mockHandler
 			n.HttpClient = mockHTTP
-			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+			n.Logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			// Setup handler expectations
 			tt.setupHandler(mockHandler)
@@ -302,7 +302,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 			}
 
 			// Execute
-			result, err := n.getBlockByNumber(tt.blockNumber)
+			result, err := n.GetBlockByNumber(tt.blockNumber)
 
 			// Verify
 			assert.NoError(t, err)

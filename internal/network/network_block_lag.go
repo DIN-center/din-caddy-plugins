@@ -1,24 +1,25 @@
-package modules
+package network
 
 import (
 	"container/list"
+	"errors"
 	"math"
 	"net/http"
 	"reflect"
 	"sync/atomic"
 	"time"
 
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 )
 
-// getLatestBlockNumberResult holds the result of a block number query
-type getLatestBlockNumberResult struct {
-	blockNumber    int64
-	healthStatus   HealthStatus
-	responseStatus int
+// GetLatestBlockNumberResult holds the result of a block number query
+type GetLatestBlockNumberResult struct {
+	BlockNumber    int64
+	HealthStatus   HealthStatus
+	ResponseStatus int
 }
 
 // Block lag calculation constants
@@ -31,18 +32,18 @@ const (
 	MinBlockLagLimit = 5
 )
 
-// calculateDynamicBlockLagLimit calculates and sets the optimal block lag limit
+// CalculateDynamicBlockLagLimit calculates and sets the optimal block lag limit
 // based on immutable blockchain data (block timestamps).
 // This produces deterministic results across all server instances since it uses
 // historical block timestamps that are baked into the blockchain.
-func (n *network) calculateDynamicBlockLagLimit() {
-	n.logger.Debug("Starting dynamic block lag limit calculation",
+func (n *Network) CalculateDynamicBlockLagLimit() {
+	n.Logger.Debug("Starting dynamic block lag limit calculation",
 		zap.String("network", n.Name),
 		zap.Int("provider_count", len(n.Providers)))
 
 	// Check if handler supports dynamic block lag using capability interface
-	if n.handler == nil || !networklib.SupportsDynamicBlockLag(n.handler) {
-		n.logger.Debug("Handler does not support dynamic block lag, keeping default",
+	if n.Handler == nil || !networklib.SupportsDynamicBlockLag(n.Handler) {
+		n.Logger.Debug("Handler does not support dynamic block lag, keeping default",
 			zap.String("network", n.Name),
 			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)))
 		return
@@ -50,14 +51,14 @@ func (n *network) calculateDynamicBlockLagLimit() {
 
 	// Check if we have providers
 	if len(n.Providers) == 0 {
-		n.logger.Warn("No providers available for dynamic block lag calculation, keeping default",
+		n.Logger.Warn("No providers available for dynamic block lag calculation, keeping default",
 			zap.String("network", n.Name),
 			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)))
 		return
 	}
 
 	// Get first available provider - if timestamps disagree across providers, we have bigger problems
-	var firstProvider *provider
+	var firstProvider *Provider
 	var providerName string
 	for name, p := range n.Providers {
 		firstProvider = p
@@ -66,15 +67,15 @@ func (n *network) calculateDynamicBlockLagLimit() {
 	}
 
 	if firstProvider == nil {
-		n.logger.Warn("No providers available for block time measurement",
+		n.Logger.Warn("No providers available for block time measurement",
 			zap.String("network", n.Name),
 			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)))
 		return
 	}
 
-	avgBlockTimeMs, err := n.measureBlockTimeFromTimestamps(firstProvider)
+	avgBlockTimeMs, err := n.MeasureBlockTimeFromTimestamps(firstProvider)
 	if err != nil {
-		n.logger.Warn("Failed to measure block time, keeping default",
+		n.Logger.Warn("Failed to measure block time, keeping default",
 			zap.String("network", n.Name),
 			zap.String("provider", providerName),
 			zap.Int64("default_limit", atomic.LoadInt64(&n.BlockLagLimit)),
@@ -82,7 +83,7 @@ func (n *network) calculateDynamicBlockLagLimit() {
 		return
 	}
 
-	n.logger.Debug("Successfully measured block time",
+	n.Logger.Debug("Successfully measured block time",
 		zap.String("network", n.Name),
 		zap.String("provider", providerName),
 		zap.Float64("avg_block_time_ms", avgBlockTimeMs))
@@ -96,12 +97,12 @@ func (n *network) calculateDynamicBlockLagLimit() {
 	}
 
 	// Round up to nearest interval of 5
-	newLimit = roundUpToInterval(newLimit, 5)
+	newLimit = RoundUpToInterval(newLimit, 5)
 
 	// Update the block lag limit atomically
 	oldLimit := atomic.SwapInt64(&n.BlockLagLimit, newLimit)
 
-	n.logger.Info("Dynamic block lag limit calculated and applied",
+	n.Logger.Info("Dynamic block lag limit calculated and applied",
 		zap.String("network", n.Name),
 		zap.Int64("old_limit", oldLimit),
 		zap.Int64("new_limit", newLimit),
@@ -113,29 +114,29 @@ func (n *network) calculateDynamicBlockLagLimit() {
 // measureBlockTimeFromTimestamps calculates the average block time in milliseconds
 // using immutable blockchain timestamps from two blocks (N and N-lookback).
 // This is deterministic - all servers querying the same blocks get the same result.
-func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
+func (n *Network) MeasureBlockTimeFromTimestamps(p *Provider) (float64, error) {
 	// Get the dynamic block lag support capability
 	// This function is only called after verifying the handler supports dynamic block lag
-	dblSupport, ok := n.handler.(networklib.DynamicBlockLagSupport)
+	dblSupport, ok := n.Handler.(networklib.DynamicBlockLagSupport)
 	if !ok {
 		return 0, errors.New("handler does not support dynamic block lag")
 	}
 
 	// Get the latest block number
-	latestResult, err := n.getLatestBlockNumber(
+	latestResult, err := n.GetLatestBlockNumber(
 		p.HttpUrl,
 		p.Headers,
 		p.AuthClient(),
-		p.host,
+		p.Host,
 	)
 	if err != nil {
 		return 0, err
 	}
-	latestBlock := latestResult.blockNumber
+	latestBlock := latestResult.BlockNumber
 
 	// Ensure we have enough blocks for the lookback
 	if latestBlock < BlockLagCalculationLookback {
-		n.logger.Debug("Chain too young for block lag calculation",
+		n.Logger.Debug("Chain too young for block lag calculation",
 			zap.String("network", n.Name),
 			zap.Int64("latest_block", latestBlock),
 			zap.Int("required_lookback", BlockLagCalculationLookback))
@@ -173,7 +174,7 @@ func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
 	// Calculate time difference in seconds
 	timeDiffSeconds := latestTimestamp - oldTimestamp
 	if timeDiffSeconds <= 0 {
-		n.logger.Warn("Invalid timestamp difference",
+		n.Logger.Warn("Invalid timestamp difference",
 			zap.String("network", n.Name),
 			zap.Int64("latest_block", latestBlock),
 			zap.Int64("old_block", oldBlock),
@@ -185,7 +186,7 @@ func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
 	// Calculate average block time in milliseconds
 	avgBlockTimeMs := (float64(timeDiffSeconds) * 1000) / float64(BlockLagCalculationLookback)
 
-	n.logger.Debug("Block time calculation details",
+	n.Logger.Debug("Block time calculation details",
 		zap.String("network", n.Name),
 		zap.Int64("latest_block", latestBlock),
 		zap.Int64("old_block", oldBlock),
@@ -195,8 +196,8 @@ func (n *network) measureBlockTimeFromTimestamps(p *provider) (float64, error) {
 	return avgBlockTimeMs, nil
 }
 
-// roundUpToInterval rounds a value up to the nearest multiple of the interval
-func roundUpToInterval(value int64, interval int64) int64 {
+// RoundUpToInterval rounds a value up to the nearest multiple of the interval
+func RoundUpToInterval(value int64, interval int64) int64 {
 	if value%interval == 0 {
 		return value
 	}
@@ -205,7 +206,7 @@ func roundUpToInterval(value int64, interval int64) int64 {
 
 // checkBlockLag checks if the provider is lagging behind the network
 // Returns: isLagged, blockLag, blockLagLimit
-func (n *network) checkBlockLag(provider *provider, currentBlock int64, latestNetworkBlock int64) (bool, int64, int64) {
+func (n *Network) checkBlockLag(provider *Provider, currentBlock int64, latestNetworkBlock int64) (bool, int64, int64) {
 	if latestNetworkBlock <= 0 {
 		return false, 0, 0
 	}
@@ -221,7 +222,7 @@ func (n *network) checkBlockLag(provider *provider, currentBlock int64, latestNe
 			zap.Int64("block_lag", blockLag),
 			zap.Int64("provider_block", currentBlock),
 			zap.Int64("network_block", latestNetworkBlock),
-			zap.String("health_status", Warning.String()))
+			zap.String("health_status", HealthStatusString(Warning)))
 		return true, blockLag, blockLagLimit
 	}
 
@@ -229,17 +230,17 @@ func (n *network) checkBlockLag(provider *provider, currentBlock int64, latestNe
 }
 
 // isStalled checks if provider's block numbers haven't changed
-func (n *network) isStalled(provider *provider) bool {
-	history := provider.BlockHistory()
+func (n *Network) IsStalled(provider *Provider) bool {
+	history := provider.GetBlockHistory()
 	// if history is less than the block history size, return false
 	if len(history) < n.ProviderBlockHistorySize {
 		return false
 	}
 
 	// if all blocks in history are the same, return true
-	firstBlock := history[0].blockNumber
+	firstBlock := history[0].BlockNumber
 	for _, entry := range history[1:] {
-		if entry.blockNumber != firstBlock {
+		if entry.BlockNumber != firstBlock {
 			return false
 		}
 	}
@@ -247,9 +248,9 @@ func (n *network) isStalled(provider *provider) bool {
 }
 
 // allProvidersStalled checks if all providers are showing no progress
-func (n *network) allProvidersStalled() bool {
+func (n *Network) AllProvidersStalled() bool {
 	for _, p := range n.Providers {
-		if !n.isStalled(p) {
+		if !n.IsStalled(p) {
 			return false
 		}
 	}
@@ -258,34 +259,34 @@ func (n *network) allProvidersStalled() bool {
 
 // getLatestHealthyBlock returns the highest block number among healthy providers
 // Falls back to warning providers if no healthy providers are available
-func (n *network) getLatestHealthyBlock() int64 {
+func (n *Network) GetLatestHealthyBlock() int64 {
 	var latestBlockFromHealthy int64
 	var latestBlockFromWarning int64
 	var latestBlockFromUnhealthy int64
 
 	// Single pass through providers to track latest blocks by status
 	for _, provider := range n.Providers {
-		history := provider.BlockHistory()
+		history := provider.GetBlockHistory()
 		if len(history) == 0 {
 			continue
 		}
 
-		latestBlock := provider.getLatestBlockEntry()
+		latestBlock := provider.GetLatestBlockEntry()
 		if latestBlock == nil {
 			continue
 		}
-		switch latestBlock.healthStatus {
+		switch latestBlock.HealthStatus {
 		case Healthy:
-			if latestBlock.blockNumber > latestBlockFromHealthy {
-				latestBlockFromHealthy = latestBlock.blockNumber
+			if latestBlock.BlockNumber > latestBlockFromHealthy {
+				latestBlockFromHealthy = latestBlock.BlockNumber
 			}
 		case Warning:
-			if latestBlock.blockNumber > latestBlockFromWarning {
-				latestBlockFromWarning = latestBlock.blockNumber
+			if latestBlock.BlockNumber > latestBlockFromWarning {
+				latestBlockFromWarning = latestBlock.BlockNumber
 			}
 		case Unhealthy:
-			if latestBlock.blockNumber > latestBlockFromUnhealthy {
-				latestBlockFromUnhealthy = latestBlock.blockNumber
+			if latestBlock.BlockNumber > latestBlockFromUnhealthy {
+				latestBlockFromUnhealthy = latestBlock.BlockNumber
 			}
 		}
 	}
@@ -308,10 +309,10 @@ func (n *network) getLatestHealthyBlock() int64 {
 //
 // This helps prevent situations where all providers might be marked unhealthy during
 // network-wide issues when one provider recovers faster than others.
-func (n *network) hasOtherHealthyProviders(provider *provider) bool {
+func (n *Network) HasOtherHealthyProviders(provider *Provider) bool {
 	for _, p := range n.Providers {
 		if p != provider {
-			entry := p.getLatestHealthyBlockEntry()
+			entry := p.GetLatestHealthyBlockEntry()
 			if entry != nil {
 				return true
 			}
@@ -321,14 +322,14 @@ func (n *network) hasOtherHealthyProviders(provider *provider) bool {
 }
 
 // processBlockNumberResponse processes the response from a block number request
-func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
+func (n *Network) ProcessBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
 	// Validate input
 	if statusCode == nil {
 		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
 	}
 
 	// Use BlockNumberParser capability interface
-	parser, ok := n.handler.(networklib.BlockNumberParser)
+	parser, ok := n.Handler.(networklib.BlockNumberParser)
 	if !ok {
 		return 0, Unhealthy, errors.New("handler does not implement BlockNumberParser")
 	}
@@ -347,41 +348,41 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 
 // AddNetworkBlockEntry adds a new block entry to the network's history,
 // maintaining the configured history size. It is concurrency-safe.
-func (n *network) AddNetworkBlockEntry(blockNumber int64, blockData interface{}) {
+func (n *Network) AddNetworkBlockEntry(blockNumber int64, blockData interface{}) {
 	if n == nil { // Guard against nil network pointer
-		// Cannot use n.logger here. Consider a global logger for such rare cases if necessary.
+		// Cannot use n.Logger here. Consider a global logger for such rare cases if necessary.
 		return
 	}
 
 	// blockData is allowed to be nil. The check for blockNumber is important.
 	if blockNumber <= 0 {
-		n.logger.Error("Invalid block number in AddNetworkBlockEntry", zap.Int64("blockNumber", blockNumber), zap.Any("blockData", blockData))
+		n.Logger.Error("Invalid block number in AddNetworkBlockEntry", zap.Int64("blockNumber", blockNumber), zap.Any("blockData", blockData))
 		return
 	}
 
-	n.blockHistoryMu.Lock()
-	defer n.blockHistoryMu.Unlock()
+	n.BlockHistoryMu.Lock()
+	defer n.BlockHistoryMu.Unlock()
 
-	if n.blockHistory == nil {
-		n.blockHistory = list.New()
-		if n.blockHistory == nil { // Should not happen with list.New(), but defensive
-			n.logger.Error("Failed to initialize network block history list")
+	if n.BlockHistory == nil {
+		n.BlockHistory = list.New()
+		if n.BlockHistory == nil { // Should not happen with list.New(), but defensive
+			n.Logger.Error("Failed to initialize network block history list")
 			return
 		}
 	}
 
 	// Check if the new block number is greater than the latest entry
-	if n.blockHistory.Len() > 0 {
-		latestEntryValue := n.blockHistory.Back().Value
-		latestEntry, ok := latestEntryValue.(blockHistoryEntry)
+	if n.BlockHistory.Len() > 0 {
+		latestEntryValue := n.BlockHistory.Back().Value
+		latestEntry, ok := latestEntryValue.(BlockHistoryEntry)
 		if !ok {
-			n.logger.Error("Invalid type in network block history during add check, skipping addition")
+			n.Logger.Error("Invalid type in network block history during add check, skipping addition")
 			return // Or handle error appropriately, e.g., clear history if corrupted
 		}
-		if blockNumber <= latestEntry.blockNumber {
-			n.logger.Debug("New block number is not greater than the latest, skipping addition",
+		if blockNumber <= latestEntry.BlockNumber {
+			n.Logger.Debug("New block number is not greater than the latest, skipping addition",
 				zap.Int64("new_block", blockNumber),
-				zap.Int64("latest_block", latestEntry.blockNumber),
+				zap.Int64("latest_block", latestEntry.BlockNumber),
 				zap.String("network", n.Name),
 			)
 			return
@@ -396,11 +397,11 @@ func (n *network) AddNetworkBlockEntry(blockNumber int64, blockData interface{})
 			blockHash = data
 		default:
 			// Use BlockFetcher capability to extract block hash if available
-			if blockFetcher, ok := n.handler.(networklib.BlockFetcher); ok {
+			if blockFetcher, ok := n.Handler.(networklib.BlockFetcher); ok {
 				blockHash = blockFetcher.ExtractBlockHash(blockData)
 			} else {
 				// If BlockFetcher not supported, log warning but continue
-				n.logger.Warn("Handler does not support BlockFetcher capability",
+				n.Logger.Warn("Handler does not support BlockFetcher capability",
 					zap.String("dataType", reflect.TypeOf(blockData).String()),
 					zap.String("network", n.Name))
 			}
@@ -408,63 +409,63 @@ func (n *network) AddNetworkBlockEntry(blockNumber int64, blockData interface{})
 	}
 
 	now := time.Now()
-	entry := blockHistoryEntry{
-		blockNumber: blockNumber,
-		blockHash:   blockHash,
-		timestamp:   &now,
+	entry := BlockHistoryEntry{
+		BlockNumber: blockNumber,
+		BlockHash:   blockHash,
+		Timestamp:   &now,
 	}
 
-	n.blockHistory.PushBack(entry)
+	n.BlockHistory.PushBack(entry)
 
 	// Trim the list if it exceeds the history size
-	for n.blockHistory.Len() > n.NetworkBlockHistorySize {
-		if n.blockHistory.Front() != nil {
-			n.blockHistory.Remove(n.blockHistory.Front())
+	for n.BlockHistory.Len() > n.NetworkBlockHistorySize {
+		if n.BlockHistory.Front() != nil {
+			n.BlockHistory.Remove(n.BlockHistory.Front())
 		} else {
 			break
 		}
 	}
 }
 
-// getLatestBlockEntry returns the most recent block history entry for the network.
+// GetLatestNetworkBlockEntry returns the most recent block history entry for the network.
 // It is concurrency-safe.
-func (n *network) getLatestBlockEntry() *blockHistoryEntry {
+func (n *Network) GetLatestNetworkBlockEntry() *BlockHistoryEntry {
 	if n == nil {
 		return nil
 	}
-	n.blockHistoryMu.RLock()
-	defer n.blockHistoryMu.RUnlock()
+	n.BlockHistoryMu.RLock()
+	defer n.BlockHistoryMu.RUnlock()
 
 	// Keep critical nil checks
-	if n.blockHistory == nil {
+	if n.BlockHistory == nil {
 		return nil
 	}
 
-	if n.blockHistory.Len() == 0 {
+	if n.BlockHistory.Len() == 0 {
 		return nil
 	}
 
-	entry, ok := n.blockHistory.Back().Value.(blockHistoryEntry)
+	entry, ok := n.BlockHistory.Back().Value.(BlockHistoryEntry)
 	if !ok {
-		// This should ideally not happen if entries are always blockHistoryEntry
-		n.logger.Error("Invalid type in network block history")
+		// This should ideally not happen if entries are always BlockHistoryEntry
+		n.Logger.Error("Invalid type in network block history")
 		return nil
 	}
 	return &entry
 }
 
-// getBlockByNumber returns the block for a given block number
-func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
-	n.logger.Debug("getBlockByNumber called", zap.Int64("blockNumber", blockNumber), zap.String("networkName", n.Name))
+// GetBlockByNumber returns the block for a given block number
+func (n *Network) GetBlockByNumber(blockNumber int64) (interface{}, error) {
+	n.Logger.Debug("GetBlockByNumber called", zap.Int64("blockNumber", blockNumber), zap.String("networkName", n.Name))
 
 	if n.CaddyPort == "" {
 		return nil, errors.New("Caddy port is not set")
 	}
 
 	// Check if handler supports BlockFetcher capability
-	blockFetcher, ok := n.handler.(networklib.BlockFetcher)
+	blockFetcher, ok := n.Handler.(networklib.BlockFetcher)
 	if !ok || !blockFetcher.SupportsGetBlockByNumber() {
-		n.logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
+		n.Logger.Debug("Network doesn't support getBlockByNumber", zap.String("networkName", n.Name))
 		return nil, nil
 	}
 
@@ -488,33 +489,33 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 	// Use BlockFetcher to create the block request payload
 	payload, err := blockFetcher.CreateBlockRequest(getBlockMethod, blockNumber, false)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to create block request")
+		return nil, pkgerrors.Wrap(err, "Failed to create block request")
 	}
 
-	n.logger.Debug("Sending getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
+	n.Logger.Debug("Sending getBlockByNumber request", zap.String("url", url), zap.Any("headers", headers), zap.String("payload", string(payload)))
 
 	resBytes, statusCode, err := n.HttpClient.Post(url, headers, payload, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "Error sending POST request")
+		return nil, pkgerrors.Wrap(err, "Error sending POST request")
 	}
 
 	responseSnippet := string(resBytes)
 	if len(resBytes) > 200 {
 		responseSnippet = string(resBytes[:200])
 	}
-	n.logger.Debug("Received getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", responseSnippet))
+	n.Logger.Debug("Received getBlockByNumber response", zap.Int("statusCode", *statusCode), zap.String("responseBodySnippet", responseSnippet))
 
 	if *statusCode != http.StatusOK {
-		n.logger.Warn("Error getting block from response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
+		n.Logger.Warn("Error getting block from response, non-OK status", zap.Int("statusCode", *statusCode), zap.String("networkName", n.Name))
 		return nil, errors.New("Error getting block from response")
 	}
 
 	// Use BlockFetcher to parse the block response
 	blockData, err := blockFetcher.ParseBlockResponse(resBytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "Error parsing block response")
+		return nil, pkgerrors.Wrap(err, "Error parsing block response")
 	}
 
-	n.logger.Debug("Successfully parsed block response", zap.String("networkName", n.Name))
+	n.Logger.Debug("Successfully parsed block response", zap.String("networkName", n.Name))
 	return blockData, nil
 }
