@@ -917,13 +917,42 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	return nil
 }
 
-// StartHealthchecks starts a background goroutine to monitor all of the networks' overall health and the health of its providers
+// MaxConcurrentHealthChecks limits how many networks can run health checks simultaneously
+// This prevents resource exhaustion when there are many networks
+const MaxConcurrentHealthChecks = 10
+
+// StartHealthchecks starts background goroutines to monitor all networks' health
+// Health checks run asynchronously with throttled concurrency to prevent resource exhaustion
 func (d *DinMiddleware) startHealthChecks() error {
-	d.logger.Info("Starting healthchecks")
-	for _, network := range d.Networks {
-		d.logger.Info("Starting healthcheck for network", zap.String("network", network.Name))
-		network.startHealthcheck()
-	}
+	d.logger.Info("Starting healthchecks asynchronously",
+		zap.Int("network_count", len(d.Networks)),
+		zap.Int("max_concurrent", MaxConcurrentHealthChecks))
+
+	// Run all health checks in a background goroutine - don't block Provision()
+	go func() {
+		// Use a semaphore to limit concurrent health checks
+		sem := make(chan struct{}, MaxConcurrentHealthChecks)
+		var wg sync.WaitGroup
+
+		for name, net := range d.Networks {
+			wg.Add(1)
+			go func(networkName string, n *network) {
+				defer wg.Done()
+
+				// Acquire semaphore slot (blocks if at max concurrency)
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				d.logger.Debug("Starting healthcheck for network", zap.String("network", networkName))
+				n.startHealthcheck()
+			}(name, net)
+		}
+
+		// Wait for all health checks to complete their initial run
+		wg.Wait()
+		d.logger.Info("All network healthchecks initiated")
+	}()
+
 	return nil
 }
 
