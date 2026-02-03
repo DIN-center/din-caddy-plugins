@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -415,9 +417,29 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 
 // startBackgroundServices starts health checks and registry sync
 func (d *DinMiddleware) startBackgroundServices() error {
-	// Start health checks
-	if err := d.startHealthChecks(); err != nil {
-		return fmt.Errorf("error starting healthchecks: %w", err)
+	// Check for startup delay (allows HTTP server to start before health checks begin)
+	// This is especially useful for large configs with many networks
+	startupDelay := time.Duration(0)
+	if delayStr := os.Getenv("DIN_HEALTHCHECK_DELAY_SEC"); delayStr != "" {
+		if delaySec, err := strconv.Atoi(delayStr); err == nil && delaySec > 0 {
+			startupDelay = time.Duration(delaySec) * time.Second
+		}
+	}
+
+	// Start health checks (with optional delay)
+	if startupDelay > 0 {
+		d.logger.Info("Deferring health checks to allow HTTP server to start",
+			zap.Duration("delay", startupDelay))
+		go func() {
+			time.Sleep(startupDelay)
+			if err := d.startHealthChecks(); err != nil {
+				d.logger.Error("Failed to start health checks after delay", zap.Error(err))
+			}
+		}()
+	} else {
+		if err := d.startHealthChecks(); err != nil {
+			return fmt.Errorf("error starting healthchecks: %w", err)
+		}
 	}
 
 	// Start registry sync if enabled
@@ -477,14 +499,15 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		provider.host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
 	}
 
-	// Initialize authentication
-	if provider.OIDCClient != nil {
+	// Initialize authentication (skip if in test mode or DIN_SKIP_AUTH is set)
+	skipAuth := d.testMode || os.Getenv("DIN_SKIP_AUTH") == "true"
+	if provider.OIDCClient != nil && !skipAuth {
 		// Initialize OIDC client
 		if err := provider.OIDCClient.Start(logger.Logger); err != nil {
 			d.logger.Error("Failed to start OIDC client", zap.String("provider", provider.HttpUrl), zap.Error(err))
 			return err
 		}
-	} else if provider.Auth != nil {
+	} else if provider.Auth != nil && !skipAuth {
 		// Initialize SIWE auth
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
