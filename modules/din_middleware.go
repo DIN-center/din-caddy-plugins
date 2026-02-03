@@ -415,6 +415,7 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 
 // startBackgroundServices starts health checks and registry sync
 func (d *DinMiddleware) startBackgroundServices() error {
+	// Start health checks
 	if err := d.startHealthChecks(); err != nil {
 		return fmt.Errorf("error starting healthchecks: %w", err)
 	}
