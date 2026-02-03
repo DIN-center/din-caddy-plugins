@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -417,29 +416,8 @@ func (d *DinMiddleware) validateNetworkConfiguration(networkName string, network
 
 // startBackgroundServices starts health checks and registry sync
 func (d *DinMiddleware) startBackgroundServices() error {
-	// Check for startup delay (allows HTTP server to start before health checks begin)
-	// This is especially useful for large configs with many networks
-	startupDelay := time.Duration(0)
-	if delayStr := os.Getenv("DIN_HEALTHCHECK_DELAY_SEC"); delayStr != "" {
-		if delaySec, err := strconv.Atoi(delayStr); err == nil && delaySec > 0 {
-			startupDelay = time.Duration(delaySec) * time.Second
-		}
-	}
-
-	// Start health checks (with optional delay)
-	if startupDelay > 0 {
-		d.logger.Info("Deferring health checks to allow HTTP server to start",
-			zap.Duration("delay", startupDelay))
-		go func() {
-			time.Sleep(startupDelay)
-			if err := d.startHealthChecks(); err != nil {
-				d.logger.Error("Failed to start health checks after delay", zap.Error(err))
-			}
-		}()
-	} else {
-		if err := d.startHealthChecks(); err != nil {
-			return fmt.Errorf("error starting healthchecks: %w", err)
-		}
+	if err := d.startHealthChecks(); err != nil {
+		return fmt.Errorf("error starting healthchecks: %w", err)
 	}
 
 	// Start registry sync if enabled
