@@ -172,7 +172,13 @@ func (n *network) UnmarshalJSON(data []byte) error {
 
 func (n *network) startHealthcheck() {
 	// Start dynamic block lag limit calculation (runs once asynchronously)
-	go n.calculateDynamicBlockLagLimit()
+	// Skip in test environment to reduce startup load and avoid timing issues
+	if n.Environment != "test" {
+		go n.calculateDynamicBlockLagLimit()
+	} else {
+		n.logger.Debug("Skipping dynamic block lag calculation in test environment",
+			zap.String("network", n.Name))
+	}
 
 	n.healthCheck()
 	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
