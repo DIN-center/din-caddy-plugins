@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -477,15 +476,14 @@ func (d *DinMiddleware) initializeProvider(networkName string, provider *provide
 		provider.host = d.ensureUniqueProviderHost(networkName, parsedUrl, provider.Headers)
 	}
 
-	// Initialize authentication (skip if in test mode or DIN_SKIP_AUTH is set)
-	skipAuth := d.testMode || os.Getenv("DIN_SKIP_AUTH") == "true"
-	if provider.OIDCClient != nil && !skipAuth {
+	// Initialize authentication (skip if in test mode)
+	if provider.OIDCClient != nil && !d.testMode {
 		// Initialize OIDC client
 		if err := provider.OIDCClient.Start(logger.Logger); err != nil {
 			d.logger.Error("Failed to start OIDC client", zap.String("provider", provider.HttpUrl), zap.Error(err))
 			return err
 		}
-	} else if provider.Auth != nil && !skipAuth {
+	} else if provider.Auth != nil && !d.testMode {
 		// Initialize SIWE auth
 		if err := provider.Auth.Start(logger.Logger); err != nil {
 			d.logger.Warn("Error starting authentication", zap.String("provider", provider.HttpUrl))
