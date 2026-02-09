@@ -172,6 +172,11 @@ func (h *TronHandler) ParseResponse(body []byte, statusCode int) error {
 	return nil
 }
 
+func (h *TronHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	// REST APIs don't have JSON-RPC -32601 semantics
+	return false
+}
+
 // IsRetryableError implements the Handler interface.
 //
 // The following Tron Full Node HTTP API methods return additional fields to
@@ -187,11 +192,6 @@ func (h *TronHandler) ParseResponse(body []byte, statusCode int) error {
 // message depending on the value of the HTTP response status code.  Per
 // the above analysis, the HTTP response body should be returned to the
 // user along with the status code.
-func (h *TronHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
-	// REST APIs don't have JSON-RPC -32601 semantics
-	return false
-}
-
 func (h *TronHandler) IsRetryableError(err error, statusCode int) bool {
 	// Server errors and rate limits are retryable
 	if statusCode >= 500 || statusCode == 429 {

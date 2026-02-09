@@ -716,7 +716,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				// For successful HTTP responses, check for application-level errors
 				appError = networkObj.handler.ParseResponse(responseBody, rww.statusCode)
 			} else {
-				// For non-2xx responses, create an HTTP error
+				// For non-2xx responses, create an HTTP error.
+				// NOTE: Some providers return HTTP 400 with a JSON-RPC -32601 body. In that case,
+				// the error will be "HTTP error: 400" and method-level failover won't trigger.
+				// This is a known limitation — most providers return HTTP 200 with the JSON-RPC error.
 				appError = fmt.Errorf("HTTP error: %d", rww.statusCode)
 			}
 			if appError == nil {
@@ -754,7 +757,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 						})
 						break
 					}
-					excludedProviders[failedProvider.(string)] = struct{}{}
+					if providerHost, ok := failedProvider.(string); ok {
+						excludedProviders[providerHost] = struct{}{}
+					}
 
 					// Check if all providers are now excluded — if so, stop retrying
 					if providerMap, ok := repl.Get(DinUpstreamsContextKey); ok {
