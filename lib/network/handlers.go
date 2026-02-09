@@ -34,6 +34,9 @@ type NetworkHandler interface {
 	// === Response Handling ===
 	ParseResponse(body []byte, statusCode int) error
 	IsRetryableError(err error, statusCode int) bool
+	// IsRetryableOnDifferentProvider returns true if this error should be retried
+	// on a different provider but not the same one (e.g., -32601 method not found)
+	IsRetryableOnDifferentProvider(err error, statusCode int) bool
 
 	// === Block Operations ===
 	FormatBlockHeight(blockNum int64) string

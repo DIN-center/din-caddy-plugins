@@ -172,6 +172,11 @@ func (h *TronHandler) ParseResponse(body []byte, statusCode int) error {
 	return nil
 }
 
+func (h *TronHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	// REST APIs don't have JSON-RPC -32601 semantics
+	return false
+}
+
 // IsRetryableError implements the Handler interface.
 //
 // The following Tron Full Node HTTP API methods return additional fields to

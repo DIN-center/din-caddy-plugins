@@ -121,6 +121,10 @@ func (h *SolanaHandler) IsRetryableError(err error, statusCode int) bool {
 	return IsRetryableJSONRPCError(err, statusCode)
 }
 
+func (h *SolanaHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	return IsRetryableOnDifferentProviderJSONRPCError(err, statusCode)
+}
+
 // === NEW NETWORK-SPECIFIC METHODS ===
 
 // Chain ID and Namespace methods

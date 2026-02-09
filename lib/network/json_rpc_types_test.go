@@ -108,6 +108,14 @@ func TestIsRetryableJSONRPCError_GasAndRevertHandling(t *testing.T) {
 			statusCode: 200,
 			expected:   false,
 		},
+		// -32601 with non-standard text (e.g., "is not supported" instead of "method not found")
+		// should NOT be retryable on the same provider — caught by error code check
+		{
+			name:       "-32601 with non-standard text",
+			err:        fmt.Errorf("JSON-RPC error -32601: debug_traceBlockByNumber is not supported"),
+			statusCode: 200,
+			expected:   false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -115,6 +123,98 @@ func TestIsRetryableJSONRPCError_GasAndRevertHandling(t *testing.T) {
 			result := IsRetryableJSONRPCError(tt.err, tt.statusCode)
 			if result != tt.expected {
 				t.Errorf("IsRetryableJSONRPCError(%v, %d) = %v, expected %v",
+					tt.err, tt.statusCode, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsRetryableOnDifferentProviderJSONRPCError(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		statusCode int
+		expected   bool
+	}{
+		// Method not found should be retryable on a different provider
+		{
+			name:       "method not found with -32601",
+			err:        fmt.Errorf("JSON-RPC error -32601: method not found"),
+			statusCode: 200,
+			expected:   true,
+		},
+		{
+			name:       "method not found plain",
+			err:        fmt.Errorf("method not found"),
+			statusCode: 200,
+			expected:   true,
+		},
+		{
+			name:       "unsupported method without error code",
+			err:        fmt.Errorf("the method debug_traceBlockByNumber is not supported"),
+			statusCode: 200,
+			expected:   false, // no -32601 code and no "method not found" pattern
+		},
+		{
+			name:       "unsupported method with -32601 error code",
+			err:        fmt.Errorf("JSON-RPC error -32601: the method debug_traceBlockByNumber is not supported"),
+			statusCode: 200,
+			expected:   true, // matches on -32601 error code regardless of message text
+		},
+		// HTTP 500 takes precedence — should use standard retry, not different-provider
+		{
+			name:       "method not found with HTTP 500",
+			err:        fmt.Errorf("method not found"),
+			statusCode: 500,
+			expected:   false,
+		},
+		// HTTP 429 takes precedence — should use standard retry
+		{
+			name:       "method not found with HTTP 429",
+			err:        fmt.Errorf("method not found"),
+			statusCode: 429,
+			expected:   false,
+		},
+		// Other non-retryable errors should NOT trigger different-provider retry
+		{
+			name:       "invalid params",
+			err:        fmt.Errorf("invalid params"),
+			statusCode: 200,
+			expected:   false,
+		},
+		{
+			name:       "revert",
+			err:        fmt.Errorf("execution reverted"),
+			statusCode: 200,
+			expected:   false,
+		},
+		{
+			name:       "insufficient funds",
+			err:        fmt.Errorf("insufficient funds"),
+			statusCode: 200,
+			expected:   false,
+		},
+		// Generic server errors should NOT trigger different-provider retry
+		{
+			name:       "generic server error",
+			err:        fmt.Errorf("json-rpc error -32000: server busy"),
+			statusCode: 200,
+			expected:   false,
+		},
+		// Nil error
+		{
+			name:       "nil error",
+			err:        nil,
+			statusCode: 200,
+			expected:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsRetryableOnDifferentProviderJSONRPCError(tt.err, tt.statusCode)
+			if result != tt.expected {
+				t.Errorf("IsRetryableOnDifferentProviderJSONRPCError(%v, %d) = %v, expected %v",
 					tt.err, tt.statusCode, result, tt.expected)
 			}
 		})
