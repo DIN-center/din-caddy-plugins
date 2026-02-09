@@ -725,6 +725,37 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			if appError == nil {
 				// Request was successful
 				shouldLogMetrics = true
+
+				// Log if this success came after a method-level failover
+				if len(excludedProviders) > 0 {
+					successProvider := "unknown"
+					successProviderName := "unknown"
+					if v, ok := repl.Get(RequestProviderKey); ok {
+						if pStr, ok := v.(string); ok {
+							successProvider = pStr
+							if providerMap, ok := repl.Get(DinUpstreamsContextKey); ok {
+								if providers, ok := providerMap.(map[string]*provider); ok {
+									if p, ok := providers[successProvider]; ok {
+										successProviderName = p.Name
+									}
+								}
+							}
+						}
+					}
+					excludedList := make([]string, 0, len(excludedProviders))
+					for host := range excludedProviders {
+						excludedList = append(excludedList, host)
+					}
+					d.logger.Info("Request succeeded after method-level failover",
+						zap.String("network", networkPath),
+						zap.String("provider", successProvider),
+						zap.String("provider_name", successProviderName),
+						zap.String("request_method", method),
+						zap.Int("attempt", attempt+1),
+						zap.Strings("excluded_providers", excludedList),
+					)
+				}
+
 				break
 			}
 
@@ -785,19 +816,20 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 					// Update the context so GetUpstreams excludes failed providers on next attempt
 					repl.Set(DinExcludedProvidersContextKey, excludedProviders)
 
-					logFailedAttempt(LogFailedAttemptParams{
-						Reason:              "Method not supported by provider, trying different provider",
-						Logger:              d.logger,
-						NetworkPath:         networkPath,
-						FailedAttemptNumber: attempt + 1,
-						MaxAttempts:         networkObj.RequestAttemptCount,
-						StatusCodeOfFailure: rww.statusCode,
-						Error:               appError,
-						Replacer:            repl,
-						RequestMethod:       method,
-						RequestParams:       params,
-						RawResponseBody:     responseBody,
-					})
+					// Log at INFO level since this is expected behavior — the request will be
+					// retried on a different provider and is likely to succeed.
+					excludedList := make([]string, 0, len(excludedProviders))
+					for host := range excludedProviders {
+						excludedList = append(excludedList, host)
+					}
+					d.logger.Info("Method not supported by provider, trying different provider",
+						zap.String("network", networkPath),
+						zap.String("request_method", method),
+						zap.Int("attempt", attempt+1),
+						zap.Int("max_attempts", networkObj.RequestAttemptCount),
+						zap.Error(appError),
+						zap.Strings("excluded_providers", excludedList),
+					)
 					continue
 				}
 
