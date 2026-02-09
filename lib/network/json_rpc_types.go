@@ -24,14 +24,15 @@ type JSONRPCError struct {
 
 // JSONRPCErrorClassifier provides error classification logic for JSON-RPC errors
 type JSONRPCErrorClassifier struct {
-	nonRetryablePatterns []string
+	nonRetryablePatterns                 []string
+	retryableOnDifferentProviderPatterns []string
 }
 
 // NewJSONRPCErrorClassifier creates a new error classifier with default patterns
 func NewJSONRPCErrorClassifier() *JSONRPCErrorClassifier {
 	return &JSONRPCErrorClassifier{
 		nonRetryablePatterns: []string{
-			"method not found",   // -32601
+			"method not found",   // -32601 (also in retryableOnDifferentProviderPatterns)
 			"invalid params",     // -32602
 			"invalid request",    // -32600
 			"parse error",        // -32700
@@ -43,6 +44,9 @@ func NewJSONRPCErrorClassifier() *JSONRPCErrorClassifier {
 			"gas",                // Gas-related errors (insufficient gas, gas estimation failed, etc.)
 			"revert",             // EVM execution reverts
 			"vm execution error", // Virtual machine execution errors
+		},
+		retryableOnDifferentProviderPatterns: []string{
+			"method not found", // -32601: provider may not support this method, but another might
 		},
 	}
 }
@@ -76,6 +80,35 @@ func (c *JSONRPCErrorClassifier) IsRetryable(err error, statusCode int) bool {
 	return true
 }
 
+// IsRetryableOnDifferentProvider returns true if this error should be retried
+// on a different provider (but NOT the same one). This covers cases like -32601
+// where one provider may not support a method but another might.
+func (c *JSONRPCErrorClassifier) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	// HTTP server errors should be retried on the same provider (standard retry)
+	if statusCode >= 500 {
+		return false
+	}
+
+	// Rate limiting should be retried on the same provider (standard retry)
+	if statusCode == 429 {
+		return false
+	}
+
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	for _, pattern := range c.retryableOnDifferentProviderPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Package-level functions for backward compatibility
 
 var defaultClassifier = NewJSONRPCErrorClassifier()
@@ -84,6 +117,12 @@ var defaultClassifier = NewJSONRPCErrorClassifier()
 // This is shared logic for all JSON-RPC based handlers
 func IsRetryableJSONRPCError(err error, statusCode int) bool {
 	return defaultClassifier.IsRetryable(err, statusCode)
+}
+
+// IsRetryableOnDifferentProviderJSONRPCError checks if a JSON-RPC error should be retried
+// on a different provider. This is shared logic for all JSON-RPC based handlers.
+func IsRetryableOnDifferentProviderJSONRPCError(err error, statusCode int) bool {
+	return defaultClassifier.IsRetryableOnDifferentProvider(err, statusCode)
 }
 
 // IsJSONRPCErrorCode checks if an error matches a specific JSON-RPC error code

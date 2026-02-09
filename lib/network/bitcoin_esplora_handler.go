@@ -129,6 +129,11 @@ func (h *BitcoinEsploraHandler) ParseResponse(body []byte, statusCode int) error
 	return nil
 }
 
+func (h *BitcoinEsploraHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	// REST APIs don't have JSON-RPC -32601 semantics
+	return false
+}
+
 func (h *BitcoinEsploraHandler) IsRetryableError(err error, statusCode int) bool {
 	// Server errors and rate limits are retryable
 	if statusCode >= 500 || statusCode == 429 {

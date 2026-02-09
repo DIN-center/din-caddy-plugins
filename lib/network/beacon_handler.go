@@ -143,6 +143,11 @@ func (h *BeaconChainHandler) ParseResponse(body []byte, statusCode int) error {
 	return nil
 }
 
+func (h *BeaconChainHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	// REST APIs don't have JSON-RPC -32601 semantics
+	return false
+}
+
 func (h *BeaconChainHandler) IsRetryableError(err error, statusCode int) bool {
 	// HTTP server errors are retryable
 	if statusCode >= 500 {

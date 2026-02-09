@@ -18,8 +18,6 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-var _ NetworkHandler = (*MockNetworkHandler)(nil)
-
 // MockNetworkHandler is a mock of NetworkHandler interface.
 type MockNetworkHandler struct {
 	ctrl     *gomock.Controller
@@ -188,6 +186,21 @@ func (mr *MockNetworkHandlerMockRecorder) GetBlockInfoMethod() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBlockInfoMethod", reflect.TypeOf((*MockNetworkHandler)(nil).GetBlockInfoMethod))
 }
 
+// GetBlockTimestamp mocks base method.
+func (m *MockNetworkHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBlockTimestamp", httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBlockTimestamp indicates an expected call of GetBlockTimestamp.
+func (mr *MockNetworkHandlerMockRecorder) GetBlockTimestamp(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBlockTimestamp", reflect.TypeOf((*MockNetworkHandler)(nil).GetBlockTimestamp), httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+}
+
 // GetChainID mocks base method.
 func (m *MockNetworkHandler) GetChainID(httpUrl string, headers map[string]string, httpClient http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (string, error) {
 	m.ctrl.T.Helper()
@@ -342,6 +355,20 @@ func (m *MockNetworkHandler) IsRetryableError(err error, statusCode int) bool {
 func (mr *MockNetworkHandlerMockRecorder) IsRetryableError(err, statusCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsRetryableError", reflect.TypeOf((*MockNetworkHandler)(nil).IsRetryableError), err, statusCode)
+}
+
+// IsRetryableOnDifferentProvider mocks base method.
+func (m *MockNetworkHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsRetryableOnDifferentProvider", err, statusCode)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsRetryableOnDifferentProvider indicates an expected call of IsRetryableOnDifferentProvider.
+func (mr *MockNetworkHandlerMockRecorder) IsRetryableOnDifferentProvider(err, statusCode any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsRetryableOnDifferentProvider", reflect.TypeOf((*MockNetworkHandler)(nil).IsRetryableOnDifferentProvider), err, statusCode)
 }
 
 // ParseArchiveResponse mocks base method.
@@ -503,20 +530,6 @@ func (mr *MockNetworkHandlerMockRecorder) SupportsArchiveMode() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsArchiveMode", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsArchiveMode))
 }
 
-// SupportsGetBlockByNumber mocks base method.
-func (m *MockNetworkHandler) SupportsGetBlockByNumber() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SupportsGetBlockByNumber")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// SupportsGetBlockByNumber indicates an expected call of SupportsGetBlockByNumber.
-func (mr *MockNetworkHandlerMockRecorder) SupportsGetBlockByNumber() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsGetBlockByNumber", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsGetBlockByNumber))
-}
-
 // SupportsDynamicBlockLag mocks base method.
 func (m *MockNetworkHandler) SupportsDynamicBlockLag() bool {
 	m.ctrl.T.Helper()
@@ -531,19 +544,18 @@ func (mr *MockNetworkHandlerMockRecorder) SupportsDynamicBlockLag() *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsDynamicBlockLag", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsDynamicBlockLag))
 }
 
-// GetBlockTimestamp mocks base method.
-func (m *MockNetworkHandler) GetBlockTimestamp(httpUrl string, headers map[string]string, httpClient http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (int64, error) {
+// SupportsGetBlockByNumber mocks base method.
+func (m *MockNetworkHandler) SupportsGetBlockByNumber() bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBlockTimestamp", httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "SupportsGetBlockByNumber")
+	ret0, _ := ret[0].(bool)
+	return ret0
 }
 
-// GetBlockTimestamp indicates an expected call of GetBlockTimestamp.
-func (mr *MockNetworkHandlerMockRecorder) GetBlockTimestamp(httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber interface{}) *gomock.Call {
+// SupportsGetBlockByNumber indicates an expected call of SupportsGetBlockByNumber.
+func (mr *MockNetworkHandlerMockRecorder) SupportsGetBlockByNumber() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBlockTimestamp", reflect.TypeOf((*MockNetworkHandler)(nil).GetBlockTimestamp), httpUrl, headers, httpClient, authClient, requestAttempts, blockNumber)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsGetBlockByNumber", reflect.TypeOf((*MockNetworkHandler)(nil).SupportsGetBlockByNumber))
 }
 
 // ValidateChainID mocks base method.

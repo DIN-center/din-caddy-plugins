@@ -124,6 +124,10 @@ func (h *StarknetHandler) IsRetryableError(err error, statusCode int) bool {
 	return IsRetryableJSONRPCError(err, statusCode)
 }
 
+func (h *StarknetHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	return IsRetryableOnDifferentProviderJSONRPCError(err, statusCode)
+}
+
 // === NEW NETWORK-SPECIFIC METHODS ===
 
 // Chain ID and Namespace methods

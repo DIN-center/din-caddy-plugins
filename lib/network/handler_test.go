@@ -64,6 +64,10 @@ func (m *MockHandler) IsRetryableError(err error, statusCode int) bool {
 	return false
 }
 
+func (m *MockHandler) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
+	return false
+}
+
 // === NEW: Network-Specific Methods (Mock implementations) ===
 
 // Chain ID and Namespace
