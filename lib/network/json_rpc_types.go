@@ -83,6 +83,10 @@ func (c *JSONRPCErrorClassifier) IsRetryable(err error, statusCode int) bool {
 // IsRetryableOnDifferentProvider returns true if this error should be retried
 // on a different provider (but NOT the same one). This covers cases like -32601
 // where one provider may not support a method but another might.
+//
+// Matching is done by error code (-32601) rather than message text, since different
+// providers use different wording (e.g., "Method not found", "unsupported method",
+// "the method X does not exist/is not available").
 func (c *JSONRPCErrorClassifier) IsRetryableOnDifferentProvider(err error, statusCode int) bool {
 	// HTTP server errors should be retried on the same provider (standard retry)
 	if statusCode >= 500 {
@@ -98,8 +102,13 @@ func (c *JSONRPCErrorClassifier) IsRetryableOnDifferentProvider(err error, statu
 		return false
 	}
 
-	errMsg := strings.ToLower(err.Error())
+	// Match on JSON-RPC error code -32601 (method not found) regardless of message text
+	if IsJSONRPCErrorCode(err, -32601) {
+		return true
+	}
 
+	// Also match text patterns for cases where error code isn't in the standard format
+	errMsg := strings.ToLower(err.Error())
 	for _, pattern := range c.retryableOnDifferentProviderPatterns {
 		if strings.Contains(errMsg, pattern) {
 			return true

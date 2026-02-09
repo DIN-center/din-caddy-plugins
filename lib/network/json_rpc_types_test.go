@@ -142,10 +142,16 @@ func TestIsRetryableOnDifferentProviderJSONRPCError(t *testing.T) {
 			expected:   true,
 		},
 		{
-			name:       "the method does not exist is not supported",
+			name:       "unsupported method without error code",
 			err:        fmt.Errorf("the method debug_traceBlockByNumber is not supported"),
 			statusCode: 200,
-			expected:   false, // does not contain exact "method not found" pattern
+			expected:   false, // no -32601 code and no "method not found" pattern
+		},
+		{
+			name:       "unsupported method with -32601 error code",
+			err:        fmt.Errorf("JSON-RPC error -32601: the method debug_traceBlockByNumber is not supported"),
+			statusCode: 200,
+			expected:   true, // matches on -32601 error code regardless of message text
 		},
 		// HTTP 500 takes precedence — should use standard retry, not different-provider
 		{

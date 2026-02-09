@@ -733,9 +733,28 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				// Check if this error can be retried on a different provider (e.g., -32601 method not found)
 				if networkObj.handler.IsRetryableOnDifferentProvider(appError, rww.statusCode) {
 					// Exclude the provider that returned method-not-found
-					if failedProvider, ok := repl.Get(RequestProviderKey); ok {
-						excludedProviders[failedProvider.(string)] = struct{}{}
+					failedProvider, ok := repl.Get(RequestProviderKey)
+					if !ok {
+						// Cannot identify which provider failed; fall through to non-retryable path
+						d.logger.Warn("Method-not-found retry skipped: provider key not available in context",
+							zap.String("network", networkPath),
+							zap.Error(appError))
+						logFailedAttempt(LogFailedAttemptParams{
+							Reason:              "Non-retryable application error",
+							Logger:              d.logger,
+							NetworkPath:         networkPath,
+							FailedAttemptNumber: attempt + 1,
+							MaxAttempts:         networkObj.RequestAttemptCount,
+							StatusCodeOfFailure: rww.statusCode,
+							Error:               appError,
+							Replacer:            repl,
+							RequestMethod:       method,
+							RequestParams:       params,
+							RawResponseBody:     responseBody,
+						})
+						break
 					}
+					excludedProviders[failedProvider.(string)] = struct{}{}
 
 					// Check if all providers are now excluded — if so, stop retrying
 					if providerMap, ok := repl.Get(DinUpstreamsContextKey); ok {
