@@ -67,6 +67,13 @@ func (c *JSONRPCErrorClassifier) IsRetryable(err error, statusCode int) bool {
 		return false
 	}
 
+	// Check for -32601 (method not found) by error code — different providers use
+	// different wording (e.g., "method not found" vs "X is not supported"), so matching
+	// the error code is more reliable than text patterns alone.
+	if IsJSONRPCErrorCode(err, -32601) {
+		return false
+	}
+
 	errMsg := strings.ToLower(err.Error())
 
 	// First check for explicitly non-retryable patterns

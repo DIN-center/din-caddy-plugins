@@ -108,6 +108,14 @@ func TestIsRetryableJSONRPCError_GasAndRevertHandling(t *testing.T) {
 			statusCode: 200,
 			expected:   false,
 		},
+		// -32601 with non-standard text (e.g., "is not supported" instead of "method not found")
+		// should NOT be retryable on the same provider — caught by error code check
+		{
+			name:       "-32601 with non-standard text",
+			err:        fmt.Errorf("JSON-RPC error -32601: debug_traceBlockByNumber is not supported"),
+			statusCode: 200,
+			expected:   false,
+		},
 	}
 
 	for _, tt := range tests {
