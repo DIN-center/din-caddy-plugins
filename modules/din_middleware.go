@@ -666,11 +666,16 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Track if we should log metrics at the end (only for final outcomes)
 	var shouldLogMetrics bool
 
+	// Track providers excluded due to method-not-found (-32601) errors.
+	// These providers are skipped on subsequent attempts so a different provider is tried.
+	excludedProviders := make(map[string]struct{})
+
 	// Retry the request if it fails up to the max attempt request count
 	// Retries occur when:
 	// 1. HTTP errors (non-200 status codes or upstream errors)
 	// 2. Retryable JSON-RPC errors (server errors, timeouts, rate limits, etc.)
-	// Non-retryable JSON-RPC errors (method not found, invalid params) will not trigger retries
+	// 3. Method-not-found errors (-32601) trigger retry on a different provider
+	// Non-retryable JSON-RPC errors (invalid params, revert, etc.) will not trigger retries
 	for attempt := 0; attempt < networkObj.RequestAttemptCount; attempt++ {
 		if err := checkRequestContext(d.logger, r, networkPath, attempt); err != nil {
 			handleContextCancellation(d.logger, d.PrometheusClient, rw, r, networkPath, attempt, err, reqStartTime, networkObj)
@@ -725,8 +730,54 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 			// Check if the error is retryable using the handler
 			if !networkObj.handler.IsRetryableError(appError, rww.statusCode) {
-				// Non-retryable error
-				// Log this for debugging purposes since we won't retry
+				// Check if this error can be retried on a different provider (e.g., -32601 method not found)
+				if networkObj.handler.IsRetryableOnDifferentProvider(appError, rww.statusCode) {
+					// Exclude the provider that returned method-not-found
+					if failedProvider, ok := repl.Get(RequestProviderKey); ok {
+						excludedProviders[failedProvider.(string)] = struct{}{}
+					}
+
+					// Check if all providers are now excluded — if so, stop retrying
+					if providerMap, ok := repl.Get(DinUpstreamsContextKey); ok {
+						providers := providerMap.(map[string]*provider)
+						if len(excludedProviders) >= len(providers) {
+							logFailedAttempt(LogFailedAttemptParams{
+								Reason:              "Method not supported by any provider",
+								Logger:              d.logger,
+								NetworkPath:         networkPath,
+								FailedAttemptNumber: attempt + 1,
+								MaxAttempts:         networkObj.RequestAttemptCount,
+								StatusCodeOfFailure: rww.statusCode,
+								Error:               appError,
+								Replacer:            repl,
+								RequestMethod:       method,
+								RequestParams:       params,
+								RawResponseBody:     responseBody,
+							})
+							break
+						}
+					}
+
+					// Update the context so GetUpstreams excludes failed providers on next attempt
+					repl.Set(DinExcludedProvidersContextKey, excludedProviders)
+
+					logFailedAttempt(LogFailedAttemptParams{
+						Reason:              "Method not supported by provider, trying different provider",
+						Logger:              d.logger,
+						NetworkPath:         networkPath,
+						FailedAttemptNumber: attempt + 1,
+						MaxAttempts:         networkObj.RequestAttemptCount,
+						StatusCodeOfFailure: rww.statusCode,
+						Error:               appError,
+						Replacer:            repl,
+						RequestMethod:       method,
+						RequestParams:       params,
+						RawResponseBody:     responseBody,
+					})
+					continue
+				}
+
+				// Truly non-retryable error — do not retry
 				logFailedAttempt(LogFailedAttemptParams{
 					Reason:              "Non-retryable application error",
 					Logger:              d.logger,
