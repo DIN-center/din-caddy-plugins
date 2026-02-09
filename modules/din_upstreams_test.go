@@ -365,3 +365,122 @@ func TestGetDinUpstreams(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDinUpstreams_WithExcludedProviders(t *testing.T) {
+	testNetwork := &network{
+		Name:      "ethereum",
+		Providers: make(map[string]*provider),
+	}
+	globalNetworkMutex.Lock()
+	globalNetworkRegistry["ethereum"] = testNetwork
+	globalNetworkMutex.Unlock()
+	defer func() {
+		globalNetworkMutex.Lock()
+		delete(globalNetworkRegistry, "ethereum")
+		globalNetworkMutex.Unlock()
+	}()
+
+	dinUpstreams := new(DinUpstreams)
+
+	upstream1 := &reverseproxy.Upstream{Dial: "provider-a:8000"}
+	upstream2 := &reverseproxy.Upstream{Dial: "provider-b:8001"}
+	upstream3 := &reverseproxy.Upstream{Dial: "provider-c:8002"}
+
+	healthyHistory := func() *list.List {
+		l := list.New()
+		l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+		return l
+	}
+
+	tests := []struct {
+		name              string
+		providers         map[string]*provider
+		excludedProviders map[string]struct{}
+		expectedCount     int
+		expectedDials     []string
+	}{
+		{
+			name: "exclude one provider, other remains",
+			providers: map[string]*provider{
+				"provider-a:8000": {upstream: upstream1, Priority: 0, host: "provider-a:8000", blockHistory: healthyHistory()},
+				"provider-b:8001": {upstream: upstream2, Priority: 0, host: "provider-b:8001", blockHistory: healthyHistory()},
+			},
+			excludedProviders: map[string]struct{}{"provider-a:8000": {}},
+			expectedCount:     1,
+			expectedDials:     []string{"provider-b:8001"},
+		},
+		{
+			name: "exclude priority 0 provider, fall through to priority 1",
+			providers: map[string]*provider{
+				"provider-a:8000": {upstream: upstream1, Priority: 0, host: "provider-a:8000", blockHistory: healthyHistory()},
+				"provider-b:8001": {upstream: upstream2, Priority: 1, host: "provider-b:8001", blockHistory: healthyHistory()},
+			},
+			excludedProviders: map[string]struct{}{"provider-a:8000": {}},
+			expectedCount:     1,
+			expectedDials:     []string{"provider-b:8001"},
+		},
+		{
+			name: "no exclusions, all providers returned",
+			providers: map[string]*provider{
+				"provider-a:8000": {upstream: upstream1, Priority: 0, host: "provider-a:8000", blockHistory: healthyHistory()},
+				"provider-b:8001": {upstream: upstream2, Priority: 0, host: "provider-b:8001", blockHistory: healthyHistory()},
+			},
+			excludedProviders: nil,
+			expectedCount:     2,
+			expectedDials:     []string{"provider-a:8000", "provider-b:8001"},
+		},
+		{
+			name: "all providers excluded, empty pool",
+			providers: map[string]*provider{
+				"provider-a:8000": {upstream: upstream1, Priority: 0, host: "provider-a:8000", blockHistory: healthyHistory()},
+				"provider-b:8001": {upstream: upstream2, Priority: 0, host: "provider-b:8001", blockHistory: healthyHistory()},
+			},
+			excludedProviders: map[string]struct{}{"provider-a:8000": {}, "provider-b:8001": {}},
+			expectedCount:     0,
+			expectedDials:     []string{},
+		},
+		{
+			name: "exclude two of three, one remains",
+			providers: map[string]*provider{
+				"provider-a:8000": {upstream: upstream1, Priority: 0, host: "provider-a:8000", blockHistory: healthyHistory()},
+				"provider-b:8001": {upstream: upstream2, Priority: 0, host: "provider-b:8001", blockHistory: healthyHistory()},
+				"provider-c:8002": {upstream: upstream3, Priority: 1, host: "provider-c:8002", blockHistory: healthyHistory()},
+			},
+			excludedProviders: map[string]struct{}{"provider-a:8000": {}, "provider-b:8001": {}},
+			expectedCount:     1,
+			expectedDials:     []string{"provider-c:8002"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			globalNetworkMutex.Lock()
+			testNetwork.Providers = tt.providers
+			globalNetworkMutex.Unlock()
+
+			req := &http.Request{URL: &url.URL{Path: "/ethereum/eth_blockNumber"}}
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(DinUpstreamsContextKey, tt.providers)
+			if tt.excludedProviders != nil {
+				repl.Set(DinExcludedProvidersContextKey, tt.excludedProviders)
+			}
+
+			upstreams, _ := dinUpstreams.GetUpstreams(req)
+			if len(upstreams) != tt.expectedCount {
+				t.Errorf("GetUpstreams() returned %d upstreams, want %d", len(upstreams), tt.expectedCount)
+				return
+			}
+
+			actualDials := make(map[string]bool)
+			for _, u := range upstreams {
+				actualDials[u.Dial] = true
+			}
+			for _, dial := range tt.expectedDials {
+				if !actualDials[dial] {
+					t.Errorf("GetUpstreams() missing expected upstream: %v", dial)
+				}
+			}
+		})
+	}
+}

@@ -86,8 +86,14 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		providers = networkConfig.Providers
 	}
 
+	// Check for providers excluded due to method-not-found errors on prior attempts
+	var excludedProviders map[string]struct{}
+	if v, ok := repl.Get(DinExcludedProvidersContextKey); ok {
+		excludedProviders = v.(map[string]struct{})
+	}
+
 	// Convert providers to upstreams based on priority and health status
-	upstreamPool := d.buildUpstreamPool(providers)
+	upstreamPool := d.buildUpstreamPool(providers, excludedProviders)
 
 	return upstreamPool, nil
 }
@@ -113,13 +119,17 @@ func (d *DinUpstreams) extractNetworkName(path string) string {
 	return networkName
 }
 
-// buildUpstreamPool converts providers to upstreams with priority + health based selection
-func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider) []*reverseproxy.Upstream {
+// buildUpstreamPool converts providers to upstreams with priority + health based selection.
+// excludedProviders contains hosts to skip (e.g., from method-not-found retries). May be nil.
+func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider, excludedProviders map[string]struct{}) []*reverseproxy.Upstream {
 	upstreamPool := make([]*reverseproxy.Upstream, 0)
 
 	// Select upstream based on priority. If no upstreams are available, pass along all upstreams
 	for priority := 0; priority < MaxPriority; priority++ {
 		for _, p := range providers {
+			if _, excluded := excludedProviders[p.host]; excluded {
+				continue
+			}
 			if p.Priority == priority && p.Available() {
 				upstreamPool = append(upstreamPool, p.upstream)
 			}
@@ -134,6 +144,9 @@ func (d *DinUpstreams) buildUpstreamPool(providers map[string]*provider) []*reve
 	if len(upstreamPool) == 0 {
 		for priority := 0; priority < MaxPriority; priority++ {
 			for _, p := range providers {
+				if _, excluded := excludedProviders[p.host]; excluded {
+					continue
+				}
 				if p.Priority == priority && p.IsAvailableWithWarning() {
 					upstreamPool = append(upstreamPool, p.upstream)
 				}
