@@ -102,6 +102,14 @@ type NetworkHandler interface {
 	Initialize(config *NetworkConfig) error
 }
 
+// TraceChecker is an optional interface for handlers that support trace/debug capabilities
+// Currently implemented by: EVMHandler
+type TraceChecker interface {
+	// PerformTraceBlockByNumberCheck performs debug_traceBlockByNumber check
+	// This is used for MetaMask compliance and verifies trace/debug API support
+	PerformTraceBlockByNumberCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error
+}
+
 // BlockInfo represents block information across different network types
 type BlockInfo struct {
 	Number    int64                  `json:"number"`

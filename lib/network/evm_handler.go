@@ -487,6 +487,40 @@ func (h *EVMHandler) PerformArchiveCheck(httpUrl string, headers map[string]stri
 	)
 }
 
+// PerformTraceBlockByNumberCheck performs debug_traceBlockByNumber check for EVM chains
+// This is an additional archive mode check that verifies trace capabilities (MetaMask requirement)
+func (h *EVMHandler) PerformTraceBlockByNumberCheck(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	return PerformTraceBlockByNumberCheckViaJSONRPC(
+		httpUrl,
+		headers,
+		httpClient,
+		authClient,
+		requestAttempts,
+		blockHeight,
+	)
+}
+
+// createTraceBlockByNumberPayload creates the debug_traceBlockByNumber request payload
+func createTraceBlockByNumberPayload(blockHeight string) ([]byte, error) {
+	payload := fmt.Sprintf(`{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","id":1,"params":["%s",{"tracer":"callTracer","timeout":"30s","onlyTopCall":true}]}`, blockHeight)
+	return []byte(payload), nil
+}
+
+// parseTraceBlockByNumberResponse validates the debug_traceBlockByNumber response
+func parseTraceBlockByNumberResponse(body []byte) error {
+	var respObject map[string]interface{}
+	if err := json.Unmarshal(body, &respObject); err != nil {
+		return fmt.Errorf("failed to unmarshal trace response: %w", err)
+	}
+
+	// Check for JSON-RPC error
+	if errField, ok := respObject["error"]; ok && errField != nil {
+		return fmt.Errorf("debug_traceBlockByNumber not supported: %v", errField)
+	}
+
+	return nil
+}
+
 // PerformGetBlockByNumber performs get block by number operation for EVM chains using JSON-RPC
 func (h *EVMHandler) PerformGetBlockByNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64) (interface{}, error) {
 	// Use the shared JSON-RPC helper for get block by number operations

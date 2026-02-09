@@ -65,6 +65,29 @@ func TestReflectionBasedConfigParsing(t *testing.T) {
 			},
 		},
 		{
+			name: "Test archive_trace_block_by_number flag",
+			caddyfile: `networks {
+				eth {
+					chain_id 0x1
+					archive_enabled true
+					archive_trace_block_by_number true
+					providers {
+						http://test.com/eth {
+							priority 1
+						}
+					}
+				}
+			}`,
+			expectedValues: map[string]interface{}{
+				"ArchiveEnabled":                   true,
+				"ArchiveTraceBlockByNumberEnabled": true,
+			},
+			expectedFlags: map[string]bool{
+				"ArchiveEnabledSetInCaddyfile":                  true,
+				"ArchiveTraceBlockByNumberSetInCaddyfile":       true,
+			},
+		},
+		{
 			name: "Test partial config with defaults",
 			caddyfile: `networks {
 				eth {
@@ -146,6 +169,8 @@ func TestReflectionBasedConfigParsing(t *testing.T) {
 					assert.Equal(t, expectedValue, network.RequestAttemptCount, "Field %s", fieldName)
 				case "ArchiveEnabled":
 					assert.Equal(t, expectedValue, network.ArchiveEnabled, "Field %s", fieldName)
+				case "ArchiveTraceBlockByNumberEnabled":
+					assert.Equal(t, expectedValue, network.ArchiveTraceBlockByNumberEnabled, "Field %s", fieldName)
 				}
 			}
 
@@ -172,6 +197,8 @@ func TestReflectionBasedConfigParsing(t *testing.T) {
 					assert.Equal(t, expectedFlag, network.CaddyfileFlags.RequestAttemptCountSetInCaddyfile, "Flag %s", flagName)
 				case "ArchiveEnabledSetInCaddyfile":
 					assert.Equal(t, expectedFlag, network.CaddyfileFlags.ArchiveEnabledSetInCaddyfile, "Flag %s", flagName)
+				case "ArchiveTraceBlockByNumberSetInCaddyfile":
+					assert.Equal(t, expectedFlag, network.CaddyfileFlags.ArchiveTraceBlockByNumberSetInCaddyfile, "Flag %s", flagName)
 				}
 			}
 		})

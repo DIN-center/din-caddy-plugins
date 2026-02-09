@@ -229,7 +229,8 @@ func (p *caddyfileParser) parseNetworkField(networkName string, nesting int) err
 	case "healthcheck_threshold", "healthcheck_timeout", "healthcheck_interval",
 		"healthcheck_blocklag_limit", "healthcheck_blockjump_limit",
 		"healthcheck_provider_block_history_size", "network_block_history_size",
-		"max_request_payload_size_kb", "request_attempt_count", "archive_enabled":
+		"max_request_payload_size_kb", "request_attempt_count", "archive_enabled",
+		"archive_trace_block_by_number":
 		return p.parseConfigField(network, p.dispenser.Val())
 	case "custom_config":
 		return p.parseCustomConfig(network, nesting)
@@ -714,6 +715,7 @@ var configFieldMapping = map[string]struct {
 	"max_request_payload_size_kb":             {"MaxRequestPayloadSizeKB", "MaxRequestPayloadSizeKBSetInCaddyfile"},
 	"request_attempt_count":                   {"RequestAttemptCount", "RequestAttemptCountSetInCaddyfile"},
 	"archive_enabled":                         {"ArchiveEnabled", "ArchiveEnabledSetInCaddyfile"},
+	"archive_trace_block_by_number":           {"ArchiveTraceBlockByNumberEnabled", "ArchiveTraceBlockByNumberSetInCaddyfile"},
 }
 
 // parseConfigField uses reflection to parse a configuration field and automatically set the corresponding flag

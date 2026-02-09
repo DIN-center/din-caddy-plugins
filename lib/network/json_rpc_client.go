@@ -178,6 +178,55 @@ func PerformArchiveCheckViaJSONRPC(httpUrl string, headers map[string]string, ht
 	return fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
 }
 
+// PerformTraceBlockByNumberCheckViaJSONRPC performs a debug_traceBlockByNumber check via JSON-RPC
+// This is EVM-specific and verifies trace/debug capabilities for MetaMask compliance
+func PerformTraceBlockByNumberCheckViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockHeight string) error {
+	var lastErr error
+	var lastResponseStatus int
+
+	// Create payload once outside the retry loop - it's deterministic
+	payload, err := createTraceBlockByNumberPayload(blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to create trace payload: %w", err)
+	}
+
+	for attempt := 0; attempt < requestAttempts; attempt++ {
+		// Make POST request with payload
+		resBytes, statusCode, err := httpClient.Post(httpUrl, headers, payload, authClient)
+		if statusCode != nil {
+			lastResponseStatus = *statusCode
+		}
+
+		if err != nil {
+			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
+			continue
+		}
+
+		// Check for specific HTTP error status codes
+		if lastResponseStatus >= 400 {
+			if lastResponseStatus == 503 || lastResponseStatus == 502 {
+				lastErr = fmt.Errorf("network unavailable (status code: %d)", lastResponseStatus)
+			} else {
+				lastErr = fmt.Errorf("error status code: %d", lastResponseStatus)
+			}
+			continue
+		}
+
+		// Validate the trace response
+		err = parseTraceBlockByNumberResponse(resBytes)
+		if err != nil {
+			lastErr = fmt.Errorf("trace block check failed: %w", err)
+			continue
+		}
+
+		// Success!
+		return nil
+	}
+
+	// All attempts failed
+	return fmt.Errorf("failed after %d attempts: %w", requestAttempts, lastErr)
+}
+
 // PerformGetBlockByNumberViaJSONRPC performs a JSON-RPC get block by number request
 // This is shared logic for JSON-RPC based handlers (EVM, Starknet, Solana)
 func PerformGetBlockByNumberViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumber int64, blockMethod string, createBlockRequestFunc func(string, int64, bool) ([]byte, error), parseBlockResponseFunc func([]byte) (interface{}, error)) (interface{}, error) {

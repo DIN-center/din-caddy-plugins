@@ -492,6 +492,135 @@ func TestArchiveModeCheck(t *testing.T) {
 	}
 }
 
+func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name                      string
+		archiveEnabled            bool
+		traceEnabled              bool
+		archiveResponse           []byte
+		archiveStatusCode         int
+		traceResponse             []byte
+		traceStatusCode           int
+		expectError               bool
+		expectedErrMsg            string
+	}{
+		{
+			name:              "trace_disabled_only_archive_check_runs",
+			archiveEnabled:    true,
+			traceEnabled:      false,
+			archiveResponse:   []byte(`{"result":"0x123"}`),
+			archiveStatusCode: 200,
+			traceResponse:     nil, // Should not be called
+			traceStatusCode:   0,
+			expectError:       false,
+		},
+		{
+			name:              "both_checks_pass",
+			archiveEnabled:    true,
+			traceEnabled:      true,
+			archiveResponse:   []byte(`{"result":"0x123"}`),
+			archiveStatusCode: 200,
+			traceResponse:     []byte(`{"jsonrpc":"2.0","id":1,"result":[{"type":"CALL"}]}`),
+			traceStatusCode:   200,
+			expectError:       false,
+		},
+		{
+			name:              "archive_passes_trace_fails_with_32000_error",
+			archiveEnabled:    true,
+			traceEnabled:      true,
+			archiveResponse:   []byte(`{"result":"0x123"}`),
+			archiveStatusCode: 200,
+			traceResponse:     []byte(`{"jsonrpc":"2.0","id":0,"error":{"code":-32000,"message":"block pruned: 183392636 vs 179652199"}}`),
+			traceStatusCode:   200,
+			expectError:       true,
+			expectedErrMsg:    "trace block check failed",
+		},
+		{
+			name:              "archive_passes_trace_fails_method_not_found",
+			archiveEnabled:    true,
+			traceEnabled:      true,
+			archiveResponse:   []byte(`{"result":"0x123"}`),
+			archiveStatusCode: 200,
+			traceResponse:     []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"method not found"}}`),
+			traceStatusCode:   200,
+			expectError:       true,
+			expectedErrMsg:    "trace block check failed",
+		},
+		{
+			name:              "archive_disabled_no_checks_run",
+			archiveEnabled:    false,
+			traceEnabled:      true, // Should be ignored when archive is disabled
+			archiveResponse:   nil,
+			archiveStatusCode: 0,
+			traceResponse:     nil,
+			traceStatusCode:   0,
+			expectError:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHTTPClient := din_http.NewMockIHTTPClient(ctrl)
+
+			// Set up mock expectations based on test case
+			if tt.archiveEnabled && tt.archiveResponse != nil {
+				// First call is for archive check (eth_getBalance)
+				firstCall := mockHTTPClient.EXPECT().
+					Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(tt.archiveResponse, &tt.archiveStatusCode, nil).
+					Times(1)
+
+				// Second call is for trace check (debug_traceBlockByNumber) - only if enabled
+				if tt.traceEnabled && tt.traceResponse != nil {
+					mockHTTPClient.EXPECT().
+						Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(tt.traceResponse, &tt.traceStatusCode, nil).
+						Times(1).
+						After(firstCall)
+				}
+			}
+
+			// Create network
+			n, err := NewNetwork("ethereum", EVMHandler, utils.Environment("test"), "8000")
+			require.NoError(t, err)
+			n.HttpClient = mockHTTPClient
+			n.RequestAttemptCount = 1
+			n.ArchiveEnabled = tt.archiveEnabled
+			n.ArchiveTraceBlockByNumberEnabled = tt.traceEnabled
+			n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+
+			// Set the EVM handler
+			config := &networklib.NetworkConfig{
+				Name:    "ethereum",
+				Type:    string(EVMHandler),
+				ChainID: "0x1",
+			}
+			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
+
+			// Create provider with enough block history
+			provider, err := NewProvider("http://test.com")
+			require.NoError(t, err)
+			provider.AddBlockEntry(400, Healthy, 5)
+			provider.AddBlockEntry(400, Healthy, 5)
+
+			// Call performArchiveCheck with currentBlock = 400 (quarterBlock = 100)
+			err = n.performArchiveCheck(provider, 400)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectedErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectedErrMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestHasOtherHealthyProviders(t *testing.T) {
 	tests := []struct {
 		name      string
