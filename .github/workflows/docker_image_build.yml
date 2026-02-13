@@ -43,10 +43,17 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           path: deployment
 
-      - name: Update image version in deployment config
+      - name: Update image version in beta config
         uses: mikefarah/yq@master
         with:
           cmd: yq e -i ".image_version = env(GITHUB_SHA)" deployment/beta.yaml
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Update image version in main config
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i ".image_version = env(GITHUB_SHA)" deployment/main.yaml
         env:
           GITHUB_SHA: ${{ github.sha }}
 
@@ -56,8 +63,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add beta.yaml
-          git commit -m "Update beta deployment image_version to ${GITHUB_SHA}" || echo "No changes to commit"
+          git add beta.yaml main.yaml
+          git commit -m "Update beta and main deployment image_version to ${GITHUB_SHA}" || echo "No changes to commit"
           git push origin HEAD:beta
         env:
           GITHUB_SHA: ${{ github.sha }}
