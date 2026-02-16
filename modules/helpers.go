@@ -162,8 +162,8 @@ func getRequestMethod(repl *caddy.Replacer) (string, error) {
 	return methodStr, nil
 }
 
-// decompressBodyIfNecessary checks if the body is compressed (gzip or Brotli) based on headers
-// and attempts to decompress according to the content encoding. Returns the (potentially decompressed) body.
+// decompressBodyIfNecessary checks if the body is compressed (gzip or Brotli) based on headers or inspection of the body bytes.
+// It attempts to decompress according to the content encoding and returns the (potentially decompressed) body.
 func decompressBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
 	contentEncoding := strings.ToLower(headers.Get("Content-Encoding"))
 	gzipByMagic := len(bodyBytes) >= 2 && bodyBytes[0] == 0x1f && bodyBytes[1] == 0x8b
@@ -177,8 +177,8 @@ func decompressBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *logger
 	return bodyBytes
 }
 
-// decompressGzipBodyIfNecessary checks if the body is gzipped based on headers
-// and attempts to decompress it. It returns the processed body (decompressed or original).
+// decompressGzipBodyIfNecessary tries to decompress the body if it is GZIP-compressed.
+// It returns the processed body (decompressed or original if decompression fails).
 func decompressGzipBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
 	bReader := bytes.NewReader(bodyBytes)
 	gzr, errDecompress := gzip.NewReader(bReader)
@@ -200,8 +200,8 @@ func decompressGzipBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, ne
 	return bodyBytes
 }
 
-// decompressBrotliBody checks if the body is Brotli-compressed based on headers
-// and attempts to decompress it. It returns the processed body (decompressed or original).
+// decompressBrotliBody tries to decompress the body if it is Brotli-compressed.
+// It returns the processed body (decompressed or original if decompression fails).
 func decompressBrotliBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
 	bReader := bytes.NewReader(bodyBytes)
 	brReader := brotli.NewReader(bReader)
@@ -211,7 +211,7 @@ func decompressBrotliBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, 
 	} else {
 		lg.Warn("Failed to read decompressed Brotli body", zap.Error(errRead), zap.String("network", networkPath))
 	}
-	//No need to close the Brotli
+	//No need to close the Brotli reader as it is automatically closed by the io.ReadAll function.
 	return bodyBytes
 }
 
