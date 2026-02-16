@@ -54,8 +54,8 @@ func NewBitcoinEsploraHandler(config *NetworkConfig) *BitcoinEsploraHandler {
 }
 
 // Metadata methods for registry
-func (h *BitcoinEsploraHandler) GetType() string {
-	return "bitcoin-esplora"
+func (h *BitcoinEsploraHandler) GetType() HandlerType {
+	return BitcoinEsploraHandlerType
 }
 
 func (h *BitcoinEsploraHandler) GetName() string {

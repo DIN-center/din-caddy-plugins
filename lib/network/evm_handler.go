@@ -37,8 +37,8 @@ func NewEVMHandler(config *NetworkConfig) *EVMHandler {
 }
 
 // Metadata methods for registry
-func (h *EVMHandler) GetType() string {
-	return "evm" // Must match modules.EVMHandler constant value
+func (h *EVMHandler) GetType() HandlerType {
+	return EVMHandlerType
 }
 
 func (h *EVMHandler) GetName() string {
@@ -460,14 +460,16 @@ func (h *EVMHandler) ParseChainIDResponse(body []byte, statusCode int) (string, 
 // Uses the JSON-RPC method eth_blockNumber to get the current block height
 func (h *EVMHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	// Use the shared JSON-RPC helper with EVM-specific hex parsing
+	// Create JSON-RPC payload for latest block number request
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":[],"id":1}`, h.GetHealthCheckMethod()))
 	return GetLatestBlockNumberViaJSONRPC(
 		httpUrl,
+		payload,
 		headers,
 		httpClient,
 		authClient,
 		requestAttempts,
-		h.GetHealthCheckMethod(), // "eth_blockNumber"
-		ParseHexBlockNumber,      // EVM uses hex-encoded block numbers
+		ParseHexBlockNumber, // EVM uses hex-encoded block numbers
 	)
 }
 

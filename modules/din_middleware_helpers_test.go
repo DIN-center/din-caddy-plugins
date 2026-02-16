@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
 	"github.com/pkg/errors"
@@ -997,7 +998,7 @@ func TestProcessHCMethodResponseAsyncLogging(t *testing.T) {
 			loggerClient := &logger.LoggerClient{Logger: observedLogger}
 
 			// Create test network with proper handler initialization
-			network, err := NewNetwork("test", EVMHandler, utils.Environment("test"), "8080")
+			network, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), "8080")
 			assert.NoError(t, err)
 			network.logger = loggerClient
 			network.Name = "test/eth" // Update name to match test expectations

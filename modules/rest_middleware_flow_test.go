@@ -28,7 +28,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		networkType        string
+		networkType        networklib.HandlerType
 		networkName        string
 		requestPath        string
 		requestMethod      string
@@ -41,7 +41,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 	}{
 		{
 			name:               "Beacon Chain Genesis endpoint integration",
-			networkType:        string(BeaconHandler),
+			networkType:        networklib.BeaconHandlerType,
 			networkName:        "ethereum-beacon",
 			requestPath:        "/ethereum-beacon/eth/v1/beacon/genesis",
 			requestMethod:      "GET",
@@ -61,7 +61,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain Block by ID integration",
-			networkType:        string(BeaconHandler),
+			networkType:        networklib.BeaconHandlerType,
 			networkName:        "beacon-mainnet",
 			requestPath:        "/beacon-mainnet/eth/v2/beacon/blocks/head",
 			requestMethod:      "GET",
@@ -80,7 +80,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain Validators with query params integration",
-			networkType:        string(BeaconHandler),
+			networkType:        networklib.BeaconHandlerType,
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/beacon/states/head/validators?id=1,2,3&status=active",
 			requestMethod:      "GET",
@@ -95,7 +95,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain with provider base path integration",
-			networkType:        string(BeaconHandler),
+			networkType:        networklib.BeaconHandlerType,
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/node/version",
 			requestMethod:      "GET",
@@ -109,7 +109,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 		},
 		{
 			name:               "Beacon Chain POST request integration",
-			networkType:        string(BeaconHandler),
+			networkType:        networklib.BeaconHandlerType,
 			networkName:        "beacon",
 			requestPath:        "/beacon/eth/v1/beacon/pool/attestations",
 			requestMethod:      "POST",
@@ -135,7 +135,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 				Networks: map[string]*network{
 					tt.networkName: {
 						Name:        tt.networkName,
-						HandlerType: HandlerType(tt.networkType),
+						HandlerType: tt.networkType,
 						ChainId:     "1",
 						Providers: map[string]*provider{
 							"test-provider": {
@@ -249,7 +249,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		networkType     string
+		networkType     networklib.HandlerType
 		networkName     string
 		requestPath     string
 		requestMethod   string
@@ -261,7 +261,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 	}{
 		{
 			name:           "Network not found error",
-			networkType:    string(BeaconHandler),
+			networkType:    networklib.BeaconHandlerType,
 			networkName:    "beacon",
 			requestPath:    "/unknown-network/eth/v1/beacon/genesis",
 			requestMethod:  "GET",
@@ -281,7 +281,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 		},
 		{
 			name:          "Request payload too large",
-			networkType:   string(BeaconHandler),
+			networkType:   networklib.BeaconHandlerType,
 			networkName:   "beacon",
 			requestPath:   "/beacon/eth/v1/beacon/pool/attestations",
 			requestMethod: "POST",
@@ -308,7 +308,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 			if tt.name != "Network not found error" {
 				network := &network{
 					Name:        tt.networkName,
-					HandlerType: HandlerType(tt.networkType),
+					HandlerType: tt.networkType,
 					ChainId:     "1",
 					Providers: map[string]*provider{
 						"test-provider": {
@@ -393,7 +393,7 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 		Networks: map[string]*network{
 			"beacon": {
 				Name:        "beacon",
-				HandlerType: BeaconHandler,
+				HandlerType: networklib.BeaconHandlerType,
 				ChainId:     "1",
 				Providers: map[string]*provider{
 					"provider1": {
@@ -472,7 +472,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "Beacon REST API GET request flow",
 			network: &network{
 				Name:                    "ethereum-beacon",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -488,7 +488,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 
 				networkObj := networkObjVal.(*network)
 				assert.Equal(t, networklib.RequestTypeREST, networkObj.handler.GetRequestType())
-				assert.Equal(t, string(BeaconHandler), string(networkObj.HandlerType))
+				assert.Equal(t, string(networklib.BeaconHandlerType), string(networkObj.HandlerType))
 				// The method is now stored in RequestMethodKey
 				methodVal, _ := repl.Get(RequestMethodKey)
 				assert.Equal(t, "/ethereum-beacon/eth/v1/beacon/genesis", methodVal)
@@ -498,7 +498,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "Beacon REST API POST request flow",
 			network: &network{
 				Name:                    "beacon",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -521,7 +521,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "JSON-RPC request flow (not REST)",
 			network: &network{
 				Name:                    "ethereum",
-				HandlerType:             EVMHandler,
+				HandlerType:             networklib.EVMHandlerType,
 				ChainId:                 "0x1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -538,14 +538,14 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 
 				networkObj := networkObjVal.(*network)
 				assert.Equal(t, networklib.RequestTypeRPC, networkObj.handler.GetRequestType())
-				assert.Equal(t, string(EVMHandler), string(networkObj.HandlerType))
+				assert.Equal(t, string(networklib.EVMHandlerType), string(networkObj.HandlerType))
 			},
 		},
 		{
 			name: "REST API with query parameters",
 			network: &network{
 				Name:                    "beacon",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -563,7 +563,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "REST API request to unknown network",
 			network: &network{
 				Name:                    "unknown",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 			},
@@ -576,7 +576,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 			name: "Large REST API payload",
 			network: &network{
 				Name:                    "beacon",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: 0, // 0 means 1KB limit
 			},
@@ -701,9 +701,9 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Determine network type based on path pattern
-			networkType := string(EVMHandler)
+			networkType := networklib.EVMHandlerType
 			if strings.Contains(tt.requestPath, "/eth/v") {
-				networkType = string(BeaconHandler)
+				networkType = networklib.BeaconHandlerType
 			}
 
 			// Create middleware
@@ -714,7 +714,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 				Networks: map[string]*network{
 					tt.networkName: {
 						Name:                    tt.networkName,
-						HandlerType:             HandlerType(networkType),
+						HandlerType:             networkType,
 						ChainId:                 getValidChainIDForType(networkType),
 						MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 						Providers: map[string]*provider{
@@ -740,7 +740,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 
 			// Create request
 			var req *http.Request
-			if networkType == string(EVMHandler) {
+			if networkType == networklib.EVMHandlerType {
 				// JSON-RPC request
 				req = httptest.NewRequest("POST", "http://test.com"+tt.requestPath,
 					strings.NewReader(`{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`))
@@ -796,7 +796,7 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 		Networks: map[string]*network{
 			"beacon": {
 				Name:                    "beacon",
-				HandlerType:             BeaconHandler,
+				HandlerType:             networklib.BeaconHandlerType,
 				ChainId:                 "1",
 				MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
 				Providers: map[string]*provider{
@@ -851,11 +851,11 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 }
 
 // Helper function for valid chain IDs
-func getValidChainIDForType(networkType string) string {
+func getValidChainIDForType(networkType networklib.HandlerType) string {
 	switch networkType {
-	case string(BeaconHandler):
+	case networklib.BeaconHandlerType:
 		return "1"
-	case string(EVMHandler):
+	case networklib.EVMHandlerType:
 		return "0x1"
 	default:
 		return "unknown:1"

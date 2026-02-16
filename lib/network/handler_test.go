@@ -29,14 +29,14 @@ var _ NetworkHandler = (*MockHandler)(nil)
 
 // Mock handler for testing
 type MockHandler struct {
-	handlerType string
+	handlerType HandlerType
 	name        string
 	version     string
 	requestType RequestType
 	initialized bool
 }
 
-func (m *MockHandler) GetType() string                        { return m.handlerType }
+func (m *MockHandler) GetType() HandlerType                   { return m.handlerType }
 func (m *MockHandler) GetName() string                        { return m.name }
 func (m *MockHandler) GetVersion() string                     { return m.version }
 func (m *MockHandler) GetRequestType() RequestType            { return m.requestType }
@@ -294,7 +294,7 @@ func TestHandlerRegistry_ListHandlers(t *testing.T) {
 	registry := NewHandlerRegistry()
 
 	// Register multiple handlers
-	handlers := []string{"test1", "test2", "test3"}
+	handlers := []HandlerType{EVMHandlerType, BeaconHandlerType, StarknetHandlerType}
 	for _, handlerType := range handlers {
 		factory := func(config *NetworkConfig) (NetworkHandler, error) {
 			return &MockHandler{handlerType: handlerType}, nil
@@ -407,7 +407,7 @@ func TestEVMHandler_Basic(t *testing.T) {
 	handler := NewEVMHandler(config)
 
 	// Test metadata
-	if handler.GetType() != "evm" {
+	if handler.GetType() != EVMHandlerType {
 		t.Errorf("Expected type 'evm', got %s", handler.GetType())
 	}
 
@@ -441,7 +441,7 @@ func TestBeaconChainHandler_Basic(t *testing.T) {
 	handler := NewBeaconChainHandler(config)
 
 	// Test metadata
-	if handler.GetType() != "beacon-chain" {
+	if handler.GetType() != BeaconHandlerType {
 		t.Errorf("Expected type 'beacon-chain', got %s", handler.GetType())
 	}
 
@@ -470,7 +470,7 @@ func TestDefaultRegistry_Initialization(t *testing.T) {
 	// Test that default registry is initialized with built-in handlers
 	handlers := DefaultRegistry.ListHandlers()
 
-	expectedHandlers := []string{"evm", "beacon-chain", "starknet", "solana", "bitcoin", "bitcoin-esplora", "tron-full-node"}
+	expectedHandlers := []HandlerType{EVMHandlerType, BeaconHandlerType, StarknetHandlerType, SolanaHandlerType, StellarRpcHandlerType, BitcoinHandlerType, BitcoinEsploraHandlerType, TronHandlerType}
 
 	if len(handlers) != len(expectedHandlers) {
 		t.Errorf("Expected %d handlers, got %d", len(expectedHandlers), len(handlers))

@@ -36,8 +36,8 @@ func NewBeaconChainHandler(config *NetworkConfig) *BeaconChainHandler {
 }
 
 // Metadata methods for registry
-func (h *BeaconChainHandler) GetType() string {
-	return "beacon-chain"
+func (h *BeaconChainHandler) GetType() HandlerType {
+	return BeaconHandlerType
 }
 
 func (h *BeaconChainHandler) GetName() string {

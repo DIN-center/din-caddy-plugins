@@ -103,8 +103,8 @@ func (h *TronHandler) Initialize(config *NetworkConfig) error {
 //
 
 // GetType implements the Handler interface.
-func (h *TronHandler) GetType() string {
-	return "tron-full-node"
+func (h *TronHandler) GetType() HandlerType {
+	return TronHandlerType
 }
 
 // GetName implements the Handler interface.

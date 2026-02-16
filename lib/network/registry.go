@@ -16,20 +16,20 @@ type HandlerConstructor func(config *NetworkConfig) (NetworkHandler, error)
 // HandlerRegistry manages available network handlers
 type HandlerRegistry struct {
 	mu           sync.RWMutex
-	constructors map[string]HandlerConstructor
+	constructors map[HandlerType]HandlerConstructor
 	handlers     map[string]NetworkHandler
 }
 
 // NewHandlerRegistry creates a new handler registry
 func NewHandlerRegistry() *HandlerRegistry {
 	return &HandlerRegistry{
-		constructors: make(map[string]HandlerConstructor),
+		constructors: make(map[HandlerType]HandlerConstructor),
 		handlers:     make(map[string]NetworkHandler),
 	}
 }
 
 // RegisterHandler registers a new handler constructor for a network type
-func (r *HandlerRegistry) RegisterHandler(networkType string, constructor HandlerConstructor) error {
+func (r *HandlerRegistry) RegisterHandler(networkType HandlerType, constructor HandlerConstructor) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -43,7 +43,7 @@ func (r *HandlerRegistry) RegisterHandler(networkType string, constructor Handle
 }
 
 // GetHandler retrieves or creates a handler for the given network type
-func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) (NetworkHandler, error) {
+func (r *HandlerRegistry) GetHandler(networkType HandlerType, config *NetworkConfig) (NetworkHandler, error) {
 	r.mu.RLock()
 	// Check if handler already exists
 	if handler, exists := r.handlers[config.Name]; exists {
@@ -56,7 +56,7 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 		if config.Logger != nil {
 			config.Logger.Debug("Returning cached handler from registry",
 				zap.String("network", config.Name),
-				zap.String("type", networkType))
+				zap.String("type", string(networkType)))
 		}
 		r.mu.RUnlock()
 		return handler, nil
@@ -77,14 +77,14 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 		if config.Logger != nil {
 			config.Logger.Debug("Returning cached handler from registry (after lock)",
 				zap.String("network", config.Name),
-				zap.String("type", networkType))
+				zap.String("type", string(networkType)))
 		}
 		return handler, nil
 	}
 
 	constructor, exists := r.constructors[networkType]
 	if !exists {
-		return nil, fmt.Errorf("no handler registered for network type '%s'", networkType)
+		return nil, fmt.Errorf("no handler registered for network type '%s'", string(networkType))
 	}
 
 	// Ensure logger is available
@@ -116,19 +116,19 @@ func (r *HandlerRegistry) GetHandler(networkType string, config *NetworkConfig) 
 	if config.Logger != nil {
 		config.Logger.Debug("Created and cached new handler in registry",
 			zap.String("network", config.Name),
-			zap.String("type", networkType),
-			zap.String("handler_type", handler.GetType()))
+			zap.String("type", string(networkType)),
+			zap.String("handler_type", string(handler.GetType())))
 	}
 
 	return handler, nil
 }
 
 // ListHandlers returns all registered handler types
-func (r *HandlerRegistry) ListHandlers() []string {
+func (r *HandlerRegistry) ListHandlers() []HandlerType {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	types := make([]string, 0, len(r.constructors))
+	types := make([]HandlerType, 0, len(r.constructors))
 	for handlerType := range r.constructors {
 		types = append(types, handlerType)
 	}
@@ -158,13 +158,13 @@ func (r *HandlerRegistry) ShutdownAll() error {
 
 // HandlerInfo provides metadata about a registered handler
 type HandlerInfo struct {
-	Type        string
+	Type        HandlerType
 	Name        string
 	Description string
 }
 
 // GetHandlerInfo returns metadata about a handler
-func (r *HandlerRegistry) GetHandlerInfo(networkType string) (*HandlerInfo, error) {
+func (r *HandlerRegistry) GetHandlerInfo(networkType HandlerType) (*HandlerInfo, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

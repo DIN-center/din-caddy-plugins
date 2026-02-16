@@ -715,7 +715,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			// mockCtrl and mockHttpClient setup will be handled by tt.setupNetwork for relevant cases
 
 			// Create a proper network with handler using NewNetwork
-			netw, err := NewNetwork("test", EVMHandler, utils.EnvTest, "8000")
+			netw, err := NewNetwork("test", networklib.EVMHandlerType, utils.EnvTest, "8000")
 			if err != nil {
 				t.Fatalf("Failed to create network: %v", err)
 			}
@@ -1302,9 +1302,9 @@ func TestMiddlewareStripsAuthorizationHeader(t *testing.T) {
 	}
 
 	tests := []struct {
-		name              string
-		authHeader        string
-		shouldBeStripped  bool
+		name             string
+		authHeader       string
+		shouldBeStripped bool
 	}{
 		{
 			name:             "Bearer token should be stripped",

@@ -2,14 +2,14 @@ package network
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestStarknetHandler_GetType(t *testing.T) {
 	handler := NewStarknetHandler(&NetworkConfig{})
 
-	if handler.GetType() != "starknet" {
-		t.Errorf("Expected type 'starknet', got '%s'", handler.GetType())
-	}
+	assert.Equal(t, StarknetHandlerType, handler.GetType())
 }
 
 func TestStarknetHandler_GetName(t *testing.T) {

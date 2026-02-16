@@ -150,7 +150,7 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			mockHandler := networklib.NewMockNetworkHandler(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), "")
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), "")
 			assert.NoError(t, err)
 
 			// Configure network

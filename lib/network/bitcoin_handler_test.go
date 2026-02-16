@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBitcoinHandler_GetType(t *testing.T) {
 	handler := NewBitcoinHandler(&NetworkConfig{})
-
-	if handler.GetType() != "bitcoin" {
-		t.Errorf("Expected type 'bitcoin', got '%s'", handler.GetType())
-	}
+	assert.Equal(t, BitcoinHandlerType, handler.GetType())
 }
 
 func TestBitcoinHandler_GetName(t *testing.T) {

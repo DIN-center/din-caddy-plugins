@@ -344,7 +344,7 @@ func (d *DinMiddleware) initializeNetworkHandler(networkName string, networkObj 
 		// Configure the handler with complete configuration including ChainID
 		config := &networklib.NetworkConfig{
 			Name:           networkName,
-			Type:           string(networkObj.HandlerType),
+			Type:           networkObj.HandlerType,
 			ChainID:        networkObj.ChainId,
 			MaxPayloadSize: networkObj.MaxRequestPayloadSizeKB * 1024,
 			RequestTimeout: time.Duration(networkObj.HCTimeout) * time.Second,
@@ -352,7 +352,7 @@ func (d *DinMiddleware) initializeNetworkHandler(networkName string, networkObj 
 			Custom:         make(map[string]interface{}),
 		}
 
-		handler, err := d.handlerRegistry.GetHandler(string(networkObj.HandlerType), config)
+		handler, err := d.handlerRegistry.GetHandler(networkObj.HandlerType, config)
 		if err != nil {
 			return fmt.Errorf("failed to get handler for network '%s' handler_type '%s': %w", networkName, networkObj.HandlerType, err)
 		}
@@ -707,8 +707,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				responseBody = rww.body.Bytes()
 			}
 
-			// Decompress gzip if necessary before passing to handler
-			responseBody = decompressGzipBodyIfNecessary(rww.Header(), responseBody, d.logger, networkPath)
+			// Decompress the body if necessary before passing to handler
+			responseBody = decompressBodyIfNecessary(rww.Header(), responseBody, d.logger, networkPath)
 
 			// Check for application-level errors using the handler
 			var appError error

@@ -45,9 +45,7 @@ func GetChainIDViaJSONRPC(httpUrl string, headers map[string]string, httpClient 
 
 // GetLatestBlockNumberViaJSONRPC performs a JSON-RPC latest block number request
 // This is shared logic for JSON-RPC based handlers (EVM, Starknet, Solana)
-func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumberMethod string, parseFunc func(json.RawMessage) (int64, error)) (*LatestBlockResult, error) {
-	// Create JSON-RPC payload for latest block number request
-	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":[],"id":1}`, blockNumberMethod))
+func GetLatestBlockNumberViaJSONRPC(httpUrl string, payload []byte, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int, blockNumberParser func(json.RawMessage) (int64, error)) (*LatestBlockResult, error) {
 
 	var lastErr error
 	var lastResponseStatus int
@@ -103,7 +101,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		}
 
 		// Use the provided parse function to extract block number
-		blockNumber, err := parseFunc(response.Result)
+		blockNumber, err := blockNumberParser(response.Result)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to parse block number from result: %w", err)
 			lastHealthStatus = Unhealthy

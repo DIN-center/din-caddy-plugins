@@ -4,20 +4,6 @@ import "time"
 
 type HealthStatus int
 
-// HandlerType represents the type of network handler
-type HandlerType string
-
-const (
-	// Handler types
-	EVMHandler            HandlerType = "evm"
-	BeaconHandler         HandlerType = "beacon-chain"
-	StarknetHandler       HandlerType = "starknet"
-	SolanaHandler         HandlerType = "solana"
-	BitcoinHandler        HandlerType = "bitcoin"
-	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
-	TronHandler           HandlerType = "tron-full-node"
-)
-
 const (
 	// Health status enums
 	Healthy HealthStatus = iota
@@ -42,20 +28,20 @@ const (
 	DefaultNetworkBlockHistorySize  = 128
 
 	// Health check constants
-	DefaultHCMethod                = "eth_blockNumber"
-	DefaultChainIdMethod           = "eth_chainId"
-	DefaultCallContractMethod      = "eth_call"
-	DefaultGetBlockByNumberMethod  = "eth_getBlockByNumber"
-	DefaultHCThreshold             = 2
-	DefaultHCTimeout               = 5
-	DefaultHCInterval              = 5
-	DefaultBlockLagLimit    = int64(15)
-	DefaultBlockLagPeriodMs = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
-	DefaultBlockJumpLimit   = int64(100)
-	DefaultMaxRequestPayloadSizeKB = int64(4096)
-	DefaultRequestAttemptCount               = 5
-	DefaultArchiveEnabled                    = false
-	DefaultArchiveTraceBlockByNumberEnabled  = false
+	DefaultHCMethod                         = "eth_blockNumber"
+	DefaultChainIdMethod                    = "eth_chainId"
+	DefaultCallContractMethod               = "eth_call"
+	DefaultGetBlockByNumberMethod           = "eth_getBlockByNumber"
+	DefaultHCThreshold                      = 2
+	DefaultHCTimeout                        = 5
+	DefaultHCInterval                       = 5
+	DefaultBlockLagLimit                    = int64(15)
+	DefaultBlockLagPeriodMs                 = 13000 // 13 seconds in milliseconds for dynamic block lag calculation
+	DefaultBlockJumpLimit                   = int64(100)
+	DefaultMaxRequestPayloadSizeKB          = int64(4096)
+	DefaultRequestAttemptCount              = 5
+	DefaultArchiveEnabled                   = false
+	DefaultArchiveTraceBlockByNumberEnabled = false
 
 	// Registry constants
 	DefaultRegistryBlockCheckIntervalSec = int64(60)
@@ -85,6 +71,8 @@ const (
 	BitcoinNamespace = "bip122"
 	// Solana
 	SolanaNamespace = "solana"
+	// Stellar
+	StellarNamespace = "stellar"
 	// Starknet
 	StarknetNamespace     = "starknet"
 	StarknetArchiveMethod = "starknet_getBlockWithTxs"

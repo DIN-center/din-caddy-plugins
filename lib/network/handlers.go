@@ -20,7 +20,7 @@ func init() {
 // NetworkHandler defines the interface for handling different network types
 type NetworkHandler interface {
 	// === Core Identification ===
-	GetType() string
+	GetType() HandlerType
 	GetName() string
 	GetRequestType() RequestType
 
@@ -178,7 +178,7 @@ const (
 // NetworkConfig contains configuration for a network handler
 type NetworkConfig struct {
 	Name           string
-	Type           string
+	Type           HandlerType
 	ChainID        string
 	MaxPayloadSize int64
 	RequestTimeout time.Duration
@@ -210,6 +210,13 @@ func RegisterBuiltinHandlers() {
 		return NewSolanaHandler(config), nil
 	}); err != nil {
 		panic(fmt.Sprintf("Failed to register Solana handler: %v", err))
+	}
+
+	// Register Stellar handler - matches modules.StellarHandler constant
+	if err := DefaultRegistry.RegisterHandler("stellar-rpc", func(config *NetworkConfig) (NetworkHandler, error) {
+		return NewStellarRpcHandler(config), nil
+	}); err != nil {
+		panic(fmt.Sprintf("Failed to register Stellar handler: %v", err))
 	}
 
 	// Register Beacon Chain handler - matches modules.BeaconHandler constant
