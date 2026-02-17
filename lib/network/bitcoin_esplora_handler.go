@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -98,9 +99,172 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 	return nil
 }
 
+var (
+	reTx                = regexp.MustCompile(`/tx/[^/]+$$`)
+	reTxStatus          = regexp.MustCompile(`/tx/[^/]+/status$$`)
+	reTxHex             = regexp.MustCompile(`/tx/[^/]+/hex$$`)
+	reTxRaw             = regexp.MustCompile(`/tx/[^/]+/raw$$`)
+	reTxMerkleblock     = regexp.MustCompile(`/tx/[^/]+/merkleblock-proof$$`)
+	reTxMerkle          = regexp.MustCompile(`/tx/[^/]+/merkle-proof$$`)
+	reTxOutspendVout    = regexp.MustCompile(`/tx/[^/]+/outspend/\d+$$`)
+	reTxOutspends       = regexp.MustCompile(`/tx/[^/]+/outspends$$`)
+	rePostTxBroadcast   = regexp.MustCompile(`/tx$$`)
+	rePostTxsPackage    = regexp.MustCompile(`/txs/package$$`)
+
+	// ---- Addresses / Scripthash ----
+	reAddressInfo       = regexp.MustCompile(`/address/[^/]+$$`)
+	reScripthashInfo    = regexp.MustCompile(`/scripthash/[^/]+$$`)
+	reAddressTxs        = regexp.MustCompile(`/address/[^/]+/txs$$`)
+	reScripthashTxs     = regexp.MustCompile(`/scripthash/[^/]+/txs$$`)
+	reAddressTxsChain   = regexp.MustCompile(`/address/[^/]+/txs/chain(?:/[^/]+)?$$`)
+	reScripthashTxsChain= regexp.MustCompile(`/scripthash/[^/]+/txs/chain(?:/[^/]+)?$$`)
+	reAddressTxsMempool = regexp.MustCompile(`/address/[^/]+/txs/mempool$$`)
+	reScripthashTxsMem  = regexp.MustCompile(`/scripthash/[^/]+/txs/mempool$$`)
+	reAddressUtxo       = regexp.MustCompile(`/address/[^/]+/utxo$$`)
+	reScripthashUtxo    = regexp.MustCompile(`/scripthash/[^/]+/utxo$$`)
+	reAddressPrefix     = regexp.MustCompile(`/address-prefix/[^/]+$$`)
+
+	// ---- Blocks ----
+	reBlock             = regexp.MustCompile(`/block/[^/]+$$`)
+	reBlockHeader       = regexp.MustCompile(`/block/[^/]+/header$$`)
+	reBlockStatus       = regexp.MustCompile(`/block/[^/]+/status$$`)
+	reBlockTxs          = regexp.MustCompile(`/block/[^/]+/txs(?:/\d+)?$$`)
+	reBlockTxids        = regexp.MustCompile(`/block/[^/]+/txids$$`)
+	reBlockTxidIndex    = regexp.MustCompile(`/block/[^/]+/txid/\d+$$`)
+	reBlockRaw          = regexp.MustCompile(`/block/[^/]+/raw$$`)
+	reBlockHeight       = regexp.MustCompile(`/block-height/\d+$$`)
+	reBlocks            = regexp.MustCompile(`/blocks(?:/\d+)?$$`)
+	reBlocksTipHeight   = regexp.MustCompile(`/blocks/tip/height$$`)
+	reBlocksTipHash     = regexp.MustCompile(`/blocks/tip/hash$$`)
+
+	// ---- Mempool / Fees ----
+	reMempool           = regexp.MustCompile(`/mempool$$`)
+	reMempoolTxids      = regexp.MustCompile(`/mempool/txids$$`)
+	reMempoolRecent     = regexp.MustCompile(`/mempool/recent$$`)
+	reFeeEstimates      = regexp.MustCompile(`/fee-estimates$$`)
+
+	// ---- Assets (Elements/Liquid only) ----
+	reAsset             = regexp.MustCompile(`/asset/[^/]+$$`)
+	reAssetTxs          = regexp.MustCompile(`/asset/[^/]+/txs$$`)
+	reAssetTxsMempool   = regexp.MustCompile(`/asset/[^/]+/txs/mempool$$`)
+	reAssetTxsChain     = regexp.MustCompile(`/asset/[^/]+/txs/chain(?:/[^/]+)?$$`)
+	reAssetSupply       = regexp.MustCompile(`/asset/[^/]+/supply$$`)
+	reAssetSupplyDec    = regexp.MustCompile(`/asset/[^/]+/supply/decimal$$`)
+	reAssetsRegistry    = regexp.MustCompile(`/assets/registry$$`)
+)
+
+// EndpointID maps an HTTP method + request path to a stable, unique endpoint identifier.
+//
+// Notes:
+//   - Paths below are derived from Blockstream Esplora API docs.
+//   - `path` should be the URL path only (no scheme/host/querystring), e.g. "/tx/<txid>/status".
+//   - All regexes are anchored (^...$) so partial matches won't collide.
+func EndpointID(method, path string) string {
+	switch {
+	// ---- Transactions ----
+	case method == "GET" && reTx.MatchString(path):
+		return "GET_TX"
+	case method == "GET" && reTxStatus.MatchString(path):
+		return "GET_TX_STATUS"
+	case method == "GET" && reTxHex.MatchString(path):
+		return "GET_TX_HEX"
+	case method == "GET" && reTxRaw.MatchString(path):
+		return "GET_TX_RAW"
+	case method == "GET" && reTxMerkleblock.MatchString(path):
+		return "GET_TX_MERKLEBLOCK_PROOF"
+	case method == "GET" && reTxMerkle.MatchString(path):
+		return "GET_TX_MERKLE_PROOF"
+	case method == "GET" && reTxOutspendVout.MatchString(path):
+		return "GET_TX_OUTSPEND_VOUT"
+	case method == "GET" && reTxOutspends.MatchString(path):
+		return "GET_TX_OUTSPENDS"
+	case method == "POST" && rePostTxBroadcast.MatchString(path):
+		return "POST_TX_BROADCAST"
+	case method == "POST" && rePostTxsPackage.MatchString(path):
+		return "POST_TXS_PACKAGE"
+
+	// ---- Addresses / Scripthash ----
+	case method == "GET" && reAddressInfo.MatchString(path):
+		return "GET_ADDRESS"
+	case method == "GET" && reScripthashInfo.MatchString(path):
+		return "GET_SCRIPTHASH"
+	case method == "GET" && reAddressTxs.MatchString(path):
+		return "GET_ADDRESS_TXS"
+	case method == "GET" && reScripthashTxs.MatchString(path):
+		return "GET_SCRIPTHASH_TXS"
+	case method == "GET" && reAddressTxsChain.MatchString(path):
+		return "GET_ADDRESS_TXS_CHAIN"
+	case method == "GET" && reScripthashTxsChain.MatchString(path):
+		return "GET_SCRIPTHASH_TXS_CHAIN"
+	case method == "GET" && reAddressTxsMempool.MatchString(path):
+		return "GET_ADDRESS_TXS_MEMPOOL"
+	case method == "GET" && reScripthashTxsMem.MatchString(path):
+		return "GET_SCRIPTHASH_TXS_MEMPOOL"
+	case method == "GET" && reAddressUtxo.MatchString(path):
+		return "GET_ADDRESS_UTXO"
+	case method == "GET" && reScripthashUtxo.MatchString(path):
+		return "GET_SCRIPTHASH_UTXO"
+	case method == "GET" && reAddressPrefix.MatchString(path):
+		return "GET_ADDRESS_PREFIX"
+
+	// ---- Blocks ----
+	case method == "GET" && reBlock.MatchString(path):
+		return "GET_BLOCK"
+	case method == "GET" && reBlockHeader.MatchString(path):
+		return "GET_BLOCK_HEADER"
+	case method == "GET" && reBlockStatus.MatchString(path):
+		return "GET_BLOCK_STATUS"
+	case method == "GET" && reBlockTxs.MatchString(path):
+		return "GET_BLOCK_TXS"
+	case method == "GET" && reBlockTxids.MatchString(path):
+		return "GET_BLOCK_TXIDS"
+	case method == "GET" && reBlockTxidIndex.MatchString(path):
+		return "GET_BLOCK_TXID_INDEX"
+	case method == "GET" && reBlockRaw.MatchString(path):
+		return "GET_BLOCK_RAW"
+	case method == "GET" && reBlockHeight.MatchString(path):
+		return "GET_BLOCK_HEIGHT"
+	case method == "GET" && reBlocks.MatchString(path):
+		return "GET_BLOCKS"
+	case method == "GET" && reBlocksTipHeight.MatchString(path):
+		return "GET_BLOCKS_TIP_HEIGHT"
+	case method == "GET" && reBlocksTipHash.MatchString(path):
+		return "GET_BLOCKS_TIP_HASH"
+
+	// ---- Assets (Elements/Liquid only) ----
+	case method == "GET" && reAsset.MatchString(path):
+		return "GET_ASSET"
+	case method == "GET" && reAssetTxs.MatchString(path):
+		return "GET_ASSET_TXS"
+	case method == "GET" && reAssetTxsMempool.MatchString(path):
+		return "GET_ASSET_TXS_MEMPOOL"
+	case method == "GET" && reAssetTxsChain.MatchString(path):
+		return "GET_ASSET_TXS_CHAIN"
+	case method == "GET" && reAssetSupply.MatchString(path):
+		return "GET_ASSET_SUPPLY"
+	case method == "GET" && reAssetSupplyDec.MatchString(path):
+		return "GET_ASSET_SUPPLY_DECIMAL"
+	case method == "GET" && reAssetsRegistry.MatchString(path):
+		return "GET_ASSETS_REGISTRY"
+	
+	// ---- Mempool / Fees ----
+	case method == "GET" && reMempool.MatchString(path):
+		return "GET_MEMPOOL"
+	case method == "GET" && reMempoolTxids.MatchString(path):
+		return "GET_MEMPOOL_TXIDS"
+	case method == "GET" && reMempoolRecent.MatchString(path):
+		return "GET_MEMPOOL_RECENT"
+	case method == "GET" && reFeeEstimates.MatchString(path):
+		return "GET_FEE_ESTIMATES"
+	}
+
+	return "UNKNOWN"
+}
+
+
 // ExtractMethod extracts the method name from the request for logging/metrics
 func (h *BitcoinEsploraHandler) ExtractMethod(req *http.Request, body []byte) (string, error) {
-	return "REST", nil
+	return EndpointID(req.Method, req.URL.Path), nil
 }
 
 // ConfigureRequestPath configures the request path for REST API requests
