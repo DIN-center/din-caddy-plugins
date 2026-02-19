@@ -1,6 +1,7 @@
 package prometheus
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -10,13 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
 func TestMain(m *testing.M) {
 	RegisterMetrics()
+
+	os.Exit(m.Run())
 }
 
 func TestHandleRequestMetric(t *testing.T) {
@@ -30,18 +32,17 @@ func TestHandleRequestMetric(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		requestBody    *din_http.JSONRPCRequest
 		duration       time.Duration
 		data           *PromRequestMetricData
 		expectedLabels map[string]string
 		expectedValue  float64
 	}{
 		{
-			name:        "Valid JSON",
-			requestBody: &din_http.JSONRPCRequest{Method: "eth_getBlockByNumber"},
-			duration:    1 * time.Second,
+			name:     "Valid JSON",
+			duration: 1 * time.Second,
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
+				Method:         "eth_getBlockByNumber",
 				Provider:       "infura",
 				ProviderName:   "infura",
 				ApiKey:         "abc123",
@@ -65,11 +66,11 @@ func TestHandleRequestMetric(t *testing.T) {
 			expectedValue: 1,
 		},
 		{
-			name:        "Invalid JSON (simulated by empty method)",
-			requestBody: &din_http.JSONRPCRequest{Method: ""},
-			duration:    1 * time.Second,
+			name:     "Invalid JSON (simulated by empty method)",
+			duration: 1 * time.Second,
 			data: &PromRequestMetricData{
 				Network:        "/ethereum",
+				Method:         "",
 				Provider:       "infura",
 				ProviderName:   "infura",
 				ApiKey:         "abc123",
@@ -97,7 +98,7 @@ func TestHandleRequestMetric(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Call the function with the new signature
-			client.HandleRequestMetrics(tt.data, tt.duration, tt.requestBody)
+			client.HandleRequestMetrics(tt.data, tt.duration)
 
 			// Use  testutil to check if the metric exists with the expected labels and value
 			_, err := registry.Gather()
@@ -108,6 +109,7 @@ func TestHandleRequestMetric(t *testing.T) {
 				tt.expectedLabels["method"],
 				tt.expectedLabels["provider"],
 				tt.expectedLabels["provider_name"],
+				tt.expectedLabels["api_key"],
 				tt.expectedLabels["host_name"],
 				tt.expectedLabels["response_status"],
 				tt.expectedLabels["health_status"],
@@ -202,6 +204,8 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 	// Initialize the prometheus client
 	client := NewPrometheusClient(logger.NewLoggerClient(zap.NewNop(), utils.Environment("test")), "test-machine-id")
+	// client.requestSampler = NewHybridSampler(1.0, 1.0)
+	client.healthCheckSampler = NewHybridSampler(1.0, 1.0)
 
 	// Create a new registry and register our metrics
 	registry := prometheus.NewRegistry()
@@ -219,7 +223,7 @@ func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 			data: &PromNetworkHealthCheckMetricData{
 				Network:        "/ethereum",
 				ResponseStatus: 200,
-				Duration:       100 * time.Millisecond,
+				Duration:       90 * time.Millisecond,
 				Environment:    "test",
 			},
 			expectedLabels: map[string]string{
@@ -229,14 +233,14 @@ func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 				"environment":     "test",
 			},
 			expectedCount:    1,
-			expectedDuration: 100,
+			expectedDuration: 90,
 		},
 		{
 			name: "Valid Data - Error Status",
 			data: &PromNetworkHealthCheckMetricData{
 				Network:        "/polygon",
 				ResponseStatus: 503,
-				Duration:       50 * time.Millisecond,
+				Duration:       40 * time.Millisecond,
 				Environment:    "prod",
 			},
 			expectedLabels: map[string]string{
@@ -246,7 +250,7 @@ func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 				"environment":     "prod",
 			},
 			expectedCount:    1,
-			expectedDuration: 50,
+			expectedDuration: 40,
 		},
 	}
 

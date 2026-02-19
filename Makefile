@@ -271,6 +271,7 @@ status: ## Show project status
 # To download mockgen, run: ``
 generate-mocks: ## Generate Mock interface
 	go tool mockgen -source=./lib/auth/interface.go -package=auth -destination=./lib/auth/interface_mock.go
+	go tool mockgen -source=./lib/prometheus/interface.go -package=prometheus -destination=./lib/prometheus/interface_mock.go
 	go tool mockgen -source=./lib/auth/siwe/client.go -package=siwe -destination=./lib/auth/siwe/interface_mock.go
 	go tool mockgen -source=./lib/watcherscore/interface.go -package=watcherscore -destination=./lib/watcherscore/interface_mock.go
 

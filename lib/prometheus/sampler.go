@@ -12,6 +12,7 @@ import (
 type HybridSampler struct {
 	baseRate  float64 // Base sampling rate for normal requests
 	errorRate float64 // Higher sampling rate for errors
+	nowFunc   func() time.Time
 }
 
 // NewHybridSampler creates a new hybrid sampler with specified rates.
@@ -36,6 +37,7 @@ func NewHybridSampler(baseRate, errorRate float64) *HybridSampler {
 	return &HybridSampler{
 		baseRate:  baseRate,
 		errorRate: errorRate,
+		nowFunc:   time.Now,
 	}
 }
 
@@ -74,7 +76,7 @@ func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
 	// Add nanosecond timestamp to make each request unique
 	// This ensures we sample 25% of requests within each label group,
 	// not 0% or 100% for the entire group
-	timestamp := time.Now().UnixNano()
+	timestamp := hs.nowFunc().UnixNano()
 	h.Write([]byte(fmt.Sprintf("%d", timestamp)))
 
 	hashValue := h.Sum64()

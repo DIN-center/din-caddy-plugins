@@ -946,7 +946,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				HealthStatus:   "unhealthy", // All providers failed
 				Priority:       priority,
 				Environment:    string(d.Env),
-			}, duration, nil)
+			}, duration)
 		}
 
 		return errors.Wrap(err, "Error serving HTTP")
