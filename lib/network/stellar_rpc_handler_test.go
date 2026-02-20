@@ -377,13 +377,18 @@ func TestStellarRpcHandler_ValidateChainID(t *testing.T) {
 		valid   bool
 	}{
 		{
-			name:    "valid_mainnet_passphrase",
+			name:    "valid_mainnet_passphrase (full)",
 			chainID: "Public Global Stellar Network ; September 2015",
 			valid:   true,
 		},
 		{
 			name:    "valid_mainnet_passphrase_short",
 			chainID: "Public Global Stellar Network",
+			valid:   true,
+		},
+		{
+			name:    "valid_mainnet_passphrase_lowercase",
+			chainID: "public global stellar network",
 			valid:   true,
 		},
 		{

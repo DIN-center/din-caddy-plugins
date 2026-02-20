@@ -132,30 +132,26 @@ func (h *StellarRpcHandler) GetNamespace() string {
 }
 
 func (h *StellarRpcHandler) ValidateChainID(chainID string) error {
-	// Fail if there's a colon (old CAIP-2 format)
-	if strings.Contains(chainID, ":") {
-		return fmt.Errorf("invalid Stellar chain ID format: %s, chain ID should not contain ':' (CAIP-2 prefix no longer required)", chainID)
-	}
-
 	if len(chainID) == 0 {
 		return fmt.Errorf("empty chain ID")
 	}
 
-	// Stellar uses network passphrase as chain ID
+	// Each Stellar network has a unique identifier in the format “[Network Name] ; [Month of Creation] [Year of Creation]” also known as the network passphrase.
 	// Check for known network prefixes: "Public Global Stellar Network" or "Test SDF Network"
-	// This is more lenient and allows for variations in the full passphrase
+	// See documentation: https://developers.stellar.org/docs/networks#network-passphrases
 	validPrefixes := []string{
-		"Public Global Stellar Network",
-		"Test SDF Network",
+		"public global stellar network",
+		"test sdf network",
 	}
 
+	qualifiedChainID := strings.ToLower(strings.TrimSpace(chainID))
 	for _, prefix := range validPrefixes {
-		if strings.HasPrefix(chainID, prefix) {
+		if strings.HasPrefix(qualifiedChainID, prefix) {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("invalid Stellar network passphrase: must start with 'Public Global Stellar Network' or 'Test SDF Network', got: %s", chainID)
+	return fmt.Errorf("invalid Stellar network passphrase: see supported networks at https://developers.stellar.org/docs/networks#network-passphrases, got: %s", chainID)
 }
 
 func (h *StellarRpcHandler) ExtractChainReference(result interface{}) (string, error) {
