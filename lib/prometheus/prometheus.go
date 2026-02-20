@@ -7,7 +7,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 
 	"go.uber.org/zap"
@@ -95,7 +94,7 @@ func RegisterMetrics() {
 			Name: DinHealthCheckCountMetricName,
 			Help: "Metric for counting din health checks with network, provider, response_status and health_status",
 		},
-		[]string{"service", "provider", "provider_name", "response_status", "health_status", "priority", "machine_id", "environment"},
+		[]string{"service", "provider", "provider_name", "response_status", "health_status", "machine_id", "environment"},
 	)
 
 	DinProviderHealthCheckBlockNumber = prometheus.NewGaugeVec(
@@ -147,7 +146,7 @@ type PromRequestMetricData struct {
 }
 
 // HandleRequestMetrics increments prometheus metric based on request data passed in
-func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration, requestBody *din_http.JSONRPCRequest) {
+func (p *PrometheusClient) HandleRequestMetrics(data *PromRequestMetricData, duration time.Duration) {
 	// Use method from data struct instead of requestBody to handle both RPC and REST requests
 	method := data.Method
 	network := strings.TrimPrefix(data.Network, "/")
@@ -180,12 +179,11 @@ type PromHealthCheckMetricData struct {
 
 func (p *PrometheusClient) HandleHealthCheckMetric(data *PromHealthCheckMetricData) {
 	network := strings.TrimPrefix(data.Network, "/")
-	priority := strconv.Itoa(data.Priority)
 
 	p.logger.Debug("Latest block metric data", zap.String("network", network), zap.String("provider", data.Provider), zap.String("provider_name", data.ProviderName), zap.String("health_status", data.HealthStatus), zap.Int("priority", data.Priority), zap.String("environment", data.Environment))
 
 	// Increment prometheus metric based on request data
-	DinProviderHealthCheckCount.WithLabelValues(network, data.Provider, data.ProviderName, strconv.Itoa(data.ResponseStatus), data.HealthStatus, priority, p.machineID, data.Environment).Inc()
+	DinProviderHealthCheckCount.WithLabelValues(network, data.Provider, data.ProviderName, strconv.Itoa(data.ResponseStatus), data.HealthStatus, p.machineID, data.Environment).Inc()
 
 	// Update prometheus metric based on block number
 	DinProviderHealthCheckBlockNumber.WithLabelValues(network, data.Provider, data.ProviderName, p.machineID, data.Environment).Set(float64(data.BlockNumber))

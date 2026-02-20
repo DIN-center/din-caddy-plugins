@@ -15,9 +15,9 @@ import (
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
-	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 )
 
@@ -83,10 +83,10 @@ func TestRoundUpToInterval(t *testing.T) {
 
 // blockTimestampSimulator holds configuration for simulating block timestamps
 type blockTimestampSimulator struct {
-	latestBlock       int64
-	blockTimeSeconds  float64 // seconds per block (can be fractional for fast chains)
-	baseTimestamp     int64   // Unix timestamp of block 0
-	shouldFail        bool
+	latestBlock      int64
+	blockTimeSeconds float64 // seconds per block (can be fractional for fast chains)
+	baseTimestamp    int64   // Unix timestamp of block 0
+	shouldFail       bool
 }
 
 // getTimestampForBlock calculates the timestamp for a given block number
@@ -424,7 +424,7 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	mockProm := prom.NewMockIPrometheusClient(ctrl)
 	mockProm.EXPECT().HandleHealthCheckMetric(gomock.Any()).AnyTimes()
 	mockProm.EXPECT().HandleNetworkHealthCheckMetric(gomock.Any()).AnyTimes()
-	mockProm.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockProm.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).AnyTimes()
 	n.PrometheusClient = mockProm
 
 	// Initialize EVM handler

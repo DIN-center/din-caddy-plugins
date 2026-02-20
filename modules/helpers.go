@@ -461,7 +461,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		HealthStatus:   healthStatus,
 		Priority:       priority,
 		Environment:    string(params.DinMiddleware.Env),
-	}, params.Duration, params.ParsedReqBody)
+	}, params.Duration)
 }
 
 // GenericRequestContext holds network-agnostic request context information
@@ -675,7 +675,7 @@ func handleContextCancellation(l *logger.LoggerClient, promClient *prom.Promethe
 			HealthStatus:   "unhealthy", // Context cancellation indicates unhealthy state
 			Priority:       priority,
 			Environment:    "unknown", // We don't have access to environment here
-		}, duration, nil) // No parsed request body - completely generic
+		}, duration)
 	}
 }
 
