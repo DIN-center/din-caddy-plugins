@@ -204,7 +204,6 @@ func TestHandleHealthCheckMetric(t *testing.T) {
 func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 	// Initialize the prometheus client
 	client := NewPrometheusClient(logger.NewLoggerClient(zap.NewNop(), utils.Environment("test")), "test-machine-id")
-	// client.requestSampler = NewHybridSampler(1.0, 1.0)
 	client.healthCheckSampler = NewHybridSampler(1.0, 1.0)
 
 	// Create a new registry and register our metrics
@@ -223,8 +222,9 @@ func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 			data: &PromNetworkHealthCheckMetricData{
 				Network:        "/ethereum",
 				ResponseStatus: 200,
-				Duration:       90 * time.Millisecond,
-				Environment:    "test",
+				// Keep Duration value away from >50.0 - <=100.0 bucket boundaries
+				Duration:    90 * time.Millisecond,
+				Environment: "test",
 			},
 			expectedLabels: map[string]string{
 				"network":         "ethereum",
@@ -240,8 +240,9 @@ func TestHandleNetworkHealthCheckMetric(t *testing.T) {
 			data: &PromNetworkHealthCheckMetricData{
 				Network:        "/polygon",
 				ResponseStatus: 503,
-				Duration:       40 * time.Millisecond,
-				Environment:    "prod",
+				// Keep Duration value away from >25 - <=50.0 bucket boundaries
+				Duration:    40 * time.Millisecond,
+				Environment: "prod",
 			},
 			expectedLabels: map[string]string{
 				"network":         "polygon",
