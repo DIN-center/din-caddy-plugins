@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -411,6 +412,55 @@ func TestCleanup_StopsHealthChecks(t *testing.T) {
 		// Success.
 	case <-time.After(2 * time.Second):
 		t.Fatal("health check goroutine did not stop after Cleanup")
+	}
+}
+
+func TestServeHTTP_ConcurrentRequests(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Override client to return streaming response with slight delay to increase overlap.
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		},
+		postStreamHandler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	// Fire 50 concurrent non-streaming + 50 concurrent streaming requests.
+	const concurrency = 100
+	errs := make(chan error, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		go func(idx int) {
+			var body string
+			if idx%2 == 0 {
+				body = `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":false}`
+			} else {
+				body = `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
+			}
+			w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+			err := m.ServeHTTP(w, r, noopHandler)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if w.Code != http.StatusOK {
+				errs <- fmt.Errorf("request %d: expected 200, got %d", idx, w.Code)
+				return
+			}
+			errs <- nil
+		}(i)
+	}
+
+	for i := 0; i < concurrency; i++ {
+		err := <-errs
+		assert.NoError(t, err)
 	}
 }
 
