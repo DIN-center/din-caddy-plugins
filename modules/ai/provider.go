@@ -140,6 +140,9 @@ func (p *AIProvider) MarkUnhealthy() {
 func (p *AIProvider) RecordTTFT(d time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.ttftWindowSize <= 0 {
+		return
+	}
 	if len(p.ttftWindow) >= p.ttftWindowSize {
 		p.ttftWindow = p.ttftWindow[1:]
 	}

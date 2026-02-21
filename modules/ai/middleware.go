@@ -377,6 +377,26 @@ func generateRequestID() string {
 	return hex.EncodeToString(b)
 }
 
+// expandEnvVars replaces all {env.VAR_NAME} patterns in a string with their
+// environment variable values. Handles both full replacement ({env.X}) and
+// embedded patterns (Bearer {env.X}).
+func expandEnvVars(s string) string {
+	for {
+		start := strings.Index(s, "{env.")
+		if start == -1 {
+			return s
+		}
+		end := strings.Index(s[start:], "}")
+		if end == -1 {
+			return s
+		}
+		end += start
+		envKey := s[start+5 : end]
+		envVal := os.Getenv(envKey)
+		s = s[:start] + envVal + s[end+1:]
+	}
+}
+
 // writeErrorResponse writes a JSON error response in OpenAI format.
 func writeErrorResponse(w http.ResponseWriter, statusCode int, message, errType string) error {
 	resp := libai.ErrorResponse{
@@ -510,12 +530,7 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 					if !d.NextArg() {
 						return d.ArgErr()
 					}
-					value := d.Val()
-					// Expand environment variables in header values.
-					if strings.HasPrefix(value, "{env.") && strings.HasSuffix(value, "}") {
-						envKey := value[5 : len(value)-1]
-						value = os.Getenv(envKey)
-					}
+					value := expandEnvVars(d.Val())
 					provider.Headers[key] = value
 				}
 
