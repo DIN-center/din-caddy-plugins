@@ -1,0 +1,103 @@
+package ai
+
+import (
+	"crypto/rand"
+	"encoding/binary"
+	"math"
+	"sort"
+
+	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+)
+
+// Tier represents a quality tier (fast, balanced, premium) containing multiple AI providers.
+type Tier struct {
+	Name      string
+	Providers []*AIProvider
+}
+
+// GetAvailableProviders returns providers that can serve requests, prioritizing healthy over warning.
+// Returns healthy providers first. If none are healthy, falls back to warning providers.
+// Returns nil if all providers are unhealthy.
+func (t *Tier) GetAvailableProviders() []*AIProvider {
+	var healthy, warning []*AIProvider
+	for _, p := range t.Providers {
+		switch p.HealthStatus() {
+		case Healthy:
+			healthy = append(healthy, p)
+		case Warning:
+			warning = append(warning, p)
+		}
+	}
+
+	if len(healthy) > 0 {
+		return healthy
+	}
+	if len(warning) > 0 {
+		return warning
+	}
+	return nil
+}
+
+// SelectProvider picks a provider from the tier based on session stickiness or TTFT-weighted selection.
+// If sessionID is non-empty and dynamic is false, uses deterministic hashing for session stickiness.
+// Otherwise, uses TTFT-weighted random selection.
+func (t *Tier) SelectProvider(sessionID string, dynamic bool) *AIProvider {
+	available := t.GetAvailableProviders()
+	if len(available) == 0 {
+		return nil
+	}
+
+	if len(available) == 1 {
+		return available[0]
+	}
+
+	// Session stickiness via deterministic hashing.
+	if sessionID != "" && !dynamic {
+		names := make([]string, len(available))
+		for i, p := range available {
+			names[i] = p.Name
+		}
+
+		idx := libai.SelectBySessionHash(sessionID, t.Name, names)
+		if idx < 0 {
+			return nil
+		}
+
+		// Find the provider by the sorted name.
+		sorted := make([]string, len(names))
+		copy(sorted, names)
+		sort.Strings(sorted)
+		selectedName := sorted[idx]
+
+		for _, p := range available {
+			if p.Name == selectedName {
+				return p
+			}
+		}
+	}
+
+	// TTFT-weighted random selection.
+	weights := make([]int64, len(available))
+	for i, p := range available {
+		weights[i] = int64(p.AvgTTFT())
+	}
+
+	randVal := cryptoRandFloat64()
+	idx := libai.SelectByTTFTWeight(weights, randVal)
+	if idx < 0 {
+		return available[0]
+	}
+	return available[idx]
+}
+
+// cryptoRandFloat64 generates a random float64 in [0, 1) using crypto/rand.
+func cryptoRandFloat64() float64 {
+	var b [8]byte
+	_, err := rand.Read(b[:])
+	if err != nil {
+		return 0.5 // fallback
+	}
+	// Convert to uint64, mask to 53 bits (float64 mantissa), divide by 2^53.
+	n := binary.LittleEndian.Uint64(b[:])
+	return float64(n>>11) / math.Exp2(53)
+}
