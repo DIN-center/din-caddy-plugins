@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bufio"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -53,12 +54,16 @@ func makeSSEResponse(statusCode int, events string) *http.Response {
 	}
 }
 
+func newBufReader(s string) *bufio.Reader {
+	return bufio.NewReader(strings.NewReader(s))
+}
+
 // --- Tests ---
 
 func TestReadNextSSEEvent(t *testing.T) {
 	t.Run("simple data event", func(t *testing.T) {
 		input := "data: {\"hello\":\"world\"}\n\n"
-		eventType, data, err := readNextSSEEvent(strings.NewReader(input))
+		eventType, data, err := readNextSSEEvent(newBufReader(input))
 		require.NoError(t, err)
 		assert.Empty(t, eventType)
 		assert.Equal(t, `{"hello":"world"}`, string(data))
@@ -66,7 +71,7 @@ func TestReadNextSSEEvent(t *testing.T) {
 
 	t.Run("event with type", func(t *testing.T) {
 		input := "event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
-		eventType, data, err := readNextSSEEvent(strings.NewReader(input))
+		eventType, data, err := readNextSSEEvent(newBufReader(input))
 		require.NoError(t, err)
 		assert.Equal(t, "message_start", eventType)
 		assert.Equal(t, `{"type":"message_start"}`, string(data))
@@ -74,20 +79,20 @@ func TestReadNextSSEEvent(t *testing.T) {
 
 	t.Run("EOF returns data collected so far", func(t *testing.T) {
 		input := "data: {\"partial\":true}\n"
-		eventType, data, err := readNextSSEEvent(strings.NewReader(input))
+		eventType, data, err := readNextSSEEvent(newBufReader(input))
 		require.NoError(t, err)
 		assert.Empty(t, eventType)
 		assert.Equal(t, `{"partial":true}`, string(data))
 	})
 
 	t.Run("empty reader returns EOF", func(t *testing.T) {
-		_, _, err := readNextSSEEvent(strings.NewReader(""))
+		_, _, err := readNextSSEEvent(newBufReader(""))
 		assert.ErrorIs(t, err, io.EOF)
 	})
 
 	t.Run("comment lines are skipped", func(t *testing.T) {
 		input := ": this is a comment\ndata: {\"content\":\"hi\"}\n\n"
-		eventType, data, err := readNextSSEEvent(strings.NewReader(input))
+		eventType, data, err := readNextSSEEvent(newBufReader(input))
 		require.NoError(t, err)
 		assert.Empty(t, eventType)
 		assert.Equal(t, `{"content":"hi"}`, string(data))
@@ -118,6 +123,7 @@ func TestAttemptStream_Success(t *testing.T) {
 	defer result.resp.Body.Close()
 
 	assert.NotNil(t, result.firstChunkData)
+	assert.NotNil(t, result.reader)
 	assert.Greater(t, result.ttft, time.Duration(0))
 }
 
@@ -196,9 +202,16 @@ func TestStreamToClient_OpenAI(t *testing.T) {
 	events += "data: [DONE]\n\n"
 
 	body := io.NopCloser(strings.NewReader(events))
+	bufReader := bufio.NewReader(strings.NewReader(events))
+	// We need body and bufReader to be from the same underlying reader for real usage,
+	// but for testing we just need to verify the output.
+	// Create a proper setup: body wraps the reader that bufReader reads from.
+	reader := strings.NewReader(events)
+	body = io.NopCloser(reader)
+	bufReader = bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, adapter, logger)
+	usage := streamToClient(recorder, body, bufReader, adapter, logger)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, `"content":"Hello"`)
@@ -218,16 +231,18 @@ func TestStreamToClient_Anthropic(t *testing.T) {
 	events += sseEvent("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
 	events += sseEvent("message_stop", `{"type":"message_stop"}`)
 
-	body := io.NopCloser(strings.NewReader(events))
+	reader := strings.NewReader(events)
+	body := io.NopCloser(reader)
+	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, adapter, logger)
+	usage := streamToClient(recorder, body, bufReader, adapter, logger)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, "Hello")
 	assert.Contains(t, result, " world")
 	assert.Contains(t, result, "[DONE]")
-	assert.Nil(t, usage) // Anthropic sends usage in message_delta, not always in OpenAI format
+	assert.Nil(t, usage)
 }
 
 func TestStreamToClient_WithUsage(t *testing.T) {
@@ -238,10 +253,12 @@ func TestStreamToClient_WithUsage(t *testing.T) {
 	events += sseEvent("", `{"id":"chatcmpl-1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
 	events += "data: [DONE]\n\n"
 
-	body := io.NopCloser(strings.NewReader(events))
+	reader := strings.NewReader(events)
+	body := io.NopCloser(reader)
+	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, adapter, logger)
+	usage := streamToClient(recorder, body, bufReader, adapter, logger)
 
 	require.NotNil(t, usage)
 	assert.Equal(t, 10, usage.PromptTokens)

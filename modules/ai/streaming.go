@@ -20,6 +20,9 @@ type streamResult struct {
 	firstChunkData []byte
 	// resp is the raw HTTP response (caller must close Body after streaming completes).
 	resp *http.Response
+	// reader is the buffered reader wrapping resp.Body. Must be used for all subsequent reads
+	// to avoid losing data buffered during the first-chunk read.
+	reader *bufio.Reader
 	// ttft is the time-to-first-token measurement.
 	ttft time.Duration
 	// adapter is the provider adapter used for this stream.
@@ -65,8 +68,11 @@ func attemptStream(
 		return nil, fmt.Errorf("provider returned HTTP %d", resp.StatusCode)
 	}
 
+	// Create a single buffered reader that persists across reads.
+	bufReader := bufio.NewReaderSize(resp.Body, 64*1024)
+
 	// Read the first SSE event and validate it's not an error.
-	eventType, data, err := readNextSSEEvent(resp.Body)
+	eventType, data, err := readNextSSEEvent(bufReader)
 	if err != nil {
 		resp.Body.Close()
 		return nil, fmt.Errorf("read first event: %w", err)
@@ -90,6 +96,7 @@ func attemptStream(
 	return &streamResult{
 		firstChunkData: transformed,
 		resp:           resp,
+		reader:         bufReader,
 		ttft:           ttft,
 		adapter:        adapter,
 	}, nil
@@ -98,17 +105,21 @@ func attemptStream(
 // streamToClient reads remaining SSE events from the provider response and writes
 // them to the client as OpenAI-format SSE events. The first chunk has already been
 // validated and should be flushed separately before calling this.
+//
+// bufReader must be the same buffered reader created in attemptStream, to avoid
+// losing data that was buffered during the first-chunk read.
 func streamToClient(
 	w http.ResponseWriter,
-	providerBody io.ReadCloser,
+	respBody io.ReadCloser,
+	bufReader *bufio.Reader,
 	adapter libai.ProviderAdapter,
 	logger *zap.Logger,
 ) *libai.UsageInfo {
-	defer providerBody.Close()
+	defer respBody.Close()
 
 	flusher, _ := w.(http.Flusher)
 
-	scanner := bufio.NewScanner(providerBody)
+	scanner := bufio.NewScanner(bufReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1MB max line
 
 	var currentEventType string
@@ -176,34 +187,35 @@ func streamToClient(
 	return usage
 }
 
-// readNextSSEEvent reads the next complete SSE event from a reader.
+// readNextSSEEvent reads the next complete SSE event from a buffered reader.
 // Returns the event type (empty for OpenAI) and the data payload.
-func readNextSSEEvent(r io.Reader) (string, []byte, error) {
-	scanner := bufio.NewScanner(r)
+func readNextSSEEvent(r *bufio.Reader) (string, []byte, error) {
 	var eventType string
 	var dataLines []string
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", nil, err
+		}
+
+		line = strings.TrimRight(line, "\r\n")
 
 		if strings.HasPrefix(line, "event:") {
 			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-			continue
-		}
-
-		if strings.HasPrefix(line, "data:") {
+		} else if strings.HasPrefix(line, "data:") {
 			data := strings.TrimPrefix(line, "data:")
 			data = strings.TrimSpace(data)
 			dataLines = append(dataLines, data)
-			continue
-		}
-
-		// Empty line = end of event. If we have data, return it.
-		if line == "" && len(dataLines) > 0 {
+		} else if line == "" && len(dataLines) > 0 {
+			// Empty line = end of event.
 			return eventType, []byte(strings.Join(dataLines, "\n")), nil
 		}
+		// Skip comment lines (starting with :) and other lines.
 
-		// Skip comment lines (starting with :).
+		if err == io.EOF {
+			break
+		}
 	}
 
 	// If we collected data but hit EOF, still return it.
@@ -211,9 +223,6 @@ func readNextSSEEvent(r io.Reader) (string, []byte, error) {
 		return eventType, []byte(strings.Join(dataLines, "\n")), nil
 	}
 
-	if err := scanner.Err(); err != nil {
-		return "", nil, err
-	}
 	return "", nil, io.EOF
 }
 

@@ -1,0 +1,436 @@
+package ai
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+// mockClient implements IStreamingHTTPClient for middleware tests.
+type mockClient struct {
+	postHandler       func(url string, headers map[string]string, payload []byte) ([]byte, int, error)
+	postStreamHandler func(url string, headers map[string]string, payload []byte) (*http.Response, error)
+}
+
+func (m *mockClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+	if m.postHandler != nil {
+		return m.postHandler(url, headers, payload)
+	}
+	return nil, 500, nil
+}
+
+func (m *mockClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+	if m.postStreamHandler != nil {
+		return m.postStreamHandler(url, headers, payload)
+	}
+	return nil, nil
+}
+
+// noopHandler is a caddyhttp.Handler that does nothing.
+var noopHandler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	return nil
+})
+
+func newTestMiddleware(t *testing.T) *DinAIMiddleware {
+	t.Helper()
+	ensureMetricsRegistered(t)
+
+	client := &mockClient{
+		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		},
+	}
+
+	m := &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierBalanced: {
+				Name: TierBalanced,
+				Providers: []*AIProvider{
+					func() *AIProvider {
+						p := newTestProvider("openai-gpt4o", Healthy)
+						p.ModelID = "gpt-4o"
+						p.AdapterType = AdapterOpenAI
+						p.httpClient = client
+						return p
+					}(),
+					func() *AIProvider {
+						p := newTestProvider("deepseek-chat", Healthy)
+						p.ModelID = "deepseek-chat"
+						p.AdapterType = AdapterOpenAI
+						p.httpClient = client
+						return p
+					}(),
+				},
+			},
+			TierFast: {
+				Name: TierFast,
+				Providers: []*AIProvider{
+					func() *AIProvider {
+						p := newTestProvider("groq-llama", Healthy)
+						p.ModelID = "llama-3.1-8b-instant"
+						p.AdapterType = AdapterOpenAI
+						p.httpClient = client
+						return p
+					}(),
+				},
+			},
+		},
+		logger:              zap.NewNop(),
+		quit:                make(chan struct{}),
+		machineID:           "test-machine",
+		client:              client,
+		testMode:            true,
+		RequestAttemptCount: DefaultRequestAttemptCount,
+	}
+
+	return m
+}
+
+func makeRequest(t *testing.T, method, path, contentType, body string, headers map[string]string) (*httptest.ResponseRecorder, *http.Request) {
+	t.Helper()
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, bodyReader)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	return httptest.NewRecorder(), req
+}
+
+// --- Tests ---
+
+func TestServeHTTP_NonMatchingPath(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	w, r := makeRequest(t, "POST", "/v1/models", "application/json", `{}`, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	// Should pass through to next handler (noop returns 200 with empty body).
+	assert.Equal(t, 200, w.Code)
+}
+
+func TestServeHTTP_WrongMethod(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	w, r := makeRequest(t, "GET", "/v1/chat/completions", "", "", nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	// GET should pass through.
+	assert.Equal(t, 200, w.Code)
+}
+
+func TestServeHTTP_WrongContentType(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "text/plain", `{}`, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusUnsupportedMediaType, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "Content-Type")
+}
+
+func TestServeHTTP_InvalidJSON(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", `not json`, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestServeHTTP_UnknownTier(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Tier": "nonexistent"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "nonexistent")
+}
+
+func TestServeHTTP_AllUnhealthy(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Mark all providers unhealthy.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		p.MarkUnhealthy()
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestServeHTTP_NonStreaming_Success(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Check response headers.
+	assert.NotEmpty(t, w.Header().Get("X-DIN-Provider"))
+	assert.NotEmpty(t, w.Header().Get("X-DIN-Model"))
+	assert.Equal(t, TierBalanced, w.Header().Get("X-DIN-Tier"))
+	assert.NotEmpty(t, w.Header().Get("X-DIN-Request-Id"))
+	assert.Empty(t, w.Header().Get("X-DIN-Session-Pinned"))
+
+	// Check response body.
+	var resp libai.ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "Hello!", resp.Choices[0].Message.Content)
+}
+
+func TestServeHTTP_NonStreaming_WithSession(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Session-Id": "session-abc"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "true", w.Header().Get("X-DIN-Session-Pinned"))
+}
+
+func TestServeHTTP_NonStreaming_SessionDeterministic(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+
+	// Same session ID should always route to the same provider.
+	var providers []string
+	for i := 0; i < 5; i++ {
+		w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+			map[string]string{"X-DIN-Session-Id": "sticky-session"})
+
+		err := m.ServeHTTP(w, r, noopHandler)
+		require.NoError(t, err)
+		providers = append(providers, w.Header().Get("X-DIN-Provider"))
+	}
+
+	// All should be the same.
+	for i := 1; i < len(providers); i++ {
+		assert.Equal(t, providers[0], providers[i])
+	}
+}
+
+func TestServeHTTP_NonStreaming_SpecificTier(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Tier": TierFast})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, TierFast, w.Header().Get("X-DIN-Tier"))
+	assert.Equal(t, "groq-llama", w.Header().Get("X-DIN-Provider"))
+}
+
+func TestServeHTTP_Streaming_Success(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Override client to return streaming response.
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+	assert.Contains(t, w.Body.String(), "assistant")
+	assert.Contains(t, w.Body.String(), "[DONE]")
+}
+
+func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			callCount++
+			if callCount == 1 {
+				return []byte(`{"error":"server error"}`), 500, nil
+			}
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.GreaterOrEqual(t, callCount, 2)
+}
+
+func TestServeHTTP_DefaultTier(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, TierBalanced, w.Header().Get("X-DIN-Tier"))
+}
+
+func TestOverwriteModel(t *testing.T) {
+	body := []byte(`{"model":"original","messages":[],"stream":false}`)
+	result, err := overwriteModel(body, "new-model")
+	require.NoError(t, err)
+
+	var parsed map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(result, &parsed))
+
+	var model string
+	require.NoError(t, json.Unmarshal(parsed["model"], &model))
+	assert.Equal(t, "new-model", model)
+
+	// Messages should be preserved.
+	assert.Contains(t, string(result), "messages")
+}
+
+func TestGenerateRequestID(t *testing.T) {
+	id1 := generateRequestID()
+	id2 := generateRequestID()
+
+	assert.Len(t, id1, 32) // 16 bytes hex encoded
+	assert.Len(t, id2, 32)
+	assert.NotEqual(t, id1, id2)
+}
+
+func TestWriteErrorResponse(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeErrorResponse(w, http.StatusBadRequest, "test error", "test_type")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "test error", resp.Error.Message)
+	assert.Equal(t, "test_type", resp.Error.Type)
+}
+
+func TestCleanup(t *testing.T) {
+	m := &DinAIMiddleware{
+		logger: zap.NewNop(),
+		quit:   make(chan struct{}),
+	}
+
+	// Should not panic.
+	err := m.Cleanup()
+	assert.NoError(t, err)
+
+	// Double cleanup should not panic.
+	err = m.Cleanup()
+	assert.NoError(t, err)
+}
+
+func TestCleanup_StopsHealthChecks(t *testing.T) {
+	ensureMetricsRegistered(t)
+
+	m := &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierFast: {
+				Name: TierFast,
+				Providers: []*AIProvider{
+					func() *AIProvider {
+						p := newTestProvider("p1", Healthy)
+						p.ModelID = "test"
+						p.AdapterType = AdapterOpenAI
+						return p
+					}(),
+				},
+			},
+		},
+		logger:              zap.NewNop(),
+		quit:                make(chan struct{}),
+		machineID:           "test",
+		HealthcheckInterval: 1,
+	}
+
+	client := &mockHealthCheckClient{statusCode: 200, body: `{}`}
+
+	done := make(chan struct{})
+	go func() {
+		runHealthChecks(m.Tiers, client, 1, "test", m.logger, m.quit)
+		close(done)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	m.Cleanup()
+
+	select {
+	case <-done:
+		// Success.
+	case <-time.After(2 * time.Second):
+		t.Fatal("health check goroutine did not stop after Cleanup")
+	}
+}
+
+func TestSelectUntried(t *testing.T) {
+	m := newTestMiddleware(t)
+	tier := m.Tiers[TierBalanced]
+
+	// First call should return a provider.
+	tried := make(map[string]bool)
+	p1 := m.selectUntried(tier, "", false, tried)
+	require.NotNil(t, p1)
+	tried[p1.Name] = true
+
+	// Second call should return a different provider.
+	p2 := m.selectUntried(tier, "", false, tried)
+	require.NotNil(t, p2)
+	assert.NotEqual(t, p1.Name, p2.Name)
+	tried[p2.Name] = true
+
+	// Third call with all tried should return nil.
+	p3 := m.selectUntried(tier, "", false, tried)
+	assert.Nil(t, p3)
+}
