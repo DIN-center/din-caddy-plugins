@@ -10,6 +10,8 @@ import (
 // AnthropicAdapter translates between OpenAI chat format and Anthropic's Messages API.
 // It is stateful for streaming — it tracks event sequences to correctly assemble
 // OpenAI-format delta chunks from Anthropic's multi-event protocol.
+//
+// NOT safe for concurrent use. Each streaming request must use its own adapter instance.
 type AnthropicAdapter struct {
 	// Streaming state — tracks the current message context.
 	messageID string

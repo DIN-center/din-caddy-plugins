@@ -5,12 +5,6 @@ import (
 	"sort"
 )
 
-// ProviderInfo is a minimal interface for provider selection by hash.
-// This avoids coupling the lib/ai package to the modules/ai AIProvider struct.
-type ProviderInfo interface {
-	ProviderName() string
-}
-
 // SelectBySessionHash deterministically selects a provider from a sorted list
 // using FNV-32a hashing of sessionID + tierName. This is stateless and produces
 // consistent results across all proxy instances given the same healthy provider pool.

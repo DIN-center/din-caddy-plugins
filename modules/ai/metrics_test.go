@@ -3,20 +3,10 @@ package ai
 import (
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRegisterAIMetrics(t *testing.T) {
-	// Unregister any previously registered metrics to avoid duplicate registration panics
-	if DinAIRequestCount != nil {
-		prometheus.Unregister(DinAIRequestCount)
-		prometheus.Unregister(DinAITokensTotal)
-		prometheus.Unregister(DinAIHealthCheckCount)
-		prometheus.Unregister(DinAIRequestDuration)
-		prometheus.Unregister(DinAITTFTDuration)
-	}
-
 	RegisterAIMetrics()
 
 	assert.NotNil(t, DinAIRequestCount)
@@ -24,6 +14,15 @@ func TestRegisterAIMetrics(t *testing.T) {
 	assert.NotNil(t, DinAIHealthCheckCount)
 	assert.NotNil(t, DinAIRequestDuration)
 	assert.NotNil(t, DinAITTFTDuration)
+}
+
+func TestRegisterAIMetrics_Idempotent(t *testing.T) {
+	// Should not panic when called multiple times.
+	RegisterAIMetrics()
+	RegisterAIMetrics()
+	RegisterAIMetrics()
+
+	assert.NotNil(t, DinAIRequestCount)
 }
 
 func TestRecordRequest(t *testing.T) {
@@ -52,14 +51,5 @@ func TestRecordHealthCheck(t *testing.T) {
 
 func ensureMetricsRegistered(t *testing.T) {
 	t.Helper()
-	if DinAIRequestCount == nil {
-		if DinAIRequestCount != nil {
-			prometheus.Unregister(DinAIRequestCount)
-			prometheus.Unregister(DinAITokensTotal)
-			prometheus.Unregister(DinAIHealthCheckCount)
-			prometheus.Unregister(DinAIRequestDuration)
-			prometheus.Unregister(DinAITTFTDuration)
-		}
-		RegisterAIMetrics()
-	}
+	RegisterAIMetrics()
 }

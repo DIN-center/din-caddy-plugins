@@ -1,6 +1,12 @@
 package ai
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+var metricsOnce sync.Once
 
 const (
 	DinAIRequestCountMetricName     = "din_ai_request_count"
@@ -21,7 +27,12 @@ var (
 )
 
 // RegisterAIMetrics registers all AI-specific Prometheus metrics.
+// Safe to call multiple times — registration only happens once.
 func RegisterAIMetrics() {
+	metricsOnce.Do(registerAIMetricsOnce)
+}
+
+func registerAIMetricsOnce() {
 	DinAIRequestCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: DinAIRequestCountMetricName,

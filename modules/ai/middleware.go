@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
 	"github.com/caddyserver/caddy/v2"
@@ -80,7 +82,7 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 	m.machineID = hostname
 
 	// Initialize HTTP client.
-	m.client = &defaultStreamingClient{}
+	m.client = newDefaultStreamingClient()
 
 	// Set health check threshold on all providers.
 	for _, tier := range m.Tiers {
@@ -130,13 +132,13 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			"Content-Type must be application/json", "invalid_request_error")
 	}
 
-	// Read request body.
-	body, err := io.ReadAll(r.Body)
+	// Read request body with size limit (10MB).
+	defer r.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
 		return writeErrorResponse(w, http.StatusBadRequest,
 			"failed to read request body", "invalid_request_error")
 	}
-	defer r.Body.Close()
 
 	// Parse request to check stream flag.
 	var req libai.ChatCompletionRequest
@@ -543,7 +545,17 @@ func (m *DinAIMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Midd
 
 // --- Default Streaming HTTP Client ---
 
-type defaultStreamingClient struct{}
+type defaultStreamingClient struct {
+	client *http.Client
+}
+
+func newDefaultStreamingClient() *defaultStreamingClient {
+	return &defaultStreamingClient{
+		client: &http.Client{
+			Timeout: 120 * time.Second, // 2-minute timeout for streaming responses
+		},
+	}
+}
 
 func (c *defaultStreamingClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 	resp, err := c.PostStream(url, headers, payload)
@@ -556,12 +568,12 @@ func (c *defaultStreamingClient) Post(url string, headers map[string]string, pay
 }
 
 func (c *defaultStreamingClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(payload)))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	return http.DefaultClient.Do(req)
+	return c.client.Do(req)
 }

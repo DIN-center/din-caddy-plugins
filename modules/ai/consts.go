@@ -1,7 +1,5 @@
 package ai
 
-import "time"
-
 // HealthStatus represents the health state of an AI provider.
 type HealthStatus int
 
@@ -24,7 +22,6 @@ const (
 	DefaultHCThreshold        = 3               // consecutive checks before state transition
 	DefaultRequestAttemptCount = 3              // max retries per request
 	DefaultTTFTWindowSize     = 20              // rolling window size for TTFT measurements
-	DefaultSessionTTL         = 30 * time.Minute // unused with deterministic hashing, kept for future
 )
 
 // Adapter type names used in Caddyfile config.
