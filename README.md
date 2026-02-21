@@ -12,6 +12,7 @@ A collection of Caddy server plugins for the DIN (Decentralized Infrastructure N
 - **Chain ID Configuration**: Explicit chain ID support for all networks using standard formats
 - **Environment Support**: Configurable environments (prod, beta, dev, test) with standardized logging
 - **Archive Node Support**: Dedicated configuration for archive nodes
+- **AI Model Routing**: Route AI API requests across providers (OpenAI, Anthropic, etc.) with tier-based selection, streaming support, and health-aware failover
 
 ## Configuration
 
@@ -34,6 +35,92 @@ The following headers indicate the DIN plugin implementations of [Caddy's Module
 ## http.handlers
 
 Caddy Middleware Handlers have the opportunity to manipulate requests before they are dispatched to the backend services, and the opportunity to manipulate responses before they are sent to clients.
+
+### http.handlers.din_ai - DIN AI Router Middleware
+
+The AI Router Middleware routes `POST /v1/chat/completions` requests across AI model providers (OpenAI, Anthropic, DeepSeek, Groq, etc.) with health-aware load balancing and streaming support.
+
+**Key Features:**
+- **Quality Tiers** (fast, balanced, premium) — clients select via `X-DIN-Tier` header
+- **SSE Streaming** with pre-first-byte failover — validates the first chunk before committing to the client
+- **Deterministic Session Routing** — `X-DIN-Session-Id` header consistently routes to the same provider via FNV-32a hashing (works across all proxy instances with zero shared state)
+- **TTFT-Weighted Selection** — for non-session traffic, faster providers receive more traffic
+- **Provider Health Checks** — periodic lightweight completions with automatic state transitions (healthy → warning → unhealthy)
+- **Protocol Translation** — Anthropic Messages API is translated to/from OpenAI format via the adapter pattern
+
+**Provider Support:**
+
+| Provider | Adapter | Notes |
+|----------|---------|-------|
+| OpenAI, Groq, DeepSeek, Together AI, Fireworks, Mistral, xAI, Google Gemini | `openai` (passthrough) | Natively OpenAI-compatible |
+| Anthropic | `anthropic` (translation) | Bidirectional protocol translation |
+
+**Request Headers** (client → DIN):
+
+| Header | Required | Default | Purpose |
+|--------|----------|---------|---------|
+| `X-DIN-Tier` | No | `balanced` | Quality tier: `fast`, `balanced`, or `premium` |
+| `X-DIN-Session-Id` | No | — | Session ID for deterministic provider selection |
+| `X-DIN-Dynamic` | No | `false` | Set `true` to use TTFT-weighted selection instead of session pinning |
+
+**Response Headers** (DIN → client):
+
+| Header | Purpose |
+|--------|---------|
+| `X-DIN-Provider` | Which provider handled the request |
+| `X-DIN-Model` | Which model was used |
+| `X-DIN-Tier` | Which tier was resolved |
+| `X-DIN-Session-Pinned` | `true` when session routing is active |
+| `X-DIN-Request-Id` | Unique request ID |
+
+Caddyfile Example:
+
+```
+:8000 {
+    route /v1/* {
+        din_ai {
+            healthcheck_interval 30
+            healthcheck_threshold 3
+            request_attempt_count 3
+
+            tiers {
+                fast {
+                    providers {
+                        groq-llama https://api.groq.com/openai/v1/chat/completions {
+                            model llama-3.1-8b-instant
+                            adapter openai
+                            headers {
+                                Authorization "Bearer {env.GROQ_API_KEY}"
+                            }
+                        }
+                    }
+                }
+                balanced {
+                    providers {
+                        openai-gpt4o https://api.openai.com/v1/chat/completions {
+                            model gpt-4o
+                            adapter openai
+                            headers {
+                                Authorization "Bearer {env.OPENAI_API_KEY}"
+                            }
+                        }
+                        anthropic-sonnet https://api.anthropic.com/v1/messages {
+                            model claude-sonnet-4-20250514
+                            adapter anthropic
+                            headers {
+                                x-api-key {env.ANTHROPIC_API_KEY}
+                                anthropic-version 2023-06-01
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+The middleware overwrites the client's `model` field with the provider's configured model — users control model selection via tier, not directly. Requests without `Content-Type: application/json` receive 415 Unsupported Media Type. When all providers in a tier are unhealthy, the middleware returns 503 Service Unavailable.
 
 ### http.handlers.din - DIN Router Middleware
 

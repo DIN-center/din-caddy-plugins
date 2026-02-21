@@ -119,7 +119,7 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 	t.Run("request with max_tokens", func(t *testing.T) {
 		maxTokens := 100
 		input := ChatCompletionRequest{
-			Model: "claude-3-5-haiku-20241022",
+			Model: "claude-haiku-4-5-20251001",
 			Messages: []ChatMessage{
 				{Role: "user", Content: "Hi"},
 			},
@@ -137,7 +137,7 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 
 	t.Run("request without max_tokens gets default", func(t *testing.T) {
 		input := ChatCompletionRequest{
-			Model: "claude-3-5-haiku-20241022",
+			Model: "claude-haiku-4-5-20251001",
 			Messages: []ChatMessage{
 				{Role: "user", Content: "Hi"},
 			},

@@ -113,12 +113,12 @@ func TestCheckProvider_NetworkError(t *testing.T) {
 func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 	ensureMetricsRegistered(t)
 	provider := newTestProvider("test-anthropic", Healthy)
-	provider.ModelID = "claude-3-5-haiku-20241022"
+	provider.ModelID = "claude-haiku-4-5-20251001"
 	provider.AdapterType = AdapterAnthropic
 
 	client := &mockHealthCheckClient{
 		statusCode: 200,
-		body:       `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"model":"claude-3-5-haiku-20241022","stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":1}}`,
+		body:       `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"model":"claude-haiku-4-5-20251001","stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":1}}`,
 	}
 
 	logger := zap.NewNop()
