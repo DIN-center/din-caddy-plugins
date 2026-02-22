@@ -198,9 +198,8 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			"service_unavailable")
 	}
 
-	// Read session and dynamic headers.
+	// Read session header.
 	sessionID := r.Header.Get("X-DIN-Session-Id")
-	dynamic := strings.EqualFold(r.Header.Get("X-DIN-Dynamic"), "true")
 
 	// Generate request ID.
 	requestID := generateRequestID()
@@ -216,7 +215,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		// Select provider.
-		provider := m.selectUntried(tier, sessionID, dynamic, tried)
+		provider := m.selectUntried(tier, sessionID, tried)
 		if provider == nil {
 			break
 		}
@@ -324,9 +323,9 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 }
 
 // selectUntried picks a provider that hasn't been tried yet.
-func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, dynamic bool, tried map[string]bool) *AIProvider {
+func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[string]bool) *AIProvider {
 	if len(tried) == 0 {
-		return tier.SelectProvider(sessionID, dynamic)
+		return tier.SelectProvider(sessionID)
 	}
 
 	// For retries, use TTFT-weighted selection excluding tried providers.
@@ -345,9 +344,9 @@ func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, dynamic bo
 		return untried[0]
 	}
 
-	// Create a temporary tier for selection.
+	// Create a temporary tier for selection — no session hash for retries.
 	tempTier := &Tier{Name: tier.Name, Providers: untried}
-	return tempTier.SelectProvider("", true) // no session hash for retries
+	return tempTier.SelectProvider("")
 }
 
 // attemptNonStreaming makes a non-streaming request to a provider.

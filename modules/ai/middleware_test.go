@@ -471,18 +471,18 @@ func TestSelectUntried(t *testing.T) {
 
 	// First call should return a provider.
 	tried := make(map[string]bool)
-	p1 := m.selectUntried(tier, "", false, tried)
+	p1 := m.selectUntried(tier, "", tried)
 	require.NotNil(t, p1)
 	tried[p1.Name] = true
 
 	// Second call should return a different provider.
-	p2 := m.selectUntried(tier, "", false, tried)
+	p2 := m.selectUntried(tier, "", tried)
 	require.NotNil(t, p2)
 	assert.NotEqual(t, p1.Name, p2.Name)
 	tried[p2.Name] = true
 
 	// Third call with all tried should return nil.
-	p3 := m.selectUntried(tier, "", false, tried)
+	p3 := m.selectUntried(tier, "", tried)
 	assert.Nil(t, p3)
 }
 

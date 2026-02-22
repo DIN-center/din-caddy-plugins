@@ -39,9 +39,9 @@ func (t *Tier) GetAvailableProviders() []*AIProvider {
 }
 
 // SelectProvider picks a provider from the tier based on session stickiness or TTFT-weighted selection.
-// If sessionID is non-empty and dynamic is false, uses deterministic hashing for session stickiness.
+// If sessionID is non-empty, uses deterministic hashing for session stickiness.
 // Otherwise, uses TTFT-weighted random selection.
-func (t *Tier) SelectProvider(sessionID string, dynamic bool) *AIProvider {
+func (t *Tier) SelectProvider(sessionID string) *AIProvider {
 	available := t.GetAvailableProviders()
 	if len(available) == 0 {
 		return nil
@@ -52,7 +52,7 @@ func (t *Tier) SelectProvider(sessionID string, dynamic bool) *AIProvider {
 	}
 
 	// Session stickiness via deterministic hashing.
-	if sessionID != "" && !dynamic {
+	if sessionID != "" {
 		names := make([]string, len(available))
 		for i, p := range available {
 			names[i] = p.Name

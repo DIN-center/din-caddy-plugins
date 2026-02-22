@@ -117,7 +117,6 @@ POST /v1/chat/completions
 Content-Type: application/json
 X-DIN-Tier: balanced
 X-DIN-Session-Id: conv_abc123
-X-DIN-Dynamic: true
 
 {
   "model": "ignored",
@@ -135,13 +134,7 @@ X-DIN-Dynamic: true
 |--------|----------|---------|-------------|
 | `Content-Type` | Yes | — | Must be `application/json` |
 | `X-DIN-Tier` | No | `balanced` | Quality tier to route to (`fast`, `balanced`, or `premium`) |
-| `X-DIN-Session-Id` | No | — | Session identifier for multi-turn conversations. When present, the same ID always routes to the same provider via deterministic hash |
-| `X-DIN-Dynamic` | No | `false` | Set to `true` to use TTFT-weighted selection (pick the fastest provider) instead of session stickiness |
-
-**How `X-DIN-Session-Id` and `X-DIN-Dynamic` interact:**
-- **Session-Id set, Dynamic not set** — Provider is selected by hashing the session ID. Same ID = same provider every time. Use this for multi-turn conversations.
-- **Session-Id set, Dynamic `true`** — Dynamic wins. The session ID is ignored and TTFT-weighted selection is used. This lets a client that normally uses sessions opt into dynamic routing for specific requests.
-- **No Session-Id** (regardless of Dynamic) — TTFT-weighted selection. Each request may hit a different provider. `X-DIN-Dynamic` has no effect without a session ID since TTFT-weighted is already the default.
+| `X-DIN-Session-Id` | No | — | Session identifier for multi-turn conversations. When present, the same ID always routes to the same provider via deterministic hash. When absent, TTFT-weighted selection is used |
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
 
@@ -169,9 +162,9 @@ Requests are routed to a tier based on the `X-DIN-Tier` header (default: `balanc
 
 ### Provider selection within a tier
 
-1. **Session stickiness** — If `X-DIN-Session-Id` is present and `X-DIN-Dynamic` is not `true`, the session ID is hashed (FNV-32a) to deterministically select a provider. This is stateless — all proxy instances independently hash to the same provider with zero shared state.
+1. **Session stickiness** — If `X-DIN-Session-Id` is present, the session ID is hashed (FNV-32a) to deterministically select a provider. This is stateless — all proxy instances independently hash to the same provider with zero shared state.
 
-2. **TTFT-weighted selection** — Without a session ID (or with `X-DIN-Dynamic: true`), providers are selected randomly weighted by inverse time-to-first-token. Faster providers receive proportionally more traffic.
+2. **TTFT-weighted selection** — Without a session ID, providers are selected randomly weighted by inverse time-to-first-token. Faster providers receive proportionally more traffic.
 
 3. **Failover** — If a provider fails, the next untried provider is selected. The middleware retries up to `request_attempt_count` times (default: 3, capped at available provider count).
 
@@ -355,7 +348,6 @@ These are tracked in the [code review document](https://github.com/DIN-center/di
 - T3: `Provision()` tests (Validate tests added)
 - T4: Weak metric assertions (no counter increment verification)
 - T5: Health check recovery test through `checkProvider`
-- T6: `X-DIN-Dynamic` header parsing test
 - T8: Health threshold boundary off-by-one verification
 
 ## Future Work

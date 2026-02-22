@@ -102,7 +102,7 @@ func TestTierSelectProvider(t *testing.T) {
 			},
 		}
 
-		provider := tier.SelectProvider("", false)
+		provider := tier.SelectProvider("")
 		assert.Nil(t, provider)
 	})
 
@@ -115,7 +115,7 @@ func TestTierSelectProvider(t *testing.T) {
 			},
 		}
 
-		provider := tier.SelectProvider("", false)
+		provider := tier.SelectProvider("")
 		require.NotNil(t, provider)
 		assert.Equal(t, "p1", provider.Name)
 	})
@@ -131,37 +131,13 @@ func TestTierSelectProvider(t *testing.T) {
 		}
 
 		// Same session ID should always pick the same provider.
-		p1 := tier.SelectProvider("session-123", false)
-		p2 := tier.SelectProvider("session-123", false)
-		p3 := tier.SelectProvider("session-123", false)
+		p1 := tier.SelectProvider("session-123")
+		p2 := tier.SelectProvider("session-123")
+		p3 := tier.SelectProvider("session-123")
 
 		require.NotNil(t, p1)
 		assert.Equal(t, p1.Name, p2.Name)
 		assert.Equal(t, p2.Name, p3.Name)
-	})
-
-	t.Run("dynamic mode ignores session hash", func(t *testing.T) {
-		tier := &Tier{
-			Name: TierBalanced,
-			Providers: []*AIProvider{
-				newTestProvider("p1", Healthy),
-				newTestProvider("p2", Healthy),
-				newTestProvider("p3", Healthy),
-			},
-		}
-
-		// With dynamic=true, session ID is ignored. Selection uses TTFT-weighted random.
-		provider := tier.SelectProvider("session-123", true)
-		require.NotNil(t, provider)
-		// Just verify it returns a valid provider.
-		found := false
-		for _, p := range tier.Providers {
-			if p.Name == provider.Name {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "should select from available providers")
 	})
 
 	t.Run("no session uses TTFT-weighted selection", func(t *testing.T) {
@@ -180,7 +156,7 @@ func TestTierSelectProvider(t *testing.T) {
 		// Run many selections and verify the faster provider gets more traffic.
 		counts := map[string]int{}
 		for i := 0; i < 100; i++ {
-			provider := tier.SelectProvider("", false)
+			provider := tier.SelectProvider("")
 			require.NotNil(t, provider)
 			counts[provider.Name]++
 		}
@@ -201,14 +177,14 @@ func TestTierSelectProvider(t *testing.T) {
 		}
 
 		// Get initial selection for a session.
-		initial := tier.SelectProvider("sticky-session", false)
+		initial := tier.SelectProvider("sticky-session")
 		require.NotNil(t, initial)
 
 		// Mark the selected provider as unhealthy.
 		setProviderHealth(initial, Unhealthy)
 
 		// Session should now route to a different provider.
-		after := tier.SelectProvider("sticky-session", false)
+		after := tier.SelectProvider("sticky-session")
 		require.NotNil(t, after)
 		assert.NotEqual(t, initial.Name, after.Name,
 			"should route to different provider when original is unhealthy")
@@ -228,7 +204,7 @@ func TestTierSelectProviderDistribution(t *testing.T) {
 
 	counts := map[string]int{}
 	for i := 0; i < 300; i++ {
-		p := tier.SelectProvider("session-"+string(rune(i)), false)
+		p := tier.SelectProvider("session-"+string(rune(i)))
 		require.NotNil(t, p)
 		counts[p.Name]++
 	}

@@ -60,8 +60,7 @@ The AI Router Middleware routes `POST /v1/chat/completions` requests across AI m
 | Header | Required | Default | Purpose |
 |--------|----------|---------|---------|
 | `X-DIN-Tier` | No | `balanced` | Quality tier: `fast`, `balanced`, or `premium` |
-| `X-DIN-Session-Id` | No | — | Session ID for deterministic provider selection |
-| `X-DIN-Dynamic` | No | `false` | Set `true` to use TTFT-weighted selection instead of session pinning |
+| `X-DIN-Session-Id` | No | — | Session ID for deterministic provider selection (omit for TTFT-weighted) |
 
 **Response Headers** (DIN → client):
 
