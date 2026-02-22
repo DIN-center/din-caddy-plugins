@@ -104,6 +104,16 @@ Caddyfile Example:
                                 Authorization "Bearer {env.OPENAI_API_KEY}"
                             }
                         }
+                        openai-o3 https://api.openai.com/v1/chat/completions {
+                            model o3-mini
+                            adapter openai
+                            health_check {
+                                max_completion_tokens 1
+                            }
+                            headers {
+                                Authorization "Bearer {env.OPENAI_API_KEY}"
+                            }
+                        }
                         anthropic-sonnet https://api.anthropic.com/v1/messages {
                             model claude-sonnet-4-20250514
                             adapter anthropic
@@ -121,6 +131,17 @@ Caddyfile Example:
 ```
 
 The middleware overwrites the client's `model` field with the provider's configured model — users control model selection via tier, not directly. Requests without `Content-Type: application/json` receive 415 Unsupported Media Type. When all providers in a tier are unhealthy, the middleware returns 503 Service Unavailable.
+
+**Provider Options:**
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `model` | Yes | Model ID sent to the backend |
+| `adapter` | No | `openai` (default) or `anthropic` |
+| `headers` | No | Static headers (e.g. `Authorization`) |
+| `health_check` | No | Override health check request params (e.g. `max_completion_tokens 1` for reasoning models) |
+
+The `health_check` block is needed for OpenAI reasoning models (o3, o1) which require `max_completion_tokens` instead of `max_tokens`. Without it, health checks default to `max_tokens: 1`.
 
 ### http.handlers.din - DIN Router Middleware
 
