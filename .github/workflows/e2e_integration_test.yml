@@ -250,7 +250,7 @@ jobs:
       - name: Start Caddy Server (AI)
         run: |
           echo "Starting Caddy server with AI config..."
-          ./caddy-din start --config ./.github/workflows/e2e_integration_test/Caddyfile.ai &
+          ./caddy-din start --config ./.github/workflows/e2e_integration_test/Caddyfile.ai --adapter caddyfile &
           CADDY_PID=$!
           echo $CADDY_PID > caddy.pid
 
