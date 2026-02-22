@@ -34,13 +34,31 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 	}
 
 	anthropicReq := AnthropicRequest{
-		Model:     req.Model,
-		Stream:    req.Stream,
-		MaxTokens: 4096, // Anthropic requires max_tokens
+		Model:       req.Model,
+		Stream:      req.Stream,
+		MaxTokens:   4096, // Anthropic requires max_tokens
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
 	}
 
 	if req.MaxTokens != nil {
 		anthropicReq.MaxTokens = *req.MaxTokens
+	}
+
+	// Convert OpenAI stop field to Anthropic stop_sequences.
+	if req.Stop != nil {
+		switch v := req.Stop.(type) {
+		case string:
+			anthropicReq.StopSequences = []string{v}
+		case []interface{}:
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					anthropicReq.StopSequences = append(anthropicReq.StopSequences, str)
+				}
+			}
+		default:
+			// Unexpected type — ignore gracefully.
+		}
 	}
 
 	// Extract system messages and convert remaining messages.
@@ -146,10 +164,11 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 				Model string `json:"model"`
 			} `json:"message"`
 		}
-		if err := json.Unmarshal(data, &evt); err == nil {
-			a.messageID = evt.Message.ID
-			a.model = evt.Message.Model
+		if err := json.Unmarshal(data, &evt); err != nil {
+			return nil, fmt.Errorf("failed to parse message_start: %w", err)
 		}
+		a.messageID = evt.Message.ID
+		a.model = evt.Message.Model
 		// Emit an initial role chunk like OpenAI does.
 		return a.buildOpenAIDelta("assistant", "", nil)
 

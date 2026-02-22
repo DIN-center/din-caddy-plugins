@@ -68,11 +68,14 @@ type ErrorDetail struct {
 
 // AnthropicRequest represents an Anthropic Messages API request.
 type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []AnthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-	Stream    bool               `json:"stream,omitempty"`
-	System    string             `json:"system,omitempty"`
+	Model         string             `json:"model"`
+	Messages      []AnthropicMessage `json:"messages"`
+	MaxTokens     int                `json:"max_tokens"`
+	Stream        bool               `json:"stream,omitempty"`
+	System        string             `json:"system,omitempty"`
+	Temperature   *float64           `json:"temperature,omitempty"`
+	TopP          *float64           `json:"top_p,omitempty"`
+	StopSequences []string           `json:"stop_sequences,omitempty"`
 }
 
 // AnthropicMessage represents a message in the Anthropic format.

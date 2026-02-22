@@ -514,6 +514,108 @@ func TestAnthropicAdapterEmptyContentResponse(t *testing.T) {
 	assert.Equal(t, "", result.Choices[0].Message.Content)
 }
 
+func TestAnthropicAdapterTransformRequest_Temperature(t *testing.T) {
+	a := NewAnthropicAdapter()
+	temp := 0.7
+	input := ChatCompletionRequest{
+		Model:       "claude-sonnet-4-20250514",
+		Messages:    []ChatMessage{{Role: "user", Content: "Hi"}},
+		Temperature: &temp,
+	}
+	body, _ := json.Marshal(input)
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.NotNil(t, result.Temperature)
+	assert.Equal(t, 0.7, *result.Temperature)
+}
+
+func TestAnthropicAdapterTransformRequest_TopP(t *testing.T) {
+	a := NewAnthropicAdapter()
+	topP := 0.9
+	input := ChatCompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{{Role: "user", Content: "Hi"}},
+		TopP:     &topP,
+	}
+	body, _ := json.Marshal(input)
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.NotNil(t, result.TopP)
+	assert.Equal(t, 0.9, *result.TopP)
+}
+
+func TestAnthropicAdapterTransformRequest_StopString(t *testing.T) {
+	a := NewAnthropicAdapter()
+	input := ChatCompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{{Role: "user", Content: "Hi"}},
+		Stop:     "END",
+	}
+	body, _ := json.Marshal(input)
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, []string{"END"}, result.StopSequences)
+}
+
+func TestAnthropicAdapterTransformRequest_StopArray(t *testing.T) {
+	a := NewAnthropicAdapter()
+	// JSON unmarshal of []interface{} from Stop field.
+	input := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"Hi"}],"stop":["END","STOP"]}`
+	out, _, err := a.TransformRequest([]byte(input))
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, []string{"END", "STOP"}, result.StopSequences)
+}
+
+func TestAnthropicAdapterTransformRequest_StopUnexpectedType(t *testing.T) {
+	a := NewAnthropicAdapter()
+	// Stop is a number — should be ignored gracefully.
+	input := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"Hi"}],"stop":42}`
+	out, _, err := a.TransformRequest([]byte(input))
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Nil(t, result.StopSequences)
+}
+
+func TestAnthropicAdapterTransformRequest_NilOptionals(t *testing.T) {
+	a := NewAnthropicAdapter()
+	input := ChatCompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{{Role: "user", Content: "Hi"}},
+	}
+	body, _ := json.Marshal(input)
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	// Verify temperature, top_p, stop_sequences are omitted from JSON.
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &raw))
+	assert.Nil(t, raw["temperature"])
+	assert.Nil(t, raw["top_p"])
+	assert.Nil(t, raw["stop_sequences"])
+}
+
+func TestAnthropicAdapterTransformStreamEvent_MalformedMessageStart(t *testing.T) {
+	a := NewAnthropicAdapter()
+	out, err := a.TransformStreamEvent("message_start", []byte(`not json`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse message_start")
+	assert.Nil(t, out)
+}
+
 // Verify interface compliance at compile time.
 var (
 	_ ProviderAdapter = (*OpenAIAdapter)(nil)
