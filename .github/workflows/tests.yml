@@ -1,28 +1,35 @@
 # yamllint disable rule:line-length rule:comments-indentation rule:comments
 ---
-    name: Unit Tests
-    
+    name: Tests
+
     'on':
       pull_request:
-    
+
     jobs:
-      unit-tests:
+      tests:
         runs-on: ubuntu-latest
         env:
           GOPRIVATE: github.com/DIN-center
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         steps:
           - uses: actions/checkout@v3
 
           - name: Authenticate with GitHub and Clone Private Repo
             env:
-              TOKEN: ${{ secrets.GH_TOKEN }}  # Use the token from GitHub Secrets
+              TOKEN: ${{ secrets.GH_TOKEN }}
             run: |
               git config --global url."https://$TOKEN:@github.com/".insteadOf "https://github.com/"
               git clone https://github.com/DIN-center/din-sc.git
               cd din-sc && git checkout develop && cd ..
               mkdir -p upstream/github.com/DIN-center/
               cp -r din-sc upstream/github.com/DIN-center/din-sc
-    
+
           - name: Set up Go
             uses: actions/setup-go@v4
             with:
@@ -30,12 +37,11 @@
               cache-dependency-path: go.sum
               go-version-file: go.mod
               check-latest: true
-    
+
           - name: Test Build
             run: |
               go mod tidy
-    
-          - name: Package Unit Tests
+
+          - name: Run Tests
             run: |
-              go test -count=1 ./...
-    
+              go test -count=1 -timeout 300s ./...

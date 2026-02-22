@@ -182,22 +182,45 @@ func TestIntegration_NonStreaming_OpenAI(t *testing.T) {
 
 func TestIntegration_NonStreaming_Anthropic(t *testing.T) {
 	skipIfNoKey(t, "ANTHROPIC_API_KEY")
-	m := newLiveMiddleware(t)
 
-	// Use a session ID that hashes to Anthropic
+	// Single-provider middleware to guarantee hitting Anthropic
+	client := newDefaultStreamingClient()
+	logger := zap.NewNop()
+	p, _ := NewAIProvider("anthropic-haiku", "https://api.anthropic.com/v1/messages")
+	p.ModelID = "claude-haiku-4-5-20251001"
+	p.AdapterType = AdapterAnthropic
+	p.Headers["x-api-key"] = os.Getenv("ANTHROPIC_API_KEY")
+	p.Headers["anthropic-version"] = "2023-06-01"
+	p.httpClient = client
+	p.logger = logger
+
+	m := &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
+		},
+		RequestAttemptCount: 3,
+		logger:              logger,
+		quit:                make(chan struct{}),
+		machineID:           "test",
+		client:              client,
+		testMode:            true,
+	}
+
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
-
-	// Try multiple requests until we hit Anthropic, or just test with balanced tier
-	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "balanced"})
+	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
 	w := httptest.NewRecorder()
 
 	err := m.ServeHTTP(w, r, noopHandler)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "anthropic-haiku", w.Header().Get("X-DIN-Provider"))
 
+	// Verify Anthropic response was translated to OpenAI format
 	var resp libai.ChatCompletionResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.Choices)
+	assert.NotEmpty(t, resp.Choices[0].Message.Content)
+	assert.Equal(t, "assistant", resp.Choices[0].Message.Role)
 }
 
 func TestIntegration_NonStreaming_Mistral(t *testing.T) {
@@ -543,6 +566,45 @@ func TestIntegration_Streaming_Moonshot(t *testing.T) {
 	assert.Equal(t, "moonshot-8k", w.Header().Get("X-DIN-Provider"))
 }
 
+func TestIntegration_Streaming_DeepSeek(t *testing.T) {
+	skipIfNoKey(t, "DEEPSEEK_API_KEY")
+
+	client := newDefaultStreamingClient()
+	logger := zap.NewNop()
+	p, _ := NewAIProvider("deepseek-chat", "https://api.deepseek.com/chat/completions")
+	p.ModelID = "deepseek-chat"
+	p.AdapterType = AdapterOpenAI
+	p.Headers["Authorization"] = "Bearer " + os.Getenv("DEEPSEEK_API_KEY")
+	p.httpClient = client
+	p.logger = logger
+
+	m := &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierBalanced: {Name: TierBalanced, Providers: []*AIProvider{p}},
+		},
+		RequestAttemptCount: 3,
+		logger:              logger,
+		quit:                make(chan struct{}),
+		machineID:           "test",
+		client:              client,
+		testMode:            true,
+	}
+
+	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
+	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "balanced"})
+	w := httptest.NewRecorder()
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/event-stream")
+
+	respBody := w.Body.String()
+	assert.Contains(t, respBody, "data: ")
+	assert.Contains(t, respBody, "data: [DONE]")
+	assert.Equal(t, "deepseek-chat", w.Header().Get("X-DIN-Provider"))
+}
+
 // --- Multi-Provider Integration Tests ---
 
 func TestIntegration_SessionStickiness(t *testing.T) {
@@ -642,6 +704,66 @@ func TestIntegration_Failover(t *testing.T) {
 
 	// Should have failed over to good-provider
 	assert.Equal(t, "good-provider", w.Header().Get("X-DIN-Provider"))
+}
+
+func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
+	skipIfNoKey(t, "OPENAI_API_KEY")
+
+	client := newDefaultStreamingClient()
+	logger := zap.NewNop()
+
+	// Bad provider: returns 200 + SSE error in first chunk (simulating a provider
+	// that accepts the connection but returns an error in the stream)
+	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		flusher := w.(http.Flusher)
+		w.Write([]byte("data: {\"error\":{\"message\":\"rate limited\",\"type\":\"tokens\"}}\n\n"))
+		flusher.Flush()
+	}))
+	defer badServer.Close()
+
+	badProvider, _ := NewAIProvider("bad-stream", badServer.URL)
+	badProvider.ModelID = "bad-model"
+	badProvider.AdapterType = AdapterOpenAI
+	badProvider.httpClient = client
+	badProvider.logger = logger
+
+	// Good provider: real OpenAI
+	goodProvider, _ := NewAIProvider("good-openai", "https://api.openai.com/v1/chat/completions")
+	goodProvider.ModelID = "gpt-4.1-nano"
+	goodProvider.AdapterType = AdapterOpenAI
+	goodProvider.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
+	goodProvider.httpClient = client
+	goodProvider.logger = logger
+
+	m := &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierFast: {Name: TierFast, Providers: []*AIProvider{badProvider, goodProvider}},
+		},
+		RequestAttemptCount: 3,
+		logger:              logger,
+		quit:                make(chan struct{}),
+		machineID:           "test",
+		client:              client,
+		testMode:            true,
+	}
+
+	body := `{"messages":[{"role":"user","content":"Say hi"}],"stream":true,"max_tokens":5}`
+	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
+	w := httptest.NewRecorder()
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/event-stream")
+
+	// Should have failed over to good-openai
+	assert.Equal(t, "good-openai", w.Header().Get("X-DIN-Provider"))
+
+	respBody := w.Body.String()
+	assert.Contains(t, respBody, "data: ")
+	assert.Contains(t, respBody, "data: [DONE]")
 }
 
 func TestIntegration_ResponseHeaders(t *testing.T) {
