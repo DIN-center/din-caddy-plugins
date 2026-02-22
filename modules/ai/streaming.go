@@ -3,6 +3,7 @@ package ai
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ type streamResult struct {
 // attemptStream tries to open a streaming connection to a provider and validate the first chunk.
 // Returns a streamResult on success, or an error if the provider fails.
 func attemptStream(
+	ctx context.Context,
 	provider *AIProvider,
 	adapter libai.ProviderAdapter,
 	body []byte,
@@ -57,7 +59,7 @@ func attemptStream(
 
 	startTime := time.Now()
 
-	resp, err := client.PostStream(provider.HttpUrl, headers, transformedBody)
+	resp, err := client.PostStream(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		return nil, fmt.Errorf("post stream: %w", err)
 	}
@@ -108,7 +110,11 @@ func attemptStream(
 //
 // bufReader must be the same buffered reader created in attemptStream, to avoid
 // losing data that was buffered during the first-chunk read.
+//
+// The context is monitored for cancellation (e.g., client disconnect). When cancelled,
+// the response body is closed to unblock the scanner.
 func streamToClient(
+	ctx context.Context,
 	w http.ResponseWriter,
 	respBody io.ReadCloser,
 	bufReader *bufio.Reader,
@@ -121,6 +127,17 @@ func streamToClient(
 
 	scanner := bufio.NewScanner(bufReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1MB max line
+
+	// Monitor context cancellation to unblock the scanner on client disconnect.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			respBody.Close()
+		case <-done:
+		}
+	}()
 
 	var currentEventType string
 	var usage *libai.UsageInfo

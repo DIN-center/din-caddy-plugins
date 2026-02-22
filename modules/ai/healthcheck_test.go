@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -18,14 +19,14 @@ type mockHealthCheckClient struct {
 	err        error
 }
 
-func (m *mockHealthCheckClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockHealthCheckClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 	if m.err != nil {
 		return nil, 0, m.err
 	}
 	return []byte(m.body), m.statusCode, nil
 }
 
-func (m *mockHealthCheckClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+func (m *mockHealthCheckClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

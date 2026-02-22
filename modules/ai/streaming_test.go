@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,11 +19,11 @@ import (
 // --- Mock HTTP Client for streaming tests ---
 
 type mockStreamingClient struct {
-	handler func(url string, headers map[string]string, payload []byte) (*http.Response, error)
+	handler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockStreamingClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-	resp, err := m.PostStream(url, headers, payload)
+func (m *mockStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+	resp, err := m.PostStream(ctx, url, headers, payload)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -31,8 +32,8 @@ func (m *mockStreamingClient) Post(url string, headers map[string]string, payloa
 	return body, resp.StatusCode, err
 }
 
-func (m *mockStreamingClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
-	return m.handler(url, headers, payload)
+func (m *mockStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+	return m.handler(ctx, url, headers, payload)
 }
 
 // --- SSE Event Helpers ---
@@ -107,7 +108,7 @@ func TestAttemptStream_Success(t *testing.T) {
 	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
 
 	client := &mockStreamingClient{
-		handler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
 	}
@@ -117,7 +118,7 @@ func TestAttemptStream_Success(t *testing.T) {
 
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
-	result, err := attemptStream(provider, adapter, body, client, logger)
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	defer result.resp.Body.Close()
@@ -132,7 +133,7 @@ func TestAttemptStream_NonOKStatus(t *testing.T) {
 	logger := zap.NewNop()
 
 	client := &mockStreamingClient{
-		handler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(429, "rate limited"), nil
 		},
 	}
@@ -140,7 +141,7 @@ func TestAttemptStream_NonOKStatus(t *testing.T) {
 	provider := newTestProvider("test-openai", Healthy)
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
-	result, err := attemptStream(provider, adapter, body, client, logger)
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "HTTP 429")
@@ -153,7 +154,7 @@ func TestAttemptStream_ErrorInFirstChunk(t *testing.T) {
 	sseData := sseEvent("", `{"error":{"message":"rate limited","type":"tokens"}}`)
 
 	client := &mockStreamingClient{
-		handler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
 	}
@@ -161,7 +162,7 @@ func TestAttemptStream_ErrorInFirstChunk(t *testing.T) {
 	provider := newTestProvider("test-openai", Healthy)
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
-	result, err := attemptStream(provider, adapter, body, client, logger)
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "error in first chunk")
@@ -175,7 +176,7 @@ func TestAttemptStream_AnthropicFormat(t *testing.T) {
 	sseData += sseEvent("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 
 	client := &mockStreamingClient{
-		handler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
 	}
@@ -184,7 +185,7 @@ func TestAttemptStream_AnthropicFormat(t *testing.T) {
 	provider.AdapterType = AdapterAnthropic
 	body := []byte(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
-	result, err := attemptStream(provider, adapter, body, client, logger)
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	defer result.resp.Body.Close()
@@ -211,7 +212,7 @@ func TestStreamToClient_OpenAI(t *testing.T) {
 	bufReader = bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, bufReader, adapter, logger)
+	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, `"content":"Hello"`)
@@ -236,7 +237,7 @@ func TestStreamToClient_Anthropic(t *testing.T) {
 	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, bufReader, adapter, logger)
+	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, "Hello")
@@ -258,7 +259,7 @@ func TestStreamToClient_WithUsage(t *testing.T) {
 	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(recorder, body, bufReader, adapter, logger)
+	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
 
 	require.NotNil(t, usage)
 	assert.Equal(t, 10, usage.PromptTokens)
@@ -301,4 +302,76 @@ func TestTryExtractUsage(t *testing.T) {
 		usage := tryExtractUsage(data, nil)
 		assert.Nil(t, usage)
 	})
+}
+
+func TestStreamToClient_ClientDisconnect(t *testing.T) {
+	adapter := libai.NewOpenAIAdapter()
+	logger := zap.NewNop()
+
+	// Create a slow streaming server that sends chunks with delays.
+	pr, pw := io.Pipe()
+
+	go func() {
+		// Send first chunk.
+		pw.Write([]byte("data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n"))
+		// Simulate a slow stream — block for a while before next chunk.
+		time.Sleep(5 * time.Second)
+		pw.Write([]byte("data: [DONE]\n\n"))
+		pw.Close()
+	}()
+
+	// Use the PipeReader directly as the body — it implements io.ReadCloser,
+	// so when the cancellation goroutine calls Close(), it actually aborts the read.
+	// (io.NopCloser would make Close() a no-op and the test would hang.)
+	bufReader := bufio.NewReader(pr)
+	recorder := httptest.NewRecorder()
+
+	// Create a cancellable context to simulate client disconnect.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		streamToClient(ctx, recorder, pr, bufReader, adapter, logger)
+		close(done)
+	}()
+
+	// Wait briefly to let it start reading, then cancel (simulate disconnect).
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// streamToClient should return promptly after cancellation (not wait 5s for the next chunk).
+	select {
+	case <-done:
+		// Success — goroutine exited promptly.
+	case <-time.After(2 * time.Second):
+		t.Fatal("streamToClient did not exit promptly after context cancellation")
+	}
+}
+
+func TestAttemptStream_ContextCancelled(t *testing.T) {
+	adapter := libai.NewOpenAIAdapter()
+	logger := zap.NewNop()
+
+	// Create a slow server that delays before responding.
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until request context is cancelled.
+		<-r.Context().Done()
+	}))
+	defer slowServer.Close()
+
+	client := newDefaultStreamingClient()
+	provider, _ := NewAIProvider("slow-provider", slowServer.URL)
+	provider.ModelID = "test-model"
+	provider.AdapterType = AdapterOpenAI
+	provider.httpClient = client
+
+	body := []byte(`{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	// Cancel immediately.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := attemptStream(ctx, provider, adapter, body, client, logger)
+	assert.Error(t, err)
+	assert.Nil(t, result)
 }

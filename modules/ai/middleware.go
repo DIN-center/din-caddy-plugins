@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -200,7 +201,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		if req.Stream {
-			result, err := attemptStream(provider, adapter, modifiedBody, m.client, m.logger)
+			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.client, m.logger)
 			if err != nil {
 				m.logger.Warn("streaming attempt failed",
 					zap.String("provider", provider.Name),
@@ -227,7 +228,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			}
 
 			// Stream remaining events.
-			usage := streamToClient(w, result.resp.Body, result.reader, result.adapter, m.logger)
+			usage := streamToClient(r.Context(), w, result.resp.Body, result.reader, result.adapter, m.logger)
 
 			// Record metrics.
 			RecordRequest(tierName, provider.Name, provider.ModelID, "200", m.machineID)
@@ -240,7 +241,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		// Non-streaming request.
-		respBody, statusCode, provider, err := m.attemptNonStreaming(provider, adapter, modifiedBody)
+		respBody, statusCode, provider, err := m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
 		if err != nil {
 			m.logger.Warn("non-streaming attempt failed",
 				zap.String("provider", provider.Name),
@@ -316,6 +317,7 @@ func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, dynamic bo
 
 // attemptNonStreaming makes a non-streaming request to a provider.
 func (m *DinAIMiddleware) attemptNonStreaming(
+	ctx context.Context,
 	provider *AIProvider,
 	adapter libai.ProviderAdapter,
 	body []byte,
@@ -334,7 +336,7 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	}
 	headers["Content-Type"] = "application/json"
 
-	respBody, statusCode, err := m.client.Post(provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		return nil, 0, provider, fmt.Errorf("post: %w", err)
 	}
@@ -572,8 +574,8 @@ func newDefaultStreamingClient() *defaultStreamingClient {
 	}
 }
 
-func (c *defaultStreamingClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-	resp, err := c.PostStream(url, headers, payload)
+func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+	resp, err := c.PostStream(ctx, url, headers, payload)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -582,8 +584,8 @@ func (c *defaultStreamingClient) Post(url string, headers map[string]string, pay
 	return body, resp.StatusCode, err
 }
 
-func (c *defaultStreamingClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+func (c *defaultStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -97,7 +98,7 @@ func checkProvider(
 
 	startTime := time.Now()
 
-	respBody, statusCode, err := client.Post(provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, err := client.Post(context.Background(), provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		logger.Warn("health check failed",
 			zap.String("provider", provider.Name),

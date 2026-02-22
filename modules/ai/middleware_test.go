@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,20 +20,20 @@ import (
 
 // mockClient implements IStreamingHTTPClient for middleware tests.
 type mockClient struct {
-	postHandler       func(url string, headers map[string]string, payload []byte) ([]byte, int, error)
-	postStreamHandler func(url string, headers map[string]string, payload []byte) (*http.Response, error)
+	postHandler       func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error)
+	postStreamHandler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockClient) Post(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 	if m.postHandler != nil {
-		return m.postHandler(url, headers, payload)
+		return m.postHandler(ctx, url, headers, payload)
 	}
 	return nil, 500, nil
 }
 
-func (m *mockClient) PostStream(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+func (m *mockClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 	if m.postStreamHandler != nil {
-		return m.postStreamHandler(url, headers, payload)
+		return m.postStreamHandler(ctx, url, headers, payload)
 	}
 	return nil, nil
 }
@@ -47,7 +48,7 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 	ensureMetricsRegistered(t)
 
 	client := &mockClient{
-		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
 		},
 	}
@@ -270,7 +271,7 @@ func TestServeHTTP_Streaming_Success(t *testing.T) {
 	sseData += "data: [DONE]\n\n"
 
 	m.client = &mockClient{
-		postStreamHandler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
 	}
@@ -291,7 +292,7 @@ func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 			callCount++
 			if callCount == 1 {
 				return []byte(`{"error":"server error"}`), 500, nil
@@ -424,10 +425,10 @@ func TestServeHTTP_ConcurrentRequests(t *testing.T) {
 	sseData += "data: [DONE]\n\n"
 
 	m.client = &mockClient{
-		postHandler: func(url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
 		},
-		postStreamHandler: func(url string, headers map[string]string, payload []byte) (*http.Response, error) {
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
 	}
