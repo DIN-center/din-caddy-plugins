@@ -234,6 +234,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		if req.Stream {
 			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.client, m.logger)
 			if err != nil {
+				provider.MarkPingWarning()
 				m.logger.Warn("streaming attempt failed",
 					zap.String("provider", provider.Name),
 					zap.Int("attempt", attempt+1),
@@ -274,6 +275,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		// Non-streaming request.
 		respBody, statusCode, provider, err := m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
 		if err != nil {
+			provider.MarkPingWarning()
 			m.logger.Warn("non-streaming attempt failed",
 				zap.String("provider", provider.Name),
 				zap.Int("attempt", attempt+1),
@@ -283,6 +285,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		if statusCode != http.StatusOK {
+			provider.MarkPingWarning()
 			lastErr = fmt.Errorf("provider %s returned HTTP %d", provider.Name, statusCode)
 			continue
 		}
@@ -290,6 +293,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		// Transform response to OpenAI format.
 		transformed, err := adapter.TransformResponse(respBody)
 		if err != nil {
+			// Transform errors are our code's fault, not the provider's — no health update.
 			lastErr = err
 			continue
 		}

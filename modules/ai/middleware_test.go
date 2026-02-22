@@ -733,6 +733,95 @@ func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown adapter type")
 }
 
+func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, 0, fmt.Errorf("connection refused")
+			}
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	// Get the first provider to check its health after.
+	firstProvider := m.Tiers[TierBalanced].Providers[0]
+	assert.Equal(t, Healthy, firstProvider.HealthStatus())
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.GreaterOrEqual(t, callCount, 2)
+
+	// At least one provider should have been marked Warning.
+	hasWarning := false
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		if p.HealthStatus() == Warning {
+			hasWarning = true
+			break
+		}
+	}
+	assert.True(t, hasWarning, "at least one provider should be in Warning state after failure")
+}
+
+func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Single 500 from one provider, but it gets retried to a second.
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			callCount++
+			if callCount == 1 {
+				return []byte(`{"error":"server error"}`), 500, nil
+			}
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// MarkPingWarning sets Warning but one warning doesn't make a provider Unhealthy.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "single failure should not transition to Unhealthy")
+	}
+}
+
+func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			callCount++
+			if callCount == 1 {
+				return []byte(`{"error":"rate limited"}`), 429, nil
+			}
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+
+	// Provider that got 429 should be Warning, not Unhealthy.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
+	}
+}
+
 func TestNewAIProvider_NoScheme(t *testing.T) {
 	_, err := NewAIProvider("test", "api.example.com/v1/chat")
 	assert.Error(t, err)
