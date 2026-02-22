@@ -135,8 +135,14 @@ X-DIN-Dynamic: true
 |--------|----------|---------|-------------|
 | `Content-Type` | Yes | — | Must be `application/json` |
 | `X-DIN-Tier` | No | `balanced` | Quality tier to route to (`fast`, `balanced`, or `premium`) |
-| `X-DIN-Session-Id` | No | — | Enables session stickiness. Same ID always routes to the same provider (deterministic hash). Use for multi-turn conversations to maintain consistent model voice |
-| `X-DIN-Dynamic` | No | `false` | Set to `true` to disable session stickiness and use TTFT-weighted selection instead. Useful for independent single-turn queries where you want the fastest provider |
+| `X-DIN-Session-Id` | No | — | Session identifier for multi-turn conversations. When present, the same ID always routes to the same provider via deterministic hash |
+| `X-DIN-Dynamic` | No | `false` | Set to `true` to use TTFT-weighted selection (pick the fastest provider) instead of session stickiness |
+
+**How `X-DIN-Session-Id` and `X-DIN-Dynamic` interact:**
+- **Session-Id only** — Provider is selected by hashing the session ID. Same ID = same provider every time. This is the default for multi-turn conversations.
+- **Dynamic only** (no Session-Id) — Provider is selected by TTFT-weighted random. Each request may hit a different provider. Same behavior as omitting both headers.
+- **Both set** — `X-DIN-Dynamic: true` wins. The session ID is ignored and TTFT-weighted selection is used. This lets a client that normally uses sessions opt into dynamic routing for specific requests.
+- **Neither set** — TTFT-weighted selection (no stickiness).
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
 
