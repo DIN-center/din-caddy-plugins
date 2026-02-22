@@ -42,6 +42,10 @@
             run: |
               go mod tidy
 
-          - name: Run Tests
+          - name: Run Unit Tests
             run: |
               go test -count=1 -timeout 300s ./...
+
+          - name: Run Integration Tests
+            run: |
+              go test -count=1 -timeout 300s -tags=integration ./modules/ai/...
