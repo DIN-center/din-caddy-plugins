@@ -2,13 +2,16 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -183,6 +186,72 @@ func TestGetAdapterForType(t *testing.T) {
 		adapter := getAdapterForType("unknown")
 		assert.Equal(t, "openai", adapter.Name())
 	})
+}
+
+func TestCheckProvider_WithOverrides(t *testing.T) {
+	ensureMetricsRegistered(t)
+
+	// Track what the mock server receives.
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"pong"}}]}`))
+	}))
+	defer server.Close()
+
+	client := newDefaultStreamingClient()
+	provider, _ := NewAIProvider("openai-o3", server.URL)
+	provider.ModelID = "o3-mini"
+	provider.AdapterType = AdapterOpenAI
+	provider.httpClient = client
+	provider.HealthCheckOverrides = map[string]interface{}{
+		"max_completion_tokens": 1,
+	}
+
+	logger := zap.NewNop()
+	checkProvider(provider, client, "test-machine", logger)
+
+	assert.Equal(t, Healthy, provider.HealthStatus())
+
+	// Verify the request used max_completion_tokens instead of max_tokens.
+	var reqMap map[string]interface{}
+	require.NoError(t, json.Unmarshal(receivedBody, &reqMap))
+	assert.Equal(t, float64(1), reqMap["max_completion_tokens"])
+	assert.Nil(t, reqMap["max_tokens"], "max_tokens should not be present when overrides are set")
+}
+
+func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
+	ensureMetricsRegistered(t)
+
+	// Track what the mock server receives.
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"pong"}}]}`))
+	}))
+	defer server.Close()
+
+	client := newDefaultStreamingClient()
+	provider, _ := NewAIProvider("openai-gpt4o", server.URL)
+	provider.ModelID = "gpt-4o"
+	provider.AdapterType = AdapterOpenAI
+	provider.httpClient = client
+	// No HealthCheckOverrides — should use default max_tokens: 1
+
+	logger := zap.NewNop()
+	checkProvider(provider, client, "test-machine", logger)
+
+	assert.Equal(t, Healthy, provider.HealthStatus())
+
+	// Verify the request used default max_tokens.
+	var reqMap map[string]interface{}
+	require.NoError(t, json.Unmarshal(receivedBody, &reqMap))
+	assert.Equal(t, float64(1), reqMap["max_tokens"])
+	assert.Nil(t, reqMap["max_completion_tokens"], "max_completion_tokens should not be present by default")
 }
 
 func TestTruncate(t *testing.T) {

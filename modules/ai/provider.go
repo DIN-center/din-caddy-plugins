@@ -16,8 +16,9 @@ type AIProvider struct {
 	HttpUrl    string            // full URL including path, e.g. "https://api.openai.com/v1/chat/completions"
 	Host       string            // parsed host for identification
 	Path       string            // parsed path
-	Headers    map[string]string // static headers (e.g. Authorization)
-	AdapterType string // "openai" or "anthropic"
+	Headers              map[string]string      // static headers (e.g. Authorization)
+	AdapterType          string                 // "openai" or "anthropic"
+	HealthCheckOverrides map[string]interface{} // optional per-provider health check params (e.g. max_completion_tokens for reasoning models)
 
 	httpClient libai.IStreamingHTTPClient
 	logger     *zap.Logger

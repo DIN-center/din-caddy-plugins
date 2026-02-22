@@ -11,18 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// healthCheckRequest is the minimal request sent to providers for health checking.
-var healthCheckRequest = libai.ChatCompletionRequest{
-	Model: "", // will be overwritten per provider
-	Messages: []libai.ChatMessage{
-		{Role: "user", Content: "ping"},
-	},
-	MaxTokens: intPtr(1),
-	Stream:    false,
-}
-
-func intPtr(i int) *int { return &i }
-
 // runHealthChecks starts a goroutine that periodically health checks all providers.
 // It stops when quit is closed.
 func runHealthChecks(
@@ -58,14 +46,27 @@ func checkProvider(
 	machineID string,
 	logger *zap.Logger,
 ) {
-	// Build health check request with provider's model.
-	req := healthCheckRequest
-	req.Model = provider.ModelID
+	// Build health check request as a map to support per-provider overrides.
+	reqMap := map[string]interface{}{
+		"model":    provider.ModelID,
+		"messages": []map[string]string{{"role": "user", "content": "ping"}},
+		"stream":   false,
+	}
+
+	// Apply per-provider health check overrides (e.g. max_completion_tokens for reasoning models).
+	// If no overrides, use default max_tokens: 1.
+	if len(provider.HealthCheckOverrides) > 0 {
+		for k, v := range provider.HealthCheckOverrides {
+			reqMap[k] = v
+		}
+	} else {
+		reqMap["max_tokens"] = 1
+	}
 
 	// Get the adapter to transform the request.
 	adapter := getAdapterForType(provider.AdapterType)
 
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(reqMap)
 	if err != nil {
 		logger.Error("failed to marshal health check request",
 			zap.String("provider", provider.Name),

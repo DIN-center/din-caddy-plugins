@@ -536,6 +536,21 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 					provider.Headers[key] = value
 				}
 
+			case "health_check":
+				provider.HealthCheckOverrides = make(map[string]interface{})
+				for d.NextBlock(5) {
+					key := d.Val()
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					val := d.Val()
+					if intVal, err := strconv.Atoi(val); err == nil {
+						provider.HealthCheckOverrides[key] = intVal
+					} else {
+						provider.HealthCheckOverrides[key] = val
+					}
+				}
+
 			default:
 				return d.Errf("unknown provider option: %s", d.Val())
 			}
