@@ -43,16 +43,21 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 		anthropicReq.MaxTokens = *req.MaxTokens
 	}
 
-	// Extract system message and convert remaining messages.
+	// Extract system messages and convert remaining messages.
+	// Multiple system messages are concatenated with newlines (Anthropic only supports one system field).
+	var systemParts []string
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			anthropicReq.System = msg.Content
+			systemParts = append(systemParts, msg.Content)
 			continue
 		}
 		anthropicReq.Messages = append(anthropicReq.Messages, AnthropicMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
+	}
+	if len(systemParts) > 0 {
+		anthropicReq.System = strings.Join(systemParts, "\n")
 	}
 
 	out, err := json.Marshal(anthropicReq)
@@ -72,10 +77,18 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 
 	// Build content from content blocks.
 	var contentParts []string
+	var unsupportedTypes []string
 	for _, block := range resp.Content {
 		if block.Type == "text" {
 			contentParts = append(contentParts, block.Text)
+		} else {
+			unsupportedTypes = append(unsupportedTypes, block.Type)
 		}
+	}
+	// If the response has no text content but has unsupported block types (tool_use, thinking, etc.),
+	// return an error rather than silently dropping the content.
+	if len(contentParts) == 0 && len(unsupportedTypes) > 0 {
+		return nil, fmt.Errorf("anthropic response contains only unsupported content types: %v", unsupportedTypes)
 	}
 	content := ""
 	if len(contentParts) == 1 {

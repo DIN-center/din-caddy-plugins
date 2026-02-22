@@ -394,6 +394,126 @@ func TestAnthropicStopReasonMapping(t *testing.T) {
 	})
 }
 
+func TestAnthropicAdapterMultipleSystemMessages(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	input := ChatCompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "You are helpful."},
+			{Role: "system", Content: "Always respond in French."},
+			{Role: "user", Content: "Hello"},
+		},
+		Stream: false,
+	}
+	body, _ := json.Marshal(input)
+
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	// Both system messages should be concatenated with newline.
+	assert.Equal(t, "You are helpful.\nAlways respond in French.", result.System)
+	// Only non-system messages remain.
+	assert.Len(t, result.Messages, 1)
+	assert.Equal(t, "user", result.Messages[0].Role)
+}
+
+func TestAnthropicAdapterSingleSystemMessage(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	input := ChatCompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "You are helpful."},
+			{Role: "user", Content: "Hello"},
+		},
+	}
+	body, _ := json.Marshal(input)
+
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	assert.Equal(t, "You are helpful.", result.System)
+}
+
+func TestAnthropicAdapterToolUseContentBlocks(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Response with only tool_use blocks (no text).
+	stopReason := "tool_use"
+	anthropicResp := AnthropicResponse{
+		ID:   "msg_456",
+		Type: "message",
+		Role: "assistant",
+		Content: []AnthropicContent{
+			{Type: "tool_use", Text: ""},
+		},
+		Model:      "claude-sonnet-4-20250514",
+		StopReason: &stopReason,
+	}
+	body, _ := json.Marshal(anthropicResp)
+
+	_, err := a.TransformResponse(body)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported content types")
+	assert.Contains(t, err.Error(), "tool_use")
+}
+
+func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Response with text + tool_use blocks — text should be returned, tool_use dropped.
+	stopReason := "end_turn"
+	anthropicResp := AnthropicResponse{
+		ID:   "msg_789",
+		Type: "message",
+		Role: "assistant",
+		Content: []AnthropicContent{
+			{Type: "text", Text: "I'll help with that."},
+			{Type: "tool_use", Text: ""},
+		},
+		Model:      "claude-sonnet-4-20250514",
+		StopReason: &stopReason,
+	}
+	body, _ := json.Marshal(anthropicResp)
+
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err)
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "I'll help with that.", result.Choices[0].Message.Content)
+}
+
+func TestAnthropicAdapterEmptyContentResponse(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Response with empty content blocks (e.g. refusal).
+	stopReason := "end_turn"
+	anthropicResp := AnthropicResponse{
+		ID:         "msg_empty",
+		Type:       "message",
+		Role:       "assistant",
+		Content:    []AnthropicContent{},
+		Model:      "claude-sonnet-4-20250514",
+		StopReason: &stopReason,
+	}
+	body, _ := json.Marshal(anthropicResp)
+
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err) // Empty content is fine — not an error
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "", result.Choices[0].Message.Content)
+}
+
 // Verify interface compliance at compile time.
 var (
 	_ ProviderAdapter = (*OpenAIAdapter)(nil)
