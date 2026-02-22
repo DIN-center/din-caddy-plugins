@@ -164,9 +164,43 @@ Requests are routed to a tier based on the `X-DIN-Tier` header (default: `balanc
 
 1. **Session stickiness** — If `X-DIN-Session-Id` is present, the session ID is hashed (FNV-32a) to deterministically select a provider. This is stateless — all proxy instances independently hash to the same provider with zero shared state.
 
-2. **TTFT-weighted selection** — Without a session ID, providers are selected randomly weighted by inverse time-to-first-token. Faster providers receive proportionally more traffic.
+2. **TTFT-weighted selection** — Without a session ID, providers are selected randomly weighted by inverse time-to-first-token. Faster providers receive proportionally more traffic. See [TTFT-weighted selection](#ttft-weighted-selection) for details.
 
 3. **Failover** — If a provider fails, the next untried provider is selected. The middleware retries up to `request_attempt_count` times (default: 3, capped at available provider count).
+
+### TTFT-weighted selection
+
+When no session ID is present, providers are selected using inverse-TTFT weighted random selection. Each provider tracks a rolling window of the last 20 time-to-first-token measurements. The average TTFT is used to compute selection weights.
+
+#### How weights are calculated
+
+Each provider's weight is `1 / AvgTTFT`. Faster providers (lower TTFT) get higher weights and receive proportionally more traffic.
+
+**Example** — Two providers in the `balanced` tier:
+
+| Provider | Avg TTFT | Weight (1/TTFT) | Traffic share |
+|----------|----------|-----------------|---------------|
+| openai-gpt4o | 50ms | 0.02 | ~91% |
+| anthropic-sonnet | 500ms | 0.002 | ~9% |
+
+**General formula**: If provider A is N times faster than provider B, A receives `N/(N+1)` of traffic. A 10x speed advantage gives ~91% of requests, not 100% — the slower provider still receives some traffic.
+
+#### Selection algorithm
+
+1. Compute inverse weight for each available provider: `weight = 1 / AvgTTFT`
+2. Sum all weights to get `totalWeight`
+3. Generate a cryptographically random float in `[0, 1)` and multiply by `totalWeight` to get a target
+4. Walk through providers, accumulating weights. The provider whose cumulative weight exceeds the target is selected
+
+#### Rolling window
+
+- **Window size**: 20 measurements per provider
+- **Behavior**: When the window is full, the oldest measurement is dropped. This allows weights to adapt as provider performance changes over time.
+- **Thread-safe**: Protected by mutex, safe for concurrent health checks and request handling
+
+#### Zero-measurement providers
+
+Providers with no TTFT measurements (newly added or just recovered) are assigned a very high weight (`1e9`), causing nearly all traffic to route to them until measurements accumulate. This is a known limitation — see [Known Limitations](#known-limitations).
 
 ### Health-aware filtering
 
