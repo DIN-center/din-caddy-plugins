@@ -12,7 +12,7 @@ import (
 )
 
 // runHealthChecks starts a goroutine that periodically health checks all providers.
-// It stops when quit is closed.
+// It stops when quit is closed, and cancels any in-flight health check requests.
 func runHealthChecks(
 	tiers map[string]*Tier,
 	client libai.IStreamingHTTPClient,
@@ -20,18 +20,24 @@ func runHealthChecks(
 	logger *zap.Logger,
 	quit <-chan struct{},
 ) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-quit
+		cancel()
+	}()
+
 	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-quit:
+		case <-ctx.Done():
 			logger.Info("stopping AI health checks")
 			return
 		case <-ticker.C:
 			for _, tier := range tiers {
 				for _, provider := range tier.Providers {
-					go checkProvider(provider, client, logger)
+					go checkProvider(ctx, provider, client, logger)
 				}
 			}
 		}
@@ -40,6 +46,7 @@ func runHealthChecks(
 
 // checkProvider performs a single health check against a provider.
 func checkProvider(
+	ctx context.Context,
 	provider *AIProvider,
 	client libai.IStreamingHTTPClient,
 	logger *zap.Logger,
@@ -51,14 +58,14 @@ func checkProvider(
 		"stream":   false,
 	}
 
-	// Apply per-provider health check overrides (e.g. max_completion_tokens for reasoning models).
-	// If no overrides, use default max_tokens: 1.
-	if len(provider.HealthCheckOverrides) > 0 {
-		for k, v := range provider.HealthCheckOverrides {
-			reqMap[k] = v
-		}
-	} else {
-		reqMap["max_tokens"] = 1
+	// Always set minimal token limit, then apply per-provider overrides.
+	reqMap["max_tokens"] = 1
+	for k, v := range provider.HealthCheckOverrides {
+		reqMap[k] = v
+	}
+	// OpenAI rejects requests with both max_tokens and max_completion_tokens.
+	if _, has := reqMap["max_completion_tokens"]; has {
+		delete(reqMap, "max_tokens")
 	}
 
 	// Get the adapter to transform the request.
@@ -97,7 +104,7 @@ func checkProvider(
 
 	startTime := time.Now()
 
-	respBody, statusCode, err := client.Post(context.Background(), provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, err := client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		logger.Warn("health check failed",
 			zap.String("provider", provider.Name),
