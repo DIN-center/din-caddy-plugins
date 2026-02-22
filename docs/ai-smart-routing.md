@@ -115,9 +115,9 @@ The module validates configuration at two points:
 ```
 POST /v1/chat/completions
 Content-Type: application/json
-X-DIN-Tier: balanced              # optional, defaults to "balanced"
-X-DIN-Session-Id: conv_abc123     # optional, enables session stickiness
-X-DIN-Dynamic: true               # optional, disables session stickiness
+X-DIN-Tier: balanced
+X-DIN-Session-Id: conv_abc123
+X-DIN-Dynamic: true
 
 {
   "model": "ignored",
@@ -128,6 +128,15 @@ X-DIN-Dynamic: true               # optional, disables session stickiness
   "stop": ["END"]
 }
 ```
+
+### Request headers
+
+| Header | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `Content-Type` | Yes | — | Must be `application/json` |
+| `X-DIN-Tier` | No | `balanced` | Quality tier to route to (`fast`, `balanced`, or `premium`) |
+| `X-DIN-Session-Id` | No | — | Enables session stickiness. Same ID always routes to the same provider (deterministic hash). Use for multi-turn conversations to maintain consistent model voice |
+| `X-DIN-Dynamic` | No | `false` | Set to `true` to disable session stickiness and use TTFT-weighted selection instead. Useful for independent single-turn queries where you want the fastest provider |
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
 
