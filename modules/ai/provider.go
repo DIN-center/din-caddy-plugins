@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"fmt"
 	"net/url"
 	"sync"
 	"time"
@@ -38,6 +39,12 @@ func NewAIProvider(name, urlStr string) (*AIProvider, error) {
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("URL scheme must be http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("URL must have a host")
 	}
 	return &AIProvider{
 		Name:           name,

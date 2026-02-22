@@ -26,6 +26,7 @@ import (
 var (
 	_ caddy.Module                = (*DinAIMiddleware)(nil)
 	_ caddy.Provisioner           = (*DinAIMiddleware)(nil)
+	_ caddy.Validator             = (*DinAIMiddleware)(nil)
 	_ caddy.CleanerUpper          = (*DinAIMiddleware)(nil)
 	_ caddyhttp.MiddlewareHandler = (*DinAIMiddleware)(nil)
 	_ caddyfile.Unmarshaler       = (*DinAIMiddleware)(nil)
@@ -67,13 +68,13 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger()
 	m.quit = make(chan struct{})
 
-	if m.HealthcheckInterval == 0 {
+	if m.HealthcheckInterval <= 0 {
 		m.HealthcheckInterval = DefaultHCInterval
 	}
-	if m.HealthcheckThreshold == 0 {
+	if m.HealthcheckThreshold <= 0 {
 		m.HealthcheckThreshold = DefaultHCThreshold
 	}
-	if m.RequestAttemptCount == 0 {
+	if m.RequestAttemptCount <= 0 {
 		m.RequestAttemptCount = DefaultRequestAttemptCount
 	}
 
@@ -100,6 +101,36 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 		zap.Int("tiers", len(m.Tiers)),
 		zap.Int("healthcheck_interval", m.HealthcheckInterval))
 
+	return nil
+}
+
+// Validate checks the middleware configuration for correctness — called after Provision().
+func (m *DinAIMiddleware) Validate() error {
+	if m.HealthcheckInterval <= 0 {
+		return fmt.Errorf("healthcheck_interval must be positive, got %d", m.HealthcheckInterval)
+	}
+	if m.HealthcheckThreshold <= 0 {
+		return fmt.Errorf("healthcheck_threshold must be positive, got %d", m.HealthcheckThreshold)
+	}
+	if m.RequestAttemptCount <= 0 {
+		return fmt.Errorf("request_attempt_count must be positive, got %d", m.RequestAttemptCount)
+	}
+	if len(m.Tiers) == 0 {
+		return fmt.Errorf("at least one tier must be defined")
+	}
+	for tierName, tier := range m.Tiers {
+		if len(tier.Providers) == 0 {
+			return fmt.Errorf("tier '%s' must have at least one provider", tierName)
+		}
+		for _, p := range tier.Providers {
+			if p.ModelID == "" {
+				return fmt.Errorf("provider '%s' in tier '%s' requires a model", p.Name, tierName)
+			}
+			if p.AdapterType != AdapterOpenAI && p.AdapterType != AdapterAnthropic {
+				return fmt.Errorf("provider '%s' has unknown adapter type '%s'", p.Name, p.AdapterType)
+			}
+		}
+	}
 	return nil
 }
 
@@ -130,10 +161,15 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	// Read request body with size limit (10MB).
 	defer r.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+	const maxBodySize = 10 << 20
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize+1))
 	if err != nil {
 		return writeErrorResponse(w, http.StatusBadRequest,
 			"failed to read request body", "invalid_request_error")
+	}
+	if len(body) > maxBodySize {
+		return writeErrorResponse(w, http.StatusRequestEntityTooLarge,
+			"request body exceeds 10MB limit", "invalid_request_error")
 	}
 
 	// Parse request to check stream flag.
@@ -382,11 +418,13 @@ func generateRequestID() string {
 // request time. Environment variable changes after Caddy starts require a
 // graceful reload (`caddy reload`) to take effect.
 func expandEnvVars(s string) string {
+	searchFrom := 0
 	for {
-		start := strings.Index(s, "{env.")
-		if start == -1 {
+		idx := strings.Index(s[searchFrom:], "{env.")
+		if idx == -1 {
 			return s
 		}
+		start := searchFrom + idx
 		end := strings.Index(s[start:], "}")
 		if end == -1 {
 			return s
@@ -398,6 +436,8 @@ func expandEnvVars(s string) string {
 			fmt.Fprintf(os.Stderr, "[WARN] din_ai: environment variable %q is not set\n", envKey)
 		}
 		s = s[:start] + envVal + s[end+1:]
+		// Advance past the substituted value to prevent re-scanning it.
+		searchFrom = start + len(envVal)
 	}
 }
 
@@ -434,6 +474,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				return d.Errf("invalid healthcheck_interval: %v", err)
 			}
+			if val <= 0 {
+				return d.Errf("healthcheck_interval must be positive, got %d", val)
+			}
 			m.HealthcheckInterval = val
 
 		case "healthcheck_threshold":
@@ -444,6 +487,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				return d.Errf("invalid healthcheck_threshold: %v", err)
 			}
+			if val <= 0 {
+				return d.Errf("healthcheck_threshold must be positive, got %d", val)
+			}
 			m.HealthcheckThreshold = val
 
 		case "request_attempt_count":
@@ -453,6 +499,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val, err := strconv.Atoi(d.Val())
 			if err != nil {
 				return d.Errf("invalid request_attempt_count: %v", err)
+			}
+			if val <= 0 {
+				return d.Errf("request_attempt_count must be positive, got %d", val)
 			}
 			m.RequestAttemptCount = val
 
@@ -477,6 +526,11 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m *DinAIMiddleware) parseTiers(d *caddyfile.Dispenser) error {
 	for d.NextBlock(1) {
 		tierName := d.Val()
+
+		if _, exists := m.Tiers[tierName]; exists {
+			return d.Errf("duplicate tier name: '%s'", tierName)
+		}
+
 		tier := &Tier{Name: tierName}
 
 		for d.NextBlock(2) {
@@ -501,8 +555,13 @@ func (m *DinAIMiddleware) parseTiers(d *caddyfile.Dispenser) error {
 
 // parseProviders parses the providers block within a tier.
 func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) error {
+	seen := make(map[string]bool)
 	for d.NextBlock(3) {
 		providerName := d.Val()
+		if seen[providerName] {
+			return d.Errf("duplicate provider name '%s' in tier '%s'", providerName, tier.Name)
+		}
+		seen[providerName] = true
 		if !d.NextArg() {
 			return d.Errf("provider '%s' requires a URL", providerName)
 		}
@@ -563,6 +622,10 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 		}
 		if provider.AdapterType == "" {
 			provider.AdapterType = AdapterOpenAI // default to openai
+		}
+		if provider.AdapterType != AdapterOpenAI && provider.AdapterType != AdapterAnthropic {
+			return d.Errf("provider '%s' has unknown adapter type '%s' (must be '%s' or '%s')",
+				providerName, provider.AdapterType, AdapterOpenAI, AdapterAnthropic)
 		}
 
 		tier.Providers = append(tier.Providers, provider)

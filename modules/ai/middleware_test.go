@@ -12,6 +12,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -519,4 +520,233 @@ func TestExpandEnvVars(t *testing.T) {
 		result := expandEnvVars("{env.TEST_AI_A}-{env.TEST_AI_B}")
 		assert.Equal(t, "aaa-bbb", result)
 	})
+
+	t.Run("value containing env pattern does not loop", func(t *testing.T) {
+		t.Setenv("TEST_AI_RECURSIVE", "prefix-{env.OTHER}-suffix")
+		done := make(chan string, 1)
+		go func() {
+			done <- expandEnvVars("{env.TEST_AI_RECURSIVE}")
+		}()
+		select {
+		case result := <-done:
+			assert.Equal(t, "prefix-{env.OTHER}-suffix", result)
+		case <-time.After(2 * time.Second):
+			t.Fatal("expandEnvVars did not return — likely infinite loop")
+		}
+	})
+
+	t.Run("empty value does not loop", func(t *testing.T) {
+		// Unset var yields empty string replacement. With the old for{} loop
+		// this could cause issues if the offset logic were wrong.
+		done := make(chan string, 1)
+		go func() {
+			done <- expandEnvVars("{env.DEFINITELY_NOT_SET_LOOP_TEST}")
+		}()
+		select {
+		case result := <-done:
+			assert.Equal(t, "", result)
+		case <-time.After(2 * time.Second):
+			t.Fatal("expandEnvVars did not return — likely infinite loop")
+		}
+	})
+
+	t.Run("value containing literal braces not misinterpreted", func(t *testing.T) {
+		t.Setenv("TEST_AI_BRACES", "my{value}here")
+		result := expandEnvVars("{env.TEST_AI_BRACES}")
+		assert.Equal(t, "my{value}here", result)
+	})
+}
+
+func TestServeHTTP_OversizedBody(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Create a body larger than 10MB.
+	bigBody := strings.Repeat("x", 10<<20+100)
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", bigBody, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
+func TestServeHTTP_ExactLimitBody(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Body exactly at the 10MB limit should proceed to JSON parsing (and fail as invalid JSON).
+	body := strings.Repeat("x", 10<<20)
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	// Should get 400 (invalid JSON), not 413.
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// newValidatableMiddleware returns a test middleware with all fields set to valid values.
+func newValidatableMiddleware(t *testing.T) *DinAIMiddleware {
+	t.Helper()
+	m := newTestMiddleware(t)
+	m.HealthcheckInterval = DefaultHCInterval
+	m.HealthcheckThreshold = DefaultHCThreshold
+	return m
+}
+
+func TestValidate_ValidConfig(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	err := m.Validate()
+	assert.NoError(t, err)
+}
+
+func TestValidate_NegativeInterval(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.HealthcheckInterval = -1
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "healthcheck_interval")
+}
+
+func TestValidate_ZeroThreshold(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.HealthcheckThreshold = 0
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "healthcheck_threshold")
+}
+
+func TestValidate_NoTiers(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.Tiers = map[string]*Tier{}
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one tier")
+}
+
+func TestValidate_EmptyTier(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.Tiers["empty"] = &Tier{Name: "empty", Providers: []*AIProvider{}}
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one provider")
+}
+
+func TestValidate_MissingModel(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.Tiers[TierBalanced].Providers[0].ModelID = ""
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a model")
+}
+
+func TestValidate_UnknownAdapter(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	m.Tiers[TierBalanced].Providers[0].AdapterType = "gemini"
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown adapter type")
+}
+
+func TestUnmarshalCaddyfile_DuplicateTier(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+					}
+				}
+			}
+			fast {
+				providers {
+					p2 https://api.example.com {
+						model test-model
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate tier name")
+}
+
+func TestUnmarshalCaddyfile_DuplicateProvider(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+					}
+					p1 https://api.other.com {
+						model other-model
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate provider name")
+}
+
+func TestUnmarshalCaddyfile_NegativeInterval(t *testing.T) {
+	input := `din_ai {
+		healthcheck_interval -5
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
+func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						adapter gemini
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown adapter type")
+}
+
+func TestNewAIProvider_NoScheme(t *testing.T) {
+	_, err := NewAIProvider("test", "api.example.com/v1/chat")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "scheme")
+}
+
+func TestNewAIProvider_FtpScheme(t *testing.T) {
+	_, err := NewAIProvider("test", "ftp://api.example.com/v1/chat")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "scheme")
+}
+
+func TestNewAIProvider_EmptyHost(t *testing.T) {
+	_, err := NewAIProvider("test", "https:///v1/chat")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "host")
 }
