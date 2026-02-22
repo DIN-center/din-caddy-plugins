@@ -103,40 +103,6 @@ func (p *AIProvider) MarkPingSuccess() {
 	}
 }
 
-// MarkHealthy transitions the provider to Healthy if recovery threshold is met.
-func (p *AIProvider) MarkHealthy() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.healthStatus == Unhealthy {
-		p.successes++
-		if p.successes > p.hcThreshold {
-			p.healthStatus = Healthy
-			p.successes = 0
-		}
-	} else {
-		p.healthStatus = Healthy
-		p.successes = 0
-	}
-}
-
-// MarkWarning transitions the provider to Warning state.
-func (p *AIProvider) MarkWarning() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.healthStatus = Warning
-	p.successes = 0
-	p.failures = 0
-}
-
-// MarkUnhealthy transitions the provider to Unhealthy state.
-func (p *AIProvider) MarkUnhealthy() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.healthStatus = Unhealthy
-	p.successes = 0
-	p.failures = 0
-}
-
 // RecordTTFT records a time-to-first-token measurement in the rolling window.
 func (p *AIProvider) RecordTTFT(d time.Duration) {
 	p.mu.Lock()

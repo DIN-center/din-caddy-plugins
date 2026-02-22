@@ -179,7 +179,7 @@ func TestServeHTTP_AllUnhealthy(t *testing.T) {
 
 	// Mark all providers unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		p.MarkUnhealthy()
+		setProviderHealth(p, Unhealthy)
 	}
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`

@@ -16,6 +16,15 @@ func newTestProvider(name string, health HealthStatus) *AIProvider {
 	return p
 }
 
+// setProviderHealth directly sets a provider's health status for testing.
+func setProviderHealth(p *AIProvider, status HealthStatus) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.healthStatus = status
+	p.successes = 0
+	p.failures = 0
+}
+
 func TestTierGetAvailableProviders(t *testing.T) {
 	t.Run("returns healthy providers", func(t *testing.T) {
 		tier := &Tier{
@@ -196,7 +205,7 @@ func TestTierSelectProvider(t *testing.T) {
 		require.NotNil(t, initial)
 
 		// Mark the selected provider as unhealthy.
-		initial.MarkUnhealthy()
+		setProviderHealth(initial, Unhealthy)
 
 		// Session should now route to a different provider.
 		after := tier.SelectProvider("sticky-session", false)

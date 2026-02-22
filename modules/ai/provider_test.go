@@ -78,7 +78,7 @@ func TestProviderHealthTransitions(t *testing.T) {
 
 	t.Run("ping success recovers from unhealthy after threshold", func(t *testing.T) {
 		p := mustProvider(t)
-		p.MarkUnhealthy()
+		setProviderHealth(p, Unhealthy)
 		assert.Equal(t, Unhealthy, p.HealthStatus())
 
 		for i := 0; i <= DefaultHCThreshold; i++ {
@@ -93,34 +93,12 @@ func TestProviderHealthTransitions(t *testing.T) {
 		assert.Equal(t, Warning, p.HealthStatus())
 	})
 
-	t.Run("mark healthy from warning is immediate", func(t *testing.T) {
+	t.Run("ping success from warning is immediate", func(t *testing.T) {
 		p := mustProvider(t)
-		p.MarkWarning()
+		setProviderHealth(p, Warning)
 		assert.Equal(t, Warning, p.HealthStatus())
-		p.MarkHealthy()
+		p.MarkPingSuccess()
 		assert.Equal(t, Healthy, p.HealthStatus())
-	})
-
-	t.Run("mark healthy from unhealthy requires threshold", func(t *testing.T) {
-		p := mustProvider(t)
-		p.MarkUnhealthy()
-
-		// First calls should not recover
-		p.MarkHealthy()
-		assert.Equal(t, Unhealthy, p.HealthStatus())
-
-		// After threshold, should recover
-		for i := 0; i < DefaultHCThreshold; i++ {
-			p.MarkHealthy()
-		}
-		assert.Equal(t, Healthy, p.HealthStatus())
-	})
-
-	t.Run("mark unhealthy is immediate", func(t *testing.T) {
-		p := mustProvider(t)
-		assert.Equal(t, Healthy, p.HealthStatus())
-		p.MarkUnhealthy()
-		assert.Equal(t, Unhealthy, p.HealthStatus())
 	})
 }
 
@@ -130,11 +108,11 @@ func TestProviderAvailability(t *testing.T) {
 	assert.True(t, p.IsHealthy())
 	assert.True(t, p.IsAvailable())
 
-	p.MarkWarning()
+	setProviderHealth(p, Warning)
 	assert.False(t, p.IsHealthy())
 	assert.True(t, p.IsAvailable())
 
-	p.MarkUnhealthy()
+	setProviderHealth(p, Unhealthy)
 	assert.False(t, p.IsHealthy())
 	assert.False(t, p.IsAvailable())
 }
