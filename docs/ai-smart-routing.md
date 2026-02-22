@@ -139,10 +139,9 @@ X-DIN-Dynamic: true
 | `X-DIN-Dynamic` | No | `false` | Set to `true` to use TTFT-weighted selection (pick the fastest provider) instead of session stickiness |
 
 **How `X-DIN-Session-Id` and `X-DIN-Dynamic` interact:**
-- **Session-Id only** — Provider is selected by hashing the session ID. Same ID = same provider every time. This is the default for multi-turn conversations.
-- **Dynamic only** (no Session-Id) — Provider is selected by TTFT-weighted random. Each request may hit a different provider. Same behavior as omitting both headers.
-- **Both set** — `X-DIN-Dynamic: true` wins. The session ID is ignored and TTFT-weighted selection is used. This lets a client that normally uses sessions opt into dynamic routing for specific requests.
-- **Neither set** — TTFT-weighted selection (no stickiness).
+- **Session-Id set, Dynamic not set** — Provider is selected by hashing the session ID. Same ID = same provider every time. Use this for multi-turn conversations.
+- **Session-Id set, Dynamic `true`** — Dynamic wins. The session ID is ignored and TTFT-weighted selection is used. This lets a client that normally uses sessions opt into dynamic routing for specific requests.
+- **No Session-Id** (regardless of Dynamic) — TTFT-weighted selection. Each request may hit a different provider. `X-DIN-Dynamic` has no effect without a session ID since TTFT-weighted is already the default.
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
 
