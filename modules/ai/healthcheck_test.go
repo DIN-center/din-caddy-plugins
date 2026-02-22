@@ -51,7 +51,7 @@ func TestCheckProvider_Success(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	checkProvider(provider, client, "test-machine", logger)
+	checkProvider(provider, client, logger)
 
 	assert.Equal(t, Healthy, provider.HealthStatus())
 	assert.Equal(t, 1, provider.TTFTCount())
@@ -72,7 +72,7 @@ func TestCheckProvider_Failure(t *testing.T) {
 
 	// Need multiple failures to transition to unhealthy (threshold is 3).
 	for i := 0; i < 5; i++ {
-		checkProvider(provider, client, "test-machine", logger)
+		checkProvider(provider, client, logger)
 	}
 
 	assert.Equal(t, Unhealthy, provider.HealthStatus())
@@ -90,7 +90,7 @@ func TestCheckProvider_RateLimited(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	checkProvider(provider, client, "test-machine", logger)
+	checkProvider(provider, client, logger)
 
 	assert.Equal(t, Warning, provider.HealthStatus())
 }
@@ -108,7 +108,7 @@ func TestCheckProvider_NetworkError(t *testing.T) {
 	logger := zap.NewNop()
 
 	for i := 0; i < 5; i++ {
-		checkProvider(provider, client, "test-machine", logger)
+		checkProvider(provider, client, logger)
 	}
 
 	assert.Equal(t, Unhealthy, provider.HealthStatus())
@@ -126,7 +126,7 @@ func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	checkProvider(provider, client, "test-machine", logger)
+	checkProvider(provider, client, logger)
 
 	assert.Equal(t, Healthy, provider.HealthStatus())
 	assert.Equal(t, 1, provider.TTFTCount())
@@ -155,7 +155,7 @@ func TestRunHealthChecks_StopsOnQuit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runHealthChecks(tiers, client, 1, "test-machine", logger, quit)
+		runHealthChecks(tiers, client, 1, logger, quit)
 		close(done)
 	}()
 
@@ -211,7 +211,7 @@ func TestCheckProvider_WithOverrides(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	checkProvider(provider, client, "test-machine", logger)
+	checkProvider(provider, client, logger)
 
 	assert.Equal(t, Healthy, provider.HealthStatus())
 
@@ -243,7 +243,7 @@ func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
 	// No HealthCheckOverrides — should use default max_tokens: 1
 
 	logger := zap.NewNop()
-	checkProvider(provider, client, "test-machine", logger)
+	checkProvider(provider, client, logger)
 
 	assert.Equal(t, Healthy, provider.HealthStatus())
 

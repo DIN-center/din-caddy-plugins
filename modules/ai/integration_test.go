@@ -40,7 +40,6 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		RequestAttemptCount: DefaultRequestAttemptCount,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "integration-test",
 		client:              client,
 		testMode:            true,
 	}
@@ -201,7 +200,6 @@ func TestIntegration_NonStreaming_Anthropic(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -243,7 +241,6 @@ func TestIntegration_NonStreaming_Mistral(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -281,7 +278,6 @@ func TestIntegration_NonStreaming_DeepSeek(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -316,7 +312,6 @@ func TestIntegration_NonStreaming_Grok(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -350,7 +345,6 @@ func TestIntegration_NonStreaming_Moonshot(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -386,7 +380,6 @@ func TestIntegration_Streaming_OpenAI(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -427,7 +420,6 @@ func TestIntegration_Streaming_Anthropic(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -468,7 +460,6 @@ func TestIntegration_Streaming_Grok(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -507,7 +498,6 @@ func TestIntegration_Streaming_Mistral(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -546,7 +536,6 @@ func TestIntegration_Streaming_Moonshot(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -585,7 +574,6 @@ func TestIntegration_Streaming_DeepSeek(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -689,7 +677,6 @@ func TestIntegration_Failover(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -744,7 +731,6 @@ func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -785,7 +771,6 @@ func TestIntegration_ResponseHeaders(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -849,7 +834,6 @@ func TestIntegration_MockServer_NonStreaming(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -910,7 +894,6 @@ func TestIntegration_MockServer_Streaming(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -976,7 +959,6 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}
@@ -1022,7 +1004,6 @@ func TestIntegration_MockServer_AllFail_503(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		client:              client,
 		testMode:            true,
 	}

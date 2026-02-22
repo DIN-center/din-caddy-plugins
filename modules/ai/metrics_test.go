@@ -28,25 +28,25 @@ func TestRegisterAIMetrics_Idempotent(t *testing.T) {
 func TestRecordRequest(t *testing.T) {
 	ensureMetricsRegistered(t)
 	// Should not panic
-	RecordRequest("balanced", "openai", "gpt-4o", "200", "test-machine")
+	RecordRequest("balanced", "openai", "gpt-4o", "200")
 }
 
 func TestRecordTokens(t *testing.T) {
 	ensureMetricsRegistered(t)
 	// Should not panic
-	RecordTokens("balanced", "openai", "gpt-4o", "test-machine", 100, 50)
+	RecordTokens("balanced", "openai", "gpt-4o", 100, 50)
 }
 
 func TestRecordTokensZeroValues(t *testing.T) {
 	ensureMetricsRegistered(t)
 	// Zero values should not record (no panic)
-	RecordTokens("fast", "groq", "llama", "test-machine", 0, 0)
+	RecordTokens("fast", "groq", "llama", 0, 0)
 }
 
 func TestRecordHealthCheck(t *testing.T) {
 	ensureMetricsRegistered(t)
 	// Should not panic
-	RecordHealthCheck("openai", "200", "healthy", "test-machine")
+	RecordHealthCheck("openai", "200", "healthy")
 }
 
 func ensureMetricsRegistered(t *testing.T) {

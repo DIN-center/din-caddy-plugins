@@ -89,7 +89,7 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 		},
 		logger:              zap.NewNop(),
 		quit:                make(chan struct{}),
-		machineID:           "test-machine",
+
 		client:              client,
 		testMode:            true,
 		RequestAttemptCount: DefaultRequestAttemptCount,
@@ -393,7 +393,6 @@ func TestCleanup_StopsHealthChecks(t *testing.T) {
 		},
 		logger:              zap.NewNop(),
 		quit:                make(chan struct{}),
-		machineID:           "test",
 		HealthcheckInterval: 1,
 	}
 
@@ -401,7 +400,7 @@ func TestCleanup_StopsHealthChecks(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runHealthChecks(m.Tiers, client, 1, "test", m.logger, m.quit)
+		runHealthChecks(m.Tiers, client, 1, m.logger, m.quit)
 		close(done)
 	}()
 

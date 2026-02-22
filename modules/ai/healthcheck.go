@@ -17,7 +17,6 @@ func runHealthChecks(
 	tiers map[string]*Tier,
 	client libai.IStreamingHTTPClient,
 	intervalSec int,
-	machineID string,
 	logger *zap.Logger,
 	quit <-chan struct{},
 ) {
@@ -32,7 +31,7 @@ func runHealthChecks(
 		case <-ticker.C:
 			for _, tier := range tiers {
 				for _, provider := range tier.Providers {
-					go checkProvider(provider, client, machineID, logger)
+					go checkProvider(provider, client, logger)
 				}
 			}
 		}
@@ -43,7 +42,6 @@ func runHealthChecks(
 func checkProvider(
 	provider *AIProvider,
 	client libai.IStreamingHTTPClient,
-	machineID string,
 	logger *zap.Logger,
 ) {
 	// Build health check request as a map to support per-provider overrides.
@@ -72,7 +70,7 @@ func checkProvider(
 			zap.String("provider", provider.Name),
 			zap.Error(err))
 		provider.MarkPingFailure()
-		RecordHealthCheck(provider.Name, "0", "error", machineID)
+		RecordHealthCheck(provider.Name, "0", "error")
 		return
 	}
 
@@ -83,7 +81,7 @@ func checkProvider(
 			zap.String("provider", provider.Name),
 			zap.Error(err))
 		provider.MarkPingFailure()
-		RecordHealthCheck(provider.Name, "0", "error", machineID)
+		RecordHealthCheck(provider.Name, "0", "error")
 		return
 	}
 
@@ -105,7 +103,7 @@ func checkProvider(
 			zap.String("provider", provider.Name),
 			zap.Error(err))
 		provider.MarkPingFailure()
-		RecordHealthCheck(provider.Name, "0", provider.HealthStatus().String(), machineID)
+		RecordHealthCheck(provider.Name, "0", provider.HealthStatus().String())
 		return
 	}
 
@@ -120,7 +118,7 @@ func checkProvider(
 	case statusCode == http.StatusOK:
 		provider.MarkPingSuccess()
 		provider.RecordTTFT(ttft)
-		RecordHealthCheck(provider.Name, "200", provider.HealthStatus().String(), machineID)
+		RecordHealthCheck(provider.Name, "200", provider.HealthStatus().String())
 		logger.Debug("health check succeeded",
 			zap.String("provider", provider.Name),
 			zap.Duration("ttft", ttft))
@@ -128,13 +126,13 @@ func checkProvider(
 	case statusCode == http.StatusTooManyRequests:
 		// Rate limited — provider is alive but degraded.
 		provider.MarkPingWarning()
-		RecordHealthCheck(provider.Name, "429", provider.HealthStatus().String(), machineID)
+		RecordHealthCheck(provider.Name, "429", provider.HealthStatus().String())
 		logger.Warn("health check rate limited",
 			zap.String("provider", provider.Name))
 
 	default:
 		provider.MarkPingFailure()
-		RecordHealthCheck(provider.Name, fmt.Sprintf("%d", statusCode), provider.HealthStatus().String(), machineID)
+		RecordHealthCheck(provider.Name, fmt.Sprintf("%d", statusCode), provider.HealthStatus().String())
 		logger.Warn("health check failed",
 			zap.String("provider", provider.Name),
 			zap.Int("status_code", statusCode),

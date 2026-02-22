@@ -43,10 +43,9 @@ type DinAIMiddleware struct {
 	RequestAttemptCount  int `json:"request_attempt_count,omitempty"`
 
 	// Runtime
-	logger    *zap.Logger
-	quit      chan struct{}
-	machineID string
-	client    libai.IStreamingHTTPClient
+	logger *zap.Logger
+	quit   chan struct{}
+	client libai.IStreamingHTTPClient
 
 	// Test mode flag — disables health checks for unit testing.
 	testMode bool
@@ -78,10 +77,6 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 		m.RequestAttemptCount = DefaultRequestAttemptCount
 	}
 
-	// Generate machine ID.
-	hostname, _ := os.Hostname()
-	m.machineID = hostname
-
 	// Initialize HTTP client.
 	m.client = newDefaultStreamingClient()
 
@@ -98,7 +93,7 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 
 	// Start health checks (unless in test mode).
 	if !m.testMode {
-		go runHealthChecks(m.Tiers, m.client, m.HealthcheckInterval, m.machineID, m.logger, m.quit)
+		go runHealthChecks(m.Tiers, m.client, m.HealthcheckInterval, m.logger, m.quit)
 	}
 
 	m.logger.Info("DIN AI middleware provisioned",
@@ -231,9 +226,9 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			usage := streamToClient(r.Context(), w, result.resp.Body, result.reader, result.adapter, m.logger)
 
 			// Record metrics.
-			RecordRequest(tierName, provider.Name, provider.ModelID, "200", m.machineID)
+			RecordRequest(tierName, provider.Name, provider.ModelID, "200")
 			if usage != nil {
-				RecordTokens(tierName, provider.Name, provider.ModelID, m.machineID,
+				RecordTokens(tierName, provider.Name, provider.ModelID,
 					usage.PromptTokens, usage.CompletionTokens)
 			}
 
@@ -266,7 +261,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		// Extract usage for metrics.
 		var resp libai.ChatCompletionResponse
 		if err := json.Unmarshal(transformed, &resp); err == nil && resp.Usage != nil {
-			RecordTokens(tierName, provider.Name, provider.ModelID, m.machineID,
+			RecordTokens(tierName, provider.Name, provider.ModelID,
 				resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 		}
 
@@ -275,12 +270,12 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		w.WriteHeader(http.StatusOK)
 		w.Write(transformed)
 
-		RecordRequest(tierName, provider.Name, provider.ModelID, "200", m.machineID)
+		RecordRequest(tierName, provider.Name, provider.ModelID, "200")
 		return nil
 	}
 
 	// All attempts failed.
-	RecordRequest(tierName, "", "", "502", m.machineID)
+	RecordRequest(tierName, "", "", "502")
 	errMsg := "all provider attempts failed"
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("all provider attempts failed: %v", lastErr)
