@@ -484,3 +484,39 @@ func TestSelectUntried(t *testing.T) {
 	p3 := m.selectUntried(tier, "", false, tried)
 	assert.Nil(t, p3)
 }
+
+func TestExpandEnvVars(t *testing.T) {
+	t.Run("basic expansion", func(t *testing.T) {
+		t.Setenv("TEST_AI_KEY", "sk-123")
+		result := expandEnvVars("{env.TEST_AI_KEY}")
+		assert.Equal(t, "sk-123", result)
+	})
+
+	t.Run("embedded pattern", func(t *testing.T) {
+		t.Setenv("TEST_AI_KEY", "sk-123")
+		result := expandEnvVars("Bearer {env.TEST_AI_KEY}")
+		assert.Equal(t, "Bearer sk-123", result)
+	})
+
+	t.Run("unset var returns empty", func(t *testing.T) {
+		result := expandEnvVars("{env.DEFINITELY_NOT_SET_12345}")
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("no pattern returns unchanged", func(t *testing.T) {
+		result := expandEnvVars("plain-value")
+		assert.Equal(t, "plain-value", result)
+	})
+
+	t.Run("malformed pattern returns unchanged", func(t *testing.T) {
+		result := expandEnvVars("{env.MISSING_CLOSE")
+		assert.Equal(t, "{env.MISSING_CLOSE", result)
+	})
+
+	t.Run("multiple patterns", func(t *testing.T) {
+		t.Setenv("TEST_AI_A", "aaa")
+		t.Setenv("TEST_AI_B", "bbb")
+		result := expandEnvVars("{env.TEST_AI_A}-{env.TEST_AI_B}")
+		assert.Equal(t, "aaa-bbb", result)
+	})
+}

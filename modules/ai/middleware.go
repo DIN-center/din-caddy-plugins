@@ -377,6 +377,10 @@ func generateRequestID() string {
 // expandEnvVars replaces all {env.VAR_NAME} patterns in a string with their
 // environment variable values. Handles both full replacement ({env.X}) and
 // embedded patterns (Bearer {env.X}).
+//
+// NOTE: This runs at Caddyfile parse time (during UnmarshalCaddyfile), not at
+// request time. Environment variable changes after Caddy starts require a
+// graceful reload (`caddy reload`) to take effect.
 func expandEnvVars(s string) string {
 	for {
 		start := strings.Index(s, "{env.")
@@ -390,6 +394,9 @@ func expandEnvVars(s string) string {
 		end += start
 		envKey := s[start+5 : end]
 		envVal := os.Getenv(envKey)
+		if envVal == "" {
+			fmt.Fprintf(os.Stderr, "[WARN] din_ai: environment variable %q is not set\n", envKey)
+		}
 		s = s[:start] + envVal + s[end+1:]
 	}
 }
@@ -576,10 +583,16 @@ type defaultStreamingClient struct {
 	client *http.Client
 }
 
+// newDefaultStreamingClient creates the shared HTTP client for all AI requests.
+//
+// NOTE: The 120s timeout applies to the entire request lifecycle including body reads.
+// For streaming responses, this means streams longer than 2 minutes will be killed.
+// For health checks, a stuck provider blocks for up to 2 minutes before being marked failing.
+// TODO: Use separate clients with appropriate timeouts for streaming vs non-streaming vs health checks.
 func newDefaultStreamingClient() *defaultStreamingClient {
 	return &defaultStreamingClient{
 		client: &http.Client{
-			Timeout: 120 * time.Second, // 2-minute timeout for streaming responses
+			Timeout: 120 * time.Second,
 		},
 	}
 }
