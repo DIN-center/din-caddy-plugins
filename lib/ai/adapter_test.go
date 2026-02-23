@@ -334,6 +334,35 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 	})
 }
 
+func TestAnthropicAdapterTransformRequest_ToolChoiceNone(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	input := `{
+		"model":"claude-sonnet-4-20250514",
+		"messages":[{"role":"user","content":"hello"}],
+		"tools":[
+			{
+				"type":"function",
+				"function":{
+					"name":"get_weather",
+					"description":"Get weather",
+					"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+				}
+			}
+		],
+		"tool_choice":"none"
+	}`
+	out, _, err := a.TransformRequest([]byte(input))
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	// "none" should omit both tools and tool_choice from the request.
+	assert.Nil(t, result.Tools, "tools should be omitted when tool_choice is none")
+	assert.Nil(t, result.ToolChoice, "tool_choice should be omitted when none")
+}
+
 func TestAnthropicAdapterTransformResponse(t *testing.T) {
 	a := NewAnthropicAdapter()
 

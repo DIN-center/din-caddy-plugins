@@ -56,7 +56,13 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 		anthropicReq.Tools = mapOpenAIToolsToAnthropic(req.Tools)
 	}
 	if req.ToolChoice != nil {
-		anthropicReq.ToolChoice = mapOpenAIToolChoiceToAnthropic(req.ToolChoice)
+		mapped := mapOpenAIToolChoiceToAnthropic(req.ToolChoice)
+		if mapped != nil {
+			anthropicReq.ToolChoice = mapped
+		} else {
+			// "none" — omit tools entirely so Anthropic won't call any.
+			anthropicReq.Tools = nil
+		}
 	}
 
 	// Convert OpenAI stop field to Anthropic stop_sequences.
@@ -518,6 +524,8 @@ func mapOpenAIToolChoiceToAnthropic(choice any) any {
 			return map[string]any{"type": "any"}
 		case "auto":
 			return map[string]any{"type": "auto"}
+		case "none":
+			return nil // caller omits tool_choice and tools
 		default:
 			return map[string]any{"type": "auto"}
 		}
