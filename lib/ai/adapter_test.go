@@ -818,13 +818,20 @@ func TestAnthropicAdapterTransformStreamEvent_ToolCallDeltas(t *testing.T) {
 	var startResp ChatCompletionResponse
 	require.NoError(t, json.Unmarshal(startChunk, &startResp))
 	require.Len(t, startResp.Choices[0].Delta.ToolCalls, 1)
-	assert.Equal(t, "toolu_1", startResp.Choices[0].Delta.ToolCalls[0].ID)
-	assert.Equal(t, "lookup_weather", startResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+	startTC := startResp.Choices[0].Delta.ToolCalls[0]
+	assert.Equal(t, "toolu_1", startTC.ID, "content_block_start must include tool id")
+	assert.Equal(t, "function", startTC.Type, "content_block_start must include type")
+	assert.Equal(t, "lookup_weather", startTC.Function.Name, "content_block_start must include function name")
 
 	var deltaResp ChatCompletionResponse
 	require.NoError(t, json.Unmarshal(deltaChunk, &deltaResp))
 	require.Len(t, deltaResp.Choices[0].Delta.ToolCalls, 1)
-	assert.Equal(t, "{\"city\":\"SF\"}", deltaResp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+	deltaTC := deltaResp.Choices[0].Delta.ToolCalls[0]
+	assert.Equal(t, "{\"city\":\"SF\"}", deltaTC.Function.Arguments)
+	// Continuation deltas must NOT include id, type, or name per OpenAI streaming spec.
+	assert.Empty(t, deltaTC.ID, "continuation delta must omit id")
+	assert.Empty(t, deltaTC.Type, "continuation delta must omit type")
+	assert.Empty(t, deltaTC.Function.Name, "continuation delta must omit function name")
 }
 
 // Verify interface compliance at compile time.

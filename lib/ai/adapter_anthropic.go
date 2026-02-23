@@ -273,11 +273,10 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 			return a.buildOpenAIDelta("", delta.Delta.Text, nil)
 		}
 		if delta.Delta.Type == "input_json_delta" {
-			toolState, ok := a.toolCalls[delta.Index]
-			if !ok {
+			if _, ok := a.toolCalls[delta.Index]; !ok {
 				return nil, nil
 			}
-			return a.buildOpenAIToolDelta(delta.Index, toolState.ID, toolState.Name, delta.Delta.PartialJSON)
+			return a.buildOpenAIToolDelta(delta.Index, "", "", delta.Delta.PartialJSON)
 		}
 		return nil, nil // skip non-text deltas
 
@@ -607,6 +606,15 @@ func mergeAssistantToolCalls(msg ChatMessage, anthropicContent any) (any, error)
 
 func (a *AnthropicAdapter) buildOpenAIToolDelta(index int, id, name, partialArgs string) ([]byte, error) {
 	idx := index
+	tc := ToolCall{
+		Index:    &idx,
+		Function: ToolCallFunction{Arguments: partialArgs},
+	}
+	if id != "" {
+		tc.ID = id
+		tc.Type = "function"
+		tc.Function.Name = name
+	}
 	chunk := ChatCompletionResponse{
 		ID:      a.messageID,
 		Object:  "chat.completion.chunk",
@@ -615,19 +623,7 @@ func (a *AnthropicAdapter) buildOpenAIToolDelta(index int, id, name, partialArgs
 		Choices: []ChatCompletionChoice{
 			{
 				Index: 0,
-				Delta: &ChatMessage{
-					ToolCalls: []ToolCall{
-						{
-							Index: &idx,
-							ID:    id,
-							Type:  "function",
-							Function: ToolCallFunction{
-								Name:      name,
-								Arguments: partialArgs,
-							},
-						},
-					},
-				},
+				Delta: &ChatMessage{ToolCalls: []ToolCall{tc}},
 			},
 		},
 	}
