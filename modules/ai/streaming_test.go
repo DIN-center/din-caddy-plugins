@@ -177,6 +177,31 @@ func TestAttemptStream_NonOKStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP 429")
 }
 
+func TestAttemptStream_NonOKStatusIncludesRetryAfter(t *testing.T) {
+	adapter := libai.NewOpenAIAdapter()
+	logger := zap.NewNop()
+
+	client := &mockStreamingClient{
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			resp := makeSSEResponse(429, "rate limited")
+			resp.Header.Set("Retry-After", "2")
+			return resp, nil
+		},
+	}
+
+	provider := newTestProvider("test-openai", Healthy)
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+
+	var streamErr *streamAttemptError
+	require.ErrorAs(t, err, &streamErr)
+	assert.Equal(t, http.StatusTooManyRequests, streamErr.statusCode)
+	assert.Equal(t, 2*time.Second, streamErr.retryAfter)
+}
+
 func TestAttemptStream_ErrorInFirstChunk(t *testing.T) {
 	adapter := libai.NewOpenAIAdapter()
 	logger := zap.NewNop()
