@@ -18,7 +18,7 @@ FAILED_TESTS=0
 TOTAL_TESTS=0
 
 # Configuration
-BASE_URL="http://localhost:9080"
+BASE_URL="http://localhost:8000"
 TIMEOUT=60
 
 print_test_result() {

@@ -2,52 +2,15 @@
 {
 	debug
 	order din before reverse_proxy
-	order din_ai before reverse_proxy
+	order din_ai before din
 }
 :8000 {
-	# Add health check endpoint
+	# Health check endpoint
 	handle /health {
 		respond "OK" 200
 	}
 
-	route /* {
-		# middleware declaration
-		din {
-			environment prod
-			# Test the new handler registry with multiple network types
-			networks {
-				# EVM Network (existing functionality)
-				eth {
-					providers {
-						https://eth.llamarpc.com:443 {
-							priority 0
-						}
-						https://ethereum-rpc.publicnode.com:443 {
-							priority 1
-						}
-					}
-					chain_id 0x1
-				}
-			}
-		}
-		# din reverse proxy directive configuration
-		reverse_proxy {
-			lb_policy din_reverse_proxy_policy
-			transport http {
-				tls
-				keepalive 10s
-			}
-			dynamic din_reverse_proxy_policy
-			header_up Host {upstream_hostport}
-		}
-	}
-}
-
-:9080 {
-	handle /health {
-		respond "OK" 200
-	}
-
+	# AI Smart Routing - matches /v1/* before the EVM wildcard
 	route /v1/* {
 		din_ai {
 			healthcheck_interval 120
@@ -94,6 +57,35 @@
 					}
 				}
 			}
+		}
+	}
+
+	# EVM Handler Registry - catches everything else
+	route /* {
+		din {
+			environment prod
+			networks {
+				eth {
+					providers {
+						https://eth.llamarpc.com:443 {
+							priority 0
+						}
+						https://ethereum-rpc.publicnode.com:443 {
+							priority 1
+						}
+					}
+					chain_id 0x1
+				}
+			}
+		}
+		reverse_proxy {
+			lb_policy din_reverse_proxy_policy
+			transport http {
+				tls
+				keepalive 10s
+			}
+			dynamic din_reverse_proxy_policy
+			header_up Host {upstream_hostport}
 		}
 	}
 }

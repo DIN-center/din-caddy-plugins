@@ -259,7 +259,7 @@ jobs:
 
           echo "Waiting for Caddy to start..."
           for i in {1..30}; do
-            if curl -f http://localhost:9080/health > /dev/null 2>&1; then
+            if curl -f http://localhost:8000/health > /dev/null 2>&1; then
               echo "Caddy AI server is ready"
               break
             fi
