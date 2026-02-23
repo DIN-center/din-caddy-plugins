@@ -20,7 +20,6 @@ import (
 // skipIfNoKey skips the test if the given env var is not set.
 func skipIfNoKey(t *testing.T, envVar string) string {
 	t.Helper()
-	ensureMetricsRegistered(t)
 	key := os.Getenv(envVar)
 	if key == "" {
 		t.Skipf("Skipping: %s not set", envVar)
@@ -42,7 +41,6 @@ func setDefaultCost(p *AIProvider) {
 // This eliminates the repeated ~15-line setup pattern across many test functions.
 func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType string, headers map[string]string) *DinAIMiddleware {
 	t.Helper()
-	ensureMetricsRegistered(t)
 	client := newDefaultStreamingClient()
 	logger := zap.NewNop()
 	p, err := NewAIProvider(name, url)
@@ -71,7 +69,6 @@ func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType str
 // Providers are set up based on which env vars are available.
 func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 	t.Helper()
-	ensureMetricsRegistered(t)
 
 	client := newDefaultStreamingClient()
 	logger := zap.NewNop()
@@ -687,8 +684,6 @@ func TestIntegration_ResponseHeaders(t *testing.T) {
 // --- Mock Server Integration Tests (no API key required) ---
 
 func TestIntegration_MockServer_NonStreaming(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req libai.ChatCompletionRequest
@@ -727,7 +722,6 @@ func TestIntegration_MockServer_NonStreaming(t *testing.T) {
 }
 
 func TestIntegration_MockServer_Streaming(t *testing.T) {
-	ensureMetricsRegistered(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -772,8 +766,6 @@ func TestIntegration_MockServer_Streaming(t *testing.T) {
 }
 
 func TestIntegration_MockServer_Failover(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	// Bad server returns 500
 	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -834,7 +826,6 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 }
 
 func TestIntegration_MockServer_AllFail_503(t *testing.T) {
-	ensureMetricsRegistered(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)

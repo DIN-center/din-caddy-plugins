@@ -98,11 +98,16 @@ func registerAIMetricsOnce() {
 
 // RecordRequest records an AI request metric.
 func RecordRequest(tier, provider, model, statusCode string) {
-	DinAIRequestCount.WithLabelValues(tier, provider, model, statusCode).Inc()
+	if DinAIRequestCount != nil {
+		DinAIRequestCount.WithLabelValues(tier, provider, model, statusCode).Inc()
+	}
 }
 
 // RecordTokens records token usage metrics.
 func RecordTokens(tier, provider, model string, promptTokens, completionTokens int) {
+	if DinAITokensTotal == nil {
+		return
+	}
 	if promptTokens > 0 {
 		DinAITokensTotal.WithLabelValues(tier, provider, model, "prompt").Add(float64(promptTokens))
 	}
@@ -113,6 +118,9 @@ func RecordTokens(tier, provider, model string, promptTokens, completionTokens i
 
 // RecordCost records an estimated cost metric in USD.
 func RecordCost(tier, provider, model string, costUSD float64) {
+	if DinAICostTotal == nil {
+		return
+	}
 	if costUSD > 0 {
 		DinAICostTotal.WithLabelValues(tier, provider, model).Add(costUSD)
 	}
@@ -120,5 +128,7 @@ func RecordCost(tier, provider, model string, costUSD float64) {
 
 // RecordHealthCheck records a health check metric.
 func RecordHealthCheck(provider, statusCode, healthStatus string) {
-	DinAIHealthCheckCount.WithLabelValues(provider, statusCode, healthStatus).Inc()
+	if DinAIHealthCheckCount != nil {
+		DinAIHealthCheckCount.WithLabelValues(provider, statusCode, healthStatus).Inc()
+	}
 }

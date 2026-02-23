@@ -46,7 +46,6 @@ var noopHandler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 
 func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 	t.Helper()
-	ensureMetricsRegistered(t)
 
 	client := &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
@@ -537,8 +536,6 @@ func TestServeHTTP_PrefixedPathDoesNotMatch(t *testing.T) {
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
 			TierFast: {
