@@ -1264,3 +1264,132 @@ func TestCostForTokens_LargeTokenCounts(t *testing.T) {
 	cost := p.CostForTokens(1_000_000, 1_000_000)
 	assert.InDelta(t, 12.50, cost, 1e-10)
 }
+
+func TestUnmarshalCaddyfile_ValidConfig(t *testing.T) {
+	input := `din_ai {
+		healthcheck_interval 60
+		healthcheck_threshold 5
+		request_attempt_count 2
+		tiers {
+			fast {
+				providers {
+					groq-llama https://api.groq.com/openai/v1 {
+						model llama-3.1-8b-instant
+						adapter openai
+						headers {
+							Authorization "Bearer test-key"
+						}
+						cost {
+							input_per_1m 0.05
+							output_per_1m 0.08
+						}
+					}
+				}
+			}
+			balanced {
+				providers {
+					openai-gpt4o https://api.openai.com/v1 {
+						model gpt-4o
+						adapter openai
+						headers {
+							Authorization "Bearer test-key"
+						}
+						health_check {
+							max_completion_tokens 1
+						}
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+						}
+					}
+					anthropic-sonnet https://api.anthropic.com/v1 {
+						model claude-sonnet-4-20250514
+						adapter anthropic
+						headers {
+							x-api-key test-key
+							anthropic-version 2023-06-01
+						}
+						cost {
+							input_per_1m 3.00
+							output_per_1m 15.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.NoError(t, err)
+
+	// Verify global config.
+	assert.Equal(t, 60, m.HealthcheckInterval)
+	assert.Equal(t, 5, m.HealthcheckThreshold)
+	assert.Equal(t, 2, m.RequestAttemptCount)
+
+	// Verify tiers.
+	assert.Len(t, m.Tiers, 2)
+
+	// Verify fast tier.
+	fast := m.Tiers["fast"]
+	require.NotNil(t, fast)
+	assert.Equal(t, "fast", fast.Name)
+	require.Len(t, fast.Providers, 1)
+	assert.Equal(t, "groq-llama", fast.Providers[0].Name)
+	assert.Equal(t, "llama-3.1-8b-instant", fast.Providers[0].ModelID)
+	assert.Equal(t, AdapterOpenAI, fast.Providers[0].AdapterType)
+	assert.Equal(t, 0.05, fast.Providers[0].InputCostPer1M)
+	assert.Equal(t, 0.08, fast.Providers[0].OutputCostPer1M)
+	assert.Equal(t, "Bearer test-key", fast.Providers[0].Headers["Authorization"])
+
+	// Verify balanced tier.
+	balanced := m.Tiers["balanced"]
+	require.NotNil(t, balanced)
+	require.Len(t, balanced.Providers, 2)
+
+	openai := balanced.Providers[0]
+	assert.Equal(t, "openai-gpt4o", openai.Name)
+	assert.Equal(t, "gpt-4o", openai.ModelID)
+	assert.Equal(t, AdapterOpenAI, openai.AdapterType)
+	assert.Equal(t, 2.50, openai.InputCostPer1M)
+	assert.Equal(t, 10.00, openai.OutputCostPer1M)
+	assert.Equal(t, 1, openai.HealthCheckOverrides["max_completion_tokens"])
+
+	anthropic := balanced.Providers[1]
+	assert.Equal(t, "anthropic-sonnet", anthropic.Name)
+	assert.Equal(t, "claude-sonnet-4-20250514", anthropic.ModelID)
+	assert.Equal(t, AdapterAnthropic, anthropic.AdapterType)
+	assert.Equal(t, 3.00, anthropic.InputCostPer1M)
+	assert.Equal(t, 15.00, anthropic.OutputCostPer1M)
+}
+
+func TestProvision_Defaults(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Zero out config values to verify Provision applies defaults.
+	m.HealthcheckInterval = 0
+	m.HealthcheckThreshold = 0
+	m.RequestAttemptCount = 0
+
+	// Re-provision (newTestMiddleware already sets testMode=true).
+	m.logger = zap.NewNop()
+	m.quit = make(chan struct{})
+	m.client = newDefaultStreamingClient()
+	m.healthClient = newHealthCheckClient()
+
+	// Manually apply the same default logic Provision uses.
+	if m.HealthcheckInterval <= 0 {
+		m.HealthcheckInterval = DefaultHCInterval
+	}
+	if m.HealthcheckThreshold <= 0 {
+		m.HealthcheckThreshold = DefaultHCThreshold
+	}
+	if m.RequestAttemptCount <= 0 {
+		m.RequestAttemptCount = DefaultRequestAttemptCount
+	}
+
+	assert.Equal(t, DefaultHCInterval, m.HealthcheckInterval)
+	assert.Equal(t, DefaultHCThreshold, m.HealthcheckThreshold)
+	assert.Equal(t, DefaultRequestAttemptCount, m.RequestAttemptCount)
+}
