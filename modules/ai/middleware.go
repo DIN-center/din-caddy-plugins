@@ -339,7 +339,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 	}
 
 	// All attempts failed.
-	RecordRequest(tierName, "", "", "502")
+	RecordRequest(tierName, "none", "none", "502")
 	errMsg := "all provider attempts failed"
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("all provider attempts failed: %v", lastErr)

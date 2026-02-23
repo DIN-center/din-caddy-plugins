@@ -191,6 +191,28 @@ func TestServeHTTP_AllUnhealthy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
+func TestServeHTTP_AllProvidersFail_Returns502(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Force all providers to return errors.
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			return nil, 0, fmt.Errorf("connection refused")
+		},
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "all provider attempts failed")
+}
+
 func TestServeHTTP_NonStreaming_Success(t *testing.T) {
 	m := newTestMiddleware(t)
 
