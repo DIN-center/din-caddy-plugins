@@ -182,11 +182,15 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			"request body exceeds 10MB limit", "invalid_request_error")
 	}
 
-	// Parse request to check stream flag.
-	var req libai.ChatCompletionRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	// Parse request once to check stream flag and prepare for model overwrite.
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &rawFields); err != nil {
 		return writeErrorResponse(w, http.StatusBadRequest,
 			"invalid JSON in request body", "invalid_request_error")
+	}
+	var isStream bool
+	if streamRaw, ok := rawFields["stream"]; ok {
+		_ = json.Unmarshal(streamRaw, &isStream)
 	}
 
 	// Resolve tier.
@@ -242,7 +246,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		adapter := getAdapterForType(provider.AdapterType)
 
 		// Overwrite model in request body.
-		modifiedBody, err := overwriteModel(body, provider.ModelID)
+		modifiedBody, err := overwriteModel(rawFields, provider.ModelID)
 		if err != nil {
 			lastErr = err
 			attemptCount++
@@ -255,7 +259,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			continue
 		}
 
-		if req.Stream {
+		if isStream {
 			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.client, m.logger)
 			if err != nil {
 				provider.MarkPingWarning()
@@ -531,18 +535,14 @@ func setResponseHeaders(w http.ResponseWriter, provider *AIProvider, tierName, s
 	}
 }
 
-// overwriteModel replaces the model field in the request body with the provider's model.
-func overwriteModel(body []byte, model string) ([]byte, error) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, err
-	}
+// overwriteModel replaces the model field in the pre-parsed request fields and re-marshals.
+func overwriteModel(rawFields map[string]json.RawMessage, model string) ([]byte, error) {
 	modelJSON, err := json.Marshal(model)
 	if err != nil {
 		return nil, err
 	}
-	raw["model"] = modelJSON
-	return json.Marshal(raw)
+	rawFields["model"] = modelJSON
+	return json.Marshal(rawFields)
 }
 
 // generateRequestID creates a unique request ID using crypto/rand.

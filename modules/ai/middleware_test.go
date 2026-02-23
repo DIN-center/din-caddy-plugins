@@ -448,8 +448,10 @@ func TestServeHTTP_DefaultTier(t *testing.T) {
 }
 
 func TestOverwriteModel(t *testing.T) {
-	body := []byte(`{"model":"original","messages":[],"stream":false}`)
-	result, err := overwriteModel(body, "new-model")
+	var rawFields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"model":"original","messages":[],"stream":false}`), &rawFields))
+
+	result, err := overwriteModel(rawFields, "new-model")
 	require.NoError(t, err)
 
 	var parsed map[string]json.RawMessage
@@ -461,6 +463,17 @@ func TestOverwriteModel(t *testing.T) {
 
 	// Messages should be preserved.
 	assert.Contains(t, string(result), "messages")
+
+	// Calling again with a different model should work (retry scenario).
+	result2, err := overwriteModel(rawFields, "another-model")
+	require.NoError(t, err)
+
+	var parsed2 map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(result2, &parsed2))
+
+	var model2 string
+	require.NoError(t, json.Unmarshal(parsed2["model"], &model2))
+	assert.Equal(t, "another-model", model2)
 }
 
 func TestGenerateRequestID(t *testing.T) {
