@@ -861,6 +861,18 @@ func TestAnthropicAdapterTransformStreamEvent_MalformedMessageStart(t *testing.T
 	assert.Nil(t, out)
 }
 
+func TestAnthropicAdapterTransformStreamEvent_ContentBlockStartText(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_t","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	// content_block_start with type "text" should return nil (no chunk to emit).
+	out, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`))
+	assert.NoError(t, err)
+	assert.Nil(t, out, "content_block_start with text type should not emit a chunk")
+}
+
 func TestAnthropicAdapterTransformStreamEvent_ToolCallDeltas(t *testing.T) {
 	a := NewAnthropicAdapter()
 

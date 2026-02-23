@@ -1063,6 +1063,87 @@ func TestServeHTTP_NonStreaming_TransformResponseError_NoInfiniteLoop(t *testing
 		"should return 502 when all attempts fail with transform errors")
 }
 
+func TestServeHTTP_NonStreaming_503RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	var primaryURL string
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					return []byte(`{"error":"service unavailable"}`), 503, http.Header{"Retry-After": []string{"0"}}, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 503")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+}
+
+func TestServeHTTP_Streaming_503RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	primaryURL := ""
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	goodSSE := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
+	goodSSE += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					resp := makeSSEResponse(http.StatusServiceUnavailable, "service unavailable")
+					resp.Header.Set("Retry-After", "0")
+					return resp, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+			return makeSSEResponse(http.StatusOK, goodSSE), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 503")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+	assert.Contains(t, w.Body.String(), "fallback works")
+}
+
 func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
 	m := newTestMiddleware(t)
 
