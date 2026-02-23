@@ -415,7 +415,9 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		setResponseHeaders(w, provider, tierName, sessionID, requestID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(transformed)
+		if _, err := w.Write(transformed); err != nil {
+			m.logger.Warn("failed to write response body", zap.Error(err))
+		}
 
 		RecordRequest(tierName, provider.Name, provider.ModelID, "200")
 		return nil
