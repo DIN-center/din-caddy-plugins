@@ -1126,6 +1126,79 @@ func TestAnthropicAdapterTransformStreamEvent_ConcurrentToolCalls(t *testing.T) 
 	assert.Equal(t, `:"SF"}`, deltaA2Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
 }
 
+func TestParseBase64DataURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantMedia   string
+		wantData    string
+		wantErrMsg  string
+	}{
+		{
+			name:       "no comma separator",
+			input:      "data:image/png;base64",
+			wantErrMsg: "invalid image data URL format",
+		},
+		{
+			name:       "not base64 encoded",
+			input:      "data:image/png;charset=utf-8,hello",
+			wantErrMsg: "must be base64 encoded",
+		},
+		{
+			name:       "empty data payload",
+			input:      "data:image/png;base64,",
+			wantErrMsg: "payload is empty",
+		},
+		{
+			name:      "no explicit media type defaults to image/png",
+			input:     "data:;base64,aGVsbG8=",
+			wantMedia: "image/png",
+			wantData:  "aGVsbG8=",
+		},
+		{
+			name:      "valid jpeg data URL",
+			input:     "data:image/jpeg;base64,/9j/4AAQ",
+			wantMedia: "image/jpeg",
+			wantData:  "/9j/4AAQ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mediaType, data, err := parseBase64DataURL(tt.input)
+			if tt.wantErrMsg != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMedia, mediaType)
+			assert.Equal(t, tt.wantData, data)
+		})
+	}
+}
+
+func TestExtractSystemText_ArrayContentParts(t *testing.T) {
+	t.Run("array of text parts concatenated", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "text", "text": "Hello "},
+			map[string]any{"type": "text", "text": "world"},
+		}
+		result, err := extractSystemText(content)
+		require.NoError(t, err)
+		assert.Equal(t, "Hello world", result)
+	})
+
+	t.Run("array with unsupported part type returns error", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/img.png"}},
+		}
+		_, err := extractSystemText(content)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported")
+	})
+}
+
 // Verify interface compliance at compile time.
 var (
 	_ ProviderAdapter = (*OpenAIAdapter)(nil)
