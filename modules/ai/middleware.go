@@ -282,6 +282,12 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 					usage.PromptTokens, usage.CompletionTokens)
 				cost := provider.CostForTokens(usage.PromptTokens, usage.CompletionTokens)
 				RecordCost(tierName, provider.Name, provider.ModelID, cost)
+				// Write cost as SSE comment after [DONE] — ignored by standard clients,
+				// parseable by DIN-aware clients.
+				fmt.Fprintf(w, ": din-cost %.6f\n\n", cost)
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
 			}
 
 			return nil

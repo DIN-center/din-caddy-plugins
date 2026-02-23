@@ -1078,6 +1078,40 @@ func TestCostForTokens_ZeroTokens(t *testing.T) {
 	assert.Equal(t, 0.0, cost)
 }
 
+func TestServeHTTP_Streaming_CostSSEComment(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set known cost values.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		p.InputCostPer1M = 2.50
+		p.OutputCostPer1M = 10.00
+	}
+
+	// Streaming response with usage in the last chunk before [DONE].
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hi"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	respBody := w.Body.String()
+	assert.Contains(t, respBody, "[DONE]")
+	// Cost = 10 * 2.50 / 1M + 5 * 10.00 / 1M = 0.000075
+	assert.Contains(t, respBody, ": din-cost 0.000075", "streaming response should contain cost SSE comment")
+}
+
 func TestServeHTTP_NonStreaming_CostHeader(t *testing.T) {
 	m := newTestMiddleware(t)
 
