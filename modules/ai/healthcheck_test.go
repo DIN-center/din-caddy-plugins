@@ -23,11 +23,11 @@ type mockHealthCheckClient struct {
 	err        error
 }
 
-func (m *mockHealthCheckClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockHealthCheckClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	if m.err != nil {
-		return nil, 0, m.err
+		return nil, 0, nil, m.err
 	}
-	return []byte(m.body), m.statusCode, nil
+	return []byte(m.body), m.statusCode, nil, nil
 }
 
 func (m *mockHealthCheckClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
@@ -41,7 +41,7 @@ func (m *mockHealthCheckClient) PostStream(ctx context.Context, url string, head
 }
 
 func TestCheckProvider_Success(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-openai", Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -59,7 +59,7 @@ func TestCheckProvider_Success(t *testing.T) {
 }
 
 func TestCheckProvider_Failure(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-openai", Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -80,7 +80,7 @@ func TestCheckProvider_Failure(t *testing.T) {
 }
 
 func TestCheckProvider_RateLimited(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-openai", Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -97,7 +97,7 @@ func TestCheckProvider_RateLimited(t *testing.T) {
 }
 
 func TestCheckProvider_NetworkError(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-openai", Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -116,7 +116,7 @@ func TestCheckProvider_NetworkError(t *testing.T) {
 }
 
 func TestCheckProvider_AnthropicAdapter(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-anthropic", Healthy)
 	provider.ModelID = "claude-haiku-4-5-20251001"
 	provider.AdapterType = AdapterAnthropic
@@ -134,7 +134,7 @@ func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 }
 
 func TestRunHealthChecks_StopsOnQuit(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	tiers := map[string]*Tier{
 		TierFast: {
 			Name: TierFast,
@@ -190,7 +190,7 @@ func TestGetAdapterForType(t *testing.T) {
 }
 
 func TestCheckProvider_WithOverrides(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 
 	// Track what the mock server receives.
 	var receivedBody []byte
@@ -224,7 +224,7 @@ func TestCheckProvider_WithOverrides(t *testing.T) {
 }
 
 func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 
 	// Track what the mock server receives.
 	var receivedBody []byte
@@ -256,7 +256,7 @@ func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
 }
 
 func TestCheckProvider_CancelledContext(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 	provider := newTestProvider("test-openai", Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -280,7 +280,7 @@ func TestCheckProvider_CancelledContext(t *testing.T) {
 }
 
 func TestCheckProvider_OverridesPreserveMaxTokens(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 
 	var receivedBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -311,7 +311,7 @@ func TestCheckProvider_OverridesPreserveMaxTokens(t *testing.T) {
 }
 
 func TestCheckProvider_OverridesCanOverrideMaxTokens(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 
 	var receivedBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,7 +340,7 @@ func TestCheckProvider_OverridesCanOverrideMaxTokens(t *testing.T) {
 }
 
 func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
-	ensureMetricsRegistered(t)
+
 
 	// Track concurrent goroutine count to verify bounding.
 	var running int32
@@ -348,7 +348,7 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 
 	// Create a slow mock that takes 500ms per check and tracks concurrency.
 	slowMock := &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			cur := atomic.AddInt32(&running, 1)
 			defer atomic.AddInt32(&running, -1)
 
@@ -361,7 +361,7 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 			}
 
 			time.Sleep(500 * time.Millisecond)
-			return []byte(`{}`), 200, nil
+			return []byte(`{}`), 200, nil, nil
 		},
 	}
 

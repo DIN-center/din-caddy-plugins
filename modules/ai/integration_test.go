@@ -20,7 +20,6 @@ import (
 // skipIfNoKey skips the test if the given env var is not set.
 func skipIfNoKey(t *testing.T, envVar string) string {
 	t.Helper()
-	ensureMetricsRegistered(t)
 	key := os.Getenv(envVar)
 	if key == "" {
 		t.Skipf("Skipping: %s not set", envVar)
@@ -38,11 +37,38 @@ func setDefaultCost(p *AIProvider) {
 	}
 }
 
+// newSingleProviderMiddleware creates a middleware with a single provider for integration tests.
+// This eliminates the repeated ~15-line setup pattern across many test functions.
+func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType string, headers map[string]string) *DinAIMiddleware {
+	t.Helper()
+	client := newDefaultStreamingClient()
+	logger := zap.NewNop()
+	p, err := NewAIProvider(name, url)
+	require.NoError(t, err)
+	p.ModelID = model
+	p.AdapterType = adapterType
+	for k, v := range headers {
+		p.Headers[k] = v
+	}
+	p.httpClient = client
+	p.logger = logger
+	setDefaultCost(p)
+	return &DinAIMiddleware{
+		Tiers: map[string]*Tier{
+			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
+		},
+		RequestAttemptCount: DefaultRequestAttemptCount,
+		logger:              logger,
+		quit:                make(chan struct{}),
+		client:              client,
+		testMode:            true,
+	}
+}
+
 // newLiveMiddleware creates a DinAIMiddleware configured to talk to real AI APIs.
 // Providers are set up based on which env vars are available.
 func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 	t.Helper()
-	ensureMetricsRegistered(t)
 
 	client := newDefaultStreamingClient()
 	logger := zap.NewNop()
@@ -212,28 +238,11 @@ func TestIntegration_NonStreaming_OpenAI(t *testing.T) {
 func TestIntegration_NonStreaming_Anthropic(t *testing.T) {
 	skipIfNoKey(t, "ANTHROPIC_API_KEY")
 
-	// Single-provider middleware to guarantee hitting Anthropic
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("anthropic-haiku", "https://api.anthropic.com/v1/messages")
-	p.ModelID = "claude-haiku-4-5-20251001"
-	p.AdapterType = AdapterAnthropic
-	p.Headers["x-api-key"] = os.Getenv("ANTHROPIC_API_KEY")
-	p.Headers["anthropic-version"] = "2023-06-01"
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "anthropic-haiku", "https://api.anthropic.com/v1/messages",
+		"claude-haiku-4-5-20251001", AdapterAnthropic, map[string]string{
+			"x-api-key":         os.Getenv("ANTHROPIC_API_KEY"),
+			"anthropic-version": "2023-06-01",
+		})
 
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -255,32 +264,16 @@ func TestIntegration_NonStreaming_Anthropic(t *testing.T) {
 func TestIntegration_NonStreaming_Mistral(t *testing.T) {
 	skipIfNoKey(t, "MISTRAL_API_KEY")
 
-	// Create a middleware with ONLY Mistral to guarantee we hit it
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("mistral-small", "https://api.mistral.ai/v1/chat/completions")
-	p.ModelID = "mistral-small-latest"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("MISTRAL_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-
-	m2 := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "mistral-small", "https://api.mistral.ai/v1/chat/completions",
+		"mistral-small-latest", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("MISTRAL_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
 	w := httptest.NewRecorder()
 
-	err := m2.ServeHTTP(w, r, noopHandler)
+	err := m.ServeHTTP(w, r, noopHandler)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "mistral-small", w.Header().Get("X-DIN-Provider"))
@@ -293,26 +286,13 @@ func TestIntegration_NonStreaming_Mistral(t *testing.T) {
 func TestIntegration_NonStreaming_DeepSeek(t *testing.T) {
 	skipIfNoKey(t, "DEEPSEEK_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("deepseek-chat", "https://api.deepseek.com/chat/completions")
-	p.ModelID = "deepseek-chat"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("DEEPSEEK_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierBalanced: {Name: TierBalanced, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "deepseek-chat", "https://api.deepseek.com/chat/completions",
+		"deepseek-chat", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("DEEPSEEK_API_KEY"),
+		})
+	// Override tier to balanced for this test.
+	m.Tiers[TierBalanced] = m.Tiers[TierFast]
+	delete(m.Tiers, TierFast)
 
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "balanced"})
@@ -328,26 +308,10 @@ func TestIntegration_NonStreaming_DeepSeek(t *testing.T) {
 func TestIntegration_NonStreaming_Grok(t *testing.T) {
 	skipIfNoKey(t, "GROK_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("grok-mini", "https://api.x.ai/v1/chat/completions")
-	p.ModelID = "grok-3-mini"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("GROK_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "grok-mini", "https://api.x.ai/v1/chat/completions",
+		"grok-3-mini", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("GROK_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -362,26 +326,10 @@ func TestIntegration_NonStreaming_Grok(t *testing.T) {
 func TestIntegration_NonStreaming_Moonshot(t *testing.T) {
 	skipIfNoKey(t, "MOONSHOT_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("moonshot-8k", "https://api.moonshot.ai/v1/chat/completions")
-	p.ModelID = "moonshot-v1-8k"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("MOONSHOT_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "moonshot-8k", "https://api.moonshot.ai/v1/chat/completions",
+		"moonshot-v1-8k", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("MOONSHOT_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Say hi in one word"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -398,26 +346,10 @@ func TestIntegration_NonStreaming_Moonshot(t *testing.T) {
 func TestIntegration_Streaming_OpenAI(t *testing.T) {
 	skipIfNoKey(t, "OPENAI_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("openai-nano", "https://api.openai.com/v1/chat/completions")
-	p.ModelID = "gpt-4.1-nano"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "openai-nano", "https://api.openai.com/v1/chat/completions",
+		"gpt-4.1-nano", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("OPENAI_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -438,27 +370,11 @@ func TestIntegration_Streaming_OpenAI(t *testing.T) {
 func TestIntegration_Streaming_Anthropic(t *testing.T) {
 	skipIfNoKey(t, "ANTHROPIC_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("anthropic-haiku", "https://api.anthropic.com/v1/messages")
-	p.ModelID = "claude-haiku-4-5-20251001"
-	p.AdapterType = AdapterAnthropic
-	p.Headers["x-api-key"] = os.Getenv("ANTHROPIC_API_KEY")
-	p.Headers["anthropic-version"] = "2023-06-01"
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "anthropic-haiku", "https://api.anthropic.com/v1/messages",
+		"claude-haiku-4-5-20251001", AdapterAnthropic, map[string]string{
+			"x-api-key":         os.Getenv("ANTHROPIC_API_KEY"),
+			"anthropic-version": "2023-06-01",
+		})
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -480,26 +396,10 @@ func TestIntegration_Streaming_Anthropic(t *testing.T) {
 func TestIntegration_Streaming_Grok(t *testing.T) {
 	skipIfNoKey(t, "GROK_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("grok-mini", "https://api.x.ai/v1/chat/completions")
-	p.ModelID = "grok-3-mini"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("GROK_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "grok-mini", "https://api.x.ai/v1/chat/completions",
+		"grok-3-mini", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("GROK_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -519,26 +419,10 @@ func TestIntegration_Streaming_Grok(t *testing.T) {
 func TestIntegration_Streaming_Mistral(t *testing.T) {
 	skipIfNoKey(t, "MISTRAL_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("mistral-small", "https://api.mistral.ai/v1/chat/completions")
-	p.ModelID = "mistral-small-latest"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("MISTRAL_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "mistral-small", "https://api.mistral.ai/v1/chat/completions",
+		"mistral-small-latest", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("MISTRAL_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -558,26 +442,10 @@ func TestIntegration_Streaming_Mistral(t *testing.T) {
 func TestIntegration_Streaming_Moonshot(t *testing.T) {
 	skipIfNoKey(t, "MOONSHOT_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("moonshot-8k", "https://api.moonshot.ai/v1/chat/completions")
-	p.ModelID = "moonshot-v1-8k"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("MOONSHOT_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "moonshot-8k", "https://api.moonshot.ai/v1/chat/completions",
+		"moonshot-v1-8k", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("MOONSHOT_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -597,26 +465,13 @@ func TestIntegration_Streaming_Moonshot(t *testing.T) {
 func TestIntegration_Streaming_DeepSeek(t *testing.T) {
 	skipIfNoKey(t, "DEEPSEEK_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("deepseek-chat", "https://api.deepseek.com/chat/completions")
-	p.ModelID = "deepseek-chat"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("DEEPSEEK_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierBalanced: {Name: TierBalanced, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "deepseek-chat", "https://api.deepseek.com/chat/completions",
+		"deepseek-chat", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("DEEPSEEK_API_KEY"),
+		})
+	// Override tier to balanced for this test.
+	m.Tiers[TierBalanced] = m.Tiers[TierFast]
+	delete(m.Tiers, TierFast)
 
 	body := `{"messages":[{"role":"user","content":"Count to 3"}],"stream":true,"max_tokens":20}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "balanced"})
@@ -799,26 +654,10 @@ func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 func TestIntegration_ResponseHeaders(t *testing.T) {
 	skipIfNoKey(t, "OPENAI_API_KEY")
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("openai-nano", "https://api.openai.com/v1/chat/completions")
-	p.ModelID = "gpt-4.1-nano"
-	p.AdapterType = AdapterOpenAI
-	p.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "openai-nano", "https://api.openai.com/v1/chat/completions",
+		"gpt-4.1-nano", AdapterOpenAI, map[string]string{
+			"Authorization": "Bearer " + os.Getenv("OPENAI_API_KEY"),
+		})
 
 	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":3}`
 	r := makeIntegrationRequest(t, body, map[string]string{
@@ -845,8 +684,6 @@ func TestIntegration_ResponseHeaders(t *testing.T) {
 // --- Mock Server Integration Tests (no API key required) ---
 
 func TestIntegration_MockServer_NonStreaming(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req libai.ChatCompletionRequest
@@ -864,25 +701,11 @@ func TestIntegration_MockServer_NonStreaming(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("mock-provider", server.URL)
-	p.ModelID = "mock-model"
-	p.AdapterType = AdapterOpenAI
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierBalanced: {Name: TierBalanced, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "mock-provider", server.URL,
+		"mock-model", AdapterOpenAI, nil)
+	// Override tier to balanced for this test.
+	m.Tiers[TierBalanced] = m.Tiers[TierFast]
+	delete(m.Tiers, TierFast)
 
 	body := `{"messages":[{"role":"user","content":"Hi"}],"max_tokens":5}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "balanced"})
@@ -899,7 +722,6 @@ func TestIntegration_MockServer_NonStreaming(t *testing.T) {
 }
 
 func TestIntegration_MockServer_Streaming(t *testing.T) {
-	ensureMetricsRegistered(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -925,25 +747,8 @@ func TestIntegration_MockServer_Streaming(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
-	logger := zap.NewNop()
-	p, _ := NewAIProvider("mock-stream", server.URL)
-	p.ModelID = "mock-model"
-	p.AdapterType = AdapterOpenAI
-	p.httpClient = client
-	p.logger = logger
-	setDefaultCost(p)
-
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {Name: TierFast, Providers: []*AIProvider{p}},
-		},
-		RequestAttemptCount: 3,
-		logger:              logger,
-		quit:                make(chan struct{}),
-		client:              client,
-		testMode:            true,
-	}
+	m := newSingleProviderMiddleware(t, "mock-stream", server.URL,
+		"mock-model", AdapterOpenAI, nil)
 
 	body := `{"messages":[{"role":"user","content":"Hi"}],"stream":true,"max_tokens":10}`
 	r := makeIntegrationRequest(t, body, map[string]string{"X-DIN-Tier": "fast"})
@@ -961,8 +766,6 @@ func TestIntegration_MockServer_Streaming(t *testing.T) {
 }
 
 func TestIntegration_MockServer_Failover(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	// Bad server returns 500
 	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -1023,7 +826,6 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 }
 
 func TestIntegration_MockServer_AllFail_503(t *testing.T) {
-	ensureMetricsRegistered(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)

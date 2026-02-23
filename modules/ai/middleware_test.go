@@ -21,15 +21,15 @@ import (
 
 // mockClient implements IStreamingHTTPClient for middleware tests.
 type mockClient struct {
-	postHandler       func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error)
+	postHandler       func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error)
 	postStreamHandler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	if m.postHandler != nil {
 		return m.postHandler(ctx, url, headers, payload)
 	}
-	return nil, 500, nil
+	return nil, 500, nil, nil
 }
 
 func (m *mockClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
@@ -46,11 +46,10 @@ var noopHandler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 
 func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 	t.Helper()
-	ensureMetricsRegistered(t)
 
 	client := &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil, nil
 		},
 	}
 
@@ -196,8 +195,8 @@ func TestServeHTTP_AllProvidersFail_Returns502(t *testing.T) {
 
 	// Force all providers to return errors.
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return nil, 0, fmt.Errorf("connection refused")
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return nil, 0, nil, fmt.Errorf("connection refused")
 		},
 	}
 
@@ -369,17 +368,61 @@ func TestServeHTTP_Streaming_FailoverOnFirstChunkError(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "[DONE]")
 }
 
+func TestServeHTTP_Streaming_429RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	primaryURL := ""
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	goodSSE := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
+	goodSSE += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					resp := makeSSEResponse(http.StatusTooManyRequests, "rate limited")
+					resp.Header.Set("Retry-After", "0")
+					return resp, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+			return makeSSEResponse(http.StatusOK, goodSSE), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 429")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+	assert.Contains(t, w.Body.String(), "fallback works")
+	assert.Contains(t, w.Body.String(), "[DONE]")
+}
+
 func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 	m := newTestMiddleware(t)
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"server error"}`), 500, nil
+				return []byte(`{"error":"server error"}`), 500, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -404,8 +447,10 @@ func TestServeHTTP_DefaultTier(t *testing.T) {
 }
 
 func TestOverwriteModel(t *testing.T) {
-	body := []byte(`{"model":"original","messages":[],"stream":false}`)
-	result, err := overwriteModel(body, "new-model")
+	var rawFields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"model":"original","messages":[],"stream":false}`), &rawFields))
+
+	result, err := overwriteModel(rawFields, "new-model")
 	require.NoError(t, err)
 
 	var parsed map[string]json.RawMessage
@@ -417,6 +462,17 @@ func TestOverwriteModel(t *testing.T) {
 
 	// Messages should be preserved.
 	assert.Contains(t, string(result), "messages")
+
+	// Calling again with a different model should work (retry scenario).
+	result2, err := overwriteModel(rawFields, "another-model")
+	require.NoError(t, err)
+
+	var parsed2 map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(result2, &parsed2))
+
+	var model2 string
+	require.NoError(t, json.Unmarshal(parsed2["model"], &model2))
+	assert.Equal(t, "another-model", model2)
 }
 
 func TestGenerateRequestID(t *testing.T) {
@@ -480,8 +536,6 @@ func TestServeHTTP_PrefixedPathDoesNotMatch(t *testing.T) {
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
-	ensureMetricsRegistered(t)
-
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
 			TierFast: {
@@ -529,8 +583,8 @@ func TestServeHTTP_ConcurrentRequests(t *testing.T) {
 	sseData += "data: [DONE]\n\n"
 
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil, nil
 		},
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
@@ -837,6 +891,56 @@ func TestUnmarshalCaddyfile_NegativeInterval(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be positive")
 }
 
+func TestUnmarshalCaddyfile_ExcessArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		directive string
+		errMsg    string
+	}{
+		{
+			name:      "healthcheck_interval excess",
+			directive: "healthcheck_interval 30 extra",
+			errMsg:    "too many arguments for healthcheck_interval",
+		},
+		{
+			name:      "healthcheck_threshold excess",
+			directive: "healthcheck_threshold 3 extra",
+			errMsg:    "too many arguments for healthcheck_threshold",
+		},
+		{
+			name:      "request_attempt_count excess",
+			directive: "request_attempt_count 5 extra",
+			errMsg:    "too many arguments for request_attempt_count",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`din_ai {
+		%s
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
+					}
+				}
+			}
+		}
+	}`, tt.directive)
+			m := &DinAIMiddleware{}
+			d := caddyfile.NewTestDispenser(input)
+			err := m.UnmarshalCaddyfile(d)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMsg)
+		})
+	}
+}
+
 func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
 	input := `din_ai {
 		tiers {
@@ -866,12 +970,12 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, 0, fmt.Errorf("connection refused")
+				return nil, 0, nil, fmt.Errorf("connection refused")
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -904,12 +1008,12 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 	// Single 500 from one provider, but it gets retried to a second.
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"server error"}`), 500, nil
+				return []byte(`{"error":"server error"}`), 500, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -930,12 +1034,12 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"rate limited"}`), 429, nil
+				return []byte(`{"error":"rate limited"}`), 429, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -948,6 +1052,246 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 	for _, p := range m.Tiers[TierBalanced].Providers {
 		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
 	}
+}
+
+func TestServeHTTP_NonStreaming_429RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	var primaryURL string
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					return []byte(`{"error":"rate limited"}`), 429, http.Header{"Retry-After": []string{"0"}}, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 429")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+}
+
+func TestServeHTTP_NonStreaming_TransformResponseError_NoInfiniteLoop(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Use Anthropic adapter so TransformResponse actually parses the body.
+	m.Tiers[TierBalanced].Providers[0].AdapterType = AdapterAnthropic
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/messages"
+	m.Tiers[TierBalanced].Providers[1].AdapterType = AdapterAnthropic
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/messages"
+
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			callCount++
+			// Return HTTP 200 with body that Anthropic adapter cannot parse,
+			// triggering a TransformResponse error.
+			return []byte(`not valid json`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"claude-3","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+
+	assert.NoError(t, err)
+	// Should NOT loop forever — must terminate after maxAttempts (default 3).
+	assert.LessOrEqual(t, callCount, m.RequestAttemptCount,
+		"should terminate after maxAttempts, not loop infinitely on TransformResponse errors")
+	assert.Equal(t, http.StatusBadGateway, w.Code,
+		"should return 502 when all attempts fail with transform errors")
+}
+
+func TestServeHTTP_NonStreaming_RetryAfterHTTPDate(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	var primaryURL string
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					// Use RFC1123 HTTP-date in the past so sleep is ~0.
+					pastDate := time.Now().Add(-1 * time.Second).UTC().Format(time.RFC1123)
+					return []byte(`{"error":"rate limited"}`), 429, http.Header{"Retry-After": []string{pastDate}}, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 429 with HTTP-date")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+}
+
+func TestServeHTTP_NonStreaming_503RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	var primaryURL string
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					return []byte(`{"error":"service unavailable"}`), 503, http.Header{"Retry-After": []string{"0"}}, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 503")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+}
+
+func TestServeHTTP_Streaming_503RetrySameProviderThenFailover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	primaryURL := ""
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	goodSSE := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
+	goodSSE += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					resp := makeSSEResponse(http.StatusServiceUnavailable, "service unavailable")
+					resp.Header.Set("Retry-After", "0")
+					return resp, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+			return makeSSEResponse(http.StatusOK, goodSSE), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 503")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+	assert.Contains(t, w.Body.String(), "fallback works")
+}
+
+func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return []byte(`{"error":"rate limited"}`), 429, http.Header{"Retry-After": []string{"5"}}, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, req := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	start := time.Now()
+	err := m.ServeHTTP(w, req, noopHandler)
+	elapsed := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Less(t, elapsed, 300*time.Millisecond, "cancelled context should interrupt Retry-After sleep")
+}
+
+func TestServeHTTP_Streaming_RetryAfterCancelledByContext(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			resp := makeSSEResponse(http.StatusTooManyRequests, "rate limited")
+			resp.Header.Set("Retry-After", "5")
+			return resp, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, req := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	start := time.Now()
+	err := m.ServeHTTP(w, req, noopHandler)
+	elapsed := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Less(t, elapsed, 300*time.Millisecond, "cancelled context should interrupt streaming Retry-After sleep")
 }
 
 func TestNewAIProvider_NoScheme(t *testing.T) {

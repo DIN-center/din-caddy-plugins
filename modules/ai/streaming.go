@@ -31,6 +31,23 @@ type streamResult struct {
 	adapter libai.ProviderAdapter
 }
 
+type streamAttemptError struct {
+	statusCode int
+	retryAfter time.Duration
+	err        error
+}
+
+func (e *streamAttemptError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("stream attempt failed with HTTP %d", e.statusCode)
+}
+
+func (e *streamAttemptError) Unwrap() error {
+	return e.err
+}
+
 // attemptStream tries to open a streaming connection to a provider and validate the first chunk.
 // Returns a streamResult on success, or an error if the provider fails.
 func attemptStream(
@@ -67,8 +84,18 @@ func attemptStream(
 
 	// Check HTTP status before reading the body.
 	if resp.StatusCode != http.StatusOK {
+		retryAfter := time.Duration(0)
+		if isRetryableStatus(resp.StatusCode) {
+			if d, parseErr := parseRetryAfter(resp.Header.Get("Retry-After"), time.Now(), defaultRetryAfterCap); parseErr == nil {
+				retryAfter = d
+			}
+		}
 		resp.Body.Close()
-		return nil, fmt.Errorf("provider returned HTTP %d", resp.StatusCode)
+		return nil, &streamAttemptError{
+			statusCode: resp.StatusCode,
+			retryAfter: retryAfter,
+			err:        fmt.Errorf("provider returned HTTP %d", resp.StatusCode),
+		}
 	}
 
 	// Create a single buffered reader that persists across reads.

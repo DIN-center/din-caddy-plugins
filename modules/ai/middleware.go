@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -181,11 +182,15 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			"request body exceeds 10MB limit", "invalid_request_error")
 	}
 
-	// Parse request to check stream flag.
-	var req libai.ChatCompletionRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	// Parse request once to check stream flag and prepare for model overwrite.
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &rawFields); err != nil {
 		return writeErrorResponse(w, http.StatusBadRequest,
 			"invalid JSON in request body", "invalid_request_error")
+	}
+	var isStream bool
+	if streamRaw, ok := rawFields["stream"]; ok {
+		_ = json.Unmarshal(streamRaw, &isStream)
 	}
 
 	// Resolve tier.
@@ -226,39 +231,65 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	// Attempt to serve the request with retry.
 	maxAttempts := m.RequestAttemptCount
-	if maxAttempts > len(available) {
-		maxAttempts = len(available)
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultRequestAttemptCount
 	}
 
 	var lastErr error
 	tried := make(map[string]bool)
+	attemptCount := 0
+	provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
+	retriedCurrentProvider := false
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Select provider.
-		provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
-		if provider == nil {
-			break
-		}
-		tried[provider.Name] = true
+	for attemptCount < maxAttempts && provider != nil {
 
 		adapter := getAdapterForType(provider.AdapterType)
 
 		// Overwrite model in request body.
-		modifiedBody, err := overwriteModel(body, provider.ModelID)
+		modifiedBody, err := overwriteModel(rawFields, provider.ModelID)
 		if err != nil {
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
-		if req.Stream {
+		if isStream {
 			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.client, m.logger)
 			if err != nil {
 				provider.MarkPingWarning()
 				m.logger.Warn("streaming attempt failed",
 					zap.String("provider", provider.Name),
-					zap.Int("attempt", attempt+1),
+					zap.Int("attempt", attemptCount+1),
 					zap.Error(err))
 				lastErr = err
+				attemptCount++
+
+				if attemptCount >= maxAttempts {
+					break
+				}
+
+				if shouldRetrySameProviderForStream(err, retriedCurrentProvider) {
+					retriedCurrentProvider = true
+					retryAfter := streamRetryAfter(err)
+					if retryAfter <= 0 {
+						retryAfter = defaultRetryBackoff
+					}
+					if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+						lastErr = sleepErr
+						break
+					}
+					continue
+				}
+
+				tried[provider.Name] = true
+				provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+				retriedCurrentProvider = false
 				continue
 			}
 
@@ -308,20 +339,51 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		// Non-streaming request.
-		respBody, statusCode, provider, err := m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
+		var respBody []byte
+		var statusCode int
+		var respHeaders http.Header
+		respBody, statusCode, respHeaders, provider, err = m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
 		if err != nil {
 			provider.MarkPingWarning()
 			m.logger.Warn("non-streaming attempt failed",
 				zap.String("provider", provider.Name),
-				zap.Int("attempt", attempt+1),
+				zap.Int("attempt", attemptCount+1),
 				zap.Error(err))
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
 		if statusCode != http.StatusOK {
 			provider.MarkPingWarning()
 			lastErr = fmt.Errorf("provider %s returned HTTP %d", provider.Name, statusCode)
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+
+			if isRetryableStatus(statusCode) && !retriedCurrentProvider {
+				retriedCurrentProvider = true
+				retryAfter := defaultRetryBackoff
+				if parsed, ok := retryDelayFromHeaders(respHeaders); ok {
+					retryAfter = parsed
+				}
+				if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+					lastErr = sleepErr
+					break
+				}
+				continue
+			}
+
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
@@ -330,6 +392,13 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		if err != nil {
 			// Transform errors are our code's fault, not the provider's — no health update.
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
@@ -346,7 +415,9 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		setResponseHeaders(w, provider, tierName, sessionID, requestID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(transformed)
+		if _, err := w.Write(transformed); err != nil {
+			m.logger.Warn("failed to write response body", zap.Error(err))
+		}
 
 		RecordRequest(tierName, provider.Name, provider.ModelID, "200")
 		return nil
@@ -394,10 +465,10 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	provider *AIProvider,
 	adapter libai.ProviderAdapter,
 	body []byte,
-) ([]byte, int, *AIProvider, error) {
+) ([]byte, int, http.Header, *AIProvider, error) {
 	transformedBody, extraHeaders, err := adapter.TransformRequest(body)
 	if err != nil {
-		return nil, 0, provider, fmt.Errorf("transform request: %w", err)
+		return nil, 0, nil, provider, fmt.Errorf("transform request: %w", err)
 	}
 
 	headers := make(map[string]string)
@@ -409,12 +480,50 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	}
 	headers["Content-Type"] = "application/json"
 
-	respBody, statusCode, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, respHeaders, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
-		return nil, 0, provider, fmt.Errorf("post: %w", err)
+		return nil, 0, nil, provider, fmt.Errorf("post: %w", err)
 	}
 
-	return respBody, statusCode, provider, nil
+	return respBody, statusCode, respHeaders, provider, nil
+}
+
+func isRetryableStatus(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable
+}
+
+func retryDelayFromHeaders(headers http.Header) (time.Duration, bool) {
+	if headers == nil {
+		return 0, false
+	}
+	retryAfterRaw := headers.Get("Retry-After")
+	if retryAfterRaw == "" {
+		return 0, false
+	}
+	delay, err := parseRetryAfter(retryAfterRaw, time.Now(), defaultRetryAfterCap)
+	if err != nil {
+		return 0, false
+	}
+	return delay, true
+}
+
+func shouldRetrySameProviderForStream(err error, alreadyRetried bool) bool {
+	if alreadyRetried {
+		return false
+	}
+	var streamErr *streamAttemptError
+	if !errors.As(err, &streamErr) {
+		return false
+	}
+	return isRetryableStatus(streamErr.statusCode)
+}
+
+func streamRetryAfter(err error) time.Duration {
+	var streamErr *streamAttemptError
+	if !errors.As(err, &streamErr) {
+		return 0
+	}
+	return streamErr.retryAfter
 }
 
 // setResponseHeaders sets the standard DIN AI response headers.
@@ -428,18 +537,14 @@ func setResponseHeaders(w http.ResponseWriter, provider *AIProvider, tierName, s
 	}
 }
 
-// overwriteModel replaces the model field in the request body with the provider's model.
-func overwriteModel(body []byte, model string) ([]byte, error) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, err
-	}
+// overwriteModel replaces the model field in the pre-parsed request fields and re-marshals.
+func overwriteModel(rawFields map[string]json.RawMessage, model string) ([]byte, error) {
 	modelJSON, err := json.Marshal(model)
 	if err != nil {
 		return nil, err
 	}
-	raw["model"] = modelJSON
-	return json.Marshal(raw)
+	rawFields["model"] = modelJSON
+	return json.Marshal(rawFields)
 }
 
 // generateRequestID creates a unique request ID using crypto/rand.
@@ -524,6 +629,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if val <= 0 {
 				return d.Errf("healthcheck_interval must be positive, got %d", val)
 			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for healthcheck_interval")
+			}
 			m.HealthcheckInterval = val
 
 		case "healthcheck_threshold":
@@ -537,6 +645,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if val <= 0 {
 				return d.Errf("healthcheck_threshold must be positive, got %d", val)
 			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for healthcheck_threshold")
+			}
 			m.HealthcheckThreshold = val
 
 		case "request_attempt_count":
@@ -549,6 +660,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			if val <= 0 {
 				return d.Errf("request_attempt_count must be positive, got %d", val)
+			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for request_attempt_count")
 			}
 			m.RequestAttemptCount = val
 
@@ -738,14 +852,14 @@ func newHealthCheckClient() *defaultStreamingClient {
 	}
 }
 
-func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	resp, err := c.PostStream(ctx, url, headers, payload)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, err
+	return body, resp.StatusCode, resp.Header, err
 }
 
 func (c *defaultStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {

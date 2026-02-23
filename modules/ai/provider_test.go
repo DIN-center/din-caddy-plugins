@@ -198,6 +198,41 @@ func TestProviderConcurrentAccess(t *testing.T) {
 	// If we get here without a race detector panic, the mutex is working
 }
 
+func TestProviderHealthThresholdBoundary(t *testing.T) {
+	t.Run("exactly threshold failures stays healthy, threshold+1 transitions to unhealthy", func(t *testing.T) {
+		p := mustProvider(t)
+		assert.Equal(t, Healthy, p.HealthStatus())
+
+		// DefaultHCThreshold (3) failures: condition is `failures > hcThreshold`,
+		// so exactly 3 should NOT transition.
+		for i := 0; i < DefaultHCThreshold; i++ {
+			p.MarkPingFailure()
+		}
+		assert.Equal(t, Healthy, p.HealthStatus(), "exactly %d failures should remain Healthy", DefaultHCThreshold)
+
+		// The (threshold+1)th failure crosses the boundary.
+		p.MarkPingFailure()
+		assert.Equal(t, Unhealthy, p.HealthStatus(), "%d failures should transition to Unhealthy", DefaultHCThreshold+1)
+	})
+
+	t.Run("exactly threshold successes stays unhealthy, threshold+1 transitions to healthy", func(t *testing.T) {
+		p := mustProvider(t)
+		setProviderHealth(p, Unhealthy)
+		assert.Equal(t, Unhealthy, p.HealthStatus())
+
+		// DefaultHCThreshold (3) successes: condition is `successes > hcThreshold`,
+		// so exactly 3 should NOT recover.
+		for i := 0; i < DefaultHCThreshold; i++ {
+			p.MarkPingSuccess()
+		}
+		assert.Equal(t, Unhealthy, p.HealthStatus(), "exactly %d successes should remain Unhealthy", DefaultHCThreshold)
+
+		// The (threshold+1)th success crosses the boundary.
+		p.MarkPingSuccess()
+		assert.Equal(t, Healthy, p.HealthStatus(), "%d successes should transition to Healthy", DefaultHCThreshold+1)
+	})
+}
+
 func mustProvider(t *testing.T) *AIProvider {
 	t.Helper()
 	p, err := NewAIProvider("test-provider", "https://api.example.com/v1/chat/completions")

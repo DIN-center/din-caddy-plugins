@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -196,6 +197,274 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 	t.Run("malformed json returns error", func(t *testing.T) {
 		_, _, err := a.TransformRequest([]byte(`not json`))
 		assert.Error(t, err)
+	})
+
+	t.Run("multimodal text-only content array", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"text","text":"hello"},
+						{"type":"text","text":" world"}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Messages, 1)
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		require.Len(t, blocks, 2)
+		first, ok := blocks[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "text", first["type"])
+		assert.Equal(t, "hello", first["text"])
+	})
+
+	t.Run("multimodal mixed text and image_url", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"text","text":"describe image"},
+						{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Messages, 1)
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		require.Len(t, blocks, 2)
+
+		second, ok := blocks[1].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "image", second["type"])
+		source, ok := second["source"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "url", source["type"])
+		assert.Equal(t, "https://example.com/cat.png", source["url"])
+	})
+
+	t.Run("multimodal image_url base64 data URL", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"image_url","image_url":{"url":"data:image/png;base64,aGVsbG8="}}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		block, ok := blocks[0].(map[string]interface{})
+		require.True(t, ok)
+		source, ok := block["source"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "base64", source["type"])
+		assert.Equal(t, "image/png", source["media_type"])
+		assert.Equal(t, "aGVsbG8=", source["data"])
+	})
+
+	t.Run("unsupported multimodal content part returns error", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"audio_url","audio_url":{"url":"https://example.com/a.mp3"}}
+					]
+				}
+			]
+		}`
+		_, _, err := a.TransformRequest([]byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported content part type")
+	})
+
+	t.Run("maps tools and function tool_choice", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"weather?"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather for a city",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"function","function":{"name":"get_weather"}}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Tools, 1)
+		assert.Equal(t, "get_weather", result.Tools[0].Name)
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "tool", choice["type"])
+		assert.Equal(t, "get_weather", choice["name"])
+	})
+}
+
+func TestAnthropicAdapterTransformRequest_ToolChoiceNone(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	input := `{
+		"model":"claude-sonnet-4-20250514",
+		"messages":[{"role":"user","content":"hello"}],
+		"tools":[
+			{
+				"type":"function",
+				"function":{
+					"name":"get_weather",
+					"description":"Get weather",
+					"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+				}
+			}
+		],
+		"tool_choice":"none"
+	}`
+	out, _, err := a.TransformRequest([]byte(input))
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	// "none" should omit both tools and tool_choice from the request.
+	assert.Nil(t, result.Tools, "tools should be omitted when tool_choice is none")
+	assert.Nil(t, result.ToolChoice, "tool_choice should be omitted when none")
+}
+
+func TestAnthropicAdapterTransformRequest_ToolChoiceStringMappings(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	tests := []struct {
+		name         string
+		toolChoice   string
+		expectedType string
+	}{
+		{"auto maps to auto", "auto", "auto"},
+		{"required maps to any", "required", "any"},
+		{"unknown string defaults to auto", "foobar", "auto"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`{
+				"model":"claude-sonnet-4-20250514",
+				"messages":[{"role":"user","content":"hello"}],
+				"tools":[
+					{
+						"type":"function",
+						"function":{
+							"name":"get_weather",
+							"description":"Get weather",
+							"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+						}
+					}
+				],
+				"tool_choice":"%s"
+			}`, tt.toolChoice)
+
+			out, _, err := a.TransformRequest([]byte(input))
+			require.NoError(t, err)
+
+			var result AnthropicRequest
+			require.NoError(t, json.Unmarshal(out, &result))
+
+			assert.NotNil(t, result.Tools, "tools should be preserved for %s", tt.toolChoice)
+			choice, ok := result.ToolChoice.(map[string]interface{})
+			require.True(t, ok, "tool_choice should be an object for %s", tt.toolChoice)
+			assert.Equal(t, tt.expectedType, choice["type"])
+		})
+	}
+}
+
+func TestAnthropicAdapterTransformRequest_ToolChoiceUnrecognizedPassthrough(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	t.Run("unrecognized object shape passes through", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"hello"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"new_type","data":"value"}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok, "unrecognized tool_choice should be passed through")
+		assert.Equal(t, "new_type", choice["type"])
+		assert.Equal(t, "value", choice["data"])
+	})
+
+	t.Run("malformed function object passes through", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"hello"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"function"}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok, "malformed function tool_choice should be passed through")
+		assert.Equal(t, "function", choice["type"])
 	})
 }
 
@@ -418,6 +687,7 @@ func TestAnthropicStopReasonMapping(t *testing.T) {
 		{"end_turn", "stop"},
 		{"max_tokens", "length"},
 		{"stop_sequence", "stop"},
+		{"tool_use", "tool_calls"},
 		{"unknown_reason", "unknown_reason"},
 	}
 
@@ -486,30 +756,67 @@ func TestAnthropicAdapterSingleSystemMessage(t *testing.T) {
 func TestAnthropicAdapterToolUseContentBlocks(t *testing.T) {
 	a := NewAnthropicAdapter()
 
-	// Response with only tool_use blocks (no text).
+	// Response with only tool_use blocks should map to OpenAI tool_calls.
 	stopReason := "tool_use"
 	anthropicResp := AnthropicResponse{
 		ID:   "msg_456",
 		Type: "message",
 		Role: "assistant",
 		Content: []AnthropicContent{
-			{Type: "tool_use", Text: ""},
+			{Type: "tool_use", ID: "toolu_123", Name: "lookup", Input: map[string]any{"city": "SF"}},
 		},
 		Model:      "claude-sonnet-4-20250514",
 		StopReason: &stopReason,
 	}
 	body, _ := json.Marshal(anthropicResp)
 
-	_, err := a.TransformResponse(body)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported content types")
-	assert.Contains(t, err.Error(), "tool_use")
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err)
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result.Choices, 1)
+	require.NotNil(t, result.Choices[0].Message)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "toolu_123", result.Choices[0].Message.ToolCalls[0].ID)
+	assert.Equal(t, "lookup", result.Choices[0].Message.ToolCalls[0].Function.Name)
+	assert.Equal(t, "tool_calls", *result.Choices[0].FinishReason)
+}
+
+func TestAnthropicAdapterTransformResponse_ToolUseWithUnknownType(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Response with tool_use + unknown block type should succeed, not error.
+	stopReason := "tool_use"
+	anthropicResp := AnthropicResponse{
+		ID:   "msg_unknown",
+		Type: "message",
+		Role: "assistant",
+		Content: []AnthropicContent{
+			{Type: "tool_use", ID: "toolu_abc", Name: "search", Input: map[string]any{"q": "test"}},
+			{Type: "server_tool_result", Text: "some unknown block type"},
+		},
+		Model:      "claude-sonnet-4-20250514",
+		StopReason: &stopReason,
+	}
+	body, _ := json.Marshal(anthropicResp)
+
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err, "should not error when tool_use blocks exist alongside unknown types")
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result.Choices, 1)
+	require.NotNil(t, result.Choices[0].Message)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "toolu_abc", result.Choices[0].Message.ToolCalls[0].ID)
+	assert.Equal(t, "search", result.Choices[0].Message.ToolCalls[0].Function.Name)
 }
 
 func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 	a := NewAnthropicAdapter()
 
-	// Response with text + tool_use blocks — text should be returned, tool_use dropped.
+	// Response with text + tool_use blocks should return text and tool calls.
 	stopReason := "end_turn"
 	anthropicResp := AnthropicResponse{
 		ID:   "msg_789",
@@ -517,7 +824,7 @@ func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 		Role: "assistant",
 		Content: []AnthropicContent{
 			{Type: "text", Text: "I'll help with that."},
-			{Type: "tool_use", Text: ""},
+			{Type: "tool_use", ID: "tool_use", Name: "lookup", Input: map[string]any{"city": "SF"}},
 		},
 		Model:      "claude-sonnet-4-20250514",
 		StopReason: &stopReason,
@@ -530,6 +837,8 @@ func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 	var result ChatCompletionResponse
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, "I'll help with that.", result.Choices[0].Message.Content)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "tool_use", result.Choices[0].Message.ToolCalls[0].ID)
 }
 
 func TestAnthropicAdapterEmptyContentResponse(t *testing.T) {
@@ -655,6 +964,239 @@ func TestAnthropicAdapterTransformStreamEvent_MalformedMessageStart(t *testing.T
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse message_start")
 	assert.Nil(t, out)
+}
+
+func TestAnthropicAdapterTransformStreamEvent_ContentBlockStartText(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_t","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	// content_block_start with type "text" should return nil (no chunk to emit).
+	out, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`))
+	assert.NoError(t, err)
+	assert.Nil(t, out, "content_block_start with text type should not emit a chunk")
+}
+
+func TestAnthropicAdapterTransformStreamEvent_ToolCallDeltas(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	startChunk, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup_weather"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startChunk)
+
+	deltaChunk, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaChunk)
+
+	var startResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startChunk, &startResp))
+	require.Len(t, startResp.Choices[0].Delta.ToolCalls, 1)
+	startTC := startResp.Choices[0].Delta.ToolCalls[0]
+	assert.Equal(t, "toolu_1", startTC.ID, "content_block_start must include tool id")
+	assert.Equal(t, "function", startTC.Type, "content_block_start must include type")
+	assert.Equal(t, "lookup_weather", startTC.Function.Name, "content_block_start must include function name")
+
+	var deltaResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaChunk, &deltaResp))
+	require.Len(t, deltaResp.Choices[0].Delta.ToolCalls, 1)
+	deltaTC := deltaResp.Choices[0].Delta.ToolCalls[0]
+	assert.Equal(t, "{\"city\":\"SF\"}", deltaTC.Function.Arguments)
+	// Continuation deltas must NOT include id, type, or name per OpenAI streaming spec.
+	assert.Empty(t, deltaTC.ID, "continuation delta must omit id")
+	assert.Empty(t, deltaTC.Type, "continuation delta must omit type")
+	assert.Empty(t, deltaTC.Function.Name, "continuation delta must omit function name")
+}
+
+func TestAnthropicAdapterTransformRequest_MultiTurnToolConversation(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Full multi-turn: system → user → assistant (with tool_calls) → tool (result) → user
+	input := ChatCompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "You are a helpful assistant."},
+			{Role: "user", Content: "What's the weather in SF?"},
+			{
+				Role:    "assistant",
+				Content: "Let me check the weather.",
+				ToolCalls: []ToolCall{
+					{
+						ID:   "call_abc123",
+						Type: "function",
+						Function: ToolCallFunction{
+							Name:      "get_weather",
+							Arguments: `{"city":"San Francisco"}`,
+						},
+					},
+				},
+			},
+			{
+				Role:       "tool",
+				Content:    `{"temperature":65,"condition":"foggy"}`,
+				ToolCallID: "call_abc123",
+			},
+			{Role: "user", Content: "Thanks!"},
+		},
+	}
+	body, _ := json.Marshal(input)
+
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	assert.Equal(t, "You are a helpful assistant.", result.System)
+	require.Len(t, result.Messages, 4) // user, assistant (with tool_use), user (tool_result), user
+
+	// Assistant message should have text + tool_use content blocks.
+	assistantMsg := result.Messages[1]
+	assert.Equal(t, "assistant", assistantMsg.Role)
+	contentBlocks, ok := assistantMsg.Content.([]any)
+	require.True(t, ok, "assistant content should be an array")
+	require.Len(t, contentBlocks, 2, "should have text + tool_use blocks")
+
+	// Tool result message should be a user message with tool_result block.
+	toolResultMsg := result.Messages[2]
+	assert.Equal(t, "user", toolResultMsg.Role)
+}
+
+func TestAnthropicAdapterTransformStreamEvent_ConcurrentToolCalls(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Initialize streaming state.
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	// Start tool A at index 0.
+	startA, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"get_weather"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startA)
+
+	// Start tool B at index 1.
+	startB, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"get_time"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startB)
+
+	// Interleaved deltas for both tools.
+	deltaA1, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\""}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaA1)
+
+	deltaB1, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"tz\""}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaB1)
+
+	deltaA2, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":":\"SF\"}"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaA2)
+
+	// Verify start chunks have id/type/name.
+	var startAResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startA, &startAResp))
+	assert.Equal(t, "toolu_a", startAResp.Choices[0].Delta.ToolCalls[0].ID)
+	assert.Equal(t, "get_weather", startAResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+
+	var startBResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startB, &startBResp))
+	assert.Equal(t, "toolu_b", startBResp.Choices[0].Delta.ToolCalls[0].ID)
+	assert.Equal(t, "get_time", startBResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+
+	// Verify delta chunks target correct indices.
+	var deltaA1Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaA1, &deltaA1Resp))
+	require.NotNil(t, deltaA1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 0, *deltaA1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `{"city"`, deltaA1Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+
+	var deltaB1Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaB1, &deltaB1Resp))
+	require.NotNil(t, deltaB1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 1, *deltaB1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `{"tz"`, deltaB1Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+
+	var deltaA2Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaA2, &deltaA2Resp))
+	require.NotNil(t, deltaA2Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 0, *deltaA2Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `:"SF"}`, deltaA2Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+}
+
+func TestParseBase64DataURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantMedia   string
+		wantData    string
+		wantErrMsg  string
+	}{
+		{
+			name:       "no comma separator",
+			input:      "data:image/png;base64",
+			wantErrMsg: "invalid image data URL format",
+		},
+		{
+			name:       "not base64 encoded",
+			input:      "data:image/png;charset=utf-8,hello",
+			wantErrMsg: "must be base64 encoded",
+		},
+		{
+			name:       "empty data payload",
+			input:      "data:image/png;base64,",
+			wantErrMsg: "payload is empty",
+		},
+		{
+			name:      "no explicit media type defaults to image/png",
+			input:     "data:;base64,aGVsbG8=",
+			wantMedia: "image/png",
+			wantData:  "aGVsbG8=",
+		},
+		{
+			name:      "valid jpeg data URL",
+			input:     "data:image/jpeg;base64,/9j/4AAQ",
+			wantMedia: "image/jpeg",
+			wantData:  "/9j/4AAQ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mediaType, data, err := parseBase64DataURL(tt.input)
+			if tt.wantErrMsg != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMedia, mediaType)
+			assert.Equal(t, tt.wantData, data)
+		})
+	}
+}
+
+func TestExtractSystemText_ArrayContentParts(t *testing.T) {
+	t.Run("array of text parts concatenated", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "text", "text": "Hello "},
+			map[string]any{"type": "text", "text": "world"},
+		}
+		result, err := extractSystemText(content)
+		require.NoError(t, err)
+		assert.Equal(t, "Hello world", result)
+	})
+
+	t.Run("array with unsupported part type returns error", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/img.png"}},
+		}
+		_, err := extractSystemText(content)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported")
+	})
 }
 
 // Verify interface compliance at compile time.

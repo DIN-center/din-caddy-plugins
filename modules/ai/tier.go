@@ -11,8 +11,8 @@ import (
 
 // Tier represents a quality tier (fast, balanced, premium) containing multiple AI providers.
 type Tier struct {
-	Name      string
-	Providers []*AIProvider
+	Name      string        `json:"name"`
+	Providers []*AIProvider `json:"providers"`
 }
 
 // GetAvailableProviders returns providers that can serve requests, prioritizing healthy over warning.

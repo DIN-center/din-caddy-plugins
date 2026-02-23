@@ -143,6 +143,16 @@ X-DIN-Optimize: cost
 {
   "model": "ignored",
   "messages": [{"role": "user", "content": "Hello"}],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup_weather",
+        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+      }
+    }
+  ],
+  "tool_choice": "auto",
   "stream": true,
   "temperature": 0.7,
   "top_p": 0.9,
@@ -160,6 +170,10 @@ X-DIN-Optimize: cost
 | `X-DIN-Optimize` | No | `latency` | Provider selection strategy within a tier: `latency` (TTFT-weighted), `cost` (inverse-cost-weighted), or `balanced` (combined 60/40 cost/latency). Session stickiness takes priority when `X-DIN-Session-Id` is present |
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
+
+`messages[*].content` supports both OpenAI forms:
+- string content (backward compatible)
+- array content parts (`text` and `image_url`)
 
 Request body limit is **10MB**. Bodies exceeding this return `413 Request Entity Too Large`.
 
@@ -193,7 +207,7 @@ Requests are routed to a tier based on the `X-DIN-Tier` header (default: `balanc
    - `cost`: Inverse-cost-weighted random selection. Cheaper providers get more traffic. See [Cost optimization](#cost-optimization).
    - `balanced`: Combined cost + latency scoring (60/40 weighting). See [Balanced mode scoring](#balanced-mode-scoring).
 
-3. **Failover** — If a provider fails, the next untried provider is selected (respecting the same optimization mode). The middleware retries up to `request_attempt_count` times (default: 3, capped at available provider count).
+3. **Failover** — On retryable upstream statuses (`429`, `503`), the middleware retries the same provider once using `Retry-After` (delta-seconds or HTTP-date, capped) and then fails over to the next untried provider if needed. Total request attempts are bounded by `request_attempt_count` (default: 3).
 
 ### TTFT-weighted selection
 
@@ -227,7 +241,7 @@ Each provider's weight is `1 / AvgTTFT`. Faster providers (lower TTFT) get highe
 
 #### Zero-measurement providers
 
-Providers with no TTFT measurements (newly added or just recovered) are assigned a very high weight (`1e9`), causing nearly all traffic to route to them until measurements accumulate. This is a known limitation — see [Known Limitations](#known-limitations).
+Providers with no TTFT measurements (newly added or just recovered) use a sane default TTFT baseline to avoid thundering-herd behavior while still receiving bootstrap traffic.
 
 ### Cost optimization
 
@@ -369,14 +383,17 @@ The Anthropic adapter translates between OpenAI chat completion format and Anthr
 | `stop` sequences | Supported (string or array converted to `stop_sequences`) |
 | Streaming (SSE) | Supported (full event sequence translation) |
 | Non-streaming | Supported |
+| Multimodal input | Supported (`text` and `image_url`, including base64 data URLs) |
+| Tool definitions / tool_choice | Supported |
+| Tool result messages (`role: tool`) | Supported |
+| Tool use translation (response + streaming deltas) | Supported |
 
-### What's not supported (MVP)
+### What's not supported
 
 | Feature | Behavior |
 |---------|----------|
-| Tool use / function calling | Response-only tool_use blocks: error if no text present, text returned with tool calls dropped if mixed |
 | Extended thinking | Thinking blocks dropped |
-| Image / PDF input | Fails at unmarshal (content is string-only) |
+| Image / PDF input beyond OpenAI `image_url` | Not translated |
 | `top_k` parameter | Not forwarded |
 
 ### Streaming translation
@@ -386,8 +403,10 @@ Anthropic uses a stateful multi-event SSE protocol. The adapter tracks event seq
 ```
 Anthropic                          → OpenAI
 message_start                      → {"choices":[{"delta":{"role":"assistant"}}]}
+content_block_start (tool_use)     → {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"...","function":{"name":"..."}}]}}]}
+content_block_delta (input_json_delta) → {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"..."}}]}}]}
 content_block_delta (text_delta)   → {"choices":[{"delta":{"content":"..."}}]}
-message_delta (stop_reason)        → {"choices":[{"finish_reason":"stop"}]}
+message_delta (stop_reason)        → {"choices":[{"finish_reason":"stop|length|tool_calls"}]}
 message_stop                       → [DONE]
 ```
 
@@ -455,10 +474,8 @@ Both use: ticker-based scheduling, quit channel signaling, `sync.Once` cleanup, 
 ## Known Limitations
 
 - **120s flat timeout** — Same HTTP client timeout for streaming, non-streaming, and health checks. Long streams are killed at 120s. Needs separate clients with appropriate timeouts.
-- **New provider thundering herd** — Providers with zero TTFT measurements get very high selection weight (`1e9`), causing nearly all traffic to route to them until measurements accumulate.
 - **No authentication** — MVP has no caller auth on the AI endpoint.
 - **No rate limiting** — No per-user or per-key rate limits at the gateway level.
-- **String-only content** — `ChatMessage.Content` is `string`, not supporting OpenAI's array-of-content-parts format for multimodal input.
 
 ## Open Issues (Tech Debt)
 
@@ -470,8 +487,6 @@ These are tracked in the [code review document](https://github.com/DIN-center/di
 - O3: Double JSON parse on every request
 - O4: Missing `context.Context` propagation to non-streaming upstream calls
 - O5: `Tier` struct missing JSON tags (only Caddyfile works, not JSON API)
-- O6: `ChatMessage.Content` string-only (no multimodal)
-- O7: New providers get near-100% traffic (zero TTFT weight)
 - O8: `Cleanup()` panics on nil logger if called before `Provision()`
 - O9: `writeErrorResponse` ignores `json.Marshal` error
 - O10: `w.Write()` return values ignored
@@ -495,18 +510,15 @@ These are tracked in the [code review document](https://github.com/DIN-center/di
 - Default TTFT for new providers (prevent thundering herd)
 - Authentication/authorization on the AI endpoint
 - `Tier` struct JSON tags for Caddy JSON API support
-- Multimodal content support (`content` as string or array)
 - Concurrency limit for health check goroutines
 
 ### Medium-term
 - Rate limiting per provider (token bucket or sliding window)
 - Budget enforcement and spend limits per tier/API key
 - Model passthrough mode (user specifies exact model)
-- Tool calling / function calling translation for Anthropic
 - Extended thinking support for Anthropic
 - Circuit breaker pattern (replace threshold-based health)
 - Configurable timeouts per provider
-- Retry-After header respect from 429 responses
 - Request/response logging (opt-in debugging)
 
 ### Long-term (see RFP roadmap)

@@ -22,14 +22,14 @@ type mockStreamingClient struct {
 	handler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	resp, err := m.PostStream(ctx, url, headers, payload)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, err
+	return body, resp.StatusCode, resp.Header.Clone(), err
 }
 
 func (m *mockStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
@@ -177,6 +177,31 @@ func TestAttemptStream_NonOKStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP 429")
 }
 
+func TestAttemptStream_NonOKStatusIncludesRetryAfter(t *testing.T) {
+	adapter := libai.NewOpenAIAdapter()
+	logger := zap.NewNop()
+
+	client := &mockStreamingClient{
+		handler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			resp := makeSSEResponse(429, "rate limited")
+			resp.Header.Set("Retry-After", "2")
+			return resp, nil
+		},
+	}
+
+	provider := newTestProvider("test-openai", Healthy)
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+
+	var streamErr *streamAttemptError
+	require.ErrorAs(t, err, &streamErr)
+	assert.Equal(t, http.StatusTooManyRequests, streamErr.statusCode)
+	assert.Equal(t, 2*time.Second, streamErr.retryAfter)
+}
+
 func TestAttemptStream_ErrorInFirstChunk(t *testing.T) {
 	adapter := libai.NewOpenAIAdapter()
 	logger := zap.NewNop()
@@ -276,6 +301,33 @@ func TestStreamToClient_Anthropic(t *testing.T) {
 	assert.Contains(t, result, " world")
 	assert.Contains(t, result, "[DONE]")
 	assert.Nil(t, usage)
+}
+
+func TestStreamToClient_AnthropicToolCallDeltas(t *testing.T) {
+	adapter := libai.NewAnthropicAdapter()
+	logger := zap.NewNop()
+
+	events := sseEvent("message_start", `{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-20250514","role":"assistant"}}`)
+	events += sseEvent("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup_weather"}}`)
+	events += sseEvent("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}`)
+	events += sseEvent("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`)
+	events += sseEvent("message_stop", `{"type":"message_stop"}`)
+
+	reader := strings.NewReader(events)
+	body := io.NopCloser(reader)
+	bufReader := bufio.NewReader(reader)
+	recorder := httptest.NewRecorder()
+
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.NoError(t, err)
+	assert.Nil(t, usage)
+
+	result := recorder.Body.String()
+	assert.Contains(t, result, `"tool_calls"`)
+	assert.Contains(t, result, `"lookup_weather"`)
+	assert.Contains(t, result, `{\"city\":\"SF\"}`)
+	assert.Contains(t, result, `"finish_reason":"tool_calls"`)
+	assert.Contains(t, result, "[DONE]")
 }
 
 func TestStreamToClient_WithUsage(t *testing.T) {
