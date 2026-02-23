@@ -274,6 +274,36 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported content part type")
 	})
+
+	t.Run("maps tools and function tool_choice", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"weather?"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather for a city",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"function","function":{"name":"get_weather"}}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Tools, 1)
+		assert.Equal(t, "get_weather", result.Tools[0].Name)
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "tool", choice["type"])
+		assert.Equal(t, "get_weather", choice["name"])
+	})
 }
 
 func TestAnthropicAdapterTransformResponse(t *testing.T) {
@@ -563,30 +593,37 @@ func TestAnthropicAdapterSingleSystemMessage(t *testing.T) {
 func TestAnthropicAdapterToolUseContentBlocks(t *testing.T) {
 	a := NewAnthropicAdapter()
 
-	// Response with only tool_use blocks (no text).
+	// Response with only tool_use blocks should map to OpenAI tool_calls.
 	stopReason := "tool_use"
 	anthropicResp := AnthropicResponse{
 		ID:   "msg_456",
 		Type: "message",
 		Role: "assistant",
 		Content: []AnthropicContent{
-			{Type: "tool_use", Text: ""},
+			{Type: "tool_use", ID: "toolu_123", Name: "lookup", Input: map[string]any{"city": "SF"}},
 		},
 		Model:      "claude-sonnet-4-20250514",
 		StopReason: &stopReason,
 	}
 	body, _ := json.Marshal(anthropicResp)
 
-	_, err := a.TransformResponse(body)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported content types")
-	assert.Contains(t, err.Error(), "tool_use")
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err)
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result.Choices, 1)
+	require.NotNil(t, result.Choices[0].Message)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "toolu_123", result.Choices[0].Message.ToolCalls[0].ID)
+	assert.Equal(t, "lookup", result.Choices[0].Message.ToolCalls[0].Function.Name)
+	assert.Equal(t, "tool_calls", *result.Choices[0].FinishReason)
 }
 
 func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 	a := NewAnthropicAdapter()
 
-	// Response with text + tool_use blocks — text should be returned, tool_use dropped.
+	// Response with text + tool_use blocks should return text and tool calls.
 	stopReason := "end_turn"
 	anthropicResp := AnthropicResponse{
 		ID:   "msg_789",
@@ -594,7 +631,7 @@ func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 		Role: "assistant",
 		Content: []AnthropicContent{
 			{Type: "text", Text: "I'll help with that."},
-			{Type: "tool_use", Text: ""},
+			{Type: "tool_use", ID: "tool_use", Name: "lookup", Input: map[string]any{"city": "SF"}},
 		},
 		Model:      "claude-sonnet-4-20250514",
 		StopReason: &stopReason,
@@ -607,6 +644,8 @@ func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 	var result ChatCompletionResponse
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, "I'll help with that.", result.Choices[0].Message.Content)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "tool_use", result.Choices[0].Message.ToolCalls[0].ID)
 }
 
 func TestAnthropicAdapterEmptyContentResponse(t *testing.T) {
@@ -732,6 +771,32 @@ func TestAnthropicAdapterTransformStreamEvent_MalformedMessageStart(t *testing.T
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse message_start")
 	assert.Nil(t, out)
+}
+
+func TestAnthropicAdapterTransformStreamEvent_ToolCallDeltas(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	startChunk, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup_weather"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startChunk)
+
+	deltaChunk, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaChunk)
+
+	var startResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startChunk, &startResp))
+	require.Len(t, startResp.Choices[0].Delta.ToolCalls, 1)
+	assert.Equal(t, "toolu_1", startResp.Choices[0].Delta.ToolCalls[0].ID)
+	assert.Equal(t, "lookup_weather", startResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+
+	var deltaResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaChunk, &deltaResp))
+	require.Len(t, deltaResp.Choices[0].Delta.ToolCalls, 1)
+	assert.Equal(t, "{\"city\":\"SF\"}", deltaResp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
 }
 
 // Verify interface compliance at compile time.

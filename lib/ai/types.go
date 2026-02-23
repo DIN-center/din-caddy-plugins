@@ -13,12 +13,17 @@ type ChatCompletionRequest struct {
 	Stop             any           `json:"stop,omitempty"`
 	N                *int          `json:"n,omitempty"`
 	User             string        `json:"user,omitempty"`
+	Tools            []OpenAITool  `json:"tools,omitempty"`
+	ToolChoice       any           `json:"tool_choice,omitempty"`
 }
 
 // ChatMessage represents a single message in a conversation.
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	Name       string     `json:"name,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 }
 
 // ChatMessageContentPart represents one OpenAI multimodal content part.
@@ -45,10 +50,37 @@ type ChatCompletionResponse struct {
 
 // ChatCompletionChoice represents a single choice in a completion response.
 type ChatCompletionChoice struct {
-	Index        int         `json:"index"`
+	Index        int          `json:"index"`
 	Message      *ChatMessage `json:"message,omitempty"`
 	Delta        *ChatMessage `json:"delta,omitempty"`
-	FinishReason *string     `json:"finish_reason,omitempty"`
+	FinishReason *string      `json:"finish_reason,omitempty"`
+}
+
+// OpenAITool represents one OpenAI tool definition.
+type OpenAITool struct {
+	Type     string         `json:"type"`
+	Function OpenAIFunction `json:"function"`
+}
+
+// OpenAIFunction is the schema for OpenAI function tools.
+type OpenAIFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+// ToolCall represents OpenAI tool call payloads for non-streaming and streaming deltas.
+type ToolCall struct {
+	Index    *int             `json:"index,omitempty"`
+	ID       string           `json:"id,omitempty"`
+	Type     string           `json:"type,omitempty"`
+	Function ToolCallFunction `json:"function,omitempty"`
+}
+
+// ToolCallFunction contains function-call name/arguments.
+type ToolCallFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // UsageInfo tracks token consumption for a request.
@@ -88,6 +120,8 @@ type AnthropicRequest struct {
 	Temperature   *float64           `json:"temperature,omitempty"`
 	TopP          *float64           `json:"top_p,omitempty"`
 	StopSequences []string           `json:"stop_sequences,omitempty"`
+	Tools         []AnthropicTool    `json:"tools,omitempty"`
+	ToolChoice    any                `json:"tool_choice,omitempty"`
 }
 
 // AnthropicMessage represents a message in the Anthropic format.
@@ -98,9 +132,14 @@ type AnthropicMessage struct {
 
 // AnthropicRequestContentBlock represents one content block in Anthropic request messages.
 type AnthropicRequestContentBlock struct {
-	Type   string                `json:"type"`
-	Text   string                `json:"text,omitempty"`
-	Source *AnthropicImageSource `json:"source,omitempty"`
+	Type      string                `json:"type"`
+	Text      string                `json:"text,omitempty"`
+	Source    *AnthropicImageSource `json:"source,omitempty"`
+	ID        string                `json:"id,omitempty"`
+	Name      string                `json:"name,omitempty"`
+	Input     map[string]any        `json:"input,omitempty"`
+	ToolUseID string                `json:"tool_use_id,omitempty"`
+	Content   string                `json:"content,omitempty"`
 }
 
 // AnthropicImageSource defines Anthropic image source payload.
@@ -124,8 +163,18 @@ type AnthropicResponse struct {
 
 // AnthropicContent represents a content block in an Anthropic response.
 type AnthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type  string         `json:"type"`
+	Text  string         `json:"text,omitempty"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+}
+
+// AnthropicTool represents one Anthropic tool definition.
+type AnthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
 }
 
 // AnthropicUsage represents token usage in the Anthropic format.

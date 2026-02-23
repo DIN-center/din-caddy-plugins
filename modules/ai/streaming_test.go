@@ -303,6 +303,33 @@ func TestStreamToClient_Anthropic(t *testing.T) {
 	assert.Nil(t, usage)
 }
 
+func TestStreamToClient_AnthropicToolCallDeltas(t *testing.T) {
+	adapter := libai.NewAnthropicAdapter()
+	logger := zap.NewNop()
+
+	events := sseEvent("message_start", `{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-20250514","role":"assistant"}}`)
+	events += sseEvent("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup_weather"}}`)
+	events += sseEvent("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}`)
+	events += sseEvent("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`)
+	events += sseEvent("message_stop", `{"type":"message_stop"}`)
+
+	reader := strings.NewReader(events)
+	body := io.NopCloser(reader)
+	bufReader := bufio.NewReader(reader)
+	recorder := httptest.NewRecorder()
+
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.NoError(t, err)
+	assert.Nil(t, usage)
+
+	result := recorder.Body.String()
+	assert.Contains(t, result, `"tool_calls"`)
+	assert.Contains(t, result, `"lookup_weather"`)
+	assert.Contains(t, result, `{\"city\":\"SF\"}`)
+	assert.Contains(t, result, `"finish_reason":"tool_calls"`)
+	assert.Contains(t, result, "[DONE]")
+}
+
 func TestStreamToClient_WithUsage(t *testing.T) {
 	adapter := libai.NewOpenAIAdapter()
 	logger := zap.NewNop()

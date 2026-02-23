@@ -16,10 +16,18 @@ type AnthropicAdapter struct {
 	// Streaming state — tracks the current message context.
 	messageID string
 	model     string
+	toolCalls map[int]toolStreamState
+}
+
+type toolStreamState struct {
+	ID   string
+	Name string
 }
 
 func NewAnthropicAdapter() *AnthropicAdapter {
-	return &AnthropicAdapter{}
+	return &AnthropicAdapter{
+		toolCalls: make(map[int]toolStreamState),
+	}
 }
 
 func (a *AnthropicAdapter) Name() string {
@@ -43,6 +51,12 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 
 	if req.MaxTokens != nil {
 		anthropicReq.MaxTokens = *req.MaxTokens
+	}
+	if len(req.Tools) > 0 {
+		anthropicReq.Tools = mapOpenAIToolsToAnthropic(req.Tools)
+	}
+	if req.ToolChoice != nil {
+		anthropicReq.ToolChoice = mapOpenAIToolChoiceToAnthropic(req.ToolChoice)
 	}
 
 	// Convert OpenAI stop field to Anthropic stop_sequences.
@@ -73,7 +87,28 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 			systemParts = append(systemParts, text)
 			continue
 		}
+		if msg.Role == "tool" {
+			toolContent, err := extractToolResultContent(msg.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			anthropicReq.Messages = append(anthropicReq.Messages, AnthropicMessage{
+				Role: "user",
+				Content: []AnthropicRequestContentBlock{
+					{
+						Type:      "tool_result",
+						ToolUseID: msg.ToolCallID,
+						Content:   toolContent,
+					},
+				},
+			})
+			continue
+		}
 		anthropicContent, err := toAnthropicContent(msg.Content)
+		if err != nil {
+			return nil, nil, err
+		}
+		anthropicContent, err = mergeAssistantToolCalls(msg, anthropicContent)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -103,10 +138,24 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 
 	// Build content from content blocks.
 	var contentParts []string
+	var toolCalls []ToolCall
 	var unsupportedTypes []string
 	for _, block := range resp.Content {
 		if block.Type == "text" {
 			contentParts = append(contentParts, block.Text)
+		} else if block.Type == "tool_use" {
+			argsBytes, err := json.Marshal(block.Input)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal tool_use input: %w", err)
+			}
+			toolCalls = append(toolCalls, ToolCall{
+				ID:   block.ID,
+				Type: "function",
+				Function: ToolCallFunction{
+					Name:      block.Name,
+					Arguments: string(argsBytes),
+				},
+			})
 		} else {
 			unsupportedTypes = append(unsupportedTypes, block.Type)
 		}
@@ -136,8 +185,9 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 			{
 				Index: 0,
 				Message: &ChatMessage{
-					Role:    resp.Role,
-					Content: content,
+					Role:      resp.Role,
+					Content:   content,
+					ToolCalls: toolCalls,
 				},
 				FinishReason: finishReason,
 			},
@@ -177,16 +227,54 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 		}
 		a.messageID = evt.Message.ID
 		a.model = evt.Message.Model
+		a.toolCalls = make(map[int]toolStreamState)
 		// Emit an initial role chunk like OpenAI does.
 		return a.buildOpenAIDelta("assistant", "", nil)
 
+	case "content_block_start":
+		var start struct {
+			Type         string `json:"type"`
+			Index        int    `json:"index"`
+			ContentBlock struct {
+				Type string `json:"type"`
+				ID   string `json:"id,omitempty"`
+				Name string `json:"name,omitempty"`
+			} `json:"content_block"`
+		}
+		if err := json.Unmarshal(data, &start); err != nil {
+			return nil, fmt.Errorf("failed to parse content_block_start: %w", err)
+		}
+		if start.ContentBlock.Type == "tool_use" {
+			a.toolCalls[start.Index] = toolStreamState{
+				ID:   start.ContentBlock.ID,
+				Name: start.ContentBlock.Name,
+			}
+			return a.buildOpenAIToolDelta(start.Index, start.ContentBlock.ID, start.ContentBlock.Name, "")
+		}
+		return nil, nil
+
 	case "content_block_delta":
-		var delta AnthropicContentBlockDelta
+		var delta struct {
+			Type  string `json:"type"`
+			Index int    `json:"index"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			} `json:"delta"`
+		}
 		if err := json.Unmarshal(data, &delta); err != nil {
 			return nil, fmt.Errorf("failed to parse content_block_delta: %w", err)
 		}
 		if delta.Delta.Type == "text_delta" {
 			return a.buildOpenAIDelta("", delta.Delta.Text, nil)
+		}
+		if delta.Delta.Type == "input_json_delta" {
+			toolState, ok := a.toolCalls[delta.Index]
+			if !ok {
+				return nil, nil
+			}
+			return a.buildOpenAIToolDelta(delta.Index, toolState.ID, toolState.Name, delta.Delta.PartialJSON)
 		}
 		return nil, nil // skip non-text deltas
 
@@ -201,7 +289,7 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 	case "message_stop":
 		return []byte("[DONE]"), nil
 
-	case "content_block_start", "content_block_stop", "ping":
+	case "content_block_stop", "ping":
 		// Skip metadata events — no OpenAI equivalent.
 		return nil, nil
 
@@ -270,6 +358,8 @@ func mapAnthropicStopReason(reason *string) *string {
 		mapped = "length"
 	case "stop_sequence":
 		mapped = "stop"
+	case "tool_use":
+		mapped = "tool_calls"
 	default:
 		mapped = *reason
 	}
@@ -280,6 +370,15 @@ func extractSystemText(content any) (string, error) {
 	switch v := content.(type) {
 	case string:
 		return v, nil
+	case []ChatMessageContentPart:
+		var sb strings.Builder
+		for _, part := range v {
+			if part.Type != "text" {
+				return "", fmt.Errorf("unsupported system content part type: %s", part.Type)
+			}
+			sb.WriteString(part.Text)
+		}
+		return sb.String(), nil
 	case []any:
 		parts, err := normalizeOpenAIContentParts(v)
 		if err != nil {
@@ -302,6 +401,8 @@ func toAnthropicContent(content any) (any, error) {
 	switch v := content.(type) {
 	case string:
 		return v, nil
+	case []ChatMessageContentPart:
+		return mapOpenAIContentPartsToAnthropic(v)
 	case []any:
 		parts, err := normalizeOpenAIContentParts(v)
 		if err != nil {
@@ -375,4 +476,142 @@ func mapOpenAIContentPartsToAnthropic(parts []ChatMessageContentPart) ([]Anthrop
 		}
 	}
 	return blocks, nil
+}
+
+func mapOpenAIToolsToAnthropic(tools []OpenAITool) []AnthropicTool {
+	result := make([]AnthropicTool, 0, len(tools))
+	for _, tool := range tools {
+		if tool.Type != "function" {
+			continue
+		}
+		result = append(result, AnthropicTool{
+			Name:        tool.Function.Name,
+			Description: tool.Function.Description,
+			InputSchema: tool.Function.Parameters,
+		})
+	}
+	return result
+}
+
+func mapOpenAIToolChoiceToAnthropic(choice any) any {
+	switch v := choice.(type) {
+	case string:
+		switch v {
+		case "required":
+			return map[string]any{"type": "any"}
+		case "auto":
+			return map[string]any{"type": "auto"}
+		default:
+			return map[string]any{"type": "auto"}
+		}
+	case map[string]any:
+		if v["type"] == "function" {
+			if fn, ok := v["function"].(map[string]any); ok {
+				if name, ok := fn["name"].(string); ok && name != "" {
+					return map[string]any{
+						"type": "tool",
+						"name": name,
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func extractToolResultContent(content any) (string, error) {
+	switch v := content.(type) {
+	case string:
+		return v, nil
+	case []ChatMessageContentPart:
+		var sb strings.Builder
+		for _, part := range v {
+			if part.Type != "text" {
+				return "", fmt.Errorf("tool result supports only text content parts")
+			}
+			sb.WriteString(part.Text)
+		}
+		return sb.String(), nil
+	case []any:
+		parts, err := normalizeOpenAIContentParts(v)
+		if err != nil {
+			return "", err
+		}
+		var sb strings.Builder
+		for _, part := range parts {
+			if part.Type != "text" {
+				return "", fmt.Errorf("tool result supports only text content parts")
+			}
+			sb.WriteString(part.Text)
+		}
+		return sb.String(), nil
+	default:
+		return "", fmt.Errorf("unsupported tool result content type: %T", content)
+	}
+}
+
+func mergeAssistantToolCalls(msg ChatMessage, anthropicContent any) (any, error) {
+	if len(msg.ToolCalls) == 0 {
+		return anthropicContent, nil
+	}
+
+	blocks := []AnthropicRequestContentBlock{}
+	switch v := anthropicContent.(type) {
+	case string:
+		if v != "" {
+			blocks = append(blocks, AnthropicRequestContentBlock{
+				Type: "text",
+				Text: v,
+			})
+		}
+	case []AnthropicRequestContentBlock:
+		blocks = append(blocks, v...)
+	default:
+		return nil, fmt.Errorf("unsupported assistant content container for tool calls: %T", anthropicContent)
+	}
+
+	for _, tc := range msg.ToolCalls {
+		var input map[string]any
+		if tc.Function.Arguments != "" {
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
+				return nil, fmt.Errorf("invalid tool call arguments for %s: %w", tc.Function.Name, err)
+			}
+		}
+		blocks = append(blocks, AnthropicRequestContentBlock{
+			Type:  "tool_use",
+			ID:    tc.ID,
+			Name:  tc.Function.Name,
+			Input: input,
+		})
+	}
+	return blocks, nil
+}
+
+func (a *AnthropicAdapter) buildOpenAIToolDelta(index int, id, name, partialArgs string) ([]byte, error) {
+	idx := index
+	chunk := ChatCompletionResponse{
+		ID:      a.messageID,
+		Object:  "chat.completion.chunk",
+		Created: time.Now().Unix(),
+		Model:   a.model,
+		Choices: []ChatCompletionChoice{
+			{
+				Index: 0,
+				Delta: &ChatMessage{
+					ToolCalls: []ToolCall{
+						{
+							Index: &idx,
+							ID:    id,
+							Type:  "function",
+							Function: ToolCallFunction{
+								Name:      name,
+								Arguments: partialArgs,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return json.Marshal(chunk)
 }
