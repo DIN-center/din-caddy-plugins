@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,8 +155,9 @@ func (m *DinAIMiddleware) Cleanup() error {
 
 // ServeHTTP handles incoming AI API requests.
 func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	requestPath := path.Clean(r.URL.Path)
 	// Only handle POST /v1/chat/completions.
-	if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/v1/chat/completions") {
+	if r.Method != http.MethodPost || requestPath != "/v1/chat/completions" {
 		return next.ServeHTTP(w, r)
 	}
 
@@ -277,7 +279,15 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			}
 
 			// Stream remaining events.
-			usage := streamToClient(r.Context(), w, result.resp.Body, result.reader, result.adapter, m.logger)
+			usage, streamErr := streamToClient(r.Context(), w, result.resp.Body, result.reader, result.adapter, m.logger)
+			if streamErr != nil {
+				provider.MarkPingWarning()
+				RecordRequest(tierName, provider.Name, provider.ModelID, "502")
+				m.logger.Warn("streaming response terminated due to transform error",
+					zap.String("provider", provider.Name),
+					zap.Error(streamErr))
+				return nil
+			}
 
 			// Record metrics.
 			RecordRequest(tierName, provider.Name, provider.ModelID, "200")
@@ -343,7 +353,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 	}
 
 	// All attempts failed.
-	RecordRequest(tierName, "none", "none", "502")
+	RecordRequest(tierName, "unknown", "unknown", "502")
 	errMsg := "all provider attempts failed"
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("all provider attempts failed: %v", lastErr)
@@ -481,10 +491,15 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message, errType 
 			Type:    errType,
 		},
 	}
-	body, _ := json.Marshal(resp)
+	body, err := json.Marshal(resp)
+	if err != nil {
+		escapedMsg := strings.ReplaceAll(message, `"`, `\"`)
+		escapedType := strings.ReplaceAll(errType, `"`, `\"`)
+		body = []byte(fmt.Sprintf(`{"error":{"message":"%s","type":"%s"}}`, escapedMsg, escapedType))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	w.Write(body)
+	_, _ = w.Write(body)
 	return nil
 }
 

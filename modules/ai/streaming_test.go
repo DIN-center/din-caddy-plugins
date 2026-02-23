@@ -36,6 +36,36 @@ func (m *mockStreamingClient) PostStream(ctx context.Context, url string, header
 	return m.handler(ctx, url, headers, payload)
 }
 
+type erroringAdapter struct {
+	base            libai.ProviderAdapter
+	errorOnEventNum int
+	eventCount      int
+}
+
+func (a *erroringAdapter) Name() string {
+	return a.base.Name()
+}
+
+func (a *erroringAdapter) TransformRequest(body []byte) ([]byte, map[string]string, error) {
+	return a.base.TransformRequest(body)
+}
+
+func (a *erroringAdapter) TransformResponse(body []byte) ([]byte, error) {
+	return a.base.TransformResponse(body)
+}
+
+func (a *erroringAdapter) TransformStreamEvent(eventType string, data []byte) ([]byte, error) {
+	a.eventCount++
+	if a.eventCount == a.errorOnEventNum {
+		return nil, assert.AnError
+	}
+	return a.base.TransformStreamEvent(eventType, data)
+}
+
+func (a *erroringAdapter) IsErrorChunk(eventType string, data []byte) bool {
+	return a.base.IsErrorChunk(eventType, data)
+}
+
 // --- SSE Event Helpers ---
 
 func sseEvent(eventType, data string) string {
@@ -212,7 +242,8 @@ func TestStreamToClient_OpenAI(t *testing.T) {
 	bufReader = bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.NoError(t, err)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, `"content":"Hello"`)
@@ -237,7 +268,8 @@ func TestStreamToClient_Anthropic(t *testing.T) {
 	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.NoError(t, err)
 
 	result := recorder.Body.String()
 	assert.Contains(t, result, "Hello")
@@ -259,12 +291,35 @@ func TestStreamToClient_WithUsage(t *testing.T) {
 	bufReader := bufio.NewReader(reader)
 
 	recorder := httptest.NewRecorder()
-	usage := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.NoError(t, err)
 
 	require.NotNil(t, usage)
 	assert.Equal(t, 10, usage.PromptTokens)
 	assert.Equal(t, 5, usage.CompletionTokens)
 	assert.Equal(t, 15, usage.TotalTokens)
+}
+
+func TestStreamToClient_TransformErrorReturnsErrorAndWritesErrorChunk(t *testing.T) {
+	adapter := &erroringAdapter{
+		base:            libai.NewOpenAIAdapter(),
+		errorOnEventNum: 2, // fail on second data event
+	}
+	logger := zap.NewNop()
+
+	events := sseEvent("", `{"id":"chatcmpl-1","choices":[{"delta":{"content":"Hello"}}]}`)
+	events += sseEvent("", `{"id":"chatcmpl-1","choices":[{"delta":{"content":" world"}}]}`)
+
+	reader := strings.NewReader(events)
+	body := io.NopCloser(reader)
+	bufReader := bufio.NewReader(reader)
+	recorder := httptest.NewRecorder()
+
+	usage, err := streamToClient(context.Background(), recorder, body, bufReader, adapter, logger)
+	require.Error(t, err)
+	assert.Nil(t, usage)
+	assert.Contains(t, recorder.Body.String(), `"type":"upstream_error"`)
+	assert.Contains(t, recorder.Body.String(), "[DONE]")
 }
 
 func TestWriteSSE(t *testing.T) {
@@ -331,7 +386,7 @@ func TestStreamToClient_ClientDisconnect(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		streamToClient(ctx, recorder, pr, bufReader, adapter, logger)
+		_, _ = streamToClient(ctx, recorder, pr, bufReader, adapter, logger)
 		close(done)
 	}()
 

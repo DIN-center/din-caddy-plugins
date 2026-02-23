@@ -121,11 +121,13 @@ func streamToClient(
 	bufReader *bufio.Reader,
 	adapter libai.ProviderAdapter,
 	logger *zap.Logger,
-) *libai.UsageInfo {
-	// Guard against double-close: both the defer and the context-cancellation
-	// goroutine may attempt to close respBody.
+) (*libai.UsageInfo, error) {
 	var closeOnce sync.Once
-	closeBody := func() { closeOnce.Do(func() { respBody.Close() }) }
+	closeBody := func() {
+		closeOnce.Do(func() {
+			_ = respBody.Close()
+		})
+	}
 	defer closeBody()
 
 	flusher, _ := w.(http.Flusher)
@@ -173,7 +175,20 @@ func streamToClient(
 				logger.Warn("failed to transform stream event",
 					zap.String("event_type", currentEventType),
 					zap.Error(err))
-				continue
+				errorChunk, marshalErr := json.Marshal(libai.ErrorResponse{
+					Error: &libai.ErrorDetail{
+						Message: "stream transform error",
+						Type:    "upstream_error",
+					},
+				})
+				if marshalErr == nil {
+					writeSSE(w, errorChunk)
+				}
+				writeSSE(w, []byte("[DONE]"))
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return usage, fmt.Errorf("transform stream event: %w", err)
 			}
 
 			if transformed == nil {
@@ -206,7 +221,7 @@ func streamToClient(
 		// Empty lines are event delimiters in SSE — just skip.
 	}
 
-	return usage
+	return usage, nil
 }
 
 // readNextSSEEvent reads the next complete SSE event from a buffered reader.

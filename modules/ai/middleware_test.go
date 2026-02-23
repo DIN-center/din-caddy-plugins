@@ -88,8 +88,8 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 				},
 			},
 		},
-		logger:              zap.NewNop(),
-		quit:                make(chan struct{}),
+		logger: zap.NewNop(),
+		quit:   make(chan struct{}),
 
 		client:              client,
 		testMode:            true,
@@ -436,6 +436,16 @@ func TestCleanup_NilLogger(t *testing.T) {
 		err := m.Cleanup()
 		assert.NoError(t, err)
 	})
+}
+
+func TestServeHTTP_PrefixedPathDoesNotMatch(t *testing.T) {
+	m := newTestMiddleware(t)
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/api/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code) // falls through to noop handler
+	assert.Empty(t, w.Header().Get("X-DIN-Provider"))
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
