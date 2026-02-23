@@ -850,7 +850,7 @@ func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers m
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, resp.Header.Clone(), err
+	return body, resp.StatusCode, resp.Header, err
 }
 
 func (c *defaultStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
