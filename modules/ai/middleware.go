@@ -44,9 +44,10 @@ type DinAIMiddleware struct {
 	RequestAttemptCount  int `json:"request_attempt_count,omitempty"`
 
 	// Runtime
-	logger *zap.Logger
-	quit   chan struct{}
-	client libai.IStreamingHTTPClient
+	logger       *zap.Logger
+	quit         chan struct{}
+	client       libai.IStreamingHTTPClient
+	healthClient libai.IStreamingHTTPClient
 
 	// Test mode flag — disables health checks for unit testing.
 	testMode bool
@@ -78,8 +79,9 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 		m.RequestAttemptCount = DefaultRequestAttemptCount
 	}
 
-	// Initialize HTTP client.
+	// Initialize HTTP clients with appropriate timeouts.
 	m.client = newDefaultStreamingClient()
+	m.healthClient = newHealthCheckClient()
 
 	// Set health check threshold on all providers.
 	for _, tier := range m.Tiers {
@@ -94,7 +96,7 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 
 	// Start health checks (unless in test mode).
 	if !m.testMode {
-		go runHealthChecks(m.Tiers, m.client, m.HealthcheckInterval, m.logger, m.quit)
+		go runHealthChecks(m.Tiers, m.healthClient, m.HealthcheckInterval, m.logger, m.quit)
 	}
 
 	m.logger.Info("DIN AI middleware provisioned",
@@ -694,22 +696,27 @@ func (m *DinAIMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Midd
 	return m, err
 }
 
-// --- Default Streaming HTTP Client ---
+// --- HTTP Clients ---
 
 type defaultStreamingClient struct {
 	client *http.Client
 }
 
-// newDefaultStreamingClient creates the shared HTTP client for all AI requests.
-//
-// NOTE: The 120s timeout applies to the entire request lifecycle including body reads.
-// For streaming responses, this means streams longer than 2 minutes will be killed.
-// For health checks, a stuck provider blocks for up to 2 minutes before being marked failing.
-// TODO: Use separate clients with appropriate timeouts for streaming vs non-streaming vs health checks.
+// newDefaultStreamingClient creates the HTTP client for AI requests (streaming and non-streaming).
+// No timeout is set because streaming responses can run indefinitely; cancellation is handled
+// via context (client disconnect or request timeout).
 func newDefaultStreamingClient() *defaultStreamingClient {
 	return &defaultStreamingClient{
+		client: &http.Client{},
+	}
+}
+
+// newHealthCheckClient creates an HTTP client with a short timeout for health checks.
+// Health checks are simple ping requests that should complete quickly.
+func newHealthCheckClient() *defaultStreamingClient {
+	return &defaultStreamingClient{
 		client: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 	}
 }
