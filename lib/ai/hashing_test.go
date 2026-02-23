@@ -159,3 +159,101 @@ func TestSelectByTTFTWeight_BoundaryValues(t *testing.T) {
 	assert.GreaterOrEqual(t, idx, 0)
 	assert.Less(t, idx, 2)
 }
+
+// --- SelectByInverseWeight Tests ---
+
+func TestSelectByInverseWeight_LowerGetsMore(t *testing.T) {
+	// Value 1 vs 10: lower (1) should get ~91% of traffic.
+	weights := []float64{1.0, 10.0}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, 1e9, randVal)
+		require.GreaterOrEqual(t, idx, 0)
+		require.Less(t, idx, 2)
+		counts[idx]++
+	}
+
+	assert.Greater(t, counts[0], counts[1], "lower weight should get more traffic")
+	assert.Greater(t, counts[0], 800, "10x lower weight should get >80%% traffic")
+}
+
+func TestSelectByInverseWeight_Equal(t *testing.T) {
+	weights := []float64{5.0, 5.0, 5.0}
+
+	counts := make([]int, 3)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, 1e9, randVal)
+		counts[idx]++
+	}
+
+	for i, count := range counts {
+		assert.InDelta(t, 333, count, 100, "provider %d should get roughly equal traffic", i)
+	}
+}
+
+func TestSelectByInverseWeight_Empty(t *testing.T) {
+	idx := SelectByInverseWeight(nil, 1e9, 0.5)
+	assert.Equal(t, -1, idx)
+}
+
+func TestSelectByInverseWeight_Single(t *testing.T) {
+	idx := SelectByInverseWeight([]float64{42.0}, 1e9, 0.5)
+	assert.Equal(t, 0, idx)
+}
+
+func TestSelectByInverseWeight_Boundary(t *testing.T) {
+	weights := []float64{1.0, 2.0}
+
+	idx := SelectByInverseWeight(weights, 1e9, 0.0)
+	assert.Equal(t, 0, idx)
+
+	idx = SelectByInverseWeight(weights, 1e9, 0.999)
+	assert.GreaterOrEqual(t, idx, 0)
+	assert.Less(t, idx, 2)
+}
+
+func TestSelectByInverseWeight_ZeroWeight(t *testing.T) {
+	// Zero value gets zeroWeight (1e9), which is much higher than 1/10.0
+	weights := []float64{0, 10.0}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, 1e9, randVal)
+		counts[idx]++
+	}
+
+	assert.Greater(t, counts[0], counts[1], "zero-weight provider should get more traffic (treated as very low value)")
+}
+
+// --- SelectByCostWeight Tests ---
+
+func TestSelectByCostWeight_CheaperGetsMore(t *testing.T) {
+	// Provider 0: $0.10/1M (cheap), Provider 1: $10.00/1M (expensive)
+	costs := []float64{0.10, 10.00}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByCostWeight(costs, randVal)
+		require.GreaterOrEqual(t, idx, 0)
+		require.Less(t, idx, 2)
+		counts[idx]++
+	}
+
+	assert.Greater(t, counts[0], counts[1], "cheaper provider should get more traffic")
+	assert.Greater(t, counts[0], 800, "100x cheaper provider should get >80%% traffic")
+}
+
+func TestSelectByCostWeight_Empty(t *testing.T) {
+	idx := SelectByCostWeight(nil, 0.5)
+	assert.Equal(t, -1, idx)
+}
+
+func TestSelectByCostWeight_Single(t *testing.T) {
+	idx := SelectByCostWeight([]float64{1.50}, 0.5)
+	assert.Equal(t, 0, idx)
+}
