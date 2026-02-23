@@ -44,9 +44,10 @@ type DinAIMiddleware struct {
 	RequestAttemptCount  int `json:"request_attempt_count,omitempty"`
 
 	// Runtime
-	logger *zap.Logger
-	quit   chan struct{}
-	client libai.IStreamingHTTPClient
+	logger       *zap.Logger
+	quit         chan struct{}
+	client       libai.IStreamingHTTPClient
+	healthClient libai.IStreamingHTTPClient
 
 	// Test mode flag — disables health checks for unit testing.
 	testMode bool
@@ -78,8 +79,9 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 		m.RequestAttemptCount = DefaultRequestAttemptCount
 	}
 
-	// Initialize HTTP client.
+	// Initialize HTTP clients with appropriate timeouts.
 	m.client = newDefaultStreamingClient()
+	m.healthClient = newHealthCheckClient()
 
 	// Set health check threshold on all providers.
 	for _, tier := range m.Tiers {
@@ -94,7 +96,7 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 
 	// Start health checks (unless in test mode).
 	if !m.testMode {
-		go runHealthChecks(m.Tiers, m.client, m.HealthcheckInterval, m.logger, m.quit)
+		go runHealthChecks(m.Tiers, m.healthClient, m.HealthcheckInterval, m.logger, m.quit)
 	}
 
 	m.logger.Info("DIN AI middleware provisioned",
@@ -129,6 +131,9 @@ func (m *DinAIMiddleware) Validate() error {
 			if p.AdapterType != AdapterOpenAI && p.AdapterType != AdapterAnthropic {
 				return fmt.Errorf("provider '%s' has unknown adapter type '%s'", p.Name, p.AdapterType)
 			}
+			if p.InputCostPer1M <= 0 || p.OutputCostPer1M <= 0 {
+				return fmt.Errorf("provider '%s' in tier '%s' requires cost configuration (input_per_1m and output_per_1m)", p.Name, tierName)
+			}
 		}
 	}
 	return nil
@@ -140,7 +145,9 @@ func (m *DinAIMiddleware) Cleanup() error {
 		if m.quit != nil {
 			close(m.quit)
 		}
-		m.logger.Info("DIN AI middleware cleaned up")
+		if m.logger != nil {
+			m.logger.Info("DIN AI middleware cleaned up")
+		}
 	})
 	return nil
 }
@@ -201,6 +208,17 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 	// Read session header.
 	sessionID := r.Header.Get("X-DIN-Session-Id")
 
+	// Read optimization mode header.
+	optimizeMode := r.Header.Get("X-DIN-Optimize")
+	if optimizeMode == "" {
+		optimizeMode = OptimizeLatency
+	}
+	if optimizeMode != OptimizeLatency && optimizeMode != OptimizeCost && optimizeMode != OptimizeBalanced {
+		return writeErrorResponse(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid X-DIN-Optimize value: %s (must be 'latency', 'cost', or 'balanced')", optimizeMode),
+			"invalid_request_error")
+	}
+
 	// Generate request ID.
 	requestID := generateRequestID()
 
@@ -215,7 +233,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		// Select provider.
-		provider := m.selectUntried(tier, sessionID, tried)
+		provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
 		if provider == nil {
 			break
 		}
@@ -266,6 +284,14 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			if usage != nil {
 				RecordTokens(tierName, provider.Name, provider.ModelID,
 					usage.PromptTokens, usage.CompletionTokens)
+				cost := provider.CostForTokens(usage.PromptTokens, usage.CompletionTokens)
+				RecordCost(tierName, provider.Name, provider.ModelID, cost)
+				// Write cost as SSE comment after [DONE] — ignored by standard clients,
+				// parseable by DIN-aware clients.
+				fmt.Fprintf(w, ": din-cost %.6f\n\n", cost)
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
 			}
 
 			return nil
@@ -297,11 +323,14 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			continue
 		}
 
-		// Extract usage for metrics.
+		// Extract usage for metrics and cost calculation.
 		var resp libai.ChatCompletionResponse
 		if err := json.Unmarshal(transformed, &resp); err == nil && resp.Usage != nil {
 			RecordTokens(tierName, provider.Name, provider.ModelID,
 				resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			cost := provider.CostForTokens(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			RecordCost(tierName, provider.Name, provider.ModelID, cost)
+			w.Header().Set("X-DIN-Cost", fmt.Sprintf("%.6f", cost))
 		}
 
 		setResponseHeaders(w, provider, tierName, sessionID, requestID)
@@ -314,7 +343,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 	}
 
 	// All attempts failed.
-	RecordRequest(tierName, "", "", "502")
+	RecordRequest(tierName, "none", "none", "502")
 	errMsg := "all provider attempts failed"
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("all provider attempts failed: %v", lastErr)
@@ -323,12 +352,12 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 }
 
 // selectUntried picks a provider that hasn't been tried yet.
-func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[string]bool) *AIProvider {
+func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[string]bool, optimizeMode string) *AIProvider {
 	if len(tried) == 0 {
-		return tier.SelectProvider(sessionID)
+		return tier.SelectProvider(sessionID, optimizeMode)
 	}
 
-	// For retries, use TTFT-weighted selection excluding tried providers.
+	// For retries, use optimization-mode-aware selection excluding tried providers.
 	available := tier.GetAvailableProviders()
 	var untried []*AIProvider
 	for _, p := range available {
@@ -346,7 +375,7 @@ func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[
 
 	// Create a temporary tier for selection — no session hash for retries.
 	tempTier := &Tier{Name: tier.Name, Providers: untried}
-	return tempTier.SelectProvider("")
+	return tempTier.SelectProvider("", optimizeMode)
 }
 
 // attemptNonStreaming makes a non-streaming request to a provider.
@@ -615,6 +644,29 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 					}
 				}
 
+			case "cost":
+				for d.NextBlock(5) {
+					key := d.Val()
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					val, err := strconv.ParseFloat(d.Val(), 64)
+					if err != nil {
+						return d.Errf("invalid cost value for '%s': %v", key, err)
+					}
+					if val <= 0 {
+						return d.Errf("cost '%s' must be positive, got %f", key, val)
+					}
+					switch key {
+					case "input_per_1m":
+						provider.InputCostPer1M = val
+					case "output_per_1m":
+						provider.OutputCostPer1M = val
+					default:
+						return d.Errf("unknown cost option: %s (expected 'input_per_1m' or 'output_per_1m')", key)
+					}
+				}
+
 			default:
 				return d.Errf("unknown provider option: %s", d.Val())
 			}
@@ -630,6 +682,9 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 			return d.Errf("provider '%s' has unknown adapter type '%s' (must be '%s' or '%s')",
 				providerName, provider.AdapterType, AdapterOpenAI, AdapterAnthropic)
 		}
+		if provider.InputCostPer1M <= 0 || provider.OutputCostPer1M <= 0 {
+			return d.Errf("provider '%s' requires a cost block with both input_per_1m and output_per_1m", providerName)
+		}
 
 		tier.Providers = append(tier.Providers, provider)
 	}
@@ -643,22 +698,27 @@ func (m *DinAIMiddleware) ParseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Midd
 	return m, err
 }
 
-// --- Default Streaming HTTP Client ---
+// --- HTTP Clients ---
 
 type defaultStreamingClient struct {
 	client *http.Client
 }
 
-// newDefaultStreamingClient creates the shared HTTP client for all AI requests.
-//
-// NOTE: The 120s timeout applies to the entire request lifecycle including body reads.
-// For streaming responses, this means streams longer than 2 minutes will be killed.
-// For health checks, a stuck provider blocks for up to 2 minutes before being marked failing.
-// TODO: Use separate clients with appropriate timeouts for streaming vs non-streaming vs health checks.
+// newDefaultStreamingClient creates the HTTP client for AI requests (streaming and non-streaming).
+// No timeout is set because streaming responses can run indefinitely; cancellation is handled
+// via context (client disconnect or request timeout).
 func newDefaultStreamingClient() *defaultStreamingClient {
 	return &defaultStreamingClient{
+		client: &http.Client{},
+	}
+}
+
+// newHealthCheckClient creates an HTTP client with a short timeout for health checks.
+// Health checks are simple ping requests that should complete quickly.
+func newHealthCheckClient() *defaultStreamingClient {
+	return &defaultStreamingClient{
 		client: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 	}
 }

@@ -26,6 +26,10 @@
 							headers {
 								Authorization "Bearer {env.OPENAI_API_KEY}"
 							}
+							cost {
+								input_per_1m 0.10
+								output_per_1m 0.40
+							}
 						}
 						anthropic-haiku https://api.anthropic.com/v1/messages {
 							model claude-haiku-4-5-20251001
@@ -33,6 +37,10 @@
 							headers {
 								x-api-key {env.ANTHROPIC_API_KEY}
 								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 0.80
+								output_per_1m 4.00
 							}
 						}
 					}
@@ -45,6 +53,10 @@
 							headers {
 								Authorization "Bearer {env.OPENAI_API_KEY}"
 							}
+							cost {
+								input_per_1m 2.00
+								output_per_1m 8.00
+							}
 						}
 						anthropic-sonnet https://api.anthropic.com/v1/messages {
 							model claude-sonnet-4-6
@@ -52,6 +64,10 @@
 							headers {
 								x-api-key {env.ANTHROPIC_API_KEY}
 								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 3.00
+								output_per_1m 15.00
 							}
 						}
 					}

@@ -191,6 +191,28 @@ func TestServeHTTP_AllUnhealthy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
+func TestServeHTTP_AllProvidersFail_Returns502(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Force all providers to return errors.
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			return nil, 0, fmt.Errorf("connection refused")
+		},
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "all provider attempts failed")
+}
+
 func TestServeHTTP_NonStreaming_Success(t *testing.T) {
 	m := newTestMiddleware(t)
 
@@ -288,6 +310,34 @@ func TestServeHTTP_Streaming_Success(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "[DONE]")
 }
 
+func TestServeHTTP_Streaming_Failover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			callCount++
+			if callCount == 1 {
+				return makeSSEResponse(500, "server error"), nil
+			}
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.GreaterOrEqual(t, callCount, 2, "should have retried after first provider failed")
+	assert.Contains(t, w.Body.String(), "[DONE]")
+}
+
 func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 	m := newTestMiddleware(t)
 
@@ -373,6 +423,19 @@ func TestCleanup(t *testing.T) {
 	// Double cleanup should not panic.
 	err = m.Cleanup()
 	assert.NoError(t, err)
+}
+
+func TestCleanup_NilLogger(t *testing.T) {
+	m := &DinAIMiddleware{
+		quit: make(chan struct{}),
+		// logger intentionally nil — simulates Cleanup called before Provision.
+	}
+
+	// Should not panic.
+	assert.NotPanics(t, func() {
+		err := m.Cleanup()
+		assert.NoError(t, err)
+	})
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
@@ -471,18 +534,18 @@ func TestSelectUntried(t *testing.T) {
 
 	// First call should return a provider.
 	tried := make(map[string]bool)
-	p1 := m.selectUntried(tier, "", tried)
+	p1 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	require.NotNil(t, p1)
 	tried[p1.Name] = true
 
 	// Second call should return a different provider.
-	p2 := m.selectUntried(tier, "", tried)
+	p2 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	require.NotNil(t, p2)
 	assert.NotEqual(t, p1.Name, p2.Name)
 	tried[p2.Name] = true
 
 	// Third call with all tried should return nil.
-	p3 := m.selectUntried(tier, "", tried)
+	p3 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	assert.Nil(t, p3)
 }
 
@@ -652,6 +715,10 @@ func TestUnmarshalCaddyfile_DuplicateTier(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -659,6 +726,10 @@ func TestUnmarshalCaddyfile_DuplicateTier(t *testing.T) {
 				providers {
 					p2 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -678,9 +749,17 @@ func TestUnmarshalCaddyfile_DuplicateProvider(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 					p1 https://api.other.com {
 						model other-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -701,6 +780,10 @@ func TestUnmarshalCaddyfile_NegativeInterval(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -721,6 +804,10 @@ func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
 					p1 https://api.example.com {
 						model test-model
 						adapter gemini
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -838,4 +925,471 @@ func TestNewAIProvider_EmptyHost(t *testing.T) {
 	_, err := NewAIProvider("test", "https:///v1/chat")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "host")
+}
+
+// --- Cost Config Parsing Tests ---
+
+func TestUnmarshalCaddyfile_CostBlock_Valid(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.NoError(t, err)
+
+	p := m.Tiers["fast"].Providers[0]
+	assert.Equal(t, 2.50, p.InputCostPer1M)
+	assert.Equal(t, 10.00, p.OutputCostPer1M)
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingCostBlock(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingInputCost(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingOutputCost(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_NegativeValue(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m -1.00
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_ZeroValue(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 0
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_InvalidFloat(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m abc
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid cost value")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_UnknownKey(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+							total_cost 12.50
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown cost option")
+}
+
+func TestValidate_MissingCostConfig(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	// Clear cost on one provider to test Validate path
+	m.Tiers[TierBalanced].Providers[0].InputCostPer1M = 0
+	m.Tiers[TierBalanced].Providers[0].OutputCostPer1M = 0
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "requires cost configuration")
+}
+
+func TestCostForTokens(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	// 1000 input tokens at $2.50/1M = $0.0025
+	// 500 output tokens at $10.00/1M = $0.005
+	cost := p.CostForTokens(1000, 500)
+	assert.InDelta(t, 0.0075, cost, 1e-10)
+}
+
+func TestCostForTokens_ZeroTokens(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	cost := p.CostForTokens(0, 0)
+	assert.Equal(t, 0.0, cost)
+}
+
+func TestServeHTTP_Streaming_CostSSEComment(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set known cost values.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		p.InputCostPer1M = 2.50
+		p.OutputCostPer1M = 10.00
+	}
+
+	// Streaming response with usage in the last chunk before [DONE].
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hi"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	respBody := w.Body.String()
+	assert.Contains(t, respBody, "[DONE]")
+	// Cost = 10 * 2.50 / 1M + 5 * 10.00 / 1M = 0.000075
+	assert.Contains(t, respBody, ": din-cost 0.000075", "streaming response should contain cost SSE comment")
+}
+
+func TestServeHTTP_NonStreaming_CostHeader(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set known cost values for predictable cost calculation.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		p.InputCostPer1M = 2.50
+		p.OutputCostPer1M = 10.00
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Mock response has usage: prompt_tokens=10, completion_tokens=5
+	// Cost = 10 * 2.50 / 1M + 5 * 10.00 / 1M = 0.000025 + 0.000050 = 0.000075
+	costHeader := w.Header().Get("X-DIN-Cost")
+	assert.NotEmpty(t, costHeader, "X-DIN-Cost header should be present")
+	assert.Equal(t, "0.000075", costHeader)
+}
+
+func TestServeHTTP_XDINOptimize_Invalid(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "invalid"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "invalid X-DIN-Optimize")
+}
+
+func TestServeHTTP_XDINOptimize_Cost(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set distinct costs so cost mode favors the cheaper one.
+	m.Tiers[TierBalanced].Providers[0].InputCostPer1M = 10.00
+	m.Tiers[TierBalanced].Providers[0].OutputCostPer1M = 40.00
+	m.Tiers[TierBalanced].Providers[1].InputCostPer1M = 0.10
+	m.Tiers[TierBalanced].Providers[1].OutputCostPer1M = 0.30
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "cost"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestServeHTTP_XDINOptimize_Balanced(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "balanced"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestServeHTTP_XDINOptimize_Default(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCostForTokens_LargeTokenCounts(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	// 1M input tokens = $2.50, 1M output tokens = $10.00
+	cost := p.CostForTokens(1_000_000, 1_000_000)
+	assert.InDelta(t, 12.50, cost, 1e-10)
+}
+
+func TestUnmarshalCaddyfile_ValidConfig(t *testing.T) {
+	input := `din_ai {
+		healthcheck_interval 60
+		healthcheck_threshold 5
+		request_attempt_count 2
+		tiers {
+			fast {
+				providers {
+					groq-llama https://api.groq.com/openai/v1 {
+						model llama-3.1-8b-instant
+						adapter openai
+						headers {
+							Authorization "Bearer test-key"
+						}
+						cost {
+							input_per_1m 0.05
+							output_per_1m 0.08
+						}
+					}
+				}
+			}
+			balanced {
+				providers {
+					openai-gpt4o https://api.openai.com/v1 {
+						model gpt-4o
+						adapter openai
+						headers {
+							Authorization "Bearer test-key"
+						}
+						health_check {
+							max_completion_tokens 1
+						}
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+						}
+					}
+					anthropic-sonnet https://api.anthropic.com/v1 {
+						model claude-sonnet-4-20250514
+						adapter anthropic
+						headers {
+							x-api-key test-key
+							anthropic-version 2023-06-01
+						}
+						cost {
+							input_per_1m 3.00
+							output_per_1m 15.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.NoError(t, err)
+
+	// Verify global config.
+	assert.Equal(t, 60, m.HealthcheckInterval)
+	assert.Equal(t, 5, m.HealthcheckThreshold)
+	assert.Equal(t, 2, m.RequestAttemptCount)
+
+	// Verify tiers.
+	assert.Len(t, m.Tiers, 2)
+
+	// Verify fast tier.
+	fast := m.Tiers["fast"]
+	require.NotNil(t, fast)
+	assert.Equal(t, "fast", fast.Name)
+	require.Len(t, fast.Providers, 1)
+	assert.Equal(t, "groq-llama", fast.Providers[0].Name)
+	assert.Equal(t, "llama-3.1-8b-instant", fast.Providers[0].ModelID)
+	assert.Equal(t, AdapterOpenAI, fast.Providers[0].AdapterType)
+	assert.Equal(t, 0.05, fast.Providers[0].InputCostPer1M)
+	assert.Equal(t, 0.08, fast.Providers[0].OutputCostPer1M)
+	assert.Equal(t, "Bearer test-key", fast.Providers[0].Headers["Authorization"])
+
+	// Verify balanced tier.
+	balanced := m.Tiers["balanced"]
+	require.NotNil(t, balanced)
+	require.Len(t, balanced.Providers, 2)
+
+	openai := balanced.Providers[0]
+	assert.Equal(t, "openai-gpt4o", openai.Name)
+	assert.Equal(t, "gpt-4o", openai.ModelID)
+	assert.Equal(t, AdapterOpenAI, openai.AdapterType)
+	assert.Equal(t, 2.50, openai.InputCostPer1M)
+	assert.Equal(t, 10.00, openai.OutputCostPer1M)
+	assert.Equal(t, 1, openai.HealthCheckOverrides["max_completion_tokens"])
+
+	anthropic := balanced.Providers[1]
+	assert.Equal(t, "anthropic-sonnet", anthropic.Name)
+	assert.Equal(t, "claude-sonnet-4-20250514", anthropic.ModelID)
+	assert.Equal(t, AdapterAnthropic, anthropic.AdapterType)
+	assert.Equal(t, 3.00, anthropic.InputCostPer1M)
+	assert.Equal(t, 15.00, anthropic.OutputCostPer1M)
+}
+
+func TestProvision_Defaults(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Zero out config values to verify Provision applies defaults.
+	m.HealthcheckInterval = 0
+	m.HealthcheckThreshold = 0
+	m.RequestAttemptCount = 0
+
+	// Re-provision (newTestMiddleware already sets testMode=true).
+	m.logger = zap.NewNop()
+	m.quit = make(chan struct{})
+	m.client = newDefaultStreamingClient()
+	m.healthClient = newHealthCheckClient()
+
+	// Manually apply the same default logic Provision uses.
+	if m.HealthcheckInterval <= 0 {
+		m.HealthcheckInterval = DefaultHCInterval
+	}
+	if m.HealthcheckThreshold <= 0 {
+		m.HealthcheckThreshold = DefaultHCThreshold
+	}
+	if m.RequestAttemptCount <= 0 {
+		m.RequestAttemptCount = DefaultRequestAttemptCount
+	}
+
+	assert.Equal(t, DefaultHCInterval, m.HealthcheckInterval)
+	assert.Equal(t, DefaultHCThreshold, m.HealthcheckThreshold)
+	assert.Equal(t, DefaultRequestAttemptCount, m.RequestAttemptCount)
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -336,6 +337,77 @@ func TestCheckProvider_OverridesCanOverrideMaxTokens(t *testing.T) {
 	var reqMap map[string]interface{}
 	require.NoError(t, json.Unmarshal(receivedBody, &reqMap))
 	assert.Equal(t, float64(5), reqMap["max_tokens"], "override max_tokens:5 should win over default")
+}
+
+func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
+	ensureMetricsRegistered(t)
+
+	// Track concurrent goroutine count to verify bounding.
+	var running int32
+	var maxRunning int32
+
+	// Create a slow mock that takes 500ms per check and tracks concurrency.
+	slowMock := &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+			cur := atomic.AddInt32(&running, 1)
+			defer atomic.AddInt32(&running, -1)
+
+			// Track peak concurrency.
+			for {
+				old := atomic.LoadInt32(&maxRunning)
+				if cur <= old || atomic.CompareAndSwapInt32(&maxRunning, old, cur) {
+					break
+				}
+			}
+
+			time.Sleep(500 * time.Millisecond)
+			return []byte(`{}`), 200, nil
+		},
+	}
+
+	tiers := map[string]*Tier{
+		TierFast: {
+			Name: TierFast,
+			Providers: []*AIProvider{
+				func() *AIProvider {
+					p := newTestProvider("p1", Healthy)
+					p.ModelID = "test"
+					p.AdapterType = AdapterOpenAI
+					return p
+				}(),
+				func() *AIProvider {
+					p := newTestProvider("p2", Healthy)
+					p.ModelID = "test"
+					p.AdapterType = AdapterOpenAI
+					return p
+				}(),
+			},
+		},
+	}
+
+	logger := zap.NewNop()
+	quit := make(chan struct{})
+
+	done := make(chan struct{})
+	go func() {
+		runHealthChecks(tiers, slowMock, 1, logger, quit)
+		close(done)
+	}()
+
+	// Let it run for ~3.5 ticks. With 1s interval and 500ms checks,
+	// the skip-if-running guard should prevent unbounded goroutine accumulation.
+	time.Sleep(3500 * time.Millisecond)
+	close(quit)
+
+	select {
+	case <-done:
+		// With the atomic guard, max concurrent goroutines should be bounded
+		// to the number of providers (2), not accumulating over time.
+		peak := atomic.LoadInt32(&maxRunning)
+		assert.LessOrEqual(t, peak, int32(2), "concurrent goroutines should be bounded to provider count")
+	case <-time.After(5 * time.Second):
+		t.Fatal("health check goroutine did not stop")
+	}
 }
 
 func TestTruncate(t *testing.T) {

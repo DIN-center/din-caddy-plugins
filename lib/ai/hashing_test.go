@@ -115,8 +115,8 @@ func TestSelectByTTFTWeight_FasterGetsMoreTraffic(t *testing.T) {
 	assert.Greater(t, counts[0], 800, "10x faster provider should get >80%% traffic")
 }
 
-func TestSelectByTTFTWeight_ZeroWeightsGetHighPriority(t *testing.T) {
-	// Provider with 0 TTFT (unmeasured) gets treated as very fast.
+func TestSelectByTTFTWeight_ZeroWeightsGetFairShare(t *testing.T) {
+	// Provider with 0 TTFT (unmeasured) gets median-based fair share, not dominance.
 	weights := []int64{0, 500_000_000}
 
 	counts := make([]int, 2)
@@ -126,8 +126,28 @@ func TestSelectByTTFTWeight_ZeroWeightsGetHighPriority(t *testing.T) {
 		counts[idx]++
 	}
 
-	// Unmeasured provider should get more traffic than the measured one.
-	assert.Greater(t, counts[0], counts[1], "unmeasured provider should get high priority")
+	// Unmeasured provider should get roughly equal traffic (median = 500ms, so same weight).
+	assert.InDelta(t, 500, counts[0], 100, "unmeasured provider should get fair share, not dominance")
+	assert.InDelta(t, 500, counts[1], 100, "measured provider should get fair share")
+}
+
+func TestSelectByTTFTWeight_MixedZeroAndMeasured(t *testing.T) {
+	// One unmeasured, two measured: 0, 100ms, 1000ms.
+	// Median of non-zero = (100+1000)/2 = 550ms. Zero gets 550ms equivalent.
+	weights := []int64{0, 100_000_000, 1_000_000_000}
+
+	counts := make([]int, 3)
+	for i := 0; i < 10000; i++ {
+		randVal := float64(i) / 10000.0
+		idx := SelectByTTFTWeight(weights, randVal)
+		counts[idx]++
+	}
+
+	// Fastest (100ms) should get the most traffic.
+	assert.Greater(t, counts[1], counts[0], "fastest measured provider should get more than unmeasured")
+	assert.Greater(t, counts[1], counts[2], "fastest measured provider should get more than slowest")
+	// Unmeasured (median=550ms) should get more than slowest (1000ms).
+	assert.Greater(t, counts[0], counts[2], "unmeasured (median) should get more than slowest")
 }
 
 func TestSelectByTTFTWeight_EqualWeights(t *testing.T) {
@@ -158,4 +178,122 @@ func TestSelectByTTFTWeight_BoundaryValues(t *testing.T) {
 	idx = SelectByTTFTWeight(weights, 0.999999)
 	assert.GreaterOrEqual(t, idx, 0)
 	assert.Less(t, idx, 2)
+}
+
+// --- SelectByInverseWeight Tests ---
+
+func TestSelectByInverseWeight_LowerGetsMore(t *testing.T) {
+	// Value 1 vs 10: lower (1) should get ~91% of traffic.
+	weights := []float64{1.0, 10.0}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, randVal)
+		require.GreaterOrEqual(t, idx, 0)
+		require.Less(t, idx, 2)
+		counts[idx]++
+	}
+
+	assert.Greater(t, counts[0], counts[1], "lower weight should get more traffic")
+	assert.Greater(t, counts[0], 800, "10x lower weight should get >80%% traffic")
+}
+
+func TestSelectByInverseWeight_Equal(t *testing.T) {
+	weights := []float64{5.0, 5.0, 5.0}
+
+	counts := make([]int, 3)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, randVal)
+		counts[idx]++
+	}
+
+	for i, count := range counts {
+		assert.InDelta(t, 333, count, 100, "provider %d should get roughly equal traffic", i)
+	}
+}
+
+func TestSelectByInverseWeight_Empty(t *testing.T) {
+	idx := SelectByInverseWeight(nil, 0.5)
+	assert.Equal(t, -1, idx)
+}
+
+func TestSelectByInverseWeight_Single(t *testing.T) {
+	idx := SelectByInverseWeight([]float64{42.0}, 0.5)
+	assert.Equal(t, 0, idx)
+}
+
+func TestSelectByInverseWeight_Boundary(t *testing.T) {
+	weights := []float64{1.0, 2.0}
+
+	idx := SelectByInverseWeight(weights, 0.0)
+	assert.Equal(t, 0, idx)
+
+	idx = SelectByInverseWeight(weights, 0.999)
+	assert.GreaterOrEqual(t, idx, 0)
+	assert.Less(t, idx, 2)
+}
+
+func TestSelectByInverseWeight_ZeroGetsFairShare(t *testing.T) {
+	// Zero value gets median replacement (median of [10.0] = 10.0), so equal to the other.
+	weights := []float64{0, 10.0}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, randVal)
+		counts[idx]++
+	}
+
+	// Both should get roughly equal traffic since zero gets median (10.0).
+	assert.InDelta(t, 500, counts[0], 100, "zero-weight provider should get fair share")
+	assert.InDelta(t, 500, counts[1], 100, "measured provider should get fair share")
+}
+
+func TestSelectByInverseWeight_AllZero(t *testing.T) {
+	weights := []float64{0, 0, 0}
+
+	counts := make([]int, 3)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByInverseWeight(weights, randVal)
+		require.GreaterOrEqual(t, idx, 0)
+		require.Less(t, idx, 3)
+		counts[idx]++
+	}
+
+	// Should distribute uniformly.
+	for i, count := range counts {
+		assert.InDelta(t, 333, count, 100, "provider %d should get roughly equal traffic", i)
+	}
+}
+
+// --- SelectByCostWeight Tests ---
+
+func TestSelectByCostWeight_CheaperGetsMore(t *testing.T) {
+	// Provider 0: $0.10/1M (cheap), Provider 1: $10.00/1M (expensive)
+	costs := []float64{0.10, 10.00}
+
+	counts := make([]int, 2)
+	for i := 0; i < 1000; i++ {
+		randVal := float64(i) / 1000.0
+		idx := SelectByCostWeight(costs, randVal)
+		require.GreaterOrEqual(t, idx, 0)
+		require.Less(t, idx, 2)
+		counts[idx]++
+	}
+
+	assert.Greater(t, counts[0], counts[1], "cheaper provider should get more traffic")
+	assert.Greater(t, counts[0], 800, "100x cheaper provider should get >80%% traffic")
+}
+
+func TestSelectByCostWeight_Empty(t *testing.T) {
+	idx := SelectByCostWeight(nil, 0.5)
+	assert.Equal(t, -1, idx)
+}
+
+func TestSelectByCostWeight_Single(t *testing.T) {
+	idx := SelectByCostWeight([]float64{1.50}, 0.5)
+	assert.Equal(t, 0, idx)
 }

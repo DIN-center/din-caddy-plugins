@@ -43,6 +43,23 @@ func TestRecordTokensZeroValues(t *testing.T) {
 	RecordTokens("fast", "groq", "llama", 0, 0)
 }
 
+func TestRecordCost(t *testing.T) {
+	ensureMetricsRegistered(t)
+	// Should not panic
+	RecordCost("balanced", "openai", "gpt-4o", 0.0025)
+}
+
+func TestRecordCost_ZeroIgnored(t *testing.T) {
+	ensureMetricsRegistered(t)
+	// Zero cost should not panic or record
+	RecordCost("balanced", "openai", "gpt-4o", 0)
+}
+
+func TestDinAICostTotal_Registered(t *testing.T) {
+	ensureMetricsRegistered(t)
+	assert.NotNil(t, DinAICostTotal)
+}
+
 func TestRecordHealthCheck(t *testing.T) {
 	ensureMetricsRegistered(t)
 	// Should not panic

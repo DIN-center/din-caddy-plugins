@@ -15,8 +15,29 @@ func (a *OpenAIAdapter) Name() string {
 	return "openai"
 }
 
-// TransformRequest passes through the body unchanged. No transformation needed.
+// TransformRequest injects stream_options for streaming requests to ensure usage
+// data is returned. Non-streaming requests pass through unchanged.
 func (a *OpenAIAdapter) TransformRequest(body []byte) ([]byte, map[string]string, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body, nil, nil // pass through on parse error
+	}
+
+	// Inject stream_options only for streaming requests that don't already have it.
+	if streamVal, ok := raw["stream"]; ok {
+		var isStream bool
+		if json.Unmarshal(streamVal, &isStream) == nil && isStream {
+			if _, hasOpts := raw["stream_options"]; !hasOpts {
+				raw["stream_options"] = json.RawMessage(`{"include_usage":true}`)
+				modified, err := json.Marshal(raw)
+				if err != nil {
+					return body, nil, nil
+				}
+				return modified, nil, nil
+			}
+		}
+	}
+
 	return body, nil, nil
 }
 

@@ -17,12 +17,53 @@ func TestOpenAIAdapterName(t *testing.T) {
 
 func TestOpenAIAdapterTransformRequest(t *testing.T) {
 	a := NewOpenAIAdapter()
-	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`)
 
-	out, headers, err := a.TransformRequest(body)
-	assert.NoError(t, err)
-	assert.Equal(t, body, out) // passthrough
-	assert.Nil(t, headers)
+	t.Run("non-streaming passthrough", func(t *testing.T) {
+		body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`)
+		out, headers, err := a.TransformRequest(body)
+		assert.NoError(t, err)
+		assert.Equal(t, body, out)
+		assert.Nil(t, headers)
+	})
+
+	t.Run("streaming injects stream_options", func(t *testing.T) {
+		body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+		out, headers, err := a.TransformRequest(body)
+		assert.NoError(t, err)
+		assert.Nil(t, headers)
+
+		var raw map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(out, &raw))
+		assert.Contains(t, string(raw["stream_options"]), `"include_usage":true`)
+	})
+
+	t.Run("streaming preserves existing stream_options", func(t *testing.T) {
+		body := []byte(`{"model":"gpt-4o","messages":[],"stream":true,"stream_options":{"include_usage":false}}`)
+		out, headers, err := a.TransformRequest(body)
+		assert.NoError(t, err)
+		assert.Nil(t, headers)
+
+		var raw map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(out, &raw))
+		// Should NOT overwrite existing stream_options.
+		assert.Contains(t, string(raw["stream_options"]), `"include_usage":false`)
+	})
+
+	t.Run("stream false no injection", func(t *testing.T) {
+		body := []byte(`{"model":"gpt-4o","messages":[],"stream":false}`)
+		out, headers, err := a.TransformRequest(body)
+		assert.NoError(t, err)
+		assert.Equal(t, body, out)
+		assert.Nil(t, headers)
+	})
+
+	t.Run("invalid json passthrough", func(t *testing.T) {
+		body := []byte(`not json`)
+		out, headers, err := a.TransformRequest(body)
+		assert.NoError(t, err)
+		assert.Equal(t, body, out)
+		assert.Nil(t, headers)
+	})
 }
 
 func TestOpenAIAdapterTransformResponse(t *testing.T) {
