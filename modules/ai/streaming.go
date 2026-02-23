@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
@@ -121,7 +122,11 @@ func streamToClient(
 	adapter libai.ProviderAdapter,
 	logger *zap.Logger,
 ) *libai.UsageInfo {
-	defer respBody.Close()
+	// Guard against double-close: both the defer and the context-cancellation
+	// goroutine may attempt to close respBody.
+	var closeOnce sync.Once
+	closeBody := func() { closeOnce.Do(func() { respBody.Close() }) }
+	defer closeBody()
 
 	flusher, _ := w.(http.Flusher)
 
@@ -134,7 +139,7 @@ func streamToClient(
 	go func() {
 		select {
 		case <-ctx.Done():
-			respBody.Close()
+			closeBody()
 		case <-done:
 		}
 	}()
