@@ -24,6 +24,24 @@ func TestParseRetryAfter_HTTPDate(t *testing.T) {
 	assert.Equal(t, 3*time.Second, d)
 }
 
+func TestParseRetryAfter_HTTPDateRFC850(t *testing.T) {
+	now := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	target := now.Add(2 * time.Second).Format(time.RFC850)
+
+	d, err := parseRetryAfter(target, now, 10*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, 2*time.Second, d)
+}
+
+func TestParseRetryAfter_HTTPDateInPast(t *testing.T) {
+	now := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	target := now.Add(-2 * time.Second).Format(time.RFC1123)
+
+	d, err := parseRetryAfter(target, now, 10*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), d)
+}
+
 func TestParseRetryAfter_Invalid(t *testing.T) {
 	_, err := parseRetryAfter("not-a-date", time.Now(), 10*time.Second)
 	require.Error(t, err)

@@ -258,6 +258,34 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 		assert.Equal(t, "https://example.com/cat.png", source["url"])
 	})
 
+	t.Run("multimodal image_url base64 data URL", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"image_url","image_url":{"url":"data:image/png;base64,aGVsbG8="}}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		block, ok := blocks[0].(map[string]interface{})
+		require.True(t, ok)
+		source, ok := block["source"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "base64", source["type"])
+		assert.Equal(t, "image/png", source["media_type"])
+		assert.Equal(t, "aGVsbG8=", source["data"])
+	})
+
 	t.Run("unsupported multimodal content part returns error", func(t *testing.T) {
 		input := `{
 			"model":"claude-sonnet-4-20250514",

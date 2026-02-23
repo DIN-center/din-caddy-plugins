@@ -8,7 +8,12 @@ import (
 	"time"
 )
 
-const defaultRetryAfterCap = 5 * time.Second
+const (
+	// defaultRetryAfterCap limits provider Retry-After values so requests don't stall for long periods.
+	defaultRetryAfterCap = 5 * time.Second
+	// defaultRetryBackoff is used when a retryable status is returned without a usable Retry-After header.
+	defaultRetryBackoff = 500 * time.Millisecond
+)
 
 func parseRetryAfter(headerValue string, now time.Time, capDuration time.Duration) (time.Duration, error) {
 	if capDuration <= 0 {
@@ -51,7 +56,10 @@ func httpDateParse(v string) (time.Time, error) {
 	if ts, err := time.Parse(time.RFC1123, v); err == nil {
 		return ts, nil
 	}
-	return time.Parse(time.RFC1123Z, v)
+	if ts, err := time.Parse(time.RFC1123Z, v); err == nil {
+		return ts, nil
+	}
+	return time.Parse(time.RFC850, v)
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) error {

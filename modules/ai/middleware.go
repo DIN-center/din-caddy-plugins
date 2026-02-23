@@ -273,11 +273,12 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 				if shouldRetrySameProviderForStream(err, retriedCurrentProvider) {
 					retriedCurrentProvider = true
 					retryAfter := streamRetryAfter(err)
-					if retryAfter > 0 {
-						if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
-							lastErr = sleepErr
-							break
-						}
+					if retryAfter <= 0 {
+						retryAfter = defaultRetryBackoff
+					}
+					if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+						lastErr = sleepErr
+						break
 					}
 					continue
 				}
@@ -365,11 +366,13 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 			if isRetryableStatus(statusCode) && !retriedCurrentProvider {
 				retriedCurrentProvider = true
-				if retryAfter, ok := retryDelayFromHeaders(respHeaders); ok {
-					if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
-						lastErr = sleepErr
-						break
-					}
+				retryAfter := defaultRetryBackoff
+				if parsed, ok := retryDelayFromHeaders(respHeaders); ok {
+					retryAfter = parsed
+				}
+				if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+					lastErr = sleepErr
+					break
 				}
 				continue
 			}

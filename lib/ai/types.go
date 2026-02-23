@@ -144,9 +144,10 @@ type AnthropicRequestContentBlock struct {
 
 // AnthropicImageSource defines Anthropic image source payload.
 type AnthropicImageSource struct {
-	Type string `json:"type"`
-	URL  string `json:"url,omitempty"`
-	Data string `json:"data,omitempty"`
+	Type      string `json:"type"`
+	URL       string `json:"url,omitempty"`
+	Data      string `json:"data,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
 }
 
 // AnthropicResponse represents an Anthropic Messages API response.

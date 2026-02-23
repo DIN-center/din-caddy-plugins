@@ -1056,6 +1056,32 @@ func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
 	assert.Less(t, elapsed, 300*time.Millisecond, "cancelled context should interrupt Retry-After sleep")
 }
 
+func TestServeHTTP_Streaming_RetryAfterCancelledByContext(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			resp := makeSSEResponse(http.StatusTooManyRequests, "rate limited")
+			resp.Header.Set("Retry-After", "5")
+			return resp, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, req := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	start := time.Now()
+	err := m.ServeHTTP(w, req, noopHandler)
+	elapsed := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Less(t, elapsed, 300*time.Millisecond, "cancelled context should interrupt streaming Retry-After sleep")
+}
+
 func TestNewAIProvider_NoScheme(t *testing.T) {
 	_, err := NewAIProvider("test", "api.example.com/v1/chat")
 	assert.Error(t, err)

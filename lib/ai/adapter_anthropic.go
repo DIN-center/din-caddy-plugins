@@ -156,6 +156,9 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 					Arguments: string(argsBytes),
 				},
 			})
+		} else if block.Type == "thinking" {
+			// No OpenAI equivalent; intentionally skip.
+			continue
 		} else {
 			unsupportedTypes = append(unsupportedTypes, block.Type)
 		}
@@ -464,6 +467,21 @@ func mapOpenAIContentPartsToAnthropic(parts []ChatMessageContentPart) ([]Anthrop
 			if part.ImageURL == nil || part.ImageURL.URL == "" {
 				return nil, fmt.Errorf("image_url part must include a non-empty url")
 			}
+			if strings.HasPrefix(part.ImageURL.URL, "data:") {
+				mediaType, data, err := parseBase64DataURL(part.ImageURL.URL)
+				if err != nil {
+					return nil, err
+				}
+				blocks = append(blocks, AnthropicRequestContentBlock{
+					Type: "image",
+					Source: &AnthropicImageSource{
+						Type:      "base64",
+						MediaType: mediaType,
+						Data:      data,
+					},
+				})
+				continue
+			}
 			blocks = append(blocks, AnthropicRequestContentBlock{
 				Type: "image",
 				Source: &AnthropicImageSource{
@@ -614,4 +632,26 @@ func (a *AnthropicAdapter) buildOpenAIToolDelta(index int, id, name, partialArgs
 		},
 	}
 	return json.Marshal(chunk)
+}
+
+func parseBase64DataURL(dataURL string) (string, string, error) {
+	comma := strings.Index(dataURL, ",")
+	if comma < 0 {
+		return "", "", fmt.Errorf("invalid image data URL format")
+	}
+	prefix := dataURL[:comma]
+	data := dataURL[comma+1:]
+
+	if !strings.Contains(prefix, ";base64") {
+		return "", "", fmt.Errorf("image data URL must be base64 encoded")
+	}
+
+	mediaType := strings.TrimPrefix(strings.Split(prefix, ";")[0], "data:")
+	if mediaType == "" {
+		mediaType = "image/png"
+	}
+	if data == "" {
+		return "", "", fmt.Errorf("image data URL payload is empty")
+	}
+	return mediaType, data, nil
 }
