@@ -18,7 +18,19 @@ type ChatCompletionRequest struct {
 // ChatMessage represents a single message in a conversation.
 type ChatMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// ChatMessageContentPart represents one OpenAI multimodal content part.
+type ChatMessageContentPart struct {
+	Type     string                    `json:"type"`
+	Text     string                    `json:"text,omitempty"`
+	ImageURL *ChatMessageImageURLValue `json:"image_url,omitempty"`
+}
+
+// ChatMessageImageURLValue is the payload for image_url content parts.
+type ChatMessageImageURLValue struct {
+	URL string `json:"url"`
 }
 
 // ChatCompletionResponse represents an OpenAI-compatible chat completion response.
@@ -81,7 +93,21 @@ type AnthropicRequest struct {
 // AnthropicMessage represents a message in the Anthropic format.
 type AnthropicMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// AnthropicRequestContentBlock represents one content block in Anthropic request messages.
+type AnthropicRequestContentBlock struct {
+	Type   string                `json:"type"`
+	Text   string                `json:"text,omitempty"`
+	Source *AnthropicImageSource `json:"source,omitempty"`
+}
+
+// AnthropicImageSource defines Anthropic image source payload.
+type AnthropicImageSource struct {
+	Type string `json:"type"`
+	URL  string `json:"url,omitempty"`
+	Data string `json:"data,omitempty"`
 }
 
 // AnthropicResponse represents an Anthropic Messages API response.

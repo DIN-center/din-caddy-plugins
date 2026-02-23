@@ -66,12 +66,20 @@ func (a *AnthropicAdapter) TransformRequest(body []byte) ([]byte, map[string]str
 	var systemParts []string
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			systemParts = append(systemParts, msg.Content)
+			text, err := extractSystemText(msg.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			systemParts = append(systemParts, text)
 			continue
+		}
+		anthropicContent, err := toAnthropicContent(msg.Content)
+		if err != nil {
+			return nil, nil, err
 		}
 		anthropicReq.Messages = append(anthropicReq.Messages, AnthropicMessage{
 			Role:    msg.Role,
-			Content: msg.Content,
+			Content: anthropicContent,
 		})
 	}
 	if len(systemParts) > 0 {
@@ -266,4 +274,105 @@ func mapAnthropicStopReason(reason *string) *string {
 		mapped = *reason
 	}
 	return &mapped
+}
+
+func extractSystemText(content any) (string, error) {
+	switch v := content.(type) {
+	case string:
+		return v, nil
+	case []any:
+		parts, err := normalizeOpenAIContentParts(v)
+		if err != nil {
+			return "", err
+		}
+		var sb strings.Builder
+		for _, part := range parts {
+			if part.Type != "text" {
+				return "", fmt.Errorf("unsupported system content part type: %s", part.Type)
+			}
+			sb.WriteString(part.Text)
+		}
+		return sb.String(), nil
+	default:
+		return "", fmt.Errorf("unsupported system content type: %T", content)
+	}
+}
+
+func toAnthropicContent(content any) (any, error) {
+	switch v := content.(type) {
+	case string:
+		return v, nil
+	case []any:
+		parts, err := normalizeOpenAIContentParts(v)
+		if err != nil {
+			return nil, err
+		}
+		return mapOpenAIContentPartsToAnthropic(parts)
+	default:
+		return nil, fmt.Errorf("unsupported OpenAI message content type: %T", content)
+	}
+}
+
+func normalizeOpenAIContentParts(rawParts []any) ([]ChatMessageContentPart, error) {
+	parts := make([]ChatMessageContentPart, 0, len(rawParts))
+	for _, rawPart := range rawParts {
+		partMap, ok := rawPart.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unsupported content part shape: %T", rawPart)
+		}
+		partType, _ := partMap["type"].(string)
+		switch partType {
+		case "text":
+			text, _ := partMap["text"].(string)
+			parts = append(parts, ChatMessageContentPart{
+				Type: "text",
+				Text: text,
+			})
+		case "image_url":
+			imageMap, ok := partMap["image_url"].(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("image_url part must include image_url object")
+			}
+			imageURL, _ := imageMap["url"].(string)
+			if imageURL == "" {
+				return nil, fmt.Errorf("image_url part must include a non-empty url")
+			}
+			parts = append(parts, ChatMessageContentPart{
+				Type: "image_url",
+				ImageURL: &ChatMessageImageURLValue{
+					URL: imageURL,
+				},
+			})
+		default:
+			return nil, fmt.Errorf("unsupported content part type: %s", partType)
+		}
+	}
+	return parts, nil
+}
+
+func mapOpenAIContentPartsToAnthropic(parts []ChatMessageContentPart) ([]AnthropicRequestContentBlock, error) {
+	blocks := make([]AnthropicRequestContentBlock, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			blocks = append(blocks, AnthropicRequestContentBlock{
+				Type: "text",
+				Text: part.Text,
+			})
+		case "image_url":
+			if part.ImageURL == nil || part.ImageURL.URL == "" {
+				return nil, fmt.Errorf("image_url part must include a non-empty url")
+			}
+			blocks = append(blocks, AnthropicRequestContentBlock{
+				Type: "image",
+				Source: &AnthropicImageSource{
+					Type: "url",
+					URL:  part.ImageURL.URL,
+				},
+			})
+		default:
+			return nil, fmt.Errorf("unsupported content part type: %s", part.Type)
+		}
+	}
+	return blocks, nil
 }

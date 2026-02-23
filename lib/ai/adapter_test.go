@@ -197,6 +197,83 @@ func TestAnthropicAdapterTransformRequest(t *testing.T) {
 		_, _, err := a.TransformRequest([]byte(`not json`))
 		assert.Error(t, err)
 	})
+
+	t.Run("multimodal text-only content array", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"text","text":"hello"},
+						{"type":"text","text":" world"}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Messages, 1)
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		require.Len(t, blocks, 2)
+		first, ok := blocks[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "text", first["type"])
+		assert.Equal(t, "hello", first["text"])
+	})
+
+	t.Run("multimodal mixed text and image_url", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"text","text":"describe image"},
+						{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}
+					]
+				}
+			]
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+		require.Len(t, result.Messages, 1)
+		blocks, ok := result.Messages[0].Content.([]interface{})
+		require.True(t, ok)
+		require.Len(t, blocks, 2)
+
+		second, ok := blocks[1].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "image", second["type"])
+		source, ok := second["source"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "url", source["type"])
+		assert.Equal(t, "https://example.com/cat.png", source["url"])
+	})
+
+	t.Run("unsupported multimodal content part returns error", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[
+				{
+					"role":"user",
+					"content":[
+						{"type":"audio_url","audio_url":{"url":"https://example.com/a.mp3"}}
+					]
+				}
+			]
+		}`
+		_, _, err := a.TransformRequest([]byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported content part type")
+	})
 }
 
 func TestAnthropicAdapterTransformResponse(t *testing.T) {
