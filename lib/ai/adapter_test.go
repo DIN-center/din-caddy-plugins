@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -361,6 +362,51 @@ func TestAnthropicAdapterTransformRequest_ToolChoiceNone(t *testing.T) {
 	// "none" should omit both tools and tool_choice from the request.
 	assert.Nil(t, result.Tools, "tools should be omitted when tool_choice is none")
 	assert.Nil(t, result.ToolChoice, "tool_choice should be omitted when none")
+}
+
+func TestAnthropicAdapterTransformRequest_ToolChoiceStringMappings(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	tests := []struct {
+		name         string
+		toolChoice   string
+		expectedType string
+	}{
+		{"auto maps to auto", "auto", "auto"},
+		{"required maps to any", "required", "any"},
+		{"unknown string defaults to auto", "foobar", "auto"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`{
+				"model":"claude-sonnet-4-20250514",
+				"messages":[{"role":"user","content":"hello"}],
+				"tools":[
+					{
+						"type":"function",
+						"function":{
+							"name":"get_weather",
+							"description":"Get weather",
+							"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+						}
+					}
+				],
+				"tool_choice":"%s"
+			}`, tt.toolChoice)
+
+			out, _, err := a.TransformRequest([]byte(input))
+			require.NoError(t, err)
+
+			var result AnthropicRequest
+			require.NoError(t, json.Unmarshal(out, &result))
+
+			assert.NotNil(t, result.Tools, "tools should be preserved for %s", tt.toolChoice)
+			choice, ok := result.ToolChoice.(map[string]interface{})
+			require.True(t, ok, "tool_choice should be an object for %s", tt.toolChoice)
+			assert.Equal(t, tt.expectedType, choice["type"])
+		})
+	}
 }
 
 func TestAnthropicAdapterTransformRequest_ToolChoiceUnrecognizedPassthrough(t *testing.T) {
