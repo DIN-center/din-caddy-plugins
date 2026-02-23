@@ -15,7 +15,7 @@ lib/ai/              — Pure types, interfaces, adapters (zero Caddy dependency
   adapter.go         — ProviderAdapter interface
   adapter_openai.go  — OpenAI passthrough adapter
   adapter_anthropic.go — Anthropic Messages API translation adapter
-  hashing.go         — Session hash and TTFT-weighted selection
+  hashing.go         — Session hash, TTFT-weighted, and cost-weighted selection
 
 modules/ai/          — Caddy middleware module
   middleware.go      — Main module: ServeHTTP, Caddyfile parsing, Validate
@@ -399,11 +399,12 @@ All metrics use the `din_ai_` prefix.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `din_ai_requests_total` | Counter | tier, provider, model, status | Total requests by outcome |
-| `din_ai_tokens_input_total` | Counter | tier, provider, model | Input tokens consumed |
-| `din_ai_tokens_output_total` | Counter | tier, provider, model | Output tokens generated |
-| `din_ai_health_checks_total` | Counter | provider, status_code, health_status | Health check results |
+| `din_ai_request_count` | Counter | tier, provider, model, status_code | Total requests by outcome |
+| `din_ai_tokens_total` | Counter | tier, provider, model, token_type | Tokens consumed (token_type: `prompt` or `completion`) |
+| `din_ai_health_check_count` | Counter | provider, status_code, health_status | Health check results |
 | `din_ai_cost_total_usd` | Counter | tier, provider, model | Cumulative estimated cost in USD |
+| `din_ai_request_duration_milliseconds` | Histogram | tier, provider, model | Request duration (disabled by default) |
+| `din_ai_ttft_duration_milliseconds` | Histogram | tier, provider, model | Time-to-first-token (disabled by default) |
 
 TTFT measurements for routing decisions are tracked in-memory on provider structs (rolling window of 20 measurements), not exported to Prometheus.
 

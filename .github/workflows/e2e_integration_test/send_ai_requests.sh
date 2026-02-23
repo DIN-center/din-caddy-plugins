@@ -45,10 +45,12 @@ make_chat_request() {
     local tier="$1"
     local session_id="$2"
     local stream="$3"
+    local optimize="$4"
 
     local headers=(-H "Content-Type: application/json")
     [ -n "$tier" ] && headers+=(-H "X-DIN-Tier: $tier")
     [ -n "$session_id" ] && headers+=(-H "X-DIN-Session-Id: $session_id")
+    [ -n "$optimize" ] && headers+=(-H "X-DIN-Optimize: $optimize")
 
     local payload
     payload=$(cat <<EOF
@@ -322,6 +324,104 @@ test_error_handling() {
 }
 
 # ============================================================
+# Test: Cost optimization
+# ============================================================
+test_cost_optimization() {
+    echo -e "\n${YELLOW}Testing Cost Optimization${NC}"
+
+    # X-DIN-Optimize: cost — should return X-DIN-Cost header
+    make_chat_request "fast" "" "false" "cost"
+    if [ "$LAST_STATUS_CODE" = "200" ]; then
+        local cost_header
+        cost_header=$(get_header "X-DIN-Cost")
+        if [ -n "$cost_header" ]; then
+            print_test_result "Cost mode - X-DIN-Cost header present" "PASS" "Cost: \$$cost_header"
+        else
+            print_test_result "Cost mode - X-DIN-Cost header present" "FAIL" "X-DIN-Cost header missing"
+        fi
+    else
+        print_test_result "Cost mode - X-DIN-Cost header present" "FAIL" "Status: $LAST_STATUS_CODE"
+    fi
+
+    # X-DIN-Optimize: balanced — should succeed
+    make_chat_request "balanced" "" "false" "balanced"
+    if [ "$LAST_STATUS_CODE" = "200" ]; then
+        local cost_header
+        cost_header=$(get_header "X-DIN-Cost")
+        if [ -n "$cost_header" ]; then
+            print_test_result "Balanced mode - X-DIN-Cost header present" "PASS" "Cost: \$$cost_header"
+        else
+            print_test_result "Balanced mode - X-DIN-Cost header present" "FAIL" "X-DIN-Cost header missing"
+        fi
+    else
+        print_test_result "Balanced mode - X-DIN-Cost header present" "FAIL" "Status: $LAST_STATUS_CODE"
+    fi
+
+    # X-DIN-Optimize: latency (default) — should also return X-DIN-Cost header
+    make_chat_request "fast" "" "false" "latency"
+    if [ "$LAST_STATUS_CODE" = "200" ]; then
+        local cost_header
+        cost_header=$(get_header "X-DIN-Cost")
+        if [ -n "$cost_header" ]; then
+            print_test_result "Latency mode - X-DIN-Cost header present" "PASS" "Cost: \$$cost_header"
+        else
+            print_test_result "Latency mode - X-DIN-Cost header present" "FAIL" "X-DIN-Cost header missing"
+        fi
+    else
+        print_test_result "Latency mode - X-DIN-Cost header present" "FAIL" "Status: $LAST_STATUS_CODE"
+    fi
+
+    # Invalid X-DIN-Optimize value — should return 400
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" -m 10 \
+        -H "Content-Type: application/json" \
+        -H "X-DIN-Optimize: invalid" \
+        -d '{"model":"x","messages":[{"role":"user","content":"hi"}]}' \
+        "$BASE_URL/v1/chat/completions" 2>/dev/null)
+
+    if [ "$status" = "400" ]; then
+        print_test_result "Invalid optimize mode" "PASS" "Status: $status"
+    else
+        print_test_result "Invalid optimize mode" "FAIL" "Expected 400, got $status"
+    fi
+}
+
+# ============================================================
+# Test: Streaming cost SSE comment
+# ============================================================
+test_streaming_cost() {
+    echo -e "\n${CYAN}Testing Streaming Cost SSE Comment${NC}"
+
+    local tmp_body
+    tmp_body=$(mktemp)
+
+    local status
+    status=$(curl -s -o "$tmp_body" -w "%{http_code}" -m "$TIMEOUT" \
+        -H "Content-Type: application/json" \
+        -H "X-DIN-Tier: fast" \
+        -H "X-DIN-Optimize: cost" \
+        -d '{"model":"ignored","messages":[{"role":"user","content":"Say hi"}],"stream":true,"max_tokens":10}' \
+        "$BASE_URL/v1/chat/completions" 2>/dev/null)
+
+    if [ "$status" = "200" ]; then
+        local has_cost_comment
+        has_cost_comment=$(grep -c "^: din-cost" "$tmp_body" || true)
+
+        if [ "$has_cost_comment" -ge 1 ]; then
+            local cost_value
+            cost_value=$(grep "^: din-cost" "$tmp_body" | awk '{print $3}')
+            print_test_result "Streaming cost SSE comment" "PASS" "Cost: \$$cost_value"
+        else
+            print_test_result "Streaming cost SSE comment" "FAIL" "Missing ': din-cost' comment in stream"
+        fi
+    else
+        print_test_result "Streaming cost SSE comment" "FAIL" "Status: $status"
+    fi
+
+    rm -f "$tmp_body"
+}
+
+# ============================================================
 # Summary
 # ============================================================
 print_summary() {
@@ -365,6 +465,8 @@ main() {
     test_response_headers
     test_session_stickiness
     test_tier_selection
+    test_cost_optimization
+    test_streaming_cost
     test_error_handling
 
     print_summary
