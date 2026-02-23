@@ -42,9 +42,11 @@ The AI Router Middleware routes `POST /v1/chat/completions` requests across AI m
 
 **Key Features:**
 - **Quality Tiers** (fast, balanced, premium) — clients select via `X-DIN-Tier` header
+- **Cost Optimization** — `X-DIN-Optimize` header selects `latency`, `cost`, or `balanced` provider selection within a tier
 - **SSE Streaming** with pre-first-byte failover — validates the first chunk before committing to the client
 - **Deterministic Session Routing** — `X-DIN-Session-Id` header consistently routes to the same provider via FNV-32a hashing (works across all proxy instances with zero shared state)
-- **TTFT-Weighted Selection** — for non-session traffic, faster providers receive more traffic
+- **TTFT-Weighted Selection** — for non-session traffic, faster providers receive more traffic (default mode)
+- **Cost Tracking** — `X-DIN-Cost` response header and `din_ai_cost_total_usd` Prometheus metric
 - **Provider Health Checks** — periodic lightweight completions with automatic state transitions (healthy → warning → unhealthy)
 - **Protocol Translation** — Anthropic Messages API is translated to/from OpenAI format via the adapter pattern
 
@@ -60,7 +62,8 @@ The AI Router Middleware routes `POST /v1/chat/completions` requests across AI m
 | Header | Required | Default | Purpose |
 |--------|----------|---------|---------|
 | `X-DIN-Tier` | No | `balanced` | Quality tier: `fast`, `balanced`, or `premium` |
-| `X-DIN-Session-Id` | No | — | Session ID for deterministic provider selection (omit for TTFT-weighted) |
+| `X-DIN-Session-Id` | No | — | Session ID for deterministic provider selection (takes priority over optimize mode) |
+| `X-DIN-Optimize` | No | `latency` | Provider selection strategy: `latency` (TTFT-weighted), `cost` (cheapest first), or `balanced` (60/40 cost/latency) |
 
 **Response Headers** (DIN → client):
 
@@ -71,6 +74,7 @@ The AI Router Middleware routes `POST /v1/chat/completions` requests across AI m
 | `X-DIN-Tier` | Which tier was resolved |
 | `X-DIN-Session-Pinned` | `true` when session routing is active |
 | `X-DIN-Request-Id` | Unique request ID |
+| `X-DIN-Cost` | Estimated cost in USD (6 decimal places). For streaming, cost is sent as `: din-cost <value>` SSE comment after `[DONE]` |
 
 Caddyfile Example:
 
@@ -91,6 +95,10 @@ Caddyfile Example:
                             headers {
                                 Authorization "Bearer {env.GROQ_API_KEY}"
                             }
+                            cost {
+                                input_per_1m 0.06
+                                output_per_1m 0.06
+                            }
                         }
                     }
                 }
@@ -102,6 +110,10 @@ Caddyfile Example:
                             headers {
                                 Authorization "Bearer {env.OPENAI_API_KEY}"
                             }
+                            cost {
+                                input_per_1m 2.50
+                                output_per_1m 10.00
+                            }
                         }
                         openai-o3 https://api.openai.com/v1/chat/completions {
                             model o3-mini
@@ -112,6 +124,10 @@ Caddyfile Example:
                             headers {
                                 Authorization "Bearer {env.OPENAI_API_KEY}"
                             }
+                            cost {
+                                input_per_1m 1.10
+                                output_per_1m 4.40
+                            }
                         }
                         anthropic-sonnet https://api.anthropic.com/v1/messages {
                             model claude-sonnet-4-20250514
@@ -119,6 +135,10 @@ Caddyfile Example:
                             headers {
                                 x-api-key {env.ANTHROPIC_API_KEY}
                                 anthropic-version 2023-06-01
+                            }
+                            cost {
+                                input_per_1m 3.00
+                                output_per_1m 15.00
                             }
                         }
                     }
@@ -138,6 +158,7 @@ The middleware overwrites the client's `model` field with the provider's configu
 | `model` | Yes | Model ID sent to the backend |
 | `adapter` | No | `openai` (default) or `anthropic` |
 | `headers` | No | Static headers (e.g. `Authorization`) |
+| `cost` | **Yes** | Cost per 1M tokens in USD (`input_per_1m` and `output_per_1m`). Used for cost-based routing and cost headers |
 | `health_check` | No | Override health check request params (e.g. `max_completion_tokens 1` for reasoning models) |
 
 The `health_check` block is needed for OpenAI reasoning models (o3, o1) which require `max_completion_tokens` instead of `max_tokens`. Without it, health checks default to `max_tokens: 1`.
