@@ -397,6 +397,19 @@ func TestCleanup(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestCleanup_NilLogger(t *testing.T) {
+	m := &DinAIMiddleware{
+		quit: make(chan struct{}),
+		// logger intentionally nil — simulates Cleanup called before Provision.
+	}
+
+	// Should not panic.
+	assert.NotPanics(t, func() {
+		err := m.Cleanup()
+		assert.NoError(t, err)
+	})
+}
+
 func TestCleanup_StopsHealthChecks(t *testing.T) {
 	ensureMetricsRegistered(t)
 

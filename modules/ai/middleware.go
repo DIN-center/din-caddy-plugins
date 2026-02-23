@@ -145,7 +145,9 @@ func (m *DinAIMiddleware) Cleanup() error {
 		if m.quit != nil {
 			close(m.quit)
 		}
-		m.logger.Info("DIN AI middleware cleaned up")
+		if m.logger != nil {
+			m.logger.Info("DIN AI middleware cleaned up")
+		}
 	})
 	return nil
 }
