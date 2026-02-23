@@ -131,6 +131,11 @@ type AnthropicMessage struct {
 }
 
 // AnthropicRequestContentBlock represents one content block in Anthropic request messages.
+// Field usage by block type:
+//   - "text": Text
+//   - "image": Source
+//   - "tool_use": ID, Name, Input
+//   - "tool_result": ToolUseID, Content (the tool's output string)
 type AnthropicRequestContentBlock struct {
 	Type      string                `json:"type"`
 	Text      string                `json:"text,omitempty"`
