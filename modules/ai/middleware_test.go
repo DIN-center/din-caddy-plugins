@@ -1032,6 +1032,37 @@ func TestServeHTTP_NonStreaming_429RetrySameProviderThenFailover(t *testing.T) {
 	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
 }
 
+func TestServeHTTP_NonStreaming_TransformResponseError_NoInfiniteLoop(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Use Anthropic adapter so TransformResponse actually parses the body.
+	m.Tiers[TierBalanced].Providers[0].AdapterType = AdapterAnthropic
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/messages"
+	m.Tiers[TierBalanced].Providers[1].AdapterType = AdapterAnthropic
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/messages"
+
+	callCount := 0
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			callCount++
+			// Return HTTP 200 with body that Anthropic adapter cannot parse,
+			// triggering a TransformResponse error.
+			return []byte(`not valid json`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"claude-3","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+
+	assert.NoError(t, err)
+	// Should NOT loop forever — must terminate after maxAttempts (default 3).
+	assert.LessOrEqual(t, callCount, m.RequestAttemptCount,
+		"should terminate after maxAttempts, not loop infinitely on TransformResponse errors")
+	assert.Equal(t, http.StatusBadGateway, w.Code,
+		"should return 502 when all attempts fail with transform errors")
+}
+
 func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
 	m := newTestMiddleware(t)
 

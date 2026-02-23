@@ -388,6 +388,13 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		if err != nil {
 			// Transform errors are our code's fault, not the provider's — no health update.
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
