@@ -471,18 +471,18 @@ func TestSelectUntried(t *testing.T) {
 
 	// First call should return a provider.
 	tried := make(map[string]bool)
-	p1 := m.selectUntried(tier, "", tried)
+	p1 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	require.NotNil(t, p1)
 	tried[p1.Name] = true
 
 	// Second call should return a different provider.
-	p2 := m.selectUntried(tier, "", tried)
+	p2 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	require.NotNil(t, p2)
 	assert.NotEqual(t, p1.Name, p2.Name)
 	tried[p2.Name] = true
 
 	// Third call with all tried should return nil.
-	p3 := m.selectUntried(tier, "", tried)
+	p3 := m.selectUntried(tier, "", tried, OptimizeLatency)
 	assert.Nil(t, p3)
 }
 
@@ -1076,6 +1076,63 @@ func TestCostForTokens_ZeroTokens(t *testing.T) {
 
 	cost := p.CostForTokens(0, 0)
 	assert.Equal(t, 0.0, cost)
+}
+
+func TestServeHTTP_XDINOptimize_Invalid(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "invalid"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp libai.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error.Message, "invalid X-DIN-Optimize")
+}
+
+func TestServeHTTP_XDINOptimize_Cost(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set distinct costs so cost mode favors the cheaper one.
+	m.Tiers[TierBalanced].Providers[0].InputCostPer1M = 10.00
+	m.Tiers[TierBalanced].Providers[0].OutputCostPer1M = 40.00
+	m.Tiers[TierBalanced].Providers[1].InputCostPer1M = 0.10
+	m.Tiers[TierBalanced].Providers[1].OutputCostPer1M = 0.30
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "cost"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestServeHTTP_XDINOptimize_Balanced(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body,
+		map[string]string{"X-DIN-Optimize": "balanced"})
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestServeHTTP_XDINOptimize_Default(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestCostForTokens_LargeTokenCounts(t *testing.T) {

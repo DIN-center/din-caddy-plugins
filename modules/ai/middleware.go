@@ -204,6 +204,17 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 	// Read session header.
 	sessionID := r.Header.Get("X-DIN-Session-Id")
 
+	// Read optimization mode header.
+	optimizeMode := r.Header.Get("X-DIN-Optimize")
+	if optimizeMode == "" {
+		optimizeMode = OptimizeLatency
+	}
+	if optimizeMode != OptimizeLatency && optimizeMode != OptimizeCost && optimizeMode != OptimizeBalanced {
+		return writeErrorResponse(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid X-DIN-Optimize value: %s (must be 'latency', 'cost', or 'balanced')", optimizeMode),
+			"invalid_request_error")
+	}
+
 	// Generate request ID.
 	requestID := generateRequestID()
 
@@ -218,7 +229,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		// Select provider.
-		provider := m.selectUntried(tier, sessionID, tried)
+		provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
 		if provider == nil {
 			break
 		}
@@ -326,12 +337,12 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 }
 
 // selectUntried picks a provider that hasn't been tried yet.
-func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[string]bool) *AIProvider {
+func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[string]bool, optimizeMode string) *AIProvider {
 	if len(tried) == 0 {
-		return tier.SelectProvider(sessionID)
+		return tier.SelectProvider(sessionID, optimizeMode)
 	}
 
-	// For retries, use TTFT-weighted selection excluding tried providers.
+	// For retries, use optimization-mode-aware selection excluding tried providers.
 	available := tier.GetAvailableProviders()
 	var untried []*AIProvider
 	for _, p := range available {
@@ -349,7 +360,7 @@ func (m *DinAIMiddleware) selectUntried(tier *Tier, sessionID string, tried map[
 
 	// Create a temporary tier for selection — no session hash for retries.
 	tempTier := &Tier{Name: tier.Name, Providers: untried}
-	return tempTier.SelectProvider("")
+	return tempTier.SelectProvider("", optimizeMode)
 }
 
 // attemptNonStreaming makes a non-streaming request to a provider.

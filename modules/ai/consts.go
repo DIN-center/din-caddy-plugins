@@ -30,6 +30,13 @@ const (
 	AdapterAnthropic = "anthropic"
 )
 
+// Optimization modes controlled by X-DIN-Optimize header.
+const (
+	OptimizeLatency  = "latency"  // default: TTFT-weighted selection
+	OptimizeCost     = "cost"     // inverse-cost-weighted selection
+	OptimizeBalanced = "balanced" // combined cost + latency scoring
+)
+
 func (h HealthStatus) String() string {
 	switch h {
 	case Healthy:
