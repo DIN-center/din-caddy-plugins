@@ -409,7 +409,7 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	}
 	headers["Content-Type"] = "application/json"
 
-	respBody, statusCode, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, _, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		return nil, 0, provider, fmt.Errorf("post: %w", err)
 	}
@@ -738,14 +738,14 @@ func newHealthCheckClient() *defaultStreamingClient {
 	}
 }
 
-func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (c *defaultStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	resp, err := c.PostStream(ctx, url, headers, payload)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, err
+	return body, resp.StatusCode, resp.Header.Clone(), err
 }
 
 func (c *defaultStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {

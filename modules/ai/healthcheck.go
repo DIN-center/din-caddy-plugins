@@ -121,7 +121,7 @@ func checkProvider(
 
 	startTime := time.Now()
 
-	respBody, statusCode, err := client.Post(ctx, provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, _, err := client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		logger.Warn("health check failed",
 			zap.String("provider", provider.Name),

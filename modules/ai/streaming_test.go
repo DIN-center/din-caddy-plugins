@@ -22,14 +22,14 @@ type mockStreamingClient struct {
 	handler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockStreamingClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	resp, err := m.PostStream(ctx, url, headers, payload)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, err
+	return body, resp.StatusCode, resp.Header.Clone(), err
 }
 
 func (m *mockStreamingClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {

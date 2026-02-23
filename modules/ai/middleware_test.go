@@ -21,15 +21,15 @@ import (
 
 // mockClient implements IStreamingHTTPClient for middleware tests.
 type mockClient struct {
-	postHandler       func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error)
+	postHandler       func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error)
 	postStreamHandler func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error)
 }
 
-func (m *mockClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	if m.postHandler != nil {
 		return m.postHandler(ctx, url, headers, payload)
 	}
-	return nil, 500, nil
+	return nil, 500, nil, nil
 }
 
 func (m *mockClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
@@ -49,8 +49,8 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 	ensureMetricsRegistered(t)
 
 	client := &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil, nil
 		},
 	}
 
@@ -196,8 +196,8 @@ func TestServeHTTP_AllProvidersFail_Returns502(t *testing.T) {
 
 	// Force all providers to return errors.
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return nil, 0, fmt.Errorf("connection refused")
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return nil, 0, nil, fmt.Errorf("connection refused")
 		},
 	}
 
@@ -374,12 +374,12 @@ func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"server error"}`), 500, nil
+				return []byte(`{"error":"server error"}`), 500, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -529,8 +529,8 @@ func TestServeHTTP_ConcurrentRequests(t *testing.T) {
 	sseData += "data: [DONE]\n\n"
 
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil, nil
 		},
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
@@ -866,12 +866,12 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, 0, fmt.Errorf("connection refused")
+				return nil, 0, nil, fmt.Errorf("connection refused")
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -904,12 +904,12 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 	// Single 500 from one provider, but it gets retried to a second.
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"server error"}`), 500, nil
+				return []byte(`{"error":"server error"}`), 500, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 
@@ -930,12 +930,12 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 
 	callCount := 0
 	m.client = &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
-				return []byte(`{"error":"rate limited"}`), 429, nil
+				return []byte(`{"error":"rate limited"}`), 429, nil, nil
 			}
-			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
 	}
 

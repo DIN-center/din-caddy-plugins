@@ -23,11 +23,11 @@ type mockHealthCheckClient struct {
 	err        error
 }
 
-func (m *mockHealthCheckClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+func (m *mockHealthCheckClient) Post(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 	if m.err != nil {
-		return nil, 0, m.err
+		return nil, 0, nil, m.err
 	}
-	return []byte(m.body), m.statusCode, nil
+	return []byte(m.body), m.statusCode, nil, nil
 }
 
 func (m *mockHealthCheckClient) PostStream(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
@@ -348,7 +348,7 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 
 	// Create a slow mock that takes 500ms per check and tracks concurrency.
 	slowMock := &mockClient{
-		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, error) {
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			cur := atomic.AddInt32(&running, 1)
 			defer atomic.AddInt32(&running, -1)
 
@@ -361,7 +361,7 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 			}
 
 			time.Sleep(500 * time.Millisecond)
-			return []byte(`{}`), 200, nil
+			return []byte(`{}`), 200, nil, nil
 		},
 	}
 
