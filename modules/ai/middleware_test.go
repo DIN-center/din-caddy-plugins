@@ -310,6 +310,34 @@ func TestServeHTTP_Streaming_Success(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "[DONE]")
 }
 
+func TestServeHTTP_Streaming_Failover(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	sseData := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
+	sseData += "data: [DONE]\n\n"
+
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			callCount++
+			if callCount == 1 {
+				return makeSSEResponse(500, "server error"), nil
+			}
+			return makeSSEResponse(200, sseData), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.GreaterOrEqual(t, callCount, 2, "should have retried after first provider failed")
+	assert.Contains(t, w.Body.String(), "[DONE]")
+}
+
 func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 	m := newTestMiddleware(t)
 
