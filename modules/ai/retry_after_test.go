@@ -53,6 +53,12 @@ func TestParseRetryAfter_CapApplied(t *testing.T) {
 	assert.Equal(t, 1*time.Second, d)
 }
 
+func TestParseRetryAfter_NegativeSeconds(t *testing.T) {
+	_, err := parseRetryAfter("-5", time.Now(), 10*time.Second)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "negative")
+}
+
 func TestSleepWithContext_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
