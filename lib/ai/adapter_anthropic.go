@@ -167,7 +167,7 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 	// return an error rather than silently dropping the content.
 	// When text IS present alongside unsupported types, the text is returned and unsupported
 	// blocks (tool calls, thinking) are intentionally dropped — full tool-call translation is out of scope.
-	if len(contentParts) == 0 && len(unsupportedTypes) > 0 {
+	if len(contentParts) == 0 && len(toolCalls) == 0 && len(unsupportedTypes) > 0 {
 		return nil, fmt.Errorf("anthropic response contains only unsupported content types: %v", unsupportedTypes)
 	}
 	content := ""

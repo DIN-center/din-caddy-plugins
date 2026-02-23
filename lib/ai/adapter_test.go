@@ -648,6 +648,36 @@ func TestAnthropicAdapterToolUseContentBlocks(t *testing.T) {
 	assert.Equal(t, "tool_calls", *result.Choices[0].FinishReason)
 }
 
+func TestAnthropicAdapterTransformResponse_ToolUseWithUnknownType(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Response with tool_use + unknown block type should succeed, not error.
+	stopReason := "tool_use"
+	anthropicResp := AnthropicResponse{
+		ID:   "msg_unknown",
+		Type: "message",
+		Role: "assistant",
+		Content: []AnthropicContent{
+			{Type: "tool_use", ID: "toolu_abc", Name: "search", Input: map[string]any{"q": "test"}},
+			{Type: "server_tool_result", Text: "some unknown block type"},
+		},
+		Model:      "claude-sonnet-4-20250514",
+		StopReason: &stopReason,
+	}
+	body, _ := json.Marshal(anthropicResp)
+
+	out, err := a.TransformResponse(body)
+	require.NoError(t, err, "should not error when tool_use blocks exist alongside unknown types")
+
+	var result ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result.Choices, 1)
+	require.NotNil(t, result.Choices[0].Message)
+	require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+	assert.Equal(t, "toolu_abc", result.Choices[0].Message.ToolCalls[0].ID)
+	assert.Equal(t, "search", result.Choices[0].Message.ToolCalls[0].Function.Name)
+}
+
 func TestAnthropicAdapterMixedContentBlocks(t *testing.T) {
 	a := NewAnthropicAdapter()
 
