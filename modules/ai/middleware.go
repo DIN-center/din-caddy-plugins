@@ -629,6 +629,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if val <= 0 {
 				return d.Errf("healthcheck_interval must be positive, got %d", val)
 			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for healthcheck_interval")
+			}
 			m.HealthcheckInterval = val
 
 		case "healthcheck_threshold":
@@ -642,6 +645,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if val <= 0 {
 				return d.Errf("healthcheck_threshold must be positive, got %d", val)
 			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for healthcheck_threshold")
+			}
 			m.HealthcheckThreshold = val
 
 		case "request_attempt_count":
@@ -654,6 +660,9 @@ func (m *DinAIMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			if val <= 0 {
 				return d.Errf("request_attempt_count must be positive, got %d", val)
+			}
+			if d.NextArg() {
+				return d.Errf("too many arguments for request_attempt_count")
 			}
 			m.RequestAttemptCount = val
 

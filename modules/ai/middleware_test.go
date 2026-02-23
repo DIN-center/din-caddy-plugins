@@ -894,6 +894,56 @@ func TestUnmarshalCaddyfile_NegativeInterval(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be positive")
 }
 
+func TestUnmarshalCaddyfile_ExcessArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		directive string
+		errMsg    string
+	}{
+		{
+			name:      "healthcheck_interval excess",
+			directive: "healthcheck_interval 30 extra",
+			errMsg:    "too many arguments for healthcheck_interval",
+		},
+		{
+			name:      "healthcheck_threshold excess",
+			directive: "healthcheck_threshold 3 extra",
+			errMsg:    "too many arguments for healthcheck_threshold",
+		},
+		{
+			name:      "request_attempt_count excess",
+			directive: "request_attempt_count 5 extra",
+			errMsg:    "too many arguments for request_attempt_count",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`din_ai {
+		%s
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
+					}
+				}
+			}
+		}
+	}`, tt.directive)
+			m := &DinAIMiddleware{}
+			d := caddyfile.NewTestDispenser(input)
+			err := m.UnmarshalCaddyfile(d)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMsg)
+		})
+	}
+}
+
 func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
 	input := `din_ai {
 		tiers {
