@@ -45,11 +45,19 @@ din_ai {
                     headers {
                         Authorization "Bearer {env.GROQ_API_KEY}"
                     }
+                    cost {
+                        input_per_1m 0.06
+                        output_per_1m 0.06
+                    }
                 }
                 deepseek-chat https://api.deepseek.com/v1/chat/completions {
                     model deepseek-chat
                     headers {
                         Authorization "Bearer {env.DEEPSEEK_API_KEY}"
+                    }
+                    cost {
+                        input_per_1m 0.27
+                        output_per_1m 1.10
                     }
                 }
             }
@@ -61,6 +69,10 @@ din_ai {
                     headers {
                         Authorization "Bearer {env.OPENAI_API_KEY}"
                     }
+                    cost {
+                        input_per_1m 2.50
+                        output_per_1m 10.00
+                    }
                 }
                 anthropic-sonnet https://api.anthropic.com/v1/messages {
                     model claude-sonnet-4-20250514
@@ -68,6 +80,10 @@ din_ai {
                     headers {
                         x-api-key {env.ANTHROPIC_API_KEY}
                         anthropic-version 2023-06-01
+                    }
+                    cost {
+                        input_per_1m 3.00
+                        output_per_1m 15.00
                     }
                 }
             }
@@ -81,6 +97,10 @@ din_ai {
                     }
                     health_check {
                         max_completion_tokens 1
+                    }
+                    cost {
+                        input_per_1m 10.00
+                        output_per_1m 40.00
                     }
                 }
             }
@@ -96,6 +116,7 @@ din_ai {
 | `model` | Yes | Model identifier sent to the backend (e.g., `gpt-4o`, `claude-sonnet-4-20250514`) |
 | `adapter` | No | `openai` (default) or `anthropic`. Controls request/response translation |
 | `headers` | No | Static headers sent with every request (supports `{env.VAR}` expansion) |
+| `cost` | **Yes** | Cost per 1M tokens in USD. Must contain `input_per_1m` and `output_per_1m` (both positive). Used for cost-based routing and cost response headers |
 | `health_check` | No | Per-provider health check overrides (e.g., `max_completion_tokens 1` for reasoning models) |
 
 ### Environment variable expansion
@@ -105,8 +126,8 @@ Headers support `{env.VAR_NAME}` patterns that are expanded at Caddyfile parse t
 ### Validation
 
 The module validates configuration at two points:
-- **Caddyfile parsing** — Rejects negative intervals, duplicate tier/provider names, unknown adapter types, invalid URLs (must be http/https with a host), missing model/URL fields
-- **`Validate()` method** — Runs after `Provision()` for JSON API configs. Checks all intervals > 0, at least one tier with providers, valid adapter types
+- **Caddyfile parsing** — Rejects negative intervals, duplicate tier/provider names, unknown adapter types, invalid URLs (must be http/https with a host), missing model/URL fields, missing or invalid `cost {}` block
+- **`Validate()` method** — Runs after `Provision()` for JSON API configs. Checks all intervals > 0, at least one tier with providers, valid adapter types, cost configuration present on every provider
 
 ## Request/Response Format
 
@@ -117,6 +138,7 @@ POST /v1/chat/completions
 Content-Type: application/json
 X-DIN-Tier: balanced
 X-DIN-Session-Id: conv_abc123
+X-DIN-Optimize: cost
 
 {
   "model": "ignored",
@@ -134,7 +156,8 @@ X-DIN-Session-Id: conv_abc123
 |--------|----------|---------|-------------|
 | `Content-Type` | Yes | — | Must be `application/json` |
 | `X-DIN-Tier` | No | `balanced` | Quality tier to route to (`fast`, `balanced`, or `premium`) |
-| `X-DIN-Session-Id` | No | — | Session identifier for multi-turn conversations. When present, the same ID always routes to the same provider via deterministic hash. When absent, TTFT-weighted selection is used |
+| `X-DIN-Session-Id` | No | — | Session identifier for multi-turn conversations. When present, the same ID always routes to the same provider via deterministic hash. When absent, optimization-mode-based selection is used |
+| `X-DIN-Optimize` | No | `latency` | Provider selection strategy within a tier: `latency` (TTFT-weighted), `cost` (inverse-cost-weighted), or `balanced` (combined 60/40 cost/latency). Session stickiness takes priority when `X-DIN-Session-Id` is present |
 
 The `model` field in the request body is overwritten with the selected provider's configured model. Clients don't need to know which model they're talking to.
 
@@ -149,6 +172,7 @@ Request body limit is **10MB**. Bodies exceeding this return `413 Request Entity
 | `X-DIN-Tier` | Tier that was selected |
 | `X-DIN-Request-Id` | Unique request ID (32 hex chars) |
 | `X-DIN-Session-Pinned` | `true` if session stickiness was used |
+| `X-DIN-Cost` | Estimated cost in USD for the request (6 decimal places, e.g., `0.000150`). Present on non-streaming responses only — for streaming, see [Streaming cost reporting](#streaming-cost-reporting) |
 
 ### Response format
 
@@ -162,11 +186,14 @@ Requests are routed to a tier based on the `X-DIN-Tier` header (default: `balanc
 
 ### Provider selection within a tier
 
-1. **Session stickiness** — If `X-DIN-Session-Id` is present, the session ID is hashed (FNV-32a) to deterministically select a provider. This is stateless — all proxy instances independently hash to the same provider with zero shared state.
+1. **Session stickiness** — If `X-DIN-Session-Id` is present, the session ID is hashed (FNV-32a) to deterministically select a provider. This is stateless — all proxy instances independently hash to the same provider with zero shared state. Session stickiness always takes priority over the optimization mode.
 
-2. **TTFT-weighted selection** — Without a session ID, providers are selected randomly weighted by inverse time-to-first-token. Faster providers receive proportionally more traffic. See [TTFT-weighted selection](#ttft-weighted-selection) for details.
+2. **Optimization-mode selection** — Without a session ID, providers are selected based on the `X-DIN-Optimize` header:
+   - `latency` (default): TTFT-weighted random selection. See [TTFT-weighted selection](#ttft-weighted-selection).
+   - `cost`: Inverse-cost-weighted random selection. Cheaper providers get more traffic. See [Cost optimization](#cost-optimization).
+   - `balanced`: Combined cost + latency scoring (60/40 weighting). See [Balanced mode scoring](#balanced-mode-scoring).
 
-3. **Failover** — If a provider fails, the next untried provider is selected. The middleware retries up to `request_attempt_count` times (default: 3, capped at available provider count).
+3. **Failover** — If a provider fails, the next untried provider is selected (respecting the same optimization mode). The middleware retries up to `request_attempt_count` times (default: 3, capped at available provider count).
 
 ### TTFT-weighted selection
 
@@ -201,6 +228,81 @@ Each provider's weight is `1 / AvgTTFT`. Faster providers (lower TTFT) get highe
 #### Zero-measurement providers
 
 Providers with no TTFT measurements (newly added or just recovered) are assigned a very high weight (`1e9`), causing nearly all traffic to route to them until measurements accumulate. This is a known limitation — see [Known Limitations](#known-limitations).
+
+### Cost optimization
+
+The `X-DIN-Optimize` header controls how providers are selected within a tier. Operators curate quality through tier composition — within each tier, the router optimizes for the requested dimension.
+
+#### Optimization modes
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| `latency` (default) | TTFT-weighted selection — faster providers get more traffic | Real-time apps, chatbots, low-latency needs |
+| `cost` | Inverse-cost weighted — cheaper providers get more traffic | Batch processing, background tasks, cost-sensitive workloads |
+| `balanced` | Combined: `0.6 × costScore + 0.4 × latencyScore` — factors in both | General purpose — optimizes for cheap AND fast |
+
+All three modes respect session stickiness (session hash takes priority) and health filtering (unhealthy providers are excluded).
+
+#### How cost weights work
+
+Cost-based selection uses the same inverse-proportional weighting as TTFT selection. Each provider's average cost `(InputCostPer1M + OutputCostPer1M) / 2` is inverted: `weight = 1 / avgCost`. Cheaper providers get higher weights.
+
+**Example** — Two providers in the `balanced` tier with `X-DIN-Optimize: cost`:
+
+| Provider | Avg cost/1M | Weight (1/cost) | Traffic share |
+|----------|-------------|-----------------|---------------|
+| deepseek-chat | $0.685 | 1.46 | ~88% |
+| openai-gpt4o | $6.25 | 0.16 | ~12% |
+
+A 9x cost advantage yields ~88% of traffic. The expensive provider still receives some traffic to maintain TTFT measurements and health data.
+
+#### Balanced mode scoring
+
+Balanced mode normalizes both cost and latency to `[0, 1]` and combines them with a 60/40 weighting:
+
+1. For each provider, compute `avgCost = (InputCostPer1M + OutputCostPer1M) / 2`
+2. Compute `avgTTFT = AvgTTFT()` (nanoseconds). If 0, use the max TTFT from the pool
+3. Normalize: `costNorm = cost / maxCost`, `ttftNorm = ttft / maxTTFT`
+4. Combined score: `score = 0.6 × costNorm + 0.4 × ttftNorm`
+5. Feed scores into inverse-weighted selection (lower score = higher probability)
+
+If no providers have TTFT measurements yet, balanced mode falls back to cost-only selection.
+
+#### Cost response headers
+
+- **Non-streaming**: The `X-DIN-Cost` response header contains the estimated USD cost with 6 decimal places (e.g., `0.000150`)
+- **Streaming**: Headers are flushed before token usage is known, so cost is reported via an SSE comment after the `[DONE]` event. See [Streaming cost reporting](#streaming-cost-reporting).
+
+#### Streaming cost reporting
+
+After streaming completes, the router writes a cost SSE comment:
+
+```
+data: [DONE]
+
+: din-cost 0.000150
+
+```
+
+SSE comments (lines starting with `:`) are ignored by standard `EventSource` clients but parseable by DIN-aware clients. The format is `: din-cost <cost_usd>` with 6 decimal places.
+
+#### Reference pricing
+
+Pricing for common providers (as of February 2026, USD per 1M tokens):
+
+| Provider | Model | Input/1M | Output/1M |
+|----------|-------|----------|-----------|
+| OpenAI | gpt-4o | $2.50 | $10.00 |
+| OpenAI | gpt-4o-mini | $0.15 | $0.60 |
+| OpenAI | o3 | $10.00 | $40.00 |
+| Anthropic | claude-sonnet-4 | $3.00 | $15.00 |
+| Anthropic | claude-haiku-3.5 | $0.80 | $4.00 |
+| Mistral | mistral-small | $0.10 | $0.30 |
+| DeepSeek | deepseek-chat | $0.27 | $1.10 |
+| Groq | llama-3.1-8b | $0.06 | $0.06 |
+| xAI | grok-2 | $2.00 | $10.00 |
+
+**Note**: Prices change frequently. Always verify current pricing from provider documentation before configuring `cost {}` blocks.
 
 ### Health-aware filtering
 
@@ -301,6 +403,7 @@ All metrics use the `din_ai_` prefix.
 | `din_ai_tokens_input_total` | Counter | tier, provider, model | Input tokens consumed |
 | `din_ai_tokens_output_total` | Counter | tier, provider, model | Output tokens generated |
 | `din_ai_health_checks_total` | Counter | provider, status_code, health_status | Health check results |
+| `din_ai_cost_total_usd` | Counter | tier, provider, model | Cumulative estimated cost in USD |
 
 TTFT measurements for routing decisions are tracked in-memory on provider structs (rolling window of 20 measurements), not exported to Prometheus.
 
@@ -396,7 +499,7 @@ These are tracked in the [code review document](https://github.com/DIN-center/di
 
 ### Medium-term
 - Rate limiting per provider (token bucket or sliding window)
-- Cost tracking and budgets per tier
+- Budget enforcement and spend limits per tier/API key
 - Model passthrough mode (user specifies exact model)
 - Tool calling / function calling translation for Anthropic
 - Extended thinking support for Anthropic
@@ -406,8 +509,7 @@ These are tracked in the [code review document](https://github.com/DIN-center/di
 - Request/response logging (opt-in debugging)
 
 ### Long-term (see RFP roadmap)
-- Dynamic cost optimization with automated price fetching
-- Spend controls and budget enforcement per API key
+- Dynamic cost optimization with automated price fetching from provider APIs
 - Quality benchmarking and adaptive tier assignments
 - Prompt-aware routing (classify task type, route to best model)
 - Cascade routing (try cheap model, retry with premium if low confidence)
