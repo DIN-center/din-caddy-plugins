@@ -1078,6 +1078,29 @@ func TestCostForTokens_ZeroTokens(t *testing.T) {
 	assert.Equal(t, 0.0, cost)
 }
 
+func TestServeHTTP_NonStreaming_CostHeader(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	// Set known cost values for predictable cost calculation.
+	for _, p := range m.Tiers[TierBalanced].Providers {
+		p.InputCostPer1M = 2.50
+		p.OutputCostPer1M = 10.00
+	}
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Mock response has usage: prompt_tokens=10, completion_tokens=5
+	// Cost = 10 * 2.50 / 1M + 5 * 10.00 / 1M = 0.000025 + 0.000050 = 0.000075
+	costHeader := w.Header().Get("X-DIN-Cost")
+	assert.NotEmpty(t, costHeader, "X-DIN-Cost header should be present")
+	assert.Equal(t, "0.000075", costHeader)
+}
+
 func TestServeHTTP_XDINOptimize_Invalid(t *testing.T) {
 	m := newTestMiddleware(t)
 

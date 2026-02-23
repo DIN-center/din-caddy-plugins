@@ -280,6 +280,8 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			if usage != nil {
 				RecordTokens(tierName, provider.Name, provider.ModelID,
 					usage.PromptTokens, usage.CompletionTokens)
+				cost := provider.CostForTokens(usage.PromptTokens, usage.CompletionTokens)
+				RecordCost(tierName, provider.Name, provider.ModelID, cost)
 			}
 
 			return nil
@@ -311,11 +313,14 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 			continue
 		}
 
-		// Extract usage for metrics.
+		// Extract usage for metrics and cost calculation.
 		var resp libai.ChatCompletionResponse
 		if err := json.Unmarshal(transformed, &resp); err == nil && resp.Usage != nil {
 			RecordTokens(tierName, provider.Name, provider.ModelID,
 				resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			cost := provider.CostForTokens(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			RecordCost(tierName, provider.Name, provider.ModelID, cost)
+			w.Header().Set("X-DIN-Cost", fmt.Sprintf("%.6f", cost))
 		}
 
 		setResponseHeaders(w, provider, tierName, sessionID, requestID)

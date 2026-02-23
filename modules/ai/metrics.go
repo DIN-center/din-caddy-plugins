@@ -14,12 +14,15 @@ const (
 	DinAIHealthCheckCountMetricName = "din_ai_health_check_count"
 	DinAIRequestDurationMetricName  = "din_ai_request_duration_milliseconds"
 	DinAITTFTDurationMetricName     = "din_ai_ttft_duration_milliseconds"
+	DinAICostTotalMetricName        = "din_ai_cost_total_usd"
 )
 
 var (
 	DinAIRequestCount     *prometheus.CounterVec
 	DinAITokensTotal      *prometheus.CounterVec
 	DinAIHealthCheckCount *prometheus.CounterVec
+
+	DinAICostTotal *prometheus.CounterVec
 
 	// Registered but disabled by default due to cardinality concerns.
 	DinAIRequestDuration *prometheus.HistogramVec
@@ -57,6 +60,14 @@ func registerAIMetricsOnce() {
 		[]string{"provider", "status_code", "health_status"},
 	)
 
+	DinAICostTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: DinAICostTotalMetricName,
+			Help: "Total estimated cost in USD of AI API requests",
+		},
+		[]string{"tier", "provider", "model"},
+	)
+
 	DinAIRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    DinAIRequestDurationMetricName,
@@ -79,6 +90,7 @@ func registerAIMetricsOnce() {
 		DinAIRequestCount,
 		DinAITokensTotal,
 		DinAIHealthCheckCount,
+		DinAICostTotal,
 		DinAIRequestDuration,
 		DinAITTFTDuration,
 	)
@@ -96,6 +108,13 @@ func RecordTokens(tier, provider, model string, promptTokens, completionTokens i
 	}
 	if completionTokens > 0 {
 		DinAITokensTotal.WithLabelValues(tier, provider, model, "completion").Add(float64(completionTokens))
+	}
+}
+
+// RecordCost records an estimated cost metric in USD.
+func RecordCost(tier, provider, model string, costUSD float64) {
+	if costUSD > 0 {
+		DinAICostTotal.WithLabelValues(tier, provider, model).Add(costUSD)
 	}
 }
 
