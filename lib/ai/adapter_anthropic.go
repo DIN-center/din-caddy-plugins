@@ -540,6 +540,8 @@ func mapOpenAIToolChoiceToAnthropic(choice any) any {
 				}
 			}
 		}
+		// Unrecognized object shape — pass through for forward compatibility.
+		return v
 	}
 	return nil
 }

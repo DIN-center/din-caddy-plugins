@@ -363,6 +363,65 @@ func TestAnthropicAdapterTransformRequest_ToolChoiceNone(t *testing.T) {
 	assert.Nil(t, result.ToolChoice, "tool_choice should be omitted when none")
 }
 
+func TestAnthropicAdapterTransformRequest_ToolChoiceUnrecognizedPassthrough(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	t.Run("unrecognized object shape passes through", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"hello"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"new_type","data":"value"}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok, "unrecognized tool_choice should be passed through")
+		assert.Equal(t, "new_type", choice["type"])
+		assert.Equal(t, "value", choice["data"])
+	})
+
+	t.Run("malformed function object passes through", func(t *testing.T) {
+		input := `{
+			"model":"claude-sonnet-4-20250514",
+			"messages":[{"role":"user","content":"hello"}],
+			"tools":[
+				{
+					"type":"function",
+					"function":{
+						"name":"get_weather",
+						"description":"Get weather",
+						"parameters":{"type":"object","properties":{"city":{"type":"string"}}}
+					}
+				}
+			],
+			"tool_choice":{"type":"function"}
+		}`
+		out, _, err := a.TransformRequest([]byte(input))
+		require.NoError(t, err)
+
+		var result AnthropicRequest
+		require.NoError(t, json.Unmarshal(out, &result))
+
+		choice, ok := result.ToolChoice.(map[string]interface{})
+		require.True(t, ok, "malformed function tool_choice should be passed through")
+		assert.Equal(t, "function", choice["type"])
+	})
+}
+
 func TestAnthropicAdapterTransformResponse(t *testing.T) {
 	a := NewAnthropicAdapter()
 
