@@ -338,6 +338,37 @@ func TestServeHTTP_Streaming_Failover(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "[DONE]")
 }
 
+func TestServeHTTP_Streaming_FailoverOnFirstChunkError(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	callCount := 0
+	goodSSE := sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}`)
+	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
+	goodSSE += "data: [DONE]\n\n"
+
+	// First provider returns HTTP 200 but an SSE error chunk; second provider succeeds.
+	m.client = &mockClient{
+		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+			callCount++
+			if callCount == 1 {
+				errSSE := sseEvent("", `{"error":{"message":"rate limited","type":"tokens"}}`)
+				return makeSSEResponse(200, errSSE), nil
+			}
+			return makeSSEResponse(200, goodSSE), nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.GreaterOrEqual(t, callCount, 2, "should retry on first chunk SSE error")
+	assert.Contains(t, w.Body.String(), "fallback works")
+	assert.Contains(t, w.Body.String(), "[DONE]")
+}
+
 func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 	m := newTestMiddleware(t)
 
