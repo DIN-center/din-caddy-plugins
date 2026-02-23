@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
@@ -29,17 +31,32 @@ func runHealthChecks(
 	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 	defer ticker.Stop()
 
+	var running int32
+
 	for {
 		select {
 		case <-ctx.Done():
 			logger.Info("stopping AI health checks")
 			return
 		case <-ticker.C:
-			for _, tier := range tiers {
-				for _, provider := range tier.Providers {
-					go checkProvider(ctx, provider, client, logger)
-				}
+			if !atomic.CompareAndSwapInt32(&running, 0, 1) {
+				logger.Debug("skipping health check round, previous still running")
+				continue
 			}
+			go func() {
+				var wg sync.WaitGroup
+				for _, tier := range tiers {
+					for _, provider := range tier.Providers {
+						wg.Add(1)
+						go func(p *AIProvider) {
+							defer wg.Done()
+							checkProvider(ctx, p, client, logger)
+						}(provider)
+					}
+				}
+				wg.Wait()
+				atomic.StoreInt32(&running, 0)
+			}()
 		}
 	}
 }
