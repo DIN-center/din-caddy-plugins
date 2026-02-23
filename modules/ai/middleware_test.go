@@ -1126,6 +1126,46 @@ func TestServeHTTP_NonStreaming_TransformResponseError_NoInfiniteLoop(t *testing
 		"should return 502 when all attempts fail with transform errors")
 }
 
+func TestServeHTTP_NonStreaming_RetryAfterHTTPDate(t *testing.T) {
+	m := newTestMiddleware(t)
+
+	m.Tiers[TierBalanced].Providers[0].HttpUrl = "https://provider-primary.example/v1/chat/completions"
+	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/chat/completions"
+
+	var primaryURL string
+	primaryCalls := 0
+	secondaryCalls := 0
+
+	m.client = &mockClient{
+		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
+			if primaryURL == "" {
+				primaryURL = url
+			}
+
+			if url == primaryURL {
+				primaryCalls++
+				if primaryCalls <= 2 {
+					// Use RFC1123 HTTP-date in the past so sleep is ~0.
+					pastDate := time.Now().Add(-1 * time.Second).UTC().Format(time.RFC1123)
+					return []byte(`{"error":"rate limited"}`), 429, http.Header{"Retry-After": []string{pastDate}}, nil
+				}
+			} else {
+				secondaryCalls++
+			}
+
+			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
+		},
+	}
+
+	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
+	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
+	err := m.ServeHTTP(w, r, noopHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, primaryCalls, "should retry same provider once after initial 429 with HTTP-date")
+	assert.Equal(t, 1, secondaryCalls, "should fail over after same-provider retry is exhausted")
+}
+
 func TestServeHTTP_NonStreaming_503RetrySameProviderThenFailover(t *testing.T) {
 	m := newTestMiddleware(t)
 
