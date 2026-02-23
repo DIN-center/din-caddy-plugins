@@ -652,6 +652,10 @@ func TestUnmarshalCaddyfile_DuplicateTier(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -659,6 +663,10 @@ func TestUnmarshalCaddyfile_DuplicateTier(t *testing.T) {
 				providers {
 					p2 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -678,9 +686,17 @@ func TestUnmarshalCaddyfile_DuplicateProvider(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 					p1 https://api.other.com {
 						model other-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -701,6 +717,10 @@ func TestUnmarshalCaddyfile_NegativeInterval(t *testing.T) {
 				providers {
 					p1 https://api.example.com {
 						model test-model
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -721,6 +741,10 @@ func TestUnmarshalCaddyfile_UnknownAdapterType(t *testing.T) {
 					p1 https://api.example.com {
 						model test-model
 						adapter gemini
+						cost {
+							input_per_1m 1.00
+							output_per_1m 2.00
+						}
 					}
 				}
 			}
@@ -838,4 +862,228 @@ func TestNewAIProvider_EmptyHost(t *testing.T) {
 	_, err := NewAIProvider("test", "https:///v1/chat")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "host")
+}
+
+// --- Cost Config Parsing Tests ---
+
+func TestUnmarshalCaddyfile_CostBlock_Valid(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.NoError(t, err)
+
+	p := m.Tiers["fast"].Providers[0]
+	assert.Equal(t, 2.50, p.InputCostPer1M)
+	assert.Equal(t, 10.00, p.OutputCostPer1M)
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingCostBlock(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingInputCost(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_MissingOutputCost(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a cost block")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_NegativeValue(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m -1.00
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_ZeroValue(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 0
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_InvalidFloat(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m abc
+							output_per_1m 10.00
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid cost value")
+}
+
+func TestUnmarshalCaddyfile_CostBlock_UnknownKey(t *testing.T) {
+	input := `din_ai {
+		tiers {
+			fast {
+				providers {
+					p1 https://api.example.com {
+						model test-model
+						cost {
+							input_per_1m 2.50
+							output_per_1m 10.00
+							total_cost 12.50
+						}
+					}
+				}
+			}
+		}
+	}`
+	m := &DinAIMiddleware{}
+	d := caddyfile.NewTestDispenser(input)
+	err := m.UnmarshalCaddyfile(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown cost option")
+}
+
+func TestValidate_MissingCostConfig(t *testing.T) {
+	m := newValidatableMiddleware(t)
+	// Clear cost on one provider to test Validate path
+	m.Tiers[TierBalanced].Providers[0].InputCostPer1M = 0
+	m.Tiers[TierBalanced].Providers[0].OutputCostPer1M = 0
+	err := m.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "requires cost configuration")
+}
+
+func TestCostForTokens(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	// 1000 input tokens at $2.50/1M = $0.0025
+	// 500 output tokens at $10.00/1M = $0.005
+	cost := p.CostForTokens(1000, 500)
+	assert.InDelta(t, 0.0075, cost, 1e-10)
+}
+
+func TestCostForTokens_ZeroTokens(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	cost := p.CostForTokens(0, 0)
+	assert.Equal(t, 0.0, cost)
+}
+
+func TestCostForTokens_LargeTokenCounts(t *testing.T) {
+	p := newTestProvider("test", Healthy)
+	p.InputCostPer1M = 2.50
+	p.OutputCostPer1M = 10.00
+
+	// 1M input tokens = $2.50, 1M output tokens = $10.00
+	cost := p.CostForTokens(1_000_000, 1_000_000)
+	assert.InDelta(t, 12.50, cost, 1e-10)
 }

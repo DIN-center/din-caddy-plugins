@@ -129,6 +129,9 @@ func (m *DinAIMiddleware) Validate() error {
 			if p.AdapterType != AdapterOpenAI && p.AdapterType != AdapterAnthropic {
 				return fmt.Errorf("provider '%s' has unknown adapter type '%s'", p.Name, p.AdapterType)
 			}
+			if p.InputCostPer1M <= 0 || p.OutputCostPer1M <= 0 {
+				return fmt.Errorf("provider '%s' in tier '%s' requires cost configuration (input_per_1m and output_per_1m)", p.Name, tierName)
+			}
 		}
 	}
 	return nil
@@ -615,6 +618,29 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 					}
 				}
 
+			case "cost":
+				for d.NextBlock(5) {
+					key := d.Val()
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					val, err := strconv.ParseFloat(d.Val(), 64)
+					if err != nil {
+						return d.Errf("invalid cost value for '%s': %v", key, err)
+					}
+					if val <= 0 {
+						return d.Errf("cost '%s' must be positive, got %f", key, val)
+					}
+					switch key {
+					case "input_per_1m":
+						provider.InputCostPer1M = val
+					case "output_per_1m":
+						provider.OutputCostPer1M = val
+					default:
+						return d.Errf("unknown cost option: %s (expected 'input_per_1m' or 'output_per_1m')", key)
+					}
+				}
+
 			default:
 				return d.Errf("unknown provider option: %s", d.Val())
 			}
@@ -629,6 +655,9 @@ func (m *DinAIMiddleware) parseProviders(d *caddyfile.Dispenser, tier *Tier) err
 		if provider.AdapterType != AdapterOpenAI && provider.AdapterType != AdapterAnthropic {
 			return d.Errf("provider '%s' has unknown adapter type '%s' (must be '%s' or '%s')",
 				providerName, provider.AdapterType, AdapterOpenAI, AdapterAnthropic)
+		}
+		if provider.InputCostPer1M <= 0 || provider.OutputCostPer1M <= 0 {
+			return d.Errf("provider '%s' requires a cost block with both input_per_1m and output_per_1m", providerName)
 		}
 
 		tier.Providers = append(tier.Providers, provider)

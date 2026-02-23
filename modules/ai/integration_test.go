@@ -28,6 +28,16 @@ func skipIfNoKey(t *testing.T, envVar string) string {
 	return key
 }
 
+// setDefaultCost sets default cost values on a provider for testing.
+func setDefaultCost(p *AIProvider) {
+	if p.InputCostPer1M <= 0 {
+		p.InputCostPer1M = 1.00
+	}
+	if p.OutputCostPer1M <= 0 {
+		p.OutputCostPer1M = 2.00
+	}
+}
+
 // newLiveMiddleware creates a DinAIMiddleware configured to talk to real AI APIs.
 // Providers are set up based on which env vars are available.
 func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
@@ -53,6 +63,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "gpt-4.1-nano"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 0.10
+		p.OutputCostPer1M = 0.40
 		p.httpClient = client
 		p.logger = logger
 		fastProviders = append(fastProviders, p)
@@ -62,6 +74,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "mistral-small-latest"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 0.10
+		p.OutputCostPer1M = 0.30
 		p.httpClient = client
 		p.logger = logger
 		fastProviders = append(fastProviders, p)
@@ -71,6 +85,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "moonshot-v1-8k"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 0.20
+		p.OutputCostPer1M = 0.60
 		p.httpClient = client
 		p.logger = logger
 		fastProviders = append(fastProviders, p)
@@ -80,6 +96,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "grok-3-mini"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 0.30
+		p.OutputCostPer1M = 0.50
 		p.httpClient = client
 		p.logger = logger
 		fastProviders = append(fastProviders, p)
@@ -90,6 +108,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.AdapterType = AdapterAnthropic
 		p.Headers["x-api-key"] = key
 		p.Headers["anthropic-version"] = "2023-06-01"
+		p.InputCostPer1M = 0.80
+		p.OutputCostPer1M = 4.00
 		p.httpClient = client
 		p.logger = logger
 		fastProviders = append(fastProviders, p)
@@ -105,6 +125,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "gpt-4.1"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 2.00
+		p.OutputCostPer1M = 8.00
 		p.httpClient = client
 		p.logger = logger
 		balancedProviders = append(balancedProviders, p)
@@ -115,6 +137,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.AdapterType = AdapterAnthropic
 		p.Headers["x-api-key"] = key
 		p.Headers["anthropic-version"] = "2023-06-01"
+		p.InputCostPer1M = 3.00
+		p.OutputCostPer1M = 15.00
 		p.httpClient = client
 		p.logger = logger
 		balancedProviders = append(balancedProviders, p)
@@ -124,6 +148,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "deepseek-chat"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 0.27
+		p.OutputCostPer1M = 1.10
 		p.httpClient = client
 		p.logger = logger
 		balancedProviders = append(balancedProviders, p)
@@ -133,6 +159,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		p.ModelID = "grok-4-fast-reasoning"
 		p.AdapterType = AdapterOpenAI
 		p.Headers["Authorization"] = "Bearer " + key
+		p.InputCostPer1M = 3.00
+		p.OutputCostPer1M = 15.00
 		p.httpClient = client
 		p.logger = logger
 		balancedProviders = append(balancedProviders, p)
@@ -194,6 +222,7 @@ func TestIntegration_NonStreaming_Anthropic(t *testing.T) {
 	p.Headers["anthropic-version"] = "2023-06-01"
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -272,6 +301,7 @@ func TestIntegration_NonStreaming_DeepSeek(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("DEEPSEEK_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -306,6 +336,7 @@ func TestIntegration_NonStreaming_Grok(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("GROK_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -339,6 +370,7 @@ func TestIntegration_NonStreaming_Moonshot(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("MOONSHOT_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -374,6 +406,7 @@ func TestIntegration_Streaming_OpenAI(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -414,6 +447,7 @@ func TestIntegration_Streaming_Anthropic(t *testing.T) {
 	p.Headers["anthropic-version"] = "2023-06-01"
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -454,6 +488,7 @@ func TestIntegration_Streaming_Grok(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("GROK_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -492,6 +527,7 @@ func TestIntegration_Streaming_Mistral(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("MISTRAL_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -530,6 +566,7 @@ func TestIntegration_Streaming_Moonshot(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("MOONSHOT_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -568,6 +605,7 @@ func TestIntegration_Streaming_DeepSeek(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("DEEPSEEK_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -663,6 +701,7 @@ func TestIntegration_Failover(t *testing.T) {
 	badProvider.Headers["Authorization"] = "Bearer invalid-key-will-401"
 	badProvider.httpClient = client
 	badProvider.logger = logger
+	setDefaultCost(badProvider)
 
 	// Second provider: real working provider
 	goodProvider, _ := NewAIProvider("good-provider", "https://api.openai.com/v1/chat/completions")
@@ -671,6 +710,7 @@ func TestIntegration_Failover(t *testing.T) {
 	goodProvider.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
 	goodProvider.httpClient = client
 	goodProvider.logger = logger
+	setDefaultCost(goodProvider)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -717,6 +757,7 @@ func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 	badProvider.AdapterType = AdapterOpenAI
 	badProvider.httpClient = client
 	badProvider.logger = logger
+	setDefaultCost(badProvider)
 
 	// Good provider: real OpenAI
 	goodProvider, _ := NewAIProvider("good-openai", "https://api.openai.com/v1/chat/completions")
@@ -725,6 +766,7 @@ func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 	goodProvider.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
 	goodProvider.httpClient = client
 	goodProvider.logger = logger
+	setDefaultCost(goodProvider)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -765,6 +807,7 @@ func TestIntegration_ResponseHeaders(t *testing.T) {
 	p.Headers["Authorization"] = "Bearer " + os.Getenv("OPENAI_API_KEY")
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -828,6 +871,7 @@ func TestIntegration_MockServer_NonStreaming(t *testing.T) {
 	p.AdapterType = AdapterOpenAI
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -888,6 +932,7 @@ func TestIntegration_MockServer_Streaming(t *testing.T) {
 	p.AdapterType = AdapterOpenAI
 	p.httpClient = client
 	p.logger = logger
+	setDefaultCost(p)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -947,12 +992,14 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 	bad.AdapterType = AdapterOpenAI
 	bad.httpClient = client
 	bad.logger = logger
+	setDefaultCost(bad)
 
 	good, _ := NewAIProvider("good-mock", goodServer.URL)
 	good.ModelID = "good-model"
 	good.AdapterType = AdapterOpenAI
 	good.httpClient = client
 	good.logger = logger
+	setDefaultCost(good)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{
@@ -992,12 +1039,14 @@ func TestIntegration_MockServer_AllFail_503(t *testing.T) {
 	p1.AdapterType = AdapterOpenAI
 	p1.httpClient = client
 	p1.logger = logger
+	setDefaultCost(p1)
 
 	p2, _ := NewAIProvider("fail-2", server.URL)
 	p2.ModelID = "fail-model"
 	p2.AdapterType = AdapterOpenAI
 	p2.httpClient = client
 	p2.logger = logger
+	setDefaultCost(p2)
 
 	m := &DinAIMiddleware{
 		Tiers: map[string]*Tier{

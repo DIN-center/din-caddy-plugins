@@ -10,6 +10,8 @@ import (
 
 func newTestProvider(name string, health HealthStatus) *AIProvider {
 	p, _ := NewAIProvider(name, "https://api.example.com/v1/chat/completions")
+	p.InputCostPer1M = 1.00
+	p.OutputCostPer1M = 2.00
 	p.mu.Lock()
 	p.healthStatus = health
 	p.mu.Unlock()

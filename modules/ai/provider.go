@@ -20,6 +20,8 @@ type AIProvider struct {
 	Headers              map[string]string      // static headers (e.g. Authorization)
 	AdapterType          string                 // "openai" or "anthropic"
 	HealthCheckOverrides map[string]interface{} // optional per-provider health check params (e.g. max_completion_tokens for reasoning models)
+	InputCostPer1M       float64                // USD per 1M input tokens — REQUIRED, configured in Caddyfile
+	OutputCostPer1M      float64                // USD per 1M output tokens — REQUIRED, configured in Caddyfile
 
 	httpClient libai.IStreamingHTTPClient
 	logger     *zap.Logger
@@ -143,4 +145,11 @@ func (p *AIProvider) TTFTCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.ttftWindow)
+}
+
+// CostForTokens calculates the actual cost in USD for the given token counts.
+func (p *AIProvider) CostForTokens(promptTokens, completionTokens int) float64 {
+	inputCost := float64(promptTokens) * p.InputCostPer1M / 1_000_000
+	outputCost := float64(completionTokens) * p.OutputCostPer1M / 1_000_000
+	return inputCost + outputCost
 }
