@@ -582,6 +582,7 @@ func TestAnthropicStopReasonMapping(t *testing.T) {
 		{"end_turn", "stop"},
 		{"max_tokens", "length"},
 		{"stop_sequence", "stop"},
+		{"tool_use", "tool_calls"},
 		{"unknown_reason", "unknown_reason"},
 	}
 
@@ -891,6 +892,121 @@ func TestAnthropicAdapterTransformStreamEvent_ToolCallDeltas(t *testing.T) {
 	assert.Empty(t, deltaTC.ID, "continuation delta must omit id")
 	assert.Empty(t, deltaTC.Type, "continuation delta must omit type")
 	assert.Empty(t, deltaTC.Function.Name, "continuation delta must omit function name")
+}
+
+func TestAnthropicAdapterTransformRequest_MultiTurnToolConversation(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Full multi-turn: system → user → assistant (with tool_calls) → tool (result) → user
+	input := ChatCompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "You are a helpful assistant."},
+			{Role: "user", Content: "What's the weather in SF?"},
+			{
+				Role:    "assistant",
+				Content: "Let me check the weather.",
+				ToolCalls: []ToolCall{
+					{
+						ID:   "call_abc123",
+						Type: "function",
+						Function: ToolCallFunction{
+							Name:      "get_weather",
+							Arguments: `{"city":"San Francisco"}`,
+						},
+					},
+				},
+			},
+			{
+				Role:       "tool",
+				Content:    `{"temperature":65,"condition":"foggy"}`,
+				ToolCallID: "call_abc123",
+			},
+			{Role: "user", Content: "Thanks!"},
+		},
+	}
+	body, _ := json.Marshal(input)
+
+	out, _, err := a.TransformRequest(body)
+	require.NoError(t, err)
+
+	var result AnthropicRequest
+	require.NoError(t, json.Unmarshal(out, &result))
+
+	assert.Equal(t, "You are a helpful assistant.", result.System)
+	require.Len(t, result.Messages, 4) // user, assistant (with tool_use), user (tool_result), user
+
+	// Assistant message should have text + tool_use content blocks.
+	assistantMsg := result.Messages[1]
+	assert.Equal(t, "assistant", assistantMsg.Role)
+	contentBlocks, ok := assistantMsg.Content.([]any)
+	require.True(t, ok, "assistant content should be an array")
+	require.Len(t, contentBlocks, 2, "should have text + tool_use blocks")
+
+	// Tool result message should be a user message with tool_result block.
+	toolResultMsg := result.Messages[2]
+	assert.Equal(t, "user", toolResultMsg.Role)
+}
+
+func TestAnthropicAdapterTransformStreamEvent_ConcurrentToolCalls(t *testing.T) {
+	a := NewAnthropicAdapter()
+
+	// Initialize streaming state.
+	_, err := a.TransformStreamEvent("message_start", []byte(`{"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-20250514","role":"assistant"}}`))
+	require.NoError(t, err)
+
+	// Start tool A at index 0.
+	startA, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"get_weather"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startA)
+
+	// Start tool B at index 1.
+	startB, err := a.TransformStreamEvent("content_block_start", []byte(`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"get_time"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, startB)
+
+	// Interleaved deltas for both tools.
+	deltaA1, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\""}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaA1)
+
+	deltaB1, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"tz\""}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaB1)
+
+	deltaA2, err := a.TransformStreamEvent("content_block_delta", []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":":\"SF\"}"}}`))
+	require.NoError(t, err)
+	require.NotNil(t, deltaA2)
+
+	// Verify start chunks have id/type/name.
+	var startAResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startA, &startAResp))
+	assert.Equal(t, "toolu_a", startAResp.Choices[0].Delta.ToolCalls[0].ID)
+	assert.Equal(t, "get_weather", startAResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+
+	var startBResp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(startB, &startBResp))
+	assert.Equal(t, "toolu_b", startBResp.Choices[0].Delta.ToolCalls[0].ID)
+	assert.Equal(t, "get_time", startBResp.Choices[0].Delta.ToolCalls[0].Function.Name)
+
+	// Verify delta chunks target correct indices.
+	var deltaA1Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaA1, &deltaA1Resp))
+	require.NotNil(t, deltaA1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 0, *deltaA1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `{"city"`, deltaA1Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+
+	var deltaB1Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaB1, &deltaB1Resp))
+	require.NotNil(t, deltaB1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 1, *deltaB1Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `{"tz"`, deltaB1Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
+
+	var deltaA2Resp ChatCompletionResponse
+	require.NoError(t, json.Unmarshal(deltaA2, &deltaA2Resp))
+	require.NotNil(t, deltaA2Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, 0, *deltaA2Resp.Choices[0].Delta.ToolCalls[0].Index)
+	assert.Equal(t, `:"SF"}`, deltaA2Resp.Choices[0].Delta.ToolCalls[0].Function.Arguments)
 }
 
 // Verify interface compliance at compile time.
