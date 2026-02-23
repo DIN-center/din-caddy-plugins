@@ -154,7 +154,7 @@ func (t *Tier) selectBalanced(available []*AIProvider, randVal float64) *AIProvi
 	}
 
 	// Lower score = better (cheaper + faster), so use inverse weighting.
-	idx := libai.SelectByInverseWeight(scores, 1e9, randVal)
+	idx := libai.SelectByInverseWeight(scores, randVal)
 	if idx < 0 {
 		return available[0]
 	}

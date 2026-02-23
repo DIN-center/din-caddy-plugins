@@ -29,10 +29,12 @@ func SelectBySessionHash(sessionID, tierName string, providerNames []string) int
 }
 
 // SelectByInverseWeight selects an index using inverse-proportional weighted random selection.
-// Lower values get higher selection probability. zeroWeight is used when a value is <= 0.
+// Lower values get higher selection probability. Zero/negative values are replaced with the
+// median of non-zero values to give unmeasured entries a fair share (not dominant share).
+// If all values are zero, distributes uniformly.
 // randVal is a random float64 in [0, 1) used for selection.
 // Returns the index of the selected element, or -1 if weights is empty.
-func SelectByInverseWeight(weights []float64, zeroWeight float64, randVal float64) int {
+func SelectByInverseWeight(weights []float64, randVal float64) int {
 	if len(weights) == 0 {
 		return -1
 	}
@@ -40,11 +42,35 @@ func SelectByInverseWeight(weights []float64, zeroWeight float64, randVal float6
 		return 0
 	}
 
+	// Collect non-zero values to compute median replacement for zeros.
+	var nonZero []float64
+	for _, w := range weights {
+		if w > 0 {
+			nonZero = append(nonZero, w)
+		}
+	}
+
+	// All zero: uniform distribution.
+	if len(nonZero) == 0 {
+		return int(randVal * float64(len(weights)))
+	}
+
+	// Compute median of non-zero values.
+	sort.Float64s(nonZero)
+	var median float64
+	n := len(nonZero)
+	if n%2 == 0 {
+		median = (nonZero[n/2-1] + nonZero[n/2]) / 2
+	} else {
+		median = nonZero[n/2]
+	}
+
 	// Convert to inverse weights (lower value = higher weight).
+	// Zero values get the median, giving them fair share instead of dominance.
 	inverseWeights := make([]float64, len(weights))
 	for i, w := range weights {
 		if w <= 0 {
-			inverseWeights[i] = zeroWeight
+			inverseWeights[i] = 1.0 / median
 		} else {
 			inverseWeights[i] = 1.0 / w
 		}
@@ -87,7 +113,7 @@ func SelectByTTFTWeight(weights []int64, randVal float64) int {
 	for i, w := range weights {
 		floatWeights[i] = float64(w)
 	}
-	return SelectByInverseWeight(floatWeights, 1e9, randVal)
+	return SelectByInverseWeight(floatWeights, randVal)
 }
 
 // SelectByCostWeight selects a provider using inverse-cost weighted random selection.
@@ -95,5 +121,5 @@ func SelectByTTFTWeight(weights []int64, randVal float64) int {
 // costs is a slice of cost values (e.g., average of input + output cost per 1M tokens).
 // randVal is a random float64 in [0, 1) used for selection.
 func SelectByCostWeight(costs []float64, randVal float64) int {
-	return SelectByInverseWeight(costs, 1e9, randVal)
+	return SelectByInverseWeight(costs, randVal)
 }
