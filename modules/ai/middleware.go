@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -226,20 +227,17 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 
 	// Attempt to serve the request with retry.
 	maxAttempts := m.RequestAttemptCount
-	if maxAttempts > len(available) {
-		maxAttempts = len(available)
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultRequestAttemptCount
 	}
 
 	var lastErr error
 	tried := make(map[string]bool)
+	attemptCount := 0
+	provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
+	retriedCurrentProvider := false
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Select provider.
-		provider := m.selectUntried(tier, sessionID, tried, optimizeMode)
-		if provider == nil {
-			break
-		}
-		tried[provider.Name] = true
+	for attemptCount < maxAttempts && provider != nil {
 
 		adapter := getAdapterForType(provider.AdapterType)
 
@@ -247,6 +245,13 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		modifiedBody, err := overwriteModel(body, provider.ModelID)
 		if err != nil {
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
@@ -256,9 +261,30 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 				provider.MarkPingWarning()
 				m.logger.Warn("streaming attempt failed",
 					zap.String("provider", provider.Name),
-					zap.Int("attempt", attempt+1),
+					zap.Int("attempt", attemptCount+1),
 					zap.Error(err))
 				lastErr = err
+				attemptCount++
+
+				if attemptCount >= maxAttempts {
+					break
+				}
+
+				if shouldRetrySameProviderForStream(err, retriedCurrentProvider) {
+					retriedCurrentProvider = true
+					retryAfter := streamRetryAfter(err)
+					if retryAfter > 0 {
+						if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+							lastErr = sleepErr
+							break
+						}
+					}
+					continue
+				}
+
+				tried[provider.Name] = true
+				provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+				retriedCurrentProvider = false
 				continue
 			}
 
@@ -308,20 +334,49 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		// Non-streaming request.
-		respBody, statusCode, provider, err := m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
+		var respBody []byte
+		var statusCode int
+		var respHeaders http.Header
+		respBody, statusCode, respHeaders, provider, err = m.attemptNonStreaming(r.Context(), provider, adapter, modifiedBody)
 		if err != nil {
 			provider.MarkPingWarning()
 			m.logger.Warn("non-streaming attempt failed",
 				zap.String("provider", provider.Name),
-				zap.Int("attempt", attempt+1),
+				zap.Int("attempt", attemptCount+1),
 				zap.Error(err))
 			lastErr = err
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
 		if statusCode != http.StatusOK {
 			provider.MarkPingWarning()
 			lastErr = fmt.Errorf("provider %s returned HTTP %d", provider.Name, statusCode)
+			attemptCount++
+			if attemptCount >= maxAttempts {
+				break
+			}
+
+			if isRetryableStatus(statusCode) && !retriedCurrentProvider {
+				retriedCurrentProvider = true
+				if retryAfter, ok := retryDelayFromHeaders(respHeaders); ok {
+					if sleepErr := sleepWithContext(r.Context(), retryAfter); sleepErr != nil {
+						lastErr = sleepErr
+						break
+					}
+				}
+				continue
+			}
+
+			tried[provider.Name] = true
+			provider = m.selectUntried(tier, sessionID, tried, optimizeMode)
+			retriedCurrentProvider = false
 			continue
 		}
 
@@ -394,10 +449,10 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	provider *AIProvider,
 	adapter libai.ProviderAdapter,
 	body []byte,
-) ([]byte, int, *AIProvider, error) {
+) ([]byte, int, http.Header, *AIProvider, error) {
 	transformedBody, extraHeaders, err := adapter.TransformRequest(body)
 	if err != nil {
-		return nil, 0, provider, fmt.Errorf("transform request: %w", err)
+		return nil, 0, nil, provider, fmt.Errorf("transform request: %w", err)
 	}
 
 	headers := make(map[string]string)
@@ -409,12 +464,50 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	}
 	headers["Content-Type"] = "application/json"
 
-	respBody, statusCode, _, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, respHeaders, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
-		return nil, 0, provider, fmt.Errorf("post: %w", err)
+		return nil, 0, nil, provider, fmt.Errorf("post: %w", err)
 	}
 
-	return respBody, statusCode, provider, nil
+	return respBody, statusCode, respHeaders, provider, nil
+}
+
+func isRetryableStatus(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable
+}
+
+func retryDelayFromHeaders(headers http.Header) (time.Duration, bool) {
+	if headers == nil {
+		return 0, false
+	}
+	retryAfterRaw := headers.Get("Retry-After")
+	if retryAfterRaw == "" {
+		return 0, false
+	}
+	delay, err := parseRetryAfter(retryAfterRaw, time.Now(), defaultRetryAfterCap)
+	if err != nil {
+		return 0, false
+	}
+	return delay, true
+}
+
+func shouldRetrySameProviderForStream(err error, alreadyRetried bool) bool {
+	if alreadyRetried {
+		return false
+	}
+	var streamErr *streamAttemptError
+	if !errors.As(err, &streamErr) {
+		return false
+	}
+	return isRetryableStatus(streamErr.statusCode)
+}
+
+func streamRetryAfter(err error) time.Duration {
+	var streamErr *streamAttemptError
+	if !errors.As(err, &streamErr) {
+		return 0
+	}
+	return streamErr.retryAfter
 }
 
 // setResponseHeaders sets the standard DIN AI response headers.
