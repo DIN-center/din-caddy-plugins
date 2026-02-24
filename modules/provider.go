@@ -12,11 +12,14 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
 	"github.com/DIN-center/din-caddy-plugins/lib/health"
+	libprovider "github.com/DIN-center/din-caddy-plugins/lib/provider"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
+
+var _ libprovider.Provider = (*provider)(nil)
 
 type provider struct {
 	HttpUrl  string
@@ -261,3 +264,27 @@ func (p *provider) SafeUpdateScore(score *ws.Score) {
 	defer p.scoreMu.Unlock()
 	p.score = score
 }
+
+// GetName returns the provider's display name.
+func (p *provider) GetName() string { return p.Name }
+
+// GetURL returns the provider's HTTP URL.
+func (p *provider) GetURL() string { return p.HttpUrl }
+
+// GetHeaders returns the provider's static request headers.
+func (p *provider) GetHeaders() map[string]string { return p.Headers }
+
+// GetHealthStatus returns the current health status from the latest block history entry.
+func (p *provider) GetHealthStatus() health.HealthStatus {
+	entry := p.getLatestBlockEntry()
+	if entry == nil {
+		return health.Unhealthy
+	}
+	return entry.healthStatus
+}
+
+// IsAvailable returns true if the provider is available (upstream up and healthy).
+func (p *provider) IsAvailable() bool { return p.Available() }
+
+// IsHealthy returns true if the provider is passing health checks.
+func (p *provider) IsHealthy() bool { return p.Healthy() }
