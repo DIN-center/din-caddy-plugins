@@ -18,6 +18,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -47,7 +48,7 @@ type DinAIMiddleware struct {
 
 	// Runtime
 	logger       *zap.Logger
-	quit         chan struct{}
+	checker      *health.Checker
 	client       libai.IStreamingHTTPClient
 	healthClient libai.IStreamingHTTPClient
 
@@ -69,7 +70,6 @@ func (*DinAIMiddleware) CaddyModule() caddy.ModuleInfo {
 // Provision initializes the middleware — called once when Caddy starts.
 func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger()
-	m.quit = make(chan struct{})
 
 	if m.HealthcheckInterval <= 0 {
 		m.HealthcheckInterval = DefaultHCInterval
@@ -98,7 +98,13 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 
 	// Start health checks (unless in test mode).
 	if !m.testMode {
-		go runHealthChecks(m.Tiers, m.healthClient, m.HealthcheckInterval, m.logger, m.quit)
+		m.checker = health.NewChecker(health.CheckerConfig{
+			Interval:       time.Duration(m.HealthcheckInterval) * time.Second,
+			PreventOverlap: true,
+		}, func(ctx context.Context) {
+			checkAllProviders(ctx, m.Tiers, m.healthClient, m.logger)
+		})
+		m.checker.Start()
 	}
 
 	m.logger.Info("DIN AI middleware provisioned",
@@ -144,8 +150,8 @@ func (m *DinAIMiddleware) Validate() error {
 // Cleanup stops all goroutines when Caddy reloads or shuts down.
 func (m *DinAIMiddleware) Cleanup() error {
 	m.cleanupOnce.Do(func() {
-		if m.quit != nil {
-			close(m.quit)
+		if m.checker != nil {
+			m.checker.Stop()
 		}
 		if m.logger != nil {
 			m.logger.Info("DIN AI middleware cleaned up")

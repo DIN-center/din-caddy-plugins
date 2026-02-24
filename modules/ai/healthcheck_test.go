@@ -134,7 +134,7 @@ func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 	assert.Equal(t, 1, provider.TTFTCount())
 }
 
-func TestRunHealthChecks_StopsOnQuit(t *testing.T) {
+func TestHealthChecker_StopsOnStop(t *testing.T) {
 
 	tiers := map[string]*Tier{
 		TierFast: {
@@ -153,23 +153,24 @@ func TestRunHealthChecks_StopsOnQuit(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	quit := make(chan struct{})
 
-	done := make(chan struct{})
-	go func() {
-		runHealthChecks(tiers, client, 1, logger, quit)
-		close(done)
-	}()
+	checker := health.NewChecker(health.CheckerConfig{
+		Interval:       1 * time.Second,
+		PreventOverlap: true,
+	}, func(ctx context.Context) {
+		checkAllProviders(ctx, tiers, client, logger)
+	})
+	checker.Start()
 
 	// Let it run briefly then stop.
 	time.Sleep(100 * time.Millisecond)
-	close(quit)
+	checker.Stop()
 
 	select {
-	case <-done:
-		// Goroutine exited properly.
+	case <-checker.Quit():
+		// Checker stopped properly.
 	case <-time.After(2 * time.Second):
-		t.Fatal("health check goroutine did not stop within 2 seconds")
+		t.Fatal("health checker did not stop within 2 seconds")
 	}
 }
 
@@ -340,8 +341,7 @@ func TestCheckProvider_OverridesCanOverrideMaxTokens(t *testing.T) {
 	assert.Equal(t, float64(5), reqMap["max_tokens"], "override max_tokens:5 should win over default")
 }
 
-func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
-
+func TestHealthChecker_BoundsGoroutines(t *testing.T) {
 
 	// Track concurrent goroutine count to verify bounding.
 	var running int32
@@ -387,28 +387,24 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	quit := make(chan struct{})
 
-	done := make(chan struct{})
-	go func() {
-		runHealthChecks(tiers, slowMock, 1, logger, quit)
-		close(done)
-	}()
+	checker := health.NewChecker(health.CheckerConfig{
+		Interval:       1 * time.Second,
+		PreventOverlap: true,
+	}, func(ctx context.Context) {
+		checkAllProviders(ctx, tiers, slowMock, logger)
+	})
+	checker.Start()
 
 	// Let it run for ~3.5 ticks. With 1s interval and 500ms checks,
 	// the skip-if-running guard should prevent unbounded goroutine accumulation.
 	time.Sleep(3500 * time.Millisecond)
-	close(quit)
+	checker.Stop()
 
-	select {
-	case <-done:
-		// With the atomic guard, max concurrent goroutines should be bounded
-		// to the number of providers (2), not accumulating over time.
-		peak := atomic.LoadInt32(&maxRunning)
-		assert.LessOrEqual(t, peak, int32(2), "concurrent goroutines should be bounded to provider count")
-	case <-time.After(5 * time.Second):
-		t.Fatal("health check goroutine did not stop")
-	}
+	// With the atomic guard, max concurrent goroutines should be bounded
+	// to the number of providers (2), not accumulating over time.
+	peak := atomic.LoadInt32(&maxRunning)
+	assert.LessOrEqual(t, peak, int32(2), "concurrent goroutines should be bounded to provider count")
 }
 
 func TestTruncate(t *testing.T) {

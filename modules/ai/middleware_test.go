@@ -89,7 +89,6 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 			},
 		},
 		logger: zap.NewNop(),
-		quit:   make(chan struct{}),
 
 		client:              client,
 		testMode:            true,
@@ -500,8 +499,8 @@ func TestWriteErrorResponse(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	m := &DinAIMiddleware{
-		logger: zap.NewNop(),
-		quit:   make(chan struct{}),
+		logger:  zap.NewNop(),
+		checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 	}
 
 	// Should not panic.
@@ -515,7 +514,7 @@ func TestCleanup(t *testing.T) {
 
 func TestCleanup_NilLogger(t *testing.T) {
 	m := &DinAIMiddleware{
-		quit: make(chan struct{}),
+		checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 		// logger intentionally nil — simulates Cleanup called before Provision.
 	}
 
@@ -537,39 +536,43 @@ func TestServeHTTP_PrefixedPathDoesNotMatch(t *testing.T) {
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {
-				Name: TierFast,
-				Providers: []*AIProvider{
-					func() *AIProvider {
-						p := newTestProvider("p1", health.Healthy)
-						p.ModelID = "test"
-						p.AdapterType = AdapterOpenAI
-						return p
-					}(),
-				},
+	client := &mockHealthCheckClient{statusCode: 200, body: `{}`}
+	tiers := map[string]*Tier{
+		TierFast: {
+			Name: TierFast,
+			Providers: []*AIProvider{
+				func() *AIProvider {
+					p := newTestProvider("p1", health.Healthy)
+					p.ModelID = "test"
+					p.AdapterType = AdapterOpenAI
+					return p
+				}(),
 			},
 		},
-		logger:              zap.NewNop(),
-		quit:                make(chan struct{}),
+	}
+	logger := zap.NewNop()
+
+	checker := health.NewChecker(health.CheckerConfig{
+		Interval:       1 * time.Second,
+		PreventOverlap: true,
+	}, func(ctx context.Context) {
+		checkAllProviders(ctx, tiers, client, logger)
+	})
+	checker.Start()
+
+	m := &DinAIMiddleware{
+		Tiers:               tiers,
+		logger:              logger,
+		checker:             checker,
 		HealthcheckInterval: 1,
 	}
-
-	client := &mockHealthCheckClient{statusCode: 200, body: `{}`}
-
-	done := make(chan struct{})
-	go func() {
-		runHealthChecks(m.Tiers, client, 1, m.logger, m.quit)
-		close(done)
-	}()
 
 	time.Sleep(100 * time.Millisecond)
 	m.Cleanup()
 
 	select {
-	case <-done:
-		// Success.
+	case <-checker.Quit():
+		// Success — checker stopped.
 	case <-time.After(2 * time.Second):
 		t.Fatal("health check goroutine did not stop after Cleanup")
 	}
@@ -1760,7 +1763,6 @@ func TestProvision_Defaults(t *testing.T) {
 
 	// Re-provision (newTestMiddleware already sets testMode=true).
 	m.logger = zap.NewNop()
-	m.quit = make(chan struct{})
 	m.client = newDefaultStreamingClient()
 	m.healthClient = newHealthCheckClient()
 
