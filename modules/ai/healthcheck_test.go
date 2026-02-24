@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -42,7 +43,7 @@ func (m *mockHealthCheckClient) PostStream(ctx context.Context, url string, head
 
 func TestCheckProvider_Success(t *testing.T) {
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
 
@@ -54,13 +55,13 @@ func TestCheckProvider_Success(t *testing.T) {
 	logger := zap.NewNop()
 	checkProvider(context.Background(), provider, client, logger)
 
-	assert.Equal(t, Healthy, provider.HealthStatus())
+	assert.Equal(t, health.Healthy, provider.HealthStatus())
 	assert.Equal(t, 1, provider.TTFTCount())
 }
 
 func TestCheckProvider_Failure(t *testing.T) {
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
 
@@ -76,12 +77,12 @@ func TestCheckProvider_Failure(t *testing.T) {
 		checkProvider(context.Background(), provider, client, logger)
 	}
 
-	assert.Equal(t, Unhealthy, provider.HealthStatus())
+	assert.Equal(t, health.Unhealthy, provider.HealthStatus())
 }
 
 func TestCheckProvider_RateLimited(t *testing.T) {
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
 
@@ -93,12 +94,12 @@ func TestCheckProvider_RateLimited(t *testing.T) {
 	logger := zap.NewNop()
 	checkProvider(context.Background(), provider, client, logger)
 
-	assert.Equal(t, Warning, provider.HealthStatus())
+	assert.Equal(t, health.Warning, provider.HealthStatus())
 }
 
 func TestCheckProvider_NetworkError(t *testing.T) {
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
 
@@ -112,12 +113,12 @@ func TestCheckProvider_NetworkError(t *testing.T) {
 		checkProvider(context.Background(), provider, client, logger)
 	}
 
-	assert.Equal(t, Unhealthy, provider.HealthStatus())
+	assert.Equal(t, health.Unhealthy, provider.HealthStatus())
 }
 
 func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 
-	provider := newTestProvider("test-anthropic", Healthy)
+	provider := newTestProvider("test-anthropic", health.Healthy)
 	provider.ModelID = "claude-haiku-4-5-20251001"
 	provider.AdapterType = AdapterAnthropic
 
@@ -129,7 +130,7 @@ func TestCheckProvider_AnthropicAdapter(t *testing.T) {
 	logger := zap.NewNop()
 	checkProvider(context.Background(), provider, client, logger)
 
-	assert.Equal(t, Healthy, provider.HealthStatus())
+	assert.Equal(t, health.Healthy, provider.HealthStatus())
 	assert.Equal(t, 1, provider.TTFTCount())
 }
 
@@ -139,7 +140,7 @@ func TestRunHealthChecks_StopsOnQuit(t *testing.T) {
 		TierFast: {
 			Name: TierFast,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Healthy),
+				newTestProvider("p1", health.Healthy),
 			},
 		},
 	}
@@ -214,7 +215,7 @@ func TestCheckProvider_WithOverrides(t *testing.T) {
 	logger := zap.NewNop()
 	checkProvider(context.Background(), provider, client, logger)
 
-	assert.Equal(t, Healthy, provider.HealthStatus())
+	assert.Equal(t, health.Healthy, provider.HealthStatus())
 
 	// Verify the request used max_completion_tokens instead of max_tokens.
 	var reqMap map[string]interface{}
@@ -246,7 +247,7 @@ func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
 	logger := zap.NewNop()
 	checkProvider(context.Background(), provider, client, logger)
 
-	assert.Equal(t, Healthy, provider.HealthStatus())
+	assert.Equal(t, health.Healthy, provider.HealthStatus())
 
 	// Verify the request used default max_tokens.
 	var reqMap map[string]interface{}
@@ -257,7 +258,7 @@ func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
 
 func TestCheckProvider_CancelledContext(t *testing.T) {
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.ModelID = "gpt-4o-mini"
 	provider.AdapterType = AdapterOpenAI
 
@@ -370,13 +371,13 @@ func TestRunHealthChecks_BoundsGoroutines(t *testing.T) {
 			Name: TierFast,
 			Providers: []*AIProvider{
 				func() *AIProvider {
-					p := newTestProvider("p1", Healthy)
+					p := newTestProvider("p1", health.Healthy)
 					p.ModelID = "test"
 					p.AdapterType = AdapterOpenAI
 					return p
 				}(),
 				func() *AIProvider {
-					p := newTestProvider("p2", Healthy)
+					p := newTestProvider("p2", health.Healthy)
 					p.ModelID = "test"
 					p.AdapterType = AdapterOpenAI
 					return p

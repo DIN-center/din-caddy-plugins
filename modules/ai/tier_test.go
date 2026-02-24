@@ -4,22 +4,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestProvider(name string, health HealthStatus) *AIProvider {
+func newTestProvider(name string, hs health.HealthStatus) *AIProvider {
 	p, _ := NewAIProvider(name, "https://api.example.com/v1/chat/completions")
 	p.InputCostPer1M = 1.00
 	p.OutputCostPer1M = 2.00
 	p.mu.Lock()
-	p.healthStatus = health
+	p.healthStatus = hs
 	p.mu.Unlock()
 	return p
 }
 
 // setProviderHealth directly sets a provider's health status for testing.
-func setProviderHealth(p *AIProvider, status HealthStatus) {
+func setProviderHealth(p *AIProvider, status health.HealthStatus) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.healthStatus = status
@@ -32,9 +33,9 @@ func TestTierGetAvailableProviders(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Healthy),
-				newTestProvider("p2", Healthy),
-				newTestProvider("p3", Unhealthy),
+				newTestProvider("p1", health.Healthy),
+				newTestProvider("p2", health.Healthy),
+				newTestProvider("p3", health.Unhealthy),
 			},
 		}
 
@@ -48,9 +49,9 @@ func TestTierGetAvailableProviders(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Unhealthy),
-				newTestProvider("p2", Warning),
-				newTestProvider("p3", Warning),
+				newTestProvider("p1", health.Unhealthy),
+				newTestProvider("p2", health.Warning),
+				newTestProvider("p3", health.Warning),
 			},
 		}
 
@@ -64,8 +65,8 @@ func TestTierGetAvailableProviders(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Unhealthy),
-				newTestProvider("p2", Unhealthy),
+				newTestProvider("p1", health.Unhealthy),
+				newTestProvider("p2", health.Unhealthy),
 			},
 		}
 
@@ -77,9 +78,9 @@ func TestTierGetAvailableProviders(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Healthy),
-				newTestProvider("p2", Warning),
-				newTestProvider("p3", Unhealthy),
+				newTestProvider("p1", health.Healthy),
+				newTestProvider("p2", health.Warning),
+				newTestProvider("p3", health.Unhealthy),
 			},
 		}
 
@@ -99,8 +100,8 @@ func TestTierSelectProvider(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Unhealthy),
-				newTestProvider("p2", Unhealthy),
+				newTestProvider("p1", health.Unhealthy),
+				newTestProvider("p2", health.Unhealthy),
 			},
 		}
 
@@ -112,8 +113,8 @@ func TestTierSelectProvider(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("p1", Healthy),
-				newTestProvider("p2", Unhealthy),
+				newTestProvider("p1", health.Healthy),
+				newTestProvider("p2", health.Unhealthy),
 			},
 		}
 
@@ -126,9 +127,9 @@ func TestTierSelectProvider(t *testing.T) {
 		tier := &Tier{
 			Name: TierBalanced,
 			Providers: []*AIProvider{
-				newTestProvider("openai-gpt4o", Healthy),
-				newTestProvider("anthropic-sonnet", Healthy),
-				newTestProvider("deepseek-chat", Healthy),
+				newTestProvider("openai-gpt4o", health.Healthy),
+				newTestProvider("anthropic-sonnet", health.Healthy),
+				newTestProvider("deepseek-chat", health.Healthy),
 			},
 		}
 
@@ -143,8 +144,8 @@ func TestTierSelectProvider(t *testing.T) {
 	})
 
 	t.Run("no session uses TTFT-weighted selection", func(t *testing.T) {
-		p1 := newTestProvider("fast-provider", Healthy)
-		p2 := newTestProvider("slow-provider", Healthy)
+		p1 := newTestProvider("fast-provider", health.Healthy)
+		p2 := newTestProvider("slow-provider", health.Healthy)
 
 		// Give p1 fast TTFT and p2 slow TTFT.
 		p1.RecordTTFT(50 * time.Millisecond)
@@ -169,9 +170,9 @@ func TestTierSelectProvider(t *testing.T) {
 	})
 
 	t.Run("session stickiness breaks when provider becomes unhealthy", func(t *testing.T) {
-		p1 := newTestProvider("openai-gpt4o", Healthy)
-		p2 := newTestProvider("anthropic-sonnet", Healthy)
-		p3 := newTestProvider("deepseek-chat", Healthy)
+		p1 := newTestProvider("openai-gpt4o", health.Healthy)
+		p2 := newTestProvider("anthropic-sonnet", health.Healthy)
+		p3 := newTestProvider("deepseek-chat", health.Healthy)
 
 		tier := &Tier{
 			Name:      TierBalanced,
@@ -183,7 +184,7 @@ func TestTierSelectProvider(t *testing.T) {
 		require.NotNil(t, initial)
 
 		// Mark the selected provider as unhealthy.
-		setProviderHealth(initial, Unhealthy)
+		setProviderHealth(initial, health.Unhealthy)
 
 		// Session should now route to a different provider.
 		after := tier.SelectProvider("sticky-session", OptimizeLatency)
@@ -194,11 +195,11 @@ func TestTierSelectProvider(t *testing.T) {
 }
 
 func TestSelectProvider_CostMode_CheaperGetsMoreTraffic(t *testing.T) {
-	cheap := newTestProvider("cheap-provider", Healthy)
+	cheap := newTestProvider("cheap-provider", health.Healthy)
 	cheap.InputCostPer1M = 0.10
 	cheap.OutputCostPer1M = 0.30
 
-	expensive := newTestProvider("expensive-provider", Healthy)
+	expensive := newTestProvider("expensive-provider", health.Healthy)
 	expensive.InputCostPer1M = 10.00
 	expensive.OutputCostPer1M = 40.00
 
@@ -220,13 +221,13 @@ func TestSelectProvider_CostMode_CheaperGetsMoreTraffic(t *testing.T) {
 
 func TestSelectProvider_BalancedMode_ConsidersBothCostAndLatency(t *testing.T) {
 	// Cheap but slow.
-	cheapSlow := newTestProvider("cheap-slow", Healthy)
+	cheapSlow := newTestProvider("cheap-slow", health.Healthy)
 	cheapSlow.InputCostPer1M = 0.10
 	cheapSlow.OutputCostPer1M = 0.30
 	cheapSlow.RecordTTFT(500 * time.Millisecond)
 
 	// Expensive but fast.
-	expensiveFast := newTestProvider("expensive-fast", Healthy)
+	expensiveFast := newTestProvider("expensive-fast", health.Healthy)
 	expensiveFast.InputCostPer1M = 10.00
 	expensiveFast.OutputCostPer1M = 40.00
 	expensiveFast.RecordTTFT(50 * time.Millisecond)
@@ -249,11 +250,11 @@ func TestSelectProvider_BalancedMode_ConsidersBothCostAndLatency(t *testing.T) {
 }
 
 func TestSelectProvider_BalancedMode_NoTTFT_FallsToCost(t *testing.T) {
-	cheap := newTestProvider("cheap", Healthy)
+	cheap := newTestProvider("cheap", health.Healthy)
 	cheap.InputCostPer1M = 0.10
 	cheap.OutputCostPer1M = 0.30
 
-	expensive := newTestProvider("expensive", Healthy)
+	expensive := newTestProvider("expensive", health.Healthy)
 	expensive.InputCostPer1M = 10.00
 	expensive.OutputCostPer1M = 40.00
 
@@ -275,11 +276,11 @@ func TestSelectProvider_BalancedMode_NoTTFT_FallsToCost(t *testing.T) {
 }
 
 func TestSelectProvider_SessionStickinessOverridesOptimizeMode(t *testing.T) {
-	cheap := newTestProvider("cheap", Healthy)
+	cheap := newTestProvider("cheap", health.Healthy)
 	cheap.InputCostPer1M = 0.10
 	cheap.OutputCostPer1M = 0.30
 
-	expensive := newTestProvider("expensive", Healthy)
+	expensive := newTestProvider("expensive", health.Healthy)
 	expensive.InputCostPer1M = 10.00
 	expensive.OutputCostPer1M = 40.00
 
@@ -299,10 +300,10 @@ func TestSelectProvider_SessionStickinessOverridesOptimizeMode(t *testing.T) {
 }
 
 func TestSelectProvider_LatencyModeUnchanged(t *testing.T) {
-	fast := newTestProvider("fast-provider", Healthy)
+	fast := newTestProvider("fast-provider", health.Healthy)
 	fast.RecordTTFT(50 * time.Millisecond)
 
-	slow := newTestProvider("slow-provider", Healthy)
+	slow := newTestProvider("slow-provider", health.Healthy)
 	slow.RecordTTFT(500 * time.Millisecond)
 
 	tier := &Tier{
@@ -326,9 +327,9 @@ func TestTierSelectProviderDistribution(t *testing.T) {
 	tier := &Tier{
 		Name: TierBalanced,
 		Providers: []*AIProvider{
-			newTestProvider("p1", Healthy),
-			newTestProvider("p2", Healthy),
-			newTestProvider("p3", Healthy),
+			newTestProvider("p1", health.Healthy),
+			newTestProvider("p2", health.Healthy),
+			newTestProvider("p3", health.Healthy),
 		},
 	}
 

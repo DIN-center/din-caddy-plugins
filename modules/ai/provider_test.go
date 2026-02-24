@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,7 +51,7 @@ func TestNewAIProvider(t *testing.T) {
 			assert.Equal(t, tt.pName, p.Name)
 			assert.Equal(t, tt.host, p.Host)
 			assert.Equal(t, tt.path, p.Path)
-			assert.Equal(t, Healthy, p.healthStatus)
+			assert.Equal(t, health.Healthy, p.healthStatus)
 			assert.NotNil(t, p.Headers)
 			assert.Equal(t, DefaultTTFTWindowSize, p.ttftWindowSize)
 		})
@@ -58,47 +59,47 @@ func TestNewAIProvider(t *testing.T) {
 }
 
 func TestHealthStatusString(t *testing.T) {
-	assert.Equal(t, "healthy", Healthy.String())
-	assert.Equal(t, "warning", Warning.String())
-	assert.Equal(t, "unhealthy", Unhealthy.String())
-	assert.Equal(t, "unknown", HealthStatus(99).String())
+	assert.Equal(t, "healthy", health.Healthy.String())
+	assert.Equal(t, "warning", health.Warning.String())
+	assert.Equal(t, "unhealthy", health.Unhealthy.String())
+	assert.Equal(t, "unknown", health.HealthStatus(99).String())
 }
 
 func TestProviderHealthTransitions(t *testing.T) {
 	t.Run("ping failure transitions to unhealthy after threshold", func(t *testing.T) {
 		p := mustProvider(t)
-		assert.Equal(t, Healthy, p.HealthStatus())
+		assert.Equal(t, health.Healthy, p.HealthStatus())
 
 		// Failures at threshold should NOT transition
 		for i := 0; i <= DefaultHCThreshold; i++ {
 			p.MarkPingFailure()
 		}
-		assert.Equal(t, Unhealthy, p.HealthStatus())
+		assert.Equal(t, health.Unhealthy, p.HealthStatus())
 	})
 
 	t.Run("ping success recovers from unhealthy after threshold", func(t *testing.T) {
 		p := mustProvider(t)
-		setProviderHealth(p, Unhealthy)
-		assert.Equal(t, Unhealthy, p.HealthStatus())
+		setProviderHealth(p, health.Unhealthy)
+		assert.Equal(t, health.Unhealthy, p.HealthStatus())
 
 		for i := 0; i <= DefaultHCThreshold; i++ {
 			p.MarkPingSuccess()
 		}
-		assert.Equal(t, Healthy, p.HealthStatus())
+		assert.Equal(t, health.Healthy, p.HealthStatus())
 	})
 
 	t.Run("ping warning sets warning state", func(t *testing.T) {
 		p := mustProvider(t)
 		p.MarkPingWarning()
-		assert.Equal(t, Warning, p.HealthStatus())
+		assert.Equal(t, health.Warning, p.HealthStatus())
 	})
 
 	t.Run("ping success from warning is immediate", func(t *testing.T) {
 		p := mustProvider(t)
-		setProviderHealth(p, Warning)
-		assert.Equal(t, Warning, p.HealthStatus())
+		setProviderHealth(p, health.Warning)
+		assert.Equal(t, health.Warning, p.HealthStatus())
 		p.MarkPingSuccess()
-		assert.Equal(t, Healthy, p.HealthStatus())
+		assert.Equal(t, health.Healthy, p.HealthStatus())
 	})
 }
 
@@ -108,11 +109,11 @@ func TestProviderAvailability(t *testing.T) {
 	assert.True(t, p.IsHealthy())
 	assert.True(t, p.IsAvailable())
 
-	setProviderHealth(p, Warning)
+	setProviderHealth(p, health.Warning)
 	assert.False(t, p.IsHealthy())
 	assert.True(t, p.IsAvailable())
 
-	setProviderHealth(p, Unhealthy)
+	setProviderHealth(p, health.Unhealthy)
 	assert.False(t, p.IsHealthy())
 	assert.False(t, p.IsAvailable())
 }
@@ -201,35 +202,35 @@ func TestProviderConcurrentAccess(t *testing.T) {
 func TestProviderHealthThresholdBoundary(t *testing.T) {
 	t.Run("exactly threshold failures stays healthy, threshold+1 transitions to unhealthy", func(t *testing.T) {
 		p := mustProvider(t)
-		assert.Equal(t, Healthy, p.HealthStatus())
+		assert.Equal(t, health.Healthy, p.HealthStatus())
 
 		// DefaultHCThreshold (3) failures: condition is `failures > hcThreshold`,
 		// so exactly 3 should NOT transition.
 		for i := 0; i < DefaultHCThreshold; i++ {
 			p.MarkPingFailure()
 		}
-		assert.Equal(t, Healthy, p.HealthStatus(), "exactly %d failures should remain Healthy", DefaultHCThreshold)
+		assert.Equal(t, health.Healthy, p.HealthStatus(), "exactly %d failures should remain Healthy", DefaultHCThreshold)
 
 		// The (threshold+1)th failure crosses the boundary.
 		p.MarkPingFailure()
-		assert.Equal(t, Unhealthy, p.HealthStatus(), "%d failures should transition to Unhealthy", DefaultHCThreshold+1)
+		assert.Equal(t, health.Unhealthy, p.HealthStatus(), "%d failures should transition to Unhealthy", DefaultHCThreshold+1)
 	})
 
 	t.Run("exactly threshold successes stays unhealthy, threshold+1 transitions to healthy", func(t *testing.T) {
 		p := mustProvider(t)
-		setProviderHealth(p, Unhealthy)
-		assert.Equal(t, Unhealthy, p.HealthStatus())
+		setProviderHealth(p, health.Unhealthy)
+		assert.Equal(t, health.Unhealthy, p.HealthStatus())
 
 		// DefaultHCThreshold (3) successes: condition is `successes > hcThreshold`,
 		// so exactly 3 should NOT recover.
 		for i := 0; i < DefaultHCThreshold; i++ {
 			p.MarkPingSuccess()
 		}
-		assert.Equal(t, Unhealthy, p.HealthStatus(), "exactly %d successes should remain Unhealthy", DefaultHCThreshold)
+		assert.Equal(t, health.Unhealthy, p.HealthStatus(), "exactly %d successes should remain Unhealthy", DefaultHCThreshold)
 
 		// The (threshold+1)th success crosses the boundary.
 		p.MarkPingSuccess()
-		assert.Equal(t, Healthy, p.HealthStatus(), "%d successes should transition to Healthy", DefaultHCThreshold+1)
+		assert.Equal(t, health.Healthy, p.HealthStatus(), "%d successes should transition to Healthy", DefaultHCThreshold+1)
 	})
 }
 
