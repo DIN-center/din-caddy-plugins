@@ -8,8 +8,11 @@ import (
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
 	"github.com/DIN-center/din-caddy-plugins/lib/health"
+	libprovider "github.com/DIN-center/din-caddy-plugins/lib/provider"
 	"go.uber.org/zap"
 )
+
+var _ libprovider.Provider = (*AIProvider)(nil)
 
 // AIProvider represents a backend AI model provider with health tracking and TTFT metrics.
 type AIProvider struct {
@@ -154,3 +157,15 @@ func (p *AIProvider) CostForTokens(promptTokens, completionTokens int) float64 {
 	outputCost := float64(completionTokens) * p.OutputCostPer1M / 1_000_000
 	return inputCost + outputCost
 }
+
+// GetName returns the provider's display name.
+func (p *AIProvider) GetName() string { return p.Name }
+
+// GetURL returns the provider's HTTP URL.
+func (p *AIProvider) GetURL() string { return p.HttpUrl }
+
+// GetHeaders returns the provider's static request headers.
+func (p *AIProvider) GetHeaders() map[string]string { return p.Headers }
+
+// GetHealthStatus returns the current health status (thread-safe).
+func (p *AIProvider) GetHealthStatus() health.HealthStatus { return p.HealthStatus() }
