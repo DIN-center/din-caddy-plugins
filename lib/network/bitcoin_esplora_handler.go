@@ -100,57 +100,57 @@ func (h *BitcoinEsploraHandler) ProcessRequest(req *http.Request) error {
 }
 
 var (
-	reTx                = regexp.MustCompile(`/tx/[^/]+$$`)
-	reTxStatus          = regexp.MustCompile(`/tx/[^/]+/status$$`)
-	reTxHex             = regexp.MustCompile(`/tx/[^/]+/hex$$`)
-	reTxRaw             = regexp.MustCompile(`/tx/[^/]+/raw$$`)
-	reTxMerkleblock     = regexp.MustCompile(`/tx/[^/]+/merkleblock-proof$$`)
-	reTxMerkle          = regexp.MustCompile(`/tx/[^/]+/merkle-proof$$`)
-	reTxOutspendVout    = regexp.MustCompile(`/tx/[^/]+/outspend/\d+$$`)
-	reTxOutspends       = regexp.MustCompile(`/tx/[^/]+/outspends$$`)
-	rePostTxBroadcast   = regexp.MustCompile(`/tx$$`)
-	rePostTxsPackage    = regexp.MustCompile(`/txs/package$$`)
+	reTx                = regexp.MustCompile(`/tx/[^/]+$`)
+	reTxStatus          = regexp.MustCompile(`/tx/[^/]+/status$`)
+	reTxHex             = regexp.MustCompile(`/tx/[^/]+/hex$`)
+	reTxRaw             = regexp.MustCompile(`/tx/[^/]+/raw$`)
+	reTxMerkleblock     = regexp.MustCompile(`/tx/[^/]+/merkleblock-proof$`)
+	reTxMerkle          = regexp.MustCompile(`/tx/[^/]+/merkle-proof$`)
+	reTxOutspendVout    = regexp.MustCompile(`/tx/[^/]+/outspend/\d+$`)
+	reTxOutspends       = regexp.MustCompile(`/tx/[^/]+/outspends$`)
+	rePostTxBroadcast   = regexp.MustCompile(`/tx$`)
+	rePostTxsPackage    = regexp.MustCompile(`/txs/package$`)
 
 	// ---- Addresses / Scripthash ----
-	reAddressInfo       = regexp.MustCompile(`/address/[^/]+$$`)
-	reScripthashInfo    = regexp.MustCompile(`/scripthash/[^/]+$$`)
-	reAddressTxs        = regexp.MustCompile(`/address/[^/]+/txs$$`)
-	reScripthashTxs     = regexp.MustCompile(`/scripthash/[^/]+/txs$$`)
-	reAddressTxsChain   = regexp.MustCompile(`/address/[^/]+/txs/chain(?:/[^/]+)?$$`)
-	reScripthashTxsChain= regexp.MustCompile(`/scripthash/[^/]+/txs/chain(?:/[^/]+)?$$`)
-	reAddressTxsMempool = regexp.MustCompile(`/address/[^/]+/txs/mempool$$`)
-	reScripthashTxsMem  = regexp.MustCompile(`/scripthash/[^/]+/txs/mempool$$`)
-	reAddressUtxo       = regexp.MustCompile(`/address/[^/]+/utxo$$`)
-	reScripthashUtxo    = regexp.MustCompile(`/scripthash/[^/]+/utxo$$`)
-	reAddressPrefix     = regexp.MustCompile(`/address-prefix/[^/]+$$`)
+	reAddressInfo       = regexp.MustCompile(`/address/[^/]+$`)
+	reScripthashInfo    = regexp.MustCompile(`/scripthash/[^/]+$`)
+	reAddressTxs        = regexp.MustCompile(`/address/[^/]+/txs$`)
+	reScripthashTxs     = regexp.MustCompile(`/scripthash/[^/]+/txs$`)
+	reAddressTxsChain   = regexp.MustCompile(`/address/[^/]+/txs/chain(?:/[^/]+)?$`)
+	reScripthashTxsChain= regexp.MustCompile(`/scripthash/[^/]+/txs/chain(?:/[^/]+)?$`)
+	reAddressTxsMempool = regexp.MustCompile(`/address/[^/]+/txs/mempool$`)
+	reScripthashTxsMem  = regexp.MustCompile(`/scripthash/[^/]+/txs/mempool$`)
+	reAddressUtxo       = regexp.MustCompile(`/address/[^/]+/utxo$`)
+	reScripthashUtxo    = regexp.MustCompile(`/scripthash/[^/]+/utxo$`)
+	reAddressPrefix     = regexp.MustCompile(`/address-prefix/[^/]+$`)
 
 	// ---- Blocks ----
-	reBlock             = regexp.MustCompile(`/block/[^/]+$$`)
-	reBlockHeader       = regexp.MustCompile(`/block/[^/]+/header$$`)
-	reBlockStatus       = regexp.MustCompile(`/block/[^/]+/status$$`)
-	reBlockTxs          = regexp.MustCompile(`/block/[^/]+/txs(?:/\d+)?$$`)
-	reBlockTxids        = regexp.MustCompile(`/block/[^/]+/txids$$`)
-	reBlockTxidIndex    = regexp.MustCompile(`/block/[^/]+/txid/\d+$$`)
-	reBlockRaw          = regexp.MustCompile(`/block/[^/]+/raw$$`)
-	reBlockHeight       = regexp.MustCompile(`/block-height/\d+$$`)
-	reBlocks            = regexp.MustCompile(`/blocks(?:/\d+)?$$`)
-	reBlocksTipHeight   = regexp.MustCompile(`/blocks/tip/height$$`)
-	reBlocksTipHash     = regexp.MustCompile(`/blocks/tip/hash$$`)
+	reBlock             = regexp.MustCompile(`/block/[^/]+$`)
+	reBlockHeader       = regexp.MustCompile(`/block/[^/]+/header$`)
+	reBlockStatus       = regexp.MustCompile(`/block/[^/]+/status$`)
+	reBlockTxs          = regexp.MustCompile(`/block/[^/]+/txs(?:/\d+)?$`)
+	reBlockTxids        = regexp.MustCompile(`/block/[^/]+/txids$`)
+	reBlockTxidIndex    = regexp.MustCompile(`/block/[^/]+/txid/\d+$`)
+	reBlockRaw          = regexp.MustCompile(`/block/[^/]+/raw$`)
+	reBlockHeight       = regexp.MustCompile(`/block-height/\d+$`)
+	reBlocks            = regexp.MustCompile(`/blocks(?:/\d+)?$`)
+	reBlocksTipHeight   = regexp.MustCompile(`/blocks/tip/height$`)
+	reBlocksTipHash     = regexp.MustCompile(`/blocks/tip/hash$`)
 
 	// ---- Mempool / Fees ----
-	reMempool           = regexp.MustCompile(`/mempool$$`)
-	reMempoolTxids      = regexp.MustCompile(`/mempool/txids$$`)
-	reMempoolRecent     = regexp.MustCompile(`/mempool/recent$$`)
-	reFeeEstimates      = regexp.MustCompile(`/fee-estimates$$`)
+	reMempool           = regexp.MustCompile(`/mempool$`)
+	reMempoolTxids      = regexp.MustCompile(`/mempool/txids$`)
+	reMempoolRecent     = regexp.MustCompile(`/mempool/recent$`)
+	reFeeEstimates      = regexp.MustCompile(`/fee-estimates$`)
 
 	// ---- Assets (Elements/Liquid only) ----
-	reAsset             = regexp.MustCompile(`/asset/[^/]+$$`)
-	reAssetTxs          = regexp.MustCompile(`/asset/[^/]+/txs$$`)
-	reAssetTxsMempool   = regexp.MustCompile(`/asset/[^/]+/txs/mempool$$`)
-	reAssetTxsChain     = regexp.MustCompile(`/asset/[^/]+/txs/chain(?:/[^/]+)?$$`)
-	reAssetSupply       = regexp.MustCompile(`/asset/[^/]+/supply$$`)
-	reAssetSupplyDec    = regexp.MustCompile(`/asset/[^/]+/supply/decimal$$`)
-	reAssetsRegistry    = regexp.MustCompile(`/assets/registry$$`)
+	reAsset             = regexp.MustCompile(`/asset/[^/]+$`)
+	reAssetTxs          = regexp.MustCompile(`/asset/[^/]+/txs$`)
+	reAssetTxsMempool   = regexp.MustCompile(`/asset/[^/]+/txs/mempool$`)
+	reAssetTxsChain     = regexp.MustCompile(`/asset/[^/]+/txs/chain(?:/[^/]+)?$`)
+	reAssetSupply       = regexp.MustCompile(`/asset/[^/]+/supply$`)
+	reAssetSupplyDec    = regexp.MustCompile(`/asset/[^/]+/supply/decimal$`)
+	reAssetsRegistry    = regexp.MustCompile(`/assets/registry$`)
 )
 
 // EndpointID maps an HTTP method + request path to a stable, unique endpoint identifier.
@@ -158,7 +158,6 @@ var (
 // Notes:
 //   - Paths below are derived from Blockstream Esplora API docs.
 //   - `path` should be the URL path only (no scheme/host/querystring), e.g. "/tx/<txid>/status".
-//   - All regexes are anchored (^...$) so partial matches won't collide.
 func EndpointID(method, path string) string {
 	switch {
 	// ---- Transactions ----
