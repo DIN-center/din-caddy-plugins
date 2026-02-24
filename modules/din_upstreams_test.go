@@ -8,6 +8,7 @@ import (
 	reflect "reflect"
 	"testing"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
@@ -81,7 +82,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -90,7 +91,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -108,7 +109,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -117,7 +118,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -135,7 +136,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -144,7 +145,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Warning})
 						return l
 					}(),
 				},
@@ -162,7 +163,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Warning})
 						return l
 					}(),
 				},
@@ -171,7 +172,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Warning})
 						return l
 					}(),
 				},
@@ -189,7 +190,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Warning})
 						return l
 					}(),
 				},
@@ -198,7 +199,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
 						return l
 					}(),
 				},
@@ -216,7 +217,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 1,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -225,7 +226,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 1,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -243,7 +244,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -252,7 +253,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 1,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -270,7 +271,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Warning})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Warning})
 						return l
 					}(),
 				},
@@ -279,7 +280,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 1,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -297,7 +298,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 0,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
 						return l
 					}(),
 				},
@@ -306,7 +307,7 @@ func TestGetDinUpstreams(t *testing.T) {
 					Priority: 1,
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
 						return l
 					}(),
 				},
@@ -388,7 +389,7 @@ func TestGetDinUpstreams_WithExcludedProviders(t *testing.T) {
 
 	healthyHistory := func() *list.List {
 		l := list.New()
-		l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+		l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 		return l
 	}
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 )
 
@@ -198,22 +199,22 @@ func TestAuthClient(t *testing.T) {
 func TestHealthy(t *testing.T) {
 	tests := []struct {
 		name           string
-		healthStatus   HealthStatus
+		healthStatus   health.HealthStatus
 		expectedResult bool
 	}{
 		{
 			name:           "healthy status",
-			healthStatus:   Healthy,
+			healthStatus:   health.Healthy,
 			expectedResult: true,
 		},
 		{
 			name:           "warning status",
-			healthStatus:   Warning,
+			healthStatus:   health.Warning,
 			expectedResult: false,
 		},
 		{
 			name:           "unhealthy status",
-			healthStatus:   Unhealthy,
+			healthStatus:   health.Unhealthy,
 			expectedResult: false,
 		},
 	}
@@ -238,22 +239,22 @@ func TestHealthy(t *testing.T) {
 func TestWarning(t *testing.T) {
 	tests := []struct {
 		name           string
-		healthStatus   HealthStatus
+		healthStatus   health.HealthStatus
 		expectedResult bool
 	}{
 		{
 			name:           "warning status",
-			healthStatus:   Warning,
+			healthStatus:   health.Warning,
 			expectedResult: true,
 		},
 		{
 			name:           "healthy status",
-			healthStatus:   Healthy,
+			healthStatus:   health.Healthy,
 			expectedResult: false,
 		},
 		{
 			name:           "unhealthy status",
-			healthStatus:   Unhealthy,
+			healthStatus:   health.Unhealthy,
 			expectedResult: false,
 		},
 	}
@@ -281,7 +282,7 @@ func TestAddBlockEntry(t *testing.T) {
 		name           string
 		setupHistory   func() *list.List
 		newBlock       int64
-		newStatus      HealthStatus
+		newStatus      health.HealthStatus
 		historySize    int
 		expectedLength int
 		expectedFirst  int64
@@ -293,7 +294,7 @@ func TestAddBlockEntry(t *testing.T) {
 				return list.New()
 			},
 			newBlock:       100,
-			newStatus:      Healthy,
+			newStatus:      health.Healthy,
 			historySize:    3,
 			expectedLength: 1,
 			expectedFirst:  100,
@@ -303,11 +304,11 @@ func TestAddBlockEntry(t *testing.T) {
 			name: "add within size limit",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy, timestamp: &now})
 				return l
 			},
 			newBlock:       101,
-			newStatus:      Healthy,
+			newStatus:      health.Healthy,
 			historySize:    3,
 			expectedLength: 2,
 			expectedFirst:  100,
@@ -317,13 +318,13 @@ func TestAddBlockEntry(t *testing.T) {
 			name: "exceed size limit",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy, timestamp: &now})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Healthy, timestamp: &now})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: health.Healthy, timestamp: &now})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: health.Healthy, timestamp: &now})
 				return l
 			},
 			newBlock:       103,
-			newStatus:      Healthy,
+			newStatus:      health.Healthy,
 			historySize:    3,
 			expectedLength: 3,
 			expectedFirst:  101,
@@ -376,16 +377,16 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "single healthy entry returns that entry",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 100, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy},
 		},
 		{
 			name: "single unhealthy entry returns nil",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
 				return l
 			},
 			expectedBlock: nil,
@@ -394,21 +395,21 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "multiple entries returns latest healthy",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 103, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: health.Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: health.Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 103, healthStatus: health.Unhealthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: health.Healthy},
 		},
 		{
 			name: "all unhealthy entries returns nil",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: health.Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: health.Unhealthy})
 				return l
 			},
 			expectedBlock: nil,
@@ -417,12 +418,12 @@ func TestGetLatestHealthyBlockEntry(t *testing.T) {
 			name: "latest entry is healthy returns that entry",
 			setupHistory: func() *list.List {
 				l := list.New()
-				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: Unhealthy})
-				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: Healthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 101, healthStatus: health.Unhealthy})
+				l.PushBack(blockHistoryEntry{blockNumber: 102, healthStatus: health.Healthy})
 				return l
 			},
-			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: Healthy},
+			expectedBlock: &blockHistoryEntry{blockNumber: 102, healthStatus: health.Healthy},
 		},
 	}
 
@@ -488,7 +489,7 @@ func TestProviderBlockHistory(t *testing.T) {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  100,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(now),
 				})
 				return l
@@ -496,7 +497,7 @@ func TestProviderBlockHistory(t *testing.T) {
 			expectedItems: []blockHistoryEntry{
 				{
 					blockNumber:  100,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(now),
 				},
 			},
@@ -507,7 +508,7 @@ func TestProviderBlockHistory(t *testing.T) {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  200,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    nil,
 				})
 				return l
@@ -515,7 +516,7 @@ func TestProviderBlockHistory(t *testing.T) {
 			expectedItems: []blockHistoryEntry{
 				{
 					blockNumber:  200,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    nil,
 				},
 			},
@@ -526,17 +527,17 @@ func TestProviderBlockHistory(t *testing.T) {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  100,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(pastTime3),
 				})
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  101,
-					healthStatus: Warning,
+					healthStatus: health.Warning,
 					timestamp:    nil,
 				})
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  102,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    timePtr(pastTime1),
 				})
 				return l
@@ -544,17 +545,17 @@ func TestProviderBlockHistory(t *testing.T) {
 			expectedItems: []blockHistoryEntry{
 				{
 					blockNumber:  100,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(pastTime3),
 				},
 				{
 					blockNumber:  101,
-					healthStatus: Warning,
+					healthStatus: health.Warning,
 					timestamp:    nil,
 				},
 				{
 					blockNumber:  102,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    timePtr(pastTime1),
 				},
 			},
@@ -565,17 +566,17 @@ func TestProviderBlockHistory(t *testing.T) {
 				l := list.New()
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  200,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(pastTime3),
 				})
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  201,
-					healthStatus: Warning,
+					healthStatus: health.Warning,
 					timestamp:    timePtr(pastTime2),
 				})
 				l.PushBack(blockHistoryEntry{
 					blockNumber:  202,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    timePtr(pastTime1),
 				})
 				return l
@@ -583,17 +584,17 @@ func TestProviderBlockHistory(t *testing.T) {
 			expectedItems: []blockHistoryEntry{
 				{
 					blockNumber:  200,
-					healthStatus: Healthy,
+					healthStatus: health.Healthy,
 					timestamp:    timePtr(pastTime3),
 				},
 				{
 					blockNumber:  201,
-					healthStatus: Warning,
+					healthStatus: health.Warning,
 					timestamp:    timePtr(pastTime2),
 				},
 				{
 					blockNumber:  202,
-					healthStatus: Unhealthy,
+					healthStatus: health.Unhealthy,
 					timestamp:    timePtr(pastTime1),
 				},
 			},

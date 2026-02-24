@@ -2,8 +2,6 @@ package modules
 
 import "time"
 
-type HealthStatus int
-
 // HandlerType represents the type of network handler
 type HandlerType string
 
@@ -16,13 +14,6 @@ const (
 	BitcoinHandler        HandlerType = "bitcoin"
 	BitcoinEsploraHandler HandlerType = "bitcoin-esplora"
 	TronHandler           HandlerType = "tron-full-node"
-)
-
-const (
-	// Health status enums
-	Healthy HealthStatus = iota
-	Warning
-	Unhealthy
 )
 
 const (
@@ -99,16 +90,3 @@ const (
 	ScoreBasedSelectionWeightBase            = 100
 )
 
-// String method to convert MyEnum to string
-func (h HealthStatus) String() string {
-	switch h {
-	case Healthy:
-		return "Healthy"
-	case Warning:
-		return "Warning"
-	case Unhealthy:
-		return "Unhealthy"
-	default:
-		return "Unknown"
-	}
-}

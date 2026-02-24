@@ -28,6 +28,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -110,7 +111,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 						"localhost:8000": {
 							blockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 								return l
 							}(),
 						},
@@ -136,7 +137,7 @@ func TestMiddlewareServeHTTP(t *testing.T) {
 						"localhost:8000": {
 							blockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 								return l
 							}(),
 						},
@@ -1293,7 +1294,7 @@ func TestMiddlewareStripsAuthorizationHeader(t *testing.T) {
 				"localhost:8000": {
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
