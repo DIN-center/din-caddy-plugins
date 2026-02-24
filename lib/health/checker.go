@@ -67,8 +67,10 @@ func (c *Checker) Start() {
 					if !atomic.CompareAndSwapInt32(&c.running, 0, 1) {
 						continue
 					}
-					c.checkFn(c.ctx)
-					atomic.StoreInt32(&c.running, 0)
+					go func() {
+						c.checkFn(c.ctx)
+						atomic.StoreInt32(&c.running, 0)
+					}()
 				} else {
 					c.checkFn(c.ctx)
 				}
