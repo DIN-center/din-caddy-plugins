@@ -167,7 +167,7 @@ type NetworkConfig struct {
 }
 
 // RegisterBuiltinHandlers registers all built-in network handlers
-// Note: The handler type strings must match the HandlerType constants in modules/consts.go
+// Note: The handler type strings must match the HandlerType constants in modules/network/consts.go
 func RegisterBuiltinHandlers() {
 	// Register EVM handler - matches modules.EVMHandler constant
 	if err := DefaultRegistry.RegisterHandler("evm", func(config *NetworkConfig) (NetworkHandler, error) {

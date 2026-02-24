@@ -31,8 +31,9 @@ The `Makefile` is the primary entry point for all development tasks.
 The repository is structured as a standard Go project with a few Caddy-specific conventions.
 
 *   `module.go`: The main entry point for the Caddy plugins. It handles the registration of all modules and directives.
-*   `modules/`: Contains the core Caddy HTTP handler and app modules (`din`, `din_auth`, `din_select`, `din_upstreams`).
-*   `lib/`: Shared libraries and packages used by the modules. This includes authentication logic (`auth/`), network utilities (`network/`), and Prometheus metrics (`prometheus/`).
+*   `modules/network/`: Contains the network/RPC proxy Caddy modules (`din`, `din_auth`, `din_select`, `din_upstreams`).
+*   `modules/ai/`: Contains the AI proxy Caddy module (`din_ai`) for routing AI API requests.
+*   `lib/`: Shared libraries and packages used by the modules. This includes authentication logic (`auth/`), network utilities (`network/`), health check framework (`health/`), shared provider interface (`provider/`), metrics interface (`metrics/`), and Prometheus metrics (`prometheus/`).
 *   `scripts/`: Contains helper scripts, including one for managing secrets by generating Caddyfiles from templates.
 *   `Caddyfile*`: Various Caddy configuration files for different environments. `Caddyfile.private` is used for local development and is not checked into source control.
 *   `Makefile`: Defines all the common development and build tasks.

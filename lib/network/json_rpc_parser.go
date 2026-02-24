@@ -106,7 +106,7 @@ func (p *JSONRPCParser) ParsePayload(payload []byte) (method string, params json
 }
 
 // CreateRequestContext creates a JSON-RPC specific request context
-// This contains the JSON-RPC parsing logic moved from modules/helpers.go
+// This contains the JSON-RPC parsing logic moved from modules/network/helpers.go
 func (p *JSONRPCParser) CreateRequestContext(payload []byte, method string) (map[string]interface{}, error) {
 	context := make(map[string]interface{})
 
