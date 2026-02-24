@@ -1133,11 +1133,11 @@ func (d *DinMiddleware) Cleanup() error {
 	d.cleanupOnce.Do(func() {
 		d.logger.Info("Starting graceful shutdown of DIN middleware")
 
-		// Close all network healthcheck goroutines
+		// Stop all network healthcheck goroutines
 		for name, network := range d.Networks {
 			d.logger.Debug("Closing network resources", zap.String("network", name))
-			if network.quit != nil {
-				close(network.quit)
+			if network.checker != nil {
+				network.checker.Stop()
 			}
 		}
 

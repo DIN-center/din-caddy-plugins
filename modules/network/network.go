@@ -2,6 +2,7 @@ package network
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,7 +47,7 @@ var _ json.Unmarshaler = (*network)(nil)
 type network struct {
 	Name             string
 	HandlerType      HandlerType `json:"handler"` // Network handler type for handler registry
-	quit             chan struct{}
+	checker          *health.Checker
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
 	CaddyPort        string
@@ -97,7 +98,6 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
-		quit:        make(chan struct{}),
 		// Default health check values, to be overridden if specified in the Caddyfile
 		HCThreshold:              DefaultHCThreshold,
 		HCTimeout:                DefaultHCTimeout,
@@ -169,8 +169,6 @@ func (n *network) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	n.quit = make(chan struct{})
-
 	return nil
 }
 
@@ -178,23 +176,14 @@ func (n *network) startHealthcheck() {
 	// Start dynamic block lag limit calculation (runs once asynchronously)
 	go n.calculateDynamicBlockLagLimit()
 
-	n.healthCheck()
-	ticker := time.NewTicker(time.Second * time.Duration(n.HCInterval))
-	go func() {
-		// Keep an index for RPC request IDs
-		for i := 0; ; i++ {
-			select {
-			// Cleanup if the quit channel gets closed. Right now nothing closes this channel, but
-			// once we integrate the authentication work there's code that should.
-			case <-n.quit:
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				// Set up the healthcheck request with authentication for this provider.
-				n.healthCheck()
-			}
-		}
-	}()
+	n.checker = health.NewChecker(health.CheckerConfig{
+		Interval:       time.Second * time.Duration(n.HCInterval),
+		PreventOverlap: false,
+		RunImmediately: true,
+	}, func(ctx context.Context) {
+		n.healthCheck()
+	})
+	n.checker.Start()
 }
 
 // HealthCheck performs health checks on all providers and updates their status
