@@ -556,6 +556,41 @@ func TestAnthropicAdapterTransformStreamEvent(t *testing.T) {
 		assert.Equal(t, "stop", *chunk.Choices[0].FinishReason)
 	})
 
+	t.Run("message_delta with usage emits usage", func(t *testing.T) {
+		a := NewAnthropicAdapter()
+		// Set up message_start with input tokens.
+		startData := []byte(`{"type":"message_start","message":{"id":"msg_u","model":"claude-sonnet-4-20250514","usage":{"input_tokens":25,"output_tokens":0}}}`)
+		_, err := a.TransformStreamEvent("message_start", startData)
+		require.NoError(t, err)
+
+		// message_delta with output tokens.
+		deltaData := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":10}}`)
+		out, err := a.TransformStreamEvent("message_delta", deltaData)
+		require.NoError(t, err)
+
+		var chunk ChatCompletionResponse
+		require.NoError(t, json.Unmarshal(out, &chunk))
+		require.NotNil(t, chunk.Usage)
+		assert.Equal(t, 25, chunk.Usage.PromptTokens)
+		assert.Equal(t, 10, chunk.Usage.CompletionTokens)
+		assert.Equal(t, 35, chunk.Usage.TotalTokens)
+	})
+
+	t.Run("message_delta without usage omits usage", func(t *testing.T) {
+		a := NewAnthropicAdapter()
+		startData := []byte(`{"type":"message_start","message":{"id":"msg_n","model":"claude-sonnet-4-20250514"}}`)
+		_, err := a.TransformStreamEvent("message_start", startData)
+		require.NoError(t, err)
+
+		deltaData := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
+		out, err := a.TransformStreamEvent("message_delta", deltaData)
+		require.NoError(t, err)
+
+		var chunk ChatCompletionResponse
+		require.NoError(t, json.Unmarshal(out, &chunk))
+		assert.Nil(t, chunk.Usage)
+	})
+
 	t.Run("message_stop emits DONE", func(t *testing.T) {
 		out, err := a.TransformStreamEvent("message_stop", []byte(`{"type":"message_stop"}`))
 		require.NoError(t, err)

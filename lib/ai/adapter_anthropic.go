@@ -14,9 +14,10 @@ import (
 // NOT safe for concurrent use. Each streaming request must use its own adapter instance.
 type AnthropicAdapter struct {
 	// Streaming state — tracks the current message context.
-	messageID string
-	model     string
-	toolCalls map[int]toolStreamState
+	messageID   string
+	model       string
+	toolCalls   map[int]toolStreamState
+	inputTokens int // captured from message_start usage for cost tracking
 }
 
 type toolStreamState struct {
@@ -223,12 +224,13 @@ func (a *AnthropicAdapter) TransformResponse(body []byte) ([]byte, error) {
 func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) ([]byte, error) {
 	switch eventType {
 	case "message_start":
-		// Extract message ID and model for subsequent events.
+		// Extract message ID, model, and usage for subsequent events.
 		var evt struct {
 			Type    string `json:"type"`
 			Message struct {
-				ID    string `json:"id"`
-				Model string `json:"model"`
+				ID    string          `json:"id"`
+				Model string          `json:"model"`
+				Usage *AnthropicUsage `json:"usage,omitempty"`
 			} `json:"message"`
 		}
 		if err := json.Unmarshal(data, &evt); err != nil {
@@ -236,6 +238,9 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 		}
 		a.messageID = evt.Message.ID
 		a.model = evt.Message.Model
+		if evt.Message.Usage != nil {
+			a.inputTokens = evt.Message.Usage.InputTokens
+		}
 		a.toolCalls = make(map[int]toolStreamState)
 		// Emit an initial role chunk like OpenAI does.
 		return a.buildOpenAIDelta("assistant", "", nil)
@@ -292,7 +297,17 @@ func (a *AnthropicAdapter) TransformStreamEvent(eventType string, data []byte) (
 			return nil, fmt.Errorf("failed to parse message_delta: %w", err)
 		}
 		finishReason := mapAnthropicStopReason(delta.Delta.StopReason)
-		return a.buildOpenAIDelta("", "", finishReason)
+
+		// Build usage from message_start input tokens + message_delta output tokens.
+		var usage *UsageInfo
+		if delta.Usage != nil {
+			usage = &UsageInfo{
+				PromptTokens:     a.inputTokens,
+				CompletionTokens: delta.Usage.OutputTokens,
+				TotalTokens:      a.inputTokens + delta.Usage.OutputTokens,
+			}
+		}
+		return a.buildOpenAIDeltaWithUsage("", "", finishReason, usage)
 
 	case "message_stop":
 		return []byte("[DONE]"), nil
@@ -324,6 +339,11 @@ func (a *AnthropicAdapter) IsErrorChunk(eventType string, data []byte) bool {
 
 // buildOpenAIDelta constructs an OpenAI-format streaming chunk.
 func (a *AnthropicAdapter) buildOpenAIDelta(role, content string, finishReason *string) ([]byte, error) {
+	return a.buildOpenAIDeltaWithUsage(role, content, finishReason, nil)
+}
+
+// buildOpenAIDeltaWithUsage constructs an OpenAI-format streaming chunk with optional usage data.
+func (a *AnthropicAdapter) buildOpenAIDeltaWithUsage(role, content string, finishReason *string, usage *UsageInfo) ([]byte, error) {
 	delta := &ChatMessage{}
 	if role != "" {
 		delta.Role = role
@@ -344,6 +364,7 @@ func (a *AnthropicAdapter) buildOpenAIDelta(role, content string, finishReason *
 				FinishReason: finishReason,
 			},
 		},
+		Usage: usage,
 	}
 
 	out, err := json.Marshal(chunk)
