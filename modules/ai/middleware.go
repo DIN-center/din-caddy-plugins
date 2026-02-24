@@ -46,10 +46,11 @@ type DinAIMiddleware struct {
 	RequestAttemptCount  int `json:"request_attempt_count,omitempty"`
 
 	// Runtime
-	logger       *zap.Logger
-	quit         chan struct{}
-	client       libai.IStreamingHTTPClient
-	healthClient libai.IStreamingHTTPClient
+	logger          *zap.Logger
+	quit            chan struct{}
+	streamClient    libai.IStreamingHTTPClient
+	nonStreamClient libai.IStreamingHTTPClient
+	healthClient    libai.IStreamingHTTPClient
 
 	// Test mode flag — disables health checks for unit testing.
 	testMode bool
@@ -82,7 +83,8 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 	}
 
 	// Initialize HTTP clients with appropriate timeouts.
-	m.client = newDefaultStreamingClient()
+	m.streamClient = newStreamingClient()
+	m.nonStreamClient = newNonStreamingClient()
 	m.healthClient = newHealthCheckClient()
 
 	// Set health check threshold on all providers.
@@ -91,7 +93,7 @@ func (m *DinAIMiddleware) Provision(ctx caddy.Context) error {
 			p.mu.Lock()
 			p.hcThreshold = m.HealthcheckThreshold
 			p.mu.Unlock()
-			p.httpClient = m.client
+			p.httpClient = m.streamClient
 			p.logger = m.logger
 		}
 	}
@@ -260,7 +262,7 @@ func (m *DinAIMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next
 		}
 
 		if isStream {
-			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.client, m.logger)
+			result, err := attemptStream(r.Context(), provider, adapter, modifiedBody, m.streamClient, m.logger)
 			if err != nil {
 				provider.MarkPingWarning()
 				m.logger.Warn("streaming attempt failed",
@@ -480,7 +482,7 @@ func (m *DinAIMiddleware) attemptNonStreaming(
 	}
 	headers["Content-Type"] = "application/json"
 
-	respBody, statusCode, respHeaders, err := m.client.Post(ctx, provider.HttpUrl, headers, transformedBody)
+	respBody, statusCode, respHeaders, err := m.nonStreamClient.Post(ctx, provider.HttpUrl, headers, transformedBody)
 	if err != nil {
 		return nil, 0, nil, provider, fmt.Errorf("post: %w", err)
 	}
@@ -833,12 +835,22 @@ type defaultStreamingClient struct {
 	client *http.Client
 }
 
-// newDefaultStreamingClient creates the HTTP client for AI requests (streaming and non-streaming).
+// newStreamingClient creates the HTTP client for streaming AI requests.
 // No timeout is set because streaming responses can run indefinitely; cancellation is handled
-// via context (client disconnect or request timeout).
-func newDefaultStreamingClient() *defaultStreamingClient {
+// via context (client disconnect).
+func newStreamingClient() *defaultStreamingClient {
 	return &defaultStreamingClient{
 		client: &http.Client{},
+	}
+}
+
+// newNonStreamingClient creates the HTTP client for non-streaming AI requests.
+// Uses a generous timeout as a safety net against hung upstreams.
+func newNonStreamingClient() *defaultStreamingClient {
+	return &defaultStreamingClient{
+		client: &http.Client{
+			Timeout: DefaultNonStreamTimeout * time.Second,
+		},
 	}
 }
 

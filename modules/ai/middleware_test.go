@@ -39,6 +39,12 @@ func (m *mockClient) PostStream(ctx context.Context, url string, headers map[str
 	return nil, nil
 }
 
+// setTestClient sets both stream and non-stream clients on the middleware for testing.
+func setTestClient(m *DinAIMiddleware, c libai.IStreamingHTTPClient) {
+	m.streamClient = c
+	m.nonStreamClient = c
+}
+
 // noopHandler is a caddyhttp.Handler that does nothing.
 var noopHandler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 	return nil
@@ -90,7 +96,8 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 		logger: zap.NewNop(),
 		quit:   make(chan struct{}),
 
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 		RequestAttemptCount: DefaultRequestAttemptCount,
 	}
@@ -194,11 +201,11 @@ func TestServeHTTP_AllProvidersFail_Returns502(t *testing.T) {
 	m := newTestMiddleware(t)
 
 	// Force all providers to return errors.
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			return nil, 0, nil, fmt.Errorf("connection refused")
 		},
-	}
+	})
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -292,11 +299,11 @@ func TestServeHTTP_Streaming_Success(t *testing.T) {
 	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
 	sseData += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
-	}
+	})
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -317,7 +324,7 @@ func TestServeHTTP_Streaming_Failover(t *testing.T) {
 	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
 	sseData += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			callCount++
 			if callCount == 1 {
@@ -325,7 +332,7 @@ func TestServeHTTP_Streaming_Failover(t *testing.T) {
 			}
 			return makeSSEResponse(200, sseData), nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -346,7 +353,7 @@ func TestServeHTTP_Streaming_FailoverOnFirstChunkError(t *testing.T) {
 	goodSSE += "data: [DONE]\n\n"
 
 	// First provider returns HTTP 200 but an SSE error chunk; second provider succeeds.
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			callCount++
 			if callCount == 1 {
@@ -355,7 +362,7 @@ func TestServeHTTP_Streaming_FailoverOnFirstChunkError(t *testing.T) {
 			}
 			return makeSSEResponse(200, goodSSE), nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -382,7 +389,7 @@ func TestServeHTTP_Streaming_429RetrySameProviderThenFailover(t *testing.T) {
 	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
 	goodSSE += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			if primaryURL == "" {
 				primaryURL = url
@@ -399,7 +406,7 @@ func TestServeHTTP_Streaming_429RetrySameProviderThenFailover(t *testing.T) {
 			}
 			return makeSSEResponse(http.StatusOK, goodSSE), nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -416,7 +423,7 @@ func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 	m := newTestMiddleware(t)
 
 	callCount := 0
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
@@ -424,7 +431,7 @@ func TestServeHTTP_NonStreaming_Failover(t *testing.T) {
 			}
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"fallback"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -582,14 +589,14 @@ func TestServeHTTP_ConcurrentRequests(t *testing.T) {
 	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}`)
 	sseData += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), 200, nil, nil
 		},
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
-	}
+	})
 
 	// Fire 50 concurrent non-streaming + 50 concurrent streaming requests.
 	const concurrency = 100
@@ -969,7 +976,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 	m := newTestMiddleware(t)
 
 	callCount := 0
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
@@ -977,7 +984,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 			}
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1007,7 +1014,7 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 
 	// Single 500 from one provider, but it gets retried to a second.
 	callCount := 0
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
@@ -1015,7 +1022,7 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 			}
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1033,7 +1040,7 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 	m := newTestMiddleware(t)
 
 	callCount := 0
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			if callCount == 1 {
@@ -1041,7 +1048,7 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 			}
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1064,7 +1071,7 @@ func TestServeHTTP_NonStreaming_429RetrySameProviderThenFailover(t *testing.T) {
 	primaryCalls := 0
 	secondaryCalls := 0
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			if primaryURL == "" {
 				primaryURL = url
@@ -1081,7 +1088,7 @@ func TestServeHTTP_NonStreaming_429RetrySameProviderThenFailover(t *testing.T) {
 
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1102,14 +1109,14 @@ func TestServeHTTP_NonStreaming_TransformResponseError_NoInfiniteLoop(t *testing
 	m.Tiers[TierBalanced].Providers[1].HttpUrl = "https://provider-secondary.example/v1/messages"
 
 	callCount := 0
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			callCount++
 			// Return HTTP 200 with body that Anthropic adapter cannot parse,
 			// triggering a TransformResponse error.
 			return []byte(`not valid json`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"claude-3","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1133,7 +1140,7 @@ func TestServeHTTP_NonStreaming_RetryAfterHTTPDate(t *testing.T) {
 	primaryCalls := 0
 	secondaryCalls := 0
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			if primaryURL == "" {
 				primaryURL = url
@@ -1152,7 +1159,7 @@ func TestServeHTTP_NonStreaming_RetryAfterHTTPDate(t *testing.T) {
 
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1173,7 +1180,7 @@ func TestServeHTTP_NonStreaming_503RetrySameProviderThenFailover(t *testing.T) {
 	primaryCalls := 0
 	secondaryCalls := 0
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			if primaryURL == "" {
 				primaryURL = url
@@ -1190,7 +1197,7 @@ func TestServeHTTP_NonStreaming_503RetrySameProviderThenFailover(t *testing.T) {
 
 			return []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"fallback","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`), 200, nil, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1215,7 +1222,7 @@ func TestServeHTTP_Streaming_503RetrySameProviderThenFailover(t *testing.T) {
 	goodSSE += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"fallback works"}}]}`)
 	goodSSE += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			if primaryURL == "" {
 				primaryURL = url
@@ -1232,7 +1239,7 @@ func TestServeHTTP_Streaming_503RetrySameProviderThenFailover(t *testing.T) {
 			}
 			return makeSSEResponse(http.StatusOK, goodSSE), nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1247,11 +1254,11 @@ func TestServeHTTP_Streaming_503RetrySameProviderThenFailover(t *testing.T) {
 func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
 	m := newTestMiddleware(t)
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) ([]byte, int, http.Header, error) {
 			return []byte(`{"error":"rate limited"}`), 429, http.Header{"Retry-After": []string{"5"}}, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}]}`
 	w, req := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1271,13 +1278,13 @@ func TestServeHTTP_NonStreaming_RetryAfterCancelledByContext(t *testing.T) {
 func TestServeHTTP_Streaming_RetryAfterCancelledByContext(t *testing.T) {
 	m := newTestMiddleware(t)
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			resp := makeSSEResponse(http.StatusTooManyRequests, "rate limited")
 			resp.Header.Set("Retry-After", "5")
 			return resp, nil
 		},
-	}
+	})
 
 	body := `{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, req := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1541,11 +1548,11 @@ func TestServeHTTP_Streaming_CostSSEComment(t *testing.T) {
 	sseData += sseEvent("", `{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
 	sseData += "data: [DONE]\n\n"
 
-	m.client = &mockClient{
+	setTestClient(m, &mockClient{
 		postStreamHandler: func(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
 			return makeSSEResponse(200, sseData), nil
 		},
-	}
+	})
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`
 	w, r := makeRequest(t, "POST", "/v1/chat/completions", "application/json", body, nil)
@@ -1760,7 +1767,8 @@ func TestProvision_Defaults(t *testing.T) {
 	// Re-provision (newTestMiddleware already sets testMode=true).
 	m.logger = zap.NewNop()
 	m.quit = make(chan struct{})
-	m.client = newDefaultStreamingClient()
+	m.streamClient = newStreamingClient()
+	m.nonStreamClient = newNonStreamingClient()
 	m.healthClient = newHealthCheckClient()
 
 	// Manually apply the same default logic Provision uses.

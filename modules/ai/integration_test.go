@@ -41,7 +41,7 @@ func setDefaultCost(p *AIProvider) {
 // This eliminates the repeated ~15-line setup pattern across many test functions.
 func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType string, headers map[string]string) *DinAIMiddleware {
 	t.Helper()
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 	p, err := NewAIProvider(name, url)
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType str
 func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 	t.Helper()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 
 	m := &DinAIMiddleware{
@@ -546,7 +546,7 @@ func TestIntegration_TierSelection(t *testing.T) {
 func TestIntegration_Failover(t *testing.T) {
 	skipIfNoKey(t, "OPENAI_API_KEY")
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 
 	// First provider: bad URL that will fail
@@ -593,7 +593,7 @@ func TestIntegration_Failover(t *testing.T) {
 func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 	skipIfNoKey(t, "OPENAI_API_KEY")
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 
 	// Bad provider: returns 200 + SSE error in first chunk (simulating a provider
@@ -787,7 +787,7 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 	}))
 	defer goodServer.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 
 	bad, _ := NewAIProvider("bad-mock", badServer.URL)
@@ -833,7 +833,7 @@ func TestIntegration_MockServer_AllFail_503(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	logger := zap.NewNop()
 
 	p1, _ := NewAIProvider("fail-1", server.URL)

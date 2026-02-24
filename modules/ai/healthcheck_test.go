@@ -202,7 +202,7 @@ func TestCheckProvider_WithOverrides(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	provider, _ := NewAIProvider("openai-o3", server.URL)
 	provider.ModelID = "o3-mini"
 	provider.AdapterType = AdapterOpenAI
@@ -236,7 +236,7 @@ func TestCheckProvider_DefaultMaxTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	provider, _ := NewAIProvider("openai-gpt4o", server.URL)
 	provider.ModelID = "gpt-4o"
 	provider.AdapterType = AdapterOpenAI
@@ -291,7 +291,7 @@ func TestCheckProvider_OverridesPreserveMaxTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	provider, _ := NewAIProvider("test-provider", server.URL)
 	provider.ModelID = "gpt-4o"
 	provider.AdapterType = AdapterOpenAI
@@ -322,7 +322,7 @@ func TestCheckProvider_OverridesCanOverrideMaxTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	provider, _ := NewAIProvider("test-provider", server.URL)
 	provider.ModelID = "gpt-4o"
 	provider.AdapterType = AdapterOpenAI

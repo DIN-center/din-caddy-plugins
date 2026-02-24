@@ -466,7 +466,7 @@ func TestAttemptStream_ContextCancelled(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	client := newDefaultStreamingClient()
+	client := newStreamingClient()
 	provider, _ := NewAIProvider("slow-provider", slowServer.URL)
 	provider.ModelID = "test-model"
 	provider.AdapterType = AdapterOpenAI

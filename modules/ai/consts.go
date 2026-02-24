@@ -22,6 +22,7 @@ const (
 	DefaultHCThreshold        = 3               // consecutive checks before state transition
 	DefaultRequestAttemptCount = 3              // max retries per request
 	DefaultTTFTWindowSize     = 20              // rolling window size for TTFT measurements
+	DefaultNonStreamTimeout   = 120             // seconds — safety net for non-streaming requests
 )
 
 // Adapter type names used in Caddyfile config.
