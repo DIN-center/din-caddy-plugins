@@ -7,7 +7,7 @@ import (
 	_ "github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
-	mod "github.com/DIN-center/din-caddy-plugins/modules"
+	mod "github.com/DIN-center/din-caddy-plugins/modules/network"
 	aimod "github.com/DIN-center/din-caddy-plugins/modules/ai"
 )
 

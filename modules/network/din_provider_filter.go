@@ -1,4 +1,4 @@
-package modules
+package network
 
 import (
 	dinHttp "github.com/DIN-center/din-caddy-plugins/lib/http"
