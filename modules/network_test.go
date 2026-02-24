@@ -10,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
@@ -20,42 +21,42 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 	tests := []struct {
 		name                 string
 		consecutiveUnhealthy int
-		healthStatus         HealthStatus
+		healthStatus         health.HealthStatus
 		hcThreshold          int
-		expectedHealthStatus HealthStatus
+		expectedHealthStatus health.HealthStatus
 		expectedConsecutive  int
 		expectedLogContains  string
 	}{
 		{
 			name:                 "warning_resets_counter",
 			consecutiveUnhealthy: 2,
-			healthStatus:         Warning,
+			healthStatus:         health.Warning,
 			hcThreshold:          3,
-			expectedHealthStatus: Warning,
+			expectedHealthStatus: health.Warning,
 			expectedConsecutive:  0,
 		},
 		{
 			name:                 "first_unhealthy_gives_grace",
 			consecutiveUnhealthy: 0,
-			healthStatus:         Unhealthy,
+			healthStatus:         health.Unhealthy,
 			hcThreshold:          3,
-			expectedHealthStatus: Warning,
+			expectedHealthStatus: health.Warning,
 			expectedConsecutive:  1,
 		},
 		{
 			name:                 "grace_period_not_exceeded",
 			consecutiveUnhealthy: 1,
-			healthStatus:         Unhealthy,
+			healthStatus:         health.Unhealthy,
 			hcThreshold:          3,
-			expectedHealthStatus: Warning,
+			expectedHealthStatus: health.Warning,
 			expectedConsecutive:  2,
 		},
 		{
 			name:                 "grace_period_exceeded",
 			consecutiveUnhealthy: 2,
-			healthStatus:         Unhealthy,
+			healthStatus:         health.Unhealthy,
 			hcThreshold:          3,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: health.Unhealthy,
 			expectedConsecutive:  3,
 			expectedLogContains:  "exceeded grace period",
 		},
@@ -128,7 +129,7 @@ func TestIsStalled(t *testing.T) {
 			provider, err := NewProvider("http://test.com")
 			assert.NoError(t, err)
 			for _, blockNum := range tt.blocks {
-				provider.AddBlockEntry(blockNum, Healthy, tt.historySize)
+				provider.AddBlockEntry(blockNum, health.Healthy, tt.historySize)
 			}
 
 			result := n.isStalled(provider)
@@ -144,7 +145,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 			host    string
 			entries []struct {
 				block  int64
-				status HealthStatus
+				status health.HealthStatus
 			}
 		}
 		expected int64
@@ -155,27 +156,27 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 				host    string
 				entries []struct {
 					block  int64
-					status HealthStatus
+					status health.HealthStatus
 				}
 			}{
 				{
 					host: "provider1",
 					entries: []struct {
 						block  int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{block: 100, status: Healthy},
-						{block: 105, status: Healthy},
+						{block: 100, status: health.Healthy},
+						{block: 105, status: health.Healthy},
 					},
 				},
 				{
 					host: "provider2",
 					entries: []struct {
 						block  int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{block: 95, status: Warning},
-						{block: 103, status: Warning},
+						{block: 95, status: health.Warning},
+						{block: 103, status: health.Warning},
 					},
 				},
 			},
@@ -187,27 +188,27 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 				host    string
 				entries []struct {
 					block  int64
-					status HealthStatus
+					status health.HealthStatus
 				}
 			}{
 				{
 					host: "provider1",
 					entries: []struct {
 						block  int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{block: 90, status: Warning},
-						{block: 95, status: Warning},
+						{block: 90, status: health.Warning},
+						{block: 95, status: health.Warning},
 					},
 				},
 				{
 					host: "provider2",
 					entries: []struct {
 						block  int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{block: 85, status: Unhealthy},
-						{block: 92, status: Unhealthy},
+						{block: 85, status: health.Unhealthy},
+						{block: 92, status: health.Unhealthy},
 					},
 				},
 			},
@@ -219,7 +220,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 				host    string
 				entries []struct {
 					block  int64
-					status HealthStatus
+					status health.HealthStatus
 				}
 			}{},
 			expected: 0,
@@ -356,14 +357,14 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, blockNumber)
-				assert.Equal(t, Healthy, healthStatus)
+				assert.Equal(t, health.Healthy, healthStatus)
 			}
 
 			// Test specific health statuses for error cases
 			if tt.statusCode == 429 && !tt.passNilStatusCode {
-				assert.Equal(t, Warning, healthStatus)
+				assert.Equal(t, health.Warning, healthStatus)
 			} else if tt.expectErr && !tt.passNilStatusCode && tt.statusCode >= 400 {
-				assert.Equal(t, Unhealthy, healthStatus)
+				assert.Equal(t, health.Unhealthy, healthStatus)
 			}
 		})
 	}
@@ -603,8 +604,8 @@ func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
 			// Create provider with enough block history
 			provider, err := NewProvider("http://test.com")
 			require.NoError(t, err)
-			provider.AddBlockEntry(400, Healthy, 5)
-			provider.AddBlockEntry(400, Healthy, 5)
+			provider.AddBlockEntry(400, health.Healthy, 5)
+			provider.AddBlockEntry(400, health.Healthy, 5)
 
 			// Call performArchiveCheck with currentBlock = 400 (quarterBlock = 100)
 			err = n.performArchiveCheck(provider, 400)
@@ -628,7 +629,7 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 			host   string
 			blocks []struct {
 				number int64
-				status HealthStatus
+				status health.HealthStatus
 			}
 		}
 		testProviderHost string
@@ -640,25 +641,25 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 				host   string
 				blocks []struct {
 					number int64
-					status HealthStatus
+					status health.HealthStatus
 				}
 			}{
 				{
 					host: "provider1",
 					blocks: []struct {
 						number int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{number: 100, status: Healthy},
+						{number: 100, status: health.Healthy},
 					},
 				},
 				{
 					host: "provider2",
 					blocks: []struct {
 						number int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{number: 101, status: Healthy},
+						{number: 101, status: health.Healthy},
 					},
 				},
 			},
@@ -671,25 +672,25 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 				host   string
 				blocks []struct {
 					number int64
-					status HealthStatus
+					status health.HealthStatus
 				}
 			}{
 				{
 					host: "provider1",
 					blocks: []struct {
 						number int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{number: 100, status: Healthy},
+						{number: 100, status: health.Healthy},
 					},
 				},
 				{
 					host: "provider2",
 					blocks: []struct {
 						number int64
-						status HealthStatus
+						status health.HealthStatus
 					}{
-						{number: 99, status: Unhealthy},
+						{number: 99, status: health.Unhealthy},
 					},
 				},
 			},
@@ -730,7 +731,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 		latestNetworkBlock int64
 		blockJumpLimit     int64
 		hasOtherHealthy    bool
-		expectedStatus     HealthStatus
+		expectedStatus     health.HealthStatus
 	}{
 		{
 			name:               "no_jump_healthy",
@@ -738,7 +739,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			latestNetworkBlock: 100,
 			blockJumpLimit:     5,
 			hasOtherHealthy:    true,
-			expectedStatus:     Healthy,
+			expectedStatus:     health.Healthy,
 		},
 		{
 			name:               "small_jump_healthy",
@@ -746,7 +747,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			latestNetworkBlock: 100,
 			blockJumpLimit:     5,
 			hasOtherHealthy:    true,
-			expectedStatus:     Healthy,
+			expectedStatus:     health.Healthy,
 		},
 		{
 			name:               "large_jump_with_others_unhealthy",
@@ -754,7 +755,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			latestNetworkBlock: 100,
 			blockJumpLimit:     5,
 			hasOtherHealthy:    true,
-			expectedStatus:     Unhealthy,
+			expectedStatus:     health.Unhealthy,
 		},
 		{
 			name:               "large_jump_without_others_healthy",
@@ -762,7 +763,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			latestNetworkBlock: 100,
 			blockJumpLimit:     5,
 			hasOtherHealthy:    false,
-			expectedStatus:     Healthy,
+			expectedStatus:     health.Healthy,
 		},
 	}
 
@@ -791,18 +792,18 @@ func TestBlockJumpBehavior(t *testing.T) {
 			// Create test provider
 			testProvider, err := NewProvider("http://test-provider.com")
 			assert.NoError(t, err)
-			testProvider.AddBlockEntry(tt.currentBlock, Healthy, 5)
+			testProvider.AddBlockEntry(tt.currentBlock, health.Healthy, 5)
 			n.Providers["test-provider"] = testProvider
 
 			// Create other providers based on hasOtherHealthy
 			if tt.hasOtherHealthy {
 				otherProvider, err := NewProvider("http://other-provider.com")
 				assert.NoError(t, err)
-				otherProvider.AddBlockEntry(tt.latestNetworkBlock, Healthy, 5)
+				otherProvider.AddBlockEntry(tt.latestNetworkBlock, health.Healthy, 5)
 				n.Providers["other-provider"] = otherProvider
 			}
 
-			result := n.evaluateProviderHealth(testProvider, tt.currentBlock, Healthy, tt.latestNetworkBlock)
+			result := n.evaluateProviderHealth(testProvider, tt.currentBlock, health.Healthy, tt.latestNetworkBlock)
 			assert.Equal(t, tt.expectedStatus, result)
 		})
 	}
@@ -818,7 +819,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 		httpError            error
 		hcMethod             string
 		expectedBlockNum     int64
-		expectedHealthStatus HealthStatus
+		expectedHealthStatus health.HealthStatus
 		expectedErr          bool
 	}{
 		{
@@ -830,7 +831,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     100,
-			expectedHealthStatus: Healthy,
+			expectedHealthStatus: health.Healthy,
 			expectedErr:          false,
 		},
 		{
@@ -842,7 +843,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			httpError:            errors.New("connection failed"),
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: health.Unhealthy,
 			expectedErr:          true,
 		},
 		{
@@ -854,7 +855,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Warning,
+			expectedHealthStatus: health.Warning,
 			expectedErr:          true,
 		},
 		{
@@ -866,7 +867,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: health.Unhealthy,
 			expectedErr:          true,
 		},
 	}
@@ -1115,7 +1116,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 		httpError            error
 		hcMethod             string
 		expectedBlockNum     int64
-		expectedHealthStatus HealthStatus
+		expectedHealthStatus health.HealthStatus
 		expectedErr          bool
 	}{
 		{
@@ -1127,7 +1128,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     100,
-			expectedHealthStatus: Healthy,
+			expectedHealthStatus: health.Healthy,
 			expectedErr:          false,
 		},
 		{
@@ -1139,7 +1140,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			httpError:            errors.New("connection refused"),
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: health.Unhealthy,
 			expectedErr:          true,
 		},
 		{
@@ -1151,7 +1152,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			httpError:            nil,
 			hcMethod:             "eth_blockNumber",
 			expectedBlockNum:     0,
-			expectedHealthStatus: Unhealthy,
+			expectedHealthStatus: health.Unhealthy,
 			expectedErr:          true,
 		},
 	}
@@ -1268,7 +1269,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 		resBytes         []byte
 		statusCode       *int
 		expectedBlock    int64
-		expectedHealth   HealthStatus
+		expectedHealth   health.HealthStatus
 		expectedErrorMsg string
 	}{
 		{
@@ -1276,7 +1277,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":"0x64"}`),
 			statusCode:       nil,
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "received nil statusCode",
 		},
 		{
@@ -1284,7 +1285,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"error":"rate limited"}`),
 			statusCode:       intPtr(429),
 			expectedBlock:    0,
-			expectedHealth:   Warning,
+			expectedHealth:   health.Warning,
 			expectedErrorMsg: "rate limit error",
 		},
 		{
@@ -1292,7 +1293,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"error":"server error"}`),
 			statusCode:       intPtr(500),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "error status code",
 		},
 		{
@@ -1300,7 +1301,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{invalid json`),
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "failed to parse JSON-RPC response",
 		},
 		{
@@ -1308,7 +1309,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":"0x64"}`),
 			statusCode:       intPtr(200),
 			expectedBlock:    100,
-			expectedHealth:   Healthy,
+			expectedHealth:   health.Healthy,
 			expectedErrorMsg: "",
 		},
 		{
@@ -1316,7 +1317,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":100}`),
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "failed to unmarshal block number",
 		},
 		{
@@ -1324,7 +1325,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":"invalid"}`),
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "invalid hex block number",
 		},
 		{
@@ -1332,7 +1333,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":""}`),
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "invalid hex block number",
 		},
 		{
@@ -1340,7 +1341,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			resBytes:         []byte(`{"result":null}`),
 			statusCode:       intPtr(200),
 			expectedBlock:    0,
-			expectedHealth:   Unhealthy,
+			expectedHealth:   health.Unhealthy,
 			expectedErrorMsg: "invalid hex block number: ",
 		},
 	}
@@ -1384,20 +1385,20 @@ func TestNetwork_isStalled(t *testing.T) {
 	// Test with insufficient history
 	provider, err := NewProvider("http://test1.com")
 	assert.NoError(t, err)
-	provider.AddBlockEntry(100, Healthy, 3)
-	provider.AddBlockEntry(101, Healthy, 3)
+	provider.AddBlockEntry(100, health.Healthy, 3)
+	provider.AddBlockEntry(101, health.Healthy, 3)
 	assert.False(t, n.isStalled(provider))
 
 	// Test with full history but different block numbers (not stalled)
-	provider.AddBlockEntry(102, Healthy, 3)
+	provider.AddBlockEntry(102, health.Healthy, 3)
 	assert.False(t, n.isStalled(provider))
 
 	// Test with full history and same block numbers (stalled)
 	provider2, err := NewProvider("http://test2.com")
 	assert.NoError(t, err)
-	provider2.AddBlockEntry(100, Healthy, 3)
-	provider2.AddBlockEntry(100, Healthy, 3)
-	provider2.AddBlockEntry(100, Healthy, 3)
+	provider2.AddBlockEntry(100, health.Healthy, 3)
+	provider2.AddBlockEntry(100, health.Healthy, 3)
+	provider2.AddBlockEntry(100, health.Healthy, 3)
 	assert.True(t, n.isStalled(provider2))
 }
 
@@ -1409,15 +1410,15 @@ func TestNetwork_allProvidersStalled(t *testing.T) {
 	// Create mock providers
 	provider1, err := NewProvider("http://provider1.com")
 	assert.NoError(t, err)
-	provider1.AddBlockEntry(100, Healthy, 3)
-	provider1.AddBlockEntry(100, Healthy, 3)
-	provider1.AddBlockEntry(100, Healthy, 3)
+	provider1.AddBlockEntry(100, health.Healthy, 3)
+	provider1.AddBlockEntry(100, health.Healthy, 3)
+	provider1.AddBlockEntry(100, health.Healthy, 3)
 
 	provider2, err := NewProvider("http://provider2.com")
 	assert.NoError(t, err)
-	provider2.AddBlockEntry(101, Healthy, 3)
-	provider2.AddBlockEntry(101, Healthy, 3)
-	provider2.AddBlockEntry(101, Healthy, 3)
+	provider2.AddBlockEntry(101, health.Healthy, 3)
+	provider2.AddBlockEntry(101, health.Healthy, 3)
+	provider2.AddBlockEntry(101, health.Healthy, 3)
 
 	// Test all stalled
 	n.Providers = map[string]*provider{
@@ -1427,7 +1428,7 @@ func TestNetwork_allProvidersStalled(t *testing.T) {
 	assert.True(t, n.allProvidersStalled())
 
 	// Test one not stalled
-	provider2.AddBlockEntry(102, Healthy, 3)
+	provider2.AddBlockEntry(102, health.Healthy, 3)
 	assert.False(t, n.allProvidersStalled())
 }
 
@@ -1442,11 +1443,11 @@ func TestNetwork_getLatestHealthyBlock(t *testing.T) {
 	// Test with healthy and warning providers
 	provider1, err := NewProvider("http://provider1.com")
 	assert.NoError(t, err)
-	provider1.AddBlockEntry(105, Healthy, 5)
+	provider1.AddBlockEntry(105, health.Healthy, 5)
 
 	provider2, err := NewProvider("http://provider2.com")
 	assert.NoError(t, err)
-	provider2.AddBlockEntry(103, Warning, 5)
+	provider2.AddBlockEntry(103, health.Warning, 5)
 
 	n.Providers = map[string]*provider{
 		"provider1": provider1,
@@ -1462,11 +1463,11 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 
 	provider1, err := NewProvider("http://provider1.com")
 	assert.NoError(t, err)
-	provider1.AddBlockEntry(100, Healthy, 5)
+	provider1.AddBlockEntry(100, health.Healthy, 5)
 
 	provider2, err := NewProvider("http://provider2.com")
 	assert.NoError(t, err)
-	provider2.AddBlockEntry(101, Healthy, 5)
+	provider2.AddBlockEntry(101, health.Healthy, 5)
 
 	n.Providers = map[string]*provider{
 		provider1.host: provider1,
@@ -1477,11 +1478,11 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 	assert.True(t, n.hasOtherHealthyProviders(provider1))
 
 	// Test with no other healthy providers - add enough unhealthy entries to clear the healthy history
-	provider2.AddBlockEntry(102, Unhealthy, 5)
-	provider2.AddBlockEntry(103, Unhealthy, 5)
-	provider2.AddBlockEntry(104, Unhealthy, 5)
-	provider2.AddBlockEntry(105, Unhealthy, 5)
-	provider2.AddBlockEntry(106, Unhealthy, 5)
+	provider2.AddBlockEntry(102, health.Unhealthy, 5)
+	provider2.AddBlockEntry(103, health.Unhealthy, 5)
+	provider2.AddBlockEntry(104, health.Unhealthy, 5)
+	provider2.AddBlockEntry(105, health.Unhealthy, 5)
+	provider2.AddBlockEntry(106, health.Unhealthy, 5)
 	assert.False(t, n.hasOtherHealthyProviders(provider1))
 }
 

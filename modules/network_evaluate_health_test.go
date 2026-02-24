@@ -8,6 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
@@ -22,11 +23,11 @@ func TestEvaluateProviderHealth(t *testing.T) {
 		name               string
 		currentBlock       int64
 		latestNetworkBlock int64
-		initialStatus      HealthStatus
+		initialStatus      health.HealthStatus
 		providerHistory    []blockHistoryEntry
 		chainIDValid       bool
 		archiveSupported   bool
-		expectedStatus     HealthStatus
+		expectedStatus     health.HealthStatus
 		networkConfig      struct {
 			blockLagLimit  int64
 			blockJumpLimit int64
@@ -36,10 +37,10 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "healthy_provider_no_lag",
 			currentBlock:       100,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			chainIDValid:       true,
 			archiveSupported:   false,
-			expectedStatus:     Healthy,
+			expectedStatus:     health.Healthy,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -52,10 +53,10 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "provider_with_block_lag",
 			currentBlock:       90,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			chainIDValid:       true,
 			archiveSupported:   false,
-			expectedStatus:     Warning,
+			expectedStatus:     health.Warning,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -68,10 +69,10 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "provider_with_block_jump",
 			currentBlock:       115,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			chainIDValid:       true,
 			archiveSupported:   false,
-			expectedStatus:     Unhealthy,
+			expectedStatus:     health.Unhealthy,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -84,10 +85,10 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "provider_wrong_chain_id",
 			currentBlock:       100,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			chainIDValid:       false,
 			archiveSupported:   false,
-			expectedStatus:     Unhealthy,
+			expectedStatus:     health.Unhealthy,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -100,17 +101,17 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "provider_stalled",
 			currentBlock:       95,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			providerHistory: []blockHistoryEntry{
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
-				{blockNumber: 95, healthStatus: Healthy},
+				{blockNumber: 95, healthStatus: health.Healthy},
+				{blockNumber: 95, healthStatus: health.Healthy},
+				{blockNumber: 95, healthStatus: health.Healthy},
+				{blockNumber: 95, healthStatus: health.Healthy},
+				{blockNumber: 95, healthStatus: health.Healthy},
 			},
 			chainIDValid:     true,
 			archiveSupported: false,
-			expectedStatus:   Warning,
+			expectedStatus:   health.Warning,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -123,17 +124,17 @@ func TestEvaluateProviderHealth(t *testing.T) {
 			name:               "provider_stalled_and_lagged",
 			currentBlock:       85,
 			latestNetworkBlock: 100,
-			initialStatus:      Healthy,
+			initialStatus:      health.Healthy,
 			providerHistory: []blockHistoryEntry{
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
-				{blockNumber: 85, healthStatus: Healthy},
+				{blockNumber: 85, healthStatus: health.Healthy},
+				{blockNumber: 85, healthStatus: health.Healthy},
+				{blockNumber: 85, healthStatus: health.Healthy},
+				{blockNumber: 85, healthStatus: health.Healthy},
+				{blockNumber: 85, healthStatus: health.Healthy},
 			},
 			chainIDValid:     true,
 			archiveSupported: false,
-			expectedStatus:   Unhealthy,
+			expectedStatus:   health.Unhealthy,
 			networkConfig: struct {
 				blockLagLimit  int64
 				blockJumpLimit int64
@@ -176,7 +177,7 @@ func TestEvaluateProviderHealth(t *testing.T) {
 				}
 			} else {
 				// Add at least one entry for the test
-				provider.AddBlockEntry(tt.currentBlock-1, Healthy, n.ProviderBlockHistorySize)
+				provider.AddBlockEntry(tt.currentBlock-1, health.Healthy, n.ProviderBlockHistorySize)
 			}
 
 			// Create a second provider if testing block jump (need other healthy providers)
@@ -221,6 +222,6 @@ func TestEvaluateProviderHealth(t *testing.T) {
 // Helper function to create a healthy provider
 func createHealthyProvider(blockNumber int64) *provider {
 	p, _ := NewProvider("http://other-provider.com")
-	p.AddBlockEntry(blockNumber, Healthy, 5)
+	p.AddBlockEntry(blockNumber, health.Healthy, 5)
 	return p
 }

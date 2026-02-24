@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
@@ -145,7 +146,7 @@ func TestRESTAPIMiddlewareIntegration(t *testing.T) {
 								Priority: 1,
 								blockHistory: func() *list.List {
 									l := list.New()
-									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 									return l
 								}(),
 							},
@@ -316,7 +317,7 @@ func TestRESTAPIMiddlewareErrorHandling(t *testing.T) {
 							host:    "test-provider",
 							blockHistory: func() *list.List {
 								l := list.New()
-								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+								l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 								return l
 							}(),
 						},
@@ -402,7 +403,7 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 						Priority: 1,
 						blockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 							return l
 						}(),
 					},
@@ -412,7 +413,7 @@ func TestRESTAPIProviderSelection(t *testing.T) {
 						Priority: 2,
 						blockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 							return l
 						}(),
 					},
@@ -607,7 +608,7 @@ func TestMiddlewareRESTFlow(t *testing.T) {
 					host:    "mock-provider",
 					blockHistory: func() *list.List {
 						l := list.New()
-						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+						l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 						return l
 					}(),
 				},
@@ -725,7 +726,7 @@ func TestMiddlewareRESTPathStripping(t *testing.T) {
 								Priority: 1,
 								blockHistory: func() *list.List {
 									l := list.New()
-									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+									l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 									return l
 								}(),
 							},
@@ -805,7 +806,7 @@ func TestMiddlewareRESTMetrics(t *testing.T) {
 						host:    "test-provider",
 						blockHistory: func() *list.List {
 							l := list.New()
-							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+							l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: health.Healthy})
 							return l
 						}(),
 					},

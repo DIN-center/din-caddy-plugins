@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
@@ -209,7 +210,7 @@ func (n *network) healthCheck() {
 	for _, provider := range n.Providers {
 
 		// Get latest block and initial health status
-		var healthStatus = Healthy
+		var healthStatus = health.Healthy
 		latestBlockResult, err := n.getLatestBlockNumber(provider.HttpUrl, provider.Headers, provider.AuthClient(), provider.host)
 		if err != nil {
 			n.logProviderWarning("Health check failed after all attempts for provider", provider,
@@ -223,9 +224,9 @@ func (n *network) healthCheck() {
 			// Handle error cases with grace period logic
 			healthStatus := n.handleErrorWithGracePeriod(provider, latestBlockResult.healthStatus, latestBlockResult.blockNumber)
 
-			if healthStatus == Unhealthy {
+			if healthStatus == health.Unhealthy {
 				// Add the block entry and send metric
-				provider.AddBlockEntry(latestBlockResult.blockNumber, Unhealthy, n.ProviderBlockHistorySize)
+				provider.AddBlockEntry(latestBlockResult.blockNumber, health.Unhealthy, n.ProviderBlockHistorySize)
 				n.sendHealthCheckMetric(provider.host, provider.Name, latestBlockResult.responseStatus, latestBlockResult.healthStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 
 				continue // Skip further checks for confirmed unhealthy providers
@@ -271,8 +272,8 @@ func (n *network) LoopbackHealthCheck() {
 }
 
 // handleErrorWithGracePeriod implements the grace period logic for unhealthy providers
-func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus HealthStatus, blockNum int64) HealthStatus {
-	if healthStatus != Unhealthy {
+func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus health.HealthStatus, blockNum int64) health.HealthStatus {
+	if healthStatus != health.Unhealthy {
 		// For Warning status, reset counter and continue with checks
 		provider.consecutiveUnhealthyChecks = 0
 		return healthStatus
@@ -282,7 +283,7 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 	provider.consecutiveUnhealthyChecks++
 	if provider.consecutiveUnhealthyChecks < n.HCThreshold {
 		// First unhealthy response - give grace period by converting to warning
-		return Warning
+		return health.Warning
 	}
 
 	// Provider has exceeded grace period - mark as unhealthy
@@ -290,8 +291,8 @@ func (n *network) handleErrorWithGracePeriod(provider *provider, healthStatus He
 		zap.Int64("block_number", blockNum),
 		zap.Int("consecutive_unhealthy_checks", provider.consecutiveUnhealthyChecks),
 		zap.Int("healthcheck_threshold", n.HCThreshold),
-		zap.String("health_status", Unhealthy.String()))
-	return Unhealthy
+		zap.String("health_status", health.Unhealthy.String()))
+	return health.Unhealthy
 }
 
 // logProviderWarning logs a warning message with standard provider context
@@ -307,18 +308,18 @@ func (n *network) logProviderWarning(msg string, provider *provider, fields ...z
 }
 
 // evaluateProviderHealth performs both levels of health checks
-func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus HealthStatus, latestNetworkBlock int64) HealthStatus {
+func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64, healthStatus health.HealthStatus, latestNetworkBlock int64) health.HealthStatus {
 	// Track the worst status we find
 	worstStatus := healthStatus
 
 	// if provider has no block history and current health check failed, set it to unhealthy
 	// Allow providers with no history to be healthy if the current check succeeded
-	if len(provider.BlockHistory()) == 0 && healthStatus != Healthy {
+	if len(provider.BlockHistory()) == 0 && healthStatus != health.Healthy {
 		n.logProviderWarning("Provider has no block history and current check failed, marking as unhealthy", provider,
 			zap.Int64("current_block", currentBlock),
 			zap.Int64("latest_network_block", latestNetworkBlock),
-			zap.String("health_status", Unhealthy.String()))
-		return Unhealthy
+			zap.String("health_status", health.Unhealthy.String()))
+		return health.Unhealthy
 	}
 
 	// Check for block lag
@@ -334,15 +335,15 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		// If block lag is greater than limit, mark as warning and set isLagged flag
 		if blockLag > blockLagLimit {
 			isLagged = true
-			if Warning > worstStatus {
-				worstStatus = Warning
+			if health.Warning > worstStatus {
+				worstStatus = health.Warning
 			}
 			n.logProviderWarning("Provider is lagging behind network", provider,
 				zap.Int64("block_lag_limit", blockLagLimit),
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
-				zap.String("health_status", Warning.String()))
+				zap.String("health_status", health.Warning.String()))
 		}
 
 		// Check if block is too far ahead (block jump)
@@ -358,8 +359,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 					zap.Int64("block_jump", blockJump),
 					zap.Int64("provider_block", currentBlock),
 					zap.Int64("network_block", latestNetworkBlock),
-					zap.String("health_status", Unhealthy.String()))
-				return Unhealthy
+					zap.String("health_status", health.Unhealthy.String()))
+				return health.Unhealthy
 			} else {
 				// If there are no other healthy providers, assume this one is correct
 				// and healthy because it might be the first to recover from a network outage
@@ -368,8 +369,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 					zap.Int64("block_jump", blockJump),
 					zap.Int64("provider_block", currentBlock),
 					zap.Int64("network_block", latestNetworkBlock),
-					zap.String("health_status", Healthy.String()))
-				return Healthy
+					zap.String("health_status", health.Healthy.String()))
+				return health.Healthy
 			}
 		}
 	}
@@ -377,8 +378,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 	isStalled := n.isStalled(provider)
 
 	if isLagged {
-		if Warning > worstStatus {
-			worstStatus = Warning
+		if health.Warning > worstStatus {
+			worstStatus = health.Warning
 		}
 
 		if isStalled {
@@ -388,15 +389,15 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.Int64("block_lag", blockLag),
 				zap.Int64("provider_block", currentBlock),
 				zap.Int64("network_block", latestNetworkBlock),
-				zap.String("health_status", Unhealthy.String()))
-			return Unhealthy
+				zap.String("health_status", health.Unhealthy.String()))
+			return health.Unhealthy
 		}
 	} else if isStalled && !n.allProvidersStalled() {
 		n.logProviderWarning("Provider is stalled while others are progressing", provider,
 			zap.Int64("provider_block", currentBlock),
 			zap.Int64("network_block", latestNetworkBlock),
-			zap.String("health_status", Warning.String()))
-		return Warning
+			zap.String("health_status", health.Warning.String()))
+		return health.Warning
 	}
 
 	// chainId check health check
@@ -406,9 +407,9 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		if err != nil {
 			n.logProviderWarning("Error getting chain ID", provider,
 				zap.String("expected_chain_id", n.ChainId),
-				zap.String("health_status", Unhealthy.String()),
+				zap.String("health_status", health.Unhealthy.String()),
 				zap.Error(err))
-			return Unhealthy
+			return health.Unhealthy
 		}
 
 		if err := n.handler.ValidateChainID(chainId); err != nil {
@@ -416,8 +417,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 				zap.String("chain_id", chainId),
 				zap.String("expected_chain_id", n.ChainId),
 				zap.String("validation_error", err.Error()),
-				zap.String("health_status", Unhealthy.String()))
-			return Unhealthy
+				zap.String("health_status", health.Unhealthy.String()))
+			return health.Unhealthy
 		}
 	}
 
@@ -426,8 +427,8 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 		n.logProviderWarning("Archive mode check failed", provider,
 			zap.Int64("current_block", currentBlock),
 			zap.Error(err),
-			zap.String("health_status", Warning.String()))
-		return Warning
+			zap.String("health_status", health.Warning.String()))
+		return health.Warning
 	}
 
 	return worstStatus
@@ -521,15 +522,15 @@ func (n *network) getLatestHealthyBlock() int64 {
 			continue
 		}
 		switch latestBlock.healthStatus {
-		case Healthy:
+		case health.Healthy:
 			if latestBlock.blockNumber > latestBlockFromHealthy {
 				latestBlockFromHealthy = latestBlock.blockNumber
 			}
-		case Warning:
+		case health.Warning:
 			if latestBlock.blockNumber > latestBlockFromWarning {
 				latestBlockFromWarning = latestBlock.blockNumber
 			}
-		case Unhealthy:
+		case health.Unhealthy:
 			if latestBlock.blockNumber > latestBlockFromUnhealthy {
 				latestBlockFromUnhealthy = latestBlock.blockNumber
 			}
@@ -558,7 +559,7 @@ func (n *network) sendHealthCheckMetric(provider string, providerName string, re
 
 type getLatestBlockNumberResult struct {
 	blockNumber    int64
-	healthStatus   HealthStatus
+	healthStatus   health.HealthStatus
 	responseStatus int
 }
 
@@ -575,14 +576,14 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 		if result != nil {
 			return &getLatestBlockNumberResult{
 				blockNumber:    result.BlockNumber,
-				healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+				healthStatus:   result.HealthStatus,
 				responseStatus: result.ResponseStatus,
 			}, err
 		} else {
 			// Return a default unhealthy result when result is nil
 			return &getLatestBlockNumberResult{
 				blockNumber:    0,
-				healthStatus:   Unhealthy,
+				healthStatus:   health.Unhealthy,
 				responseStatus: 0,
 			}, err
 		}
@@ -597,16 +598,16 @@ func (n *network) getLatestBlockNumber(httpUrl string, headers map[string]string
 
 	return &getLatestBlockNumberResult{
 		blockNumber:    result.BlockNumber,
-		healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+		healthStatus:   result.HealthStatus,
 		responseStatus: result.ResponseStatus,
 	}, nil
 }
 
 // Layer 3: Process response
-func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, HealthStatus, error) {
+func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (int64, health.HealthStatus, error) {
 	// Validate input
 	if statusCode == nil {
-		return 0, Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
+		return 0, health.Unhealthy, errors.New("received nil statusCode in processBlockNumberResponse")
 	}
 
 	// Delegate to handler for network-specific parsing
@@ -614,12 +615,12 @@ func (n *network) processBlockNumberResponse(resBytes []byte, statusCode *int) (
 	if err != nil {
 		// Determine health status based on error type
 		if *statusCode == 429 {
-			return 0, Warning, err
+			return 0, health.Warning, err
 		}
-		return 0, Unhealthy, err
+		return 0, health.Unhealthy, err
 	}
 
-	return blockNumber, Healthy, nil
+	return blockNumber, health.Healthy, nil
 }
 
 // getHealthCheckMethod returns the health check method using handler
@@ -771,7 +772,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	if repl == nil || genericContext == nil {
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,
-			healthStatus:   Unhealthy,
+			healthStatus:   health.Unhealthy,
 			responseStatus: 0,
 		}, fmt.Errorf("handler unavailable or failed to create health check context for network %s", n.Name)
 	}
@@ -817,7 +818,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 		// Return safe defaults when request failed (result may be nil)
 		return &getLatestBlockNumberResult{
 			blockNumber:    0,          // Unknown block number since request failed
-			healthStatus:   Unhealthy,  // Mark as unhealthy since the request failed
+			healthStatus:   health.Unhealthy,  // Mark as unhealthy since the request failed
 			responseStatus: statusCode, // Use safe status code (0 if result is nil)
 		}, err
 	}
@@ -825,7 +826,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	// Success!
 	return &getLatestBlockNumberResult{
 		blockNumber:    result.BlockNumber,
-		healthStatus:   HealthStatus(result.HealthStatus), // Convert networklib.HealthStatus to modules.HealthStatus
+		healthStatus:   result.HealthStatus,
 		responseStatus: result.ResponseStatus,
 	}, nil
 }

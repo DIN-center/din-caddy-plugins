@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
@@ -47,7 +48,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					1,            // Single attempt
 				).Return(&networklib.LatestBlockResult{
 					BlockNumber:    12345,
-					HealthStatus:   networklib.Healthy,
+					HealthStatus:   health.Healthy,
 					ResponseStatus: 200,
 					Metadata:       make(map[string]interface{}),
 				}, nil)
@@ -79,7 +80,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					1,
 				).Return(&networklib.LatestBlockResult{
 					BlockNumber:    0,
-					HealthStatus:   networklib.Unhealthy,
+					HealthStatus:   health.Unhealthy,
 					ResponseStatus: 500,
 					Metadata:       make(map[string]interface{}),
 				}, errors.New("internal server error"))
@@ -112,7 +113,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 					1,
 				).Return(&networklib.LatestBlockResult{
 					BlockNumber:    0,
-					HealthStatus:   networklib.Unhealthy,
+					HealthStatus:   health.Unhealthy,
 					ResponseStatus: 0, // No response due to timeout
 					Metadata:       make(map[string]interface{}),
 				}, errors.New("request timeout"))
@@ -202,7 +203,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			provider:       "provider1.com",
 			providerName:   "provider1",
 			responseStatus: 200,
-			healthStatus:   "Healthy",
+			healthStatus:   "healthy",
 			blockNumber:    12345,
 			priority:       0,
 			environment:    "production",
@@ -211,7 +212,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				Provider:       "provider1.com",
 				ProviderName:   "provider1",
 				ResponseStatus: 200,
-				HealthStatus:   "Healthy",
+				HealthStatus:   "healthy",
 				BlockNumber:    12345,
 				Priority:       0,
 				Environment:    "production",
@@ -222,7 +223,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			provider:       "provider2.com",
 			providerName:   "provider2",
 			responseStatus: 200,
-			healthStatus:   "Warning",
+			healthStatus:   "warning",
 			blockNumber:    12340,
 			priority:       1,
 			environment:    "staging",
@@ -231,7 +232,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				Provider:       "provider2.com",
 				ProviderName:   "provider2",
 				ResponseStatus: 200,
-				HealthStatus:   "Warning",
+				HealthStatus:   "warning",
 				BlockNumber:    12340,
 				Priority:       1,
 				Environment:    "staging",
@@ -242,7 +243,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			provider:       "provider3.com",
 			providerName:   "provider3",
 			responseStatus: 500,
-			healthStatus:   "Unhealthy",
+			healthStatus:   "unhealthy",
 			blockNumber:    0,
 			priority:       2,
 			environment:    "test",
@@ -251,7 +252,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				Provider:       "provider3.com",
 				ProviderName:   "provider3",
 				ResponseStatus: 500,
-				HealthStatus:   "Unhealthy",
+				HealthStatus:   "unhealthy",
 				BlockNumber:    0,
 				Priority:       2,
 				Environment:    "test",
@@ -262,7 +263,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			provider:       "provider4.com",
 			providerName:   "provider4",
 			responseStatus: 429,
-			healthStatus:   "Warning",
+			healthStatus:   "warning",
 			blockNumber:    12345,
 			priority:       0,
 			environment:    "production",
@@ -271,7 +272,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 				Provider:       "provider4.com",
 				ProviderName:   "provider4",
 				ResponseStatus: 429,
-				HealthStatus:   "Warning",
+				HealthStatus:   "warning",
 				BlockNumber:    12345,
 				Priority:       0,
 				Environment:    "production",

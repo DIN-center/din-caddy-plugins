@@ -11,6 +11,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/oidc"
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
@@ -50,7 +51,7 @@ type provider struct {
 type blockHistoryEntry struct {
 	blockNumber  int64
 	blockHash    string
-	healthStatus HealthStatus
+	healthStatus health.HealthStatus
 	timestamp    *time.Time
 }
 
@@ -121,7 +122,7 @@ func (p *provider) Healthy() bool {
 	if latestBlockEntry == nil {
 		return false
 	}
-	if latestBlockEntry.healthStatus == Healthy {
+	if latestBlockEntry.healthStatus == health.Healthy {
 		return true
 	} else {
 		return false
@@ -134,7 +135,7 @@ func (p *provider) Warning() bool {
 	if latestBlockEntry == nil {
 		return false
 	}
-	if latestBlockEntry.healthStatus == Warning {
+	if latestBlockEntry.healthStatus == health.Warning {
 		return true
 	} else {
 		return false
@@ -172,7 +173,7 @@ func (p *provider) BlockHistory() []blockHistoryEntry {
 }
 
 // AddBlockEntry adds a new block entry to the history, maintaining the configured history size
-func (p *provider) AddBlockEntry(block int64, status HealthStatus, blockHistorySize int) {
+func (p *provider) AddBlockEntry(block int64, status health.HealthStatus, blockHistorySize int) {
 	if p == nil {
 		return
 	}
@@ -223,7 +224,7 @@ func (p *provider) getLatestHealthyBlockEntry() *blockHistoryEntry {
 	// Start from the back (most recent) and find the first healthy entry
 	for e := p.blockHistory.Back(); e != nil; e = e.Prev() {
 		entry := e.Value.(blockHistoryEntry)
-		if entry.healthStatus == Healthy {
+		if entry.healthStatus == health.Healthy {
 			return &entry
 		}
 	}
