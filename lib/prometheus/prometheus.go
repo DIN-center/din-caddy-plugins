@@ -8,9 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
+	"github.com/DIN-center/din-caddy-plugins/lib/metrics"
 
 	"go.uber.org/zap"
 )
+
+// Compile-time check that PrometheusClient implements HealthCheckRecorder.
+var _ metrics.HealthCheckRecorder = (*PrometheusClient)(nil)
 
 const (
 	DinRequestCountMetricName                      = "din_http_request_count"
@@ -219,4 +223,17 @@ func (p *PrometheusClient) HandleNetworkHealthCheckMetric(data *PromNetworkHealt
 	if p.healthCheckSampler.ShouldSampleHealthCheck(data.ResponseStatus, network, status, p.machineID, data.Environment) {
 		DinNetworkRequestHealthCheckDurationMilliseconds.WithLabelValues(network, status, p.machineID, data.Environment).Observe(float64(durationMS))
 	}
+}
+
+// RecordHealthCheck implements metrics.HealthCheckRecorder.
+// It delegates to HandleHealthCheckMetric with minimal labels.
+// For full-fidelity recording with network/block/priority context,
+// callers should use HandleHealthCheckMetric directly.
+func (p *PrometheusClient) RecordHealthCheck(provider, statusCode, healthStatus string) {
+	responseStatus, _ := strconv.Atoi(statusCode)
+	p.HandleHealthCheckMetric(&PromHealthCheckMetricData{
+		Provider:       provider,
+		ResponseStatus: responseStatus,
+		HealthStatus:   healthStatus,
+	})
 }
