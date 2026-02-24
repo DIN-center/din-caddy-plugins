@@ -12,6 +12,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
@@ -59,14 +60,14 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 				Name: TierBalanced,
 				Providers: []*AIProvider{
 					func() *AIProvider {
-						p := newTestProvider("openai-gpt4o", Healthy)
+						p := newTestProvider("openai-gpt4o", health.Healthy)
 						p.ModelID = "gpt-4o"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
 						return p
 					}(),
 					func() *AIProvider {
-						p := newTestProvider("deepseek-chat", Healthy)
+						p := newTestProvider("deepseek-chat", health.Healthy)
 						p.ModelID = "deepseek-chat"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
@@ -78,7 +79,7 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 				Name: TierFast,
 				Providers: []*AIProvider{
 					func() *AIProvider {
-						p := newTestProvider("groq-llama", Healthy)
+						p := newTestProvider("groq-llama", health.Healthy)
 						p.ModelID = "llama-3.1-8b-instant"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
@@ -179,7 +180,7 @@ func TestServeHTTP_AllUnhealthy(t *testing.T) {
 
 	// Mark all providers unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		setProviderHealth(p, Unhealthy)
+		setProviderHealth(p, health.Unhealthy)
 	}
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
@@ -542,7 +543,7 @@ func TestCleanup_StopsHealthChecks(t *testing.T) {
 				Name: TierFast,
 				Providers: []*AIProvider{
 					func() *AIProvider {
-						p := newTestProvider("p1", Healthy)
+						p := newTestProvider("p1", health.Healthy)
 						p.ModelID = "test"
 						p.AdapterType = AdapterOpenAI
 						return p
@@ -984,7 +985,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 
 	// Get the first provider to check its health after.
 	firstProvider := m.Tiers[TierBalanced].Providers[0]
-	assert.Equal(t, Healthy, firstProvider.HealthStatus())
+	assert.Equal(t, health.Healthy, firstProvider.HealthStatus())
 
 	err := m.ServeHTTP(w, r, noopHandler)
 	assert.NoError(t, err)
@@ -994,7 +995,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 	// At least one provider should have been marked Warning.
 	hasWarning := false
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		if p.HealthStatus() == Warning {
+		if p.HealthStatus() == health.Warning {
 			hasWarning = true
 			break
 		}
@@ -1025,7 +1026,7 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 
 	// MarkPingWarning sets Warning but one warning doesn't make a provider Unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "single failure should not transition to Unhealthy")
+		assert.NotEqual(t, health.Unhealthy, p.HealthStatus(), "single failure should not transition to Unhealthy")
 	}
 }
 
@@ -1050,7 +1051,7 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 
 	// Provider that got 429 should be Warning, not Unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
+		assert.NotEqual(t, health.Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
 	}
 }
 
@@ -1507,7 +1508,7 @@ func TestValidate_MissingCostConfig(t *testing.T) {
 }
 
 func TestCostForTokens(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 
@@ -1518,7 +1519,7 @@ func TestCostForTokens(t *testing.T) {
 }
 
 func TestCostForTokens_ZeroTokens(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 
@@ -1641,7 +1642,7 @@ func TestServeHTTP_XDINOptimize_Default(t *testing.T) {
 }
 
 func TestCostForTokens_LargeTokenCounts(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +28,7 @@ type AIProvider struct {
 	logger     *zap.Logger
 
 	mu           sync.RWMutex
-	healthStatus HealthStatus
+	healthStatus health.HealthStatus
 	failures     int
 	successes    int
 	hcThreshold  int
@@ -54,7 +55,7 @@ func NewAIProvider(name, urlStr string) (*AIProvider, error) {
 		Host:           u.Host,
 		Path:           u.Path,
 		Headers:        make(map[string]string),
-		healthStatus:   Healthy,
+		healthStatus:   health.Healthy,
 		hcThreshold:    DefaultHCThreshold,
 		ttftWindowSize: DefaultTTFTWindowSize,
 		ttftWindow:     make([]time.Duration, 0, DefaultTTFTWindowSize),
@@ -62,7 +63,7 @@ func NewAIProvider(name, urlStr string) (*AIProvider, error) {
 }
 
 // HealthStatus returns the current health status (thread-safe).
-func (p *AIProvider) HealthStatus() HealthStatus {
+func (p *AIProvider) HealthStatus() health.HealthStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.healthStatus
@@ -70,13 +71,13 @@ func (p *AIProvider) HealthStatus() HealthStatus {
 
 // IsHealthy returns true if the provider is in Healthy state.
 func (p *AIProvider) IsHealthy() bool {
-	return p.HealthStatus() == Healthy
+	return p.HealthStatus() == health.Healthy
 }
 
 // IsAvailable returns true if the provider is Healthy or Warning.
 func (p *AIProvider) IsAvailable() bool {
 	s := p.HealthStatus()
-	return s == Healthy || s == Warning
+	return s == health.Healthy || s == health.Warning
 }
 
 // MarkPingFailure records a failed health check ping.
@@ -86,7 +87,7 @@ func (p *AIProvider) MarkPingFailure() {
 	p.failures++
 	p.successes = 0
 	if p.failures > p.hcThreshold {
-		p.healthStatus = Unhealthy
+		p.healthStatus = health.Unhealthy
 	}
 }
 
@@ -96,7 +97,7 @@ func (p *AIProvider) MarkPingWarning() {
 	defer p.mu.Unlock()
 	p.failures = 0
 	p.successes = 0
-	p.healthStatus = Warning
+	p.healthStatus = health.Warning
 }
 
 // MarkPingSuccess records a successful health check ping.
@@ -105,10 +106,10 @@ func (p *AIProvider) MarkPingSuccess() {
 	defer p.mu.Unlock()
 	p.successes++
 	p.failures = 0
-	if p.healthStatus == Unhealthy && p.successes > p.hcThreshold {
-		p.healthStatus = Healthy
-	} else if p.healthStatus != Unhealthy {
-		p.healthStatus = Healthy
+	if p.healthStatus == health.Unhealthy && p.successes > p.hcThreshold {
+		p.healthStatus = health.Healthy
+	} else if p.healthStatus != health.Unhealthy {
+		p.healthStatus = health.Healthy
 	}
 }
 

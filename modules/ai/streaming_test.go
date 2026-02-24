@@ -11,6 +11,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -143,7 +144,7 @@ func TestAttemptStream_Success(t *testing.T) {
 		},
 	}
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	provider.httpClient = client
 
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
@@ -168,7 +169,7 @@ func TestAttemptStream_NonOKStatus(t *testing.T) {
 		},
 	}
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
 	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
@@ -189,7 +190,7 @@ func TestAttemptStream_NonOKStatusIncludesRetryAfter(t *testing.T) {
 		},
 	}
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
 	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
@@ -214,7 +215,7 @@ func TestAttemptStream_ErrorInFirstChunk(t *testing.T) {
 		},
 	}
 
-	provider := newTestProvider("test-openai", Healthy)
+	provider := newTestProvider("test-openai", health.Healthy)
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
 	result, err := attemptStream(context.Background(), provider, adapter, body, client, logger)
@@ -236,7 +237,7 @@ func TestAttemptStream_AnthropicFormat(t *testing.T) {
 		},
 	}
 
-	provider := newTestProvider("test-anthropic", Healthy)
+	provider := newTestProvider("test-anthropic", health.Healthy)
 	provider.AdapterType = AdapterAnthropic
 	body := []byte(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}],"stream":true}`)
 

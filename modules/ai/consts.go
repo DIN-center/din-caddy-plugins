@@ -1,14 +1,5 @@
 package ai
 
-// HealthStatus represents the health state of an AI provider.
-type HealthStatus int
-
-const (
-	Healthy   HealthStatus = 0
-	Warning   HealthStatus = 1
-	Unhealthy HealthStatus = 2
-)
-
 // Tier names.
 const (
 	TierFast     = "fast"
@@ -36,16 +27,3 @@ const (
 	OptimizeCost     = "cost"     // inverse-cost-weighted selection
 	OptimizeBalanced = "balanced" // combined cost + latency scoring
 )
-
-func (h HealthStatus) String() string {
-	switch h {
-	case Healthy:
-		return "healthy"
-	case Warning:
-		return "warning"
-	case Unhealthy:
-		return "unhealthy"
-	default:
-		return "unknown"
-	}
-}

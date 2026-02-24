@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 )
 
 // Tier represents a quality tier (fast, balanced, premium) containing multiple AI providers.
@@ -22,9 +23,9 @@ func (t *Tier) GetAvailableProviders() []*AIProvider {
 	var healthy, warning []*AIProvider
 	for _, p := range t.Providers {
 		switch p.HealthStatus() {
-		case Healthy:
+		case health.Healthy:
 			healthy = append(healthy, p)
-		case Warning:
+		case health.Warning:
 			warning = append(warning, p)
 		}
 	}
