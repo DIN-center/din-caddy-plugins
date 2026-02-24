@@ -417,7 +417,7 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	n.BlockLagLimit = DefaultBlockLagLimit
 	n.HCInterval = 5
 	n.RequestAttemptCount = 1
-	n.quit = make(chan struct{})
+	// checker is initialized by startHealthcheck(), not needed for this test
 
 	// Initialize PrometheusClient mock
 	ctrl := gomock.NewController(t)

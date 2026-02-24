@@ -975,16 +975,16 @@ func TestCleanup(t *testing.T) {
 			setupNetworks: func() map[string]*network {
 				return map[string]*network{
 					"network1": {
-						Name: "network1",
-						quit: make(chan struct{}),
+						Name:    "network1",
+						checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 					},
 					"network2": {
-						Name: "network2",
-						quit: make(chan struct{}),
+						Name:    "network2",
+						checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 					},
 					"network3": {
-						Name: "network3",
-						quit: make(chan struct{}),
+						Name:    "network3",
+						checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 					},
 				}
 			},
@@ -1000,16 +1000,16 @@ func TestCleanup(t *testing.T) {
 			expectedClosed: 1, // only registry
 		},
 		{
-			name: "Cleanup with nil quit channels",
+			name: "Cleanup with nil checker",
 			setupNetworks: func() map[string]*network {
 				return map[string]*network{
 					"network1": {
-						Name: "network1",
-						quit: nil, // nil channel
+						Name:    "network1",
+						checker: nil, // nil checker
 					},
 					"network2": {
-						Name: "network2",
-						quit: make(chan struct{}),
+						Name:    "network2",
+						checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 					},
 				}
 			},
@@ -1032,13 +1032,13 @@ func TestCleanup(t *testing.T) {
 			// Track which channels are closed
 			closedCount := 0
 
-			// Monitor channels in goroutines
+			// Monitor checker quit channels in goroutines
 			for _, network := range d.Networks {
-				if network.quit != nil {
-					go func(ch chan struct{}) {
+				if network.checker != nil {
+					go func(ch <-chan struct{}) {
 						<-ch
 						closedCount++
-					}(network.quit)
+					}(network.checker.Quit())
 				}
 			}
 
@@ -1067,12 +1067,12 @@ func TestCleanupConcurrency(t *testing.T) {
 	d := &DinMiddleware{
 		Networks: map[string]*network{
 			"network1": {
-				Name: "network1",
-				quit: make(chan struct{}),
+				Name:    "network1",
+				checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 			},
 			"network2": {
-				Name: "network2",
-				quit: make(chan struct{}),
+				Name:    "network2",
+				checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 			},
 		},
 		quit:   make(chan struct{}),
@@ -1086,11 +1086,11 @@ func TestCleanupConcurrency(t *testing.T) {
 
 	// Monitor channels
 	go func() {
-		<-d.Networks["network1"].quit
+		<-d.Networks["network1"].checker.Quit()
 		network1Closed = true
 	}()
 	go func() {
-		<-d.Networks["network2"].quit
+		<-d.Networks["network2"].checker.Quit()
 		network2Closed = true
 	}()
 	go func() {
