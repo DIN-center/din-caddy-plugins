@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
@@ -529,7 +530,7 @@ func (h *BeaconChainHandler) GetChainID(httpUrl string, headers map[string]strin
 func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	var lastErr error
 	var lastResponseStatus int
-	var lastHealthStatus = Unhealthy
+	var lastHealthStatus = health.Unhealthy
 
 	// Use the block info endpoint to get latest slot
 	blockInfoMethod := h.GetBlockInfoMethod()
@@ -544,7 +545,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 		blockInfoURL, err := url.JoinPath(httpUrl, blockInfoMethod)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to construct block info URL: %w", err)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			continue
 		}
 
@@ -562,9 +563,9 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
 			// Check if it's a retryable error based on status code
 			if lastResponseStatus >= 500 || lastResponseStatus == 429 {
-				lastHealthStatus = Warning
+				lastHealthStatus = health.Warning
 			} else {
-				lastHealthStatus = Unhealthy
+				lastHealthStatus = health.Unhealthy
 			}
 			h.logger.Debug("HTTP request failed",
 				zap.Error(err),
@@ -577,10 +578,10 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 		if lastResponseStatus >= 400 {
 			if lastResponseStatus == 429 {
 				lastErr = fmt.Errorf("rate limit error (status code: %d)", lastResponseStatus)
-				lastHealthStatus = Warning
+				lastHealthStatus = health.Warning
 			} else {
 				lastErr = fmt.Errorf("error status code: %d", lastResponseStatus)
-				lastHealthStatus = Unhealthy
+				lastHealthStatus = health.Unhealthy
 			}
 			h.logger.Debug("HTTP request returned error status",
 				zap.Int("status_code", lastResponseStatus),
@@ -598,7 +599,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 		blockInfo, err := h.ParseHealthCheckResponse(resBytes)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to parse beacon chain response: %w", err)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			h.logger.Debug("Failed to parse beacon response",
 				zap.Error(err),
 				zap.String("response_snippet", string(resBytes[:min(len(resBytes), 500)])),
@@ -608,7 +609,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 
 		if blockInfo == nil {
 			lastErr = fmt.Errorf("beacon chain response parsing returned nil block info")
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			h.logger.Debug("Received nil block info from parser",
 				zap.Int("attempt", attempt+1))
 			continue
@@ -625,7 +626,7 @@ func (h *BeaconChainHandler) GetLatestBlockNumber(httpUrl string, headers map[st
 
 		return &LatestBlockResult{
 			BlockNumber:    blockInfo.Number, // This will be the slot number
-			HealthStatus:   Healthy,
+			HealthStatus:   health.Healthy,
 			ResponseStatus: lastResponseStatus,
 			Metadata: map[string]interface{}{
 				"slot":      blockInfo.Number, // Number field contains slot for beacon chain

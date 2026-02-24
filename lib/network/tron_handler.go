@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	"github.com/cenkalti/backoff/v5"
@@ -396,7 +397,7 @@ func (h *TronHandler) GetLatestBlockNumber(httpUrl string, headers map[string]st
 
 		return &LatestBlockResult{
 			BlockNumber:    block.BlockHeader.RawData.Number,
-			HealthStatus:   Healthy,
+			HealthStatus:   health.Healthy,
 			ResponseStatus: *statusCode,
 		}, nil
 	}
