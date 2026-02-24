@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
@@ -51,7 +52,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 
 	var lastErr error
 	var lastResponseStatus int
-	var lastHealthStatus = Unhealthy
+	var lastHealthStatus = health.Unhealthy
 
 	for attempt := 0; attempt < requestAttempts; attempt++ {
 		// Make POST request with payload
@@ -63,14 +64,14 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		if err != nil {
 			lastErr = fmt.Errorf("error sending HTTP request: %w", err)
 			// HTTP connection errors are considered unhealthy (matches original test expectations)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			continue
 		}
 
 		// Check HTTP status code for rate limiting first
 		if lastResponseStatus == 429 {
 			lastErr = fmt.Errorf("rate limit error (status code: %d)", lastResponseStatus)
-			lastHealthStatus = Warning
+			lastHealthStatus = health.Warning
 			continue
 		}
 
@@ -78,7 +79,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		if lastResponseStatus >= 400 {
 			lastErr = fmt.Errorf("error status code: %d", lastResponseStatus)
 			// All HTTP error status codes are considered unhealthy (matches original test expectations)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			continue
 		}
 
@@ -86,7 +87,7 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		var response JSONRPCResponse
 		if err := json.Unmarshal(resBytes, &response); err != nil {
 			lastErr = fmt.Errorf("failed to parse JSON-RPC response: %w", err)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			continue
 		}
 
@@ -95,9 +96,9 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 			lastErr = fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
 			// Classify JSON-RPC errors based on their nature
 			if IsRetryableJSONRPCError(lastErr, lastResponseStatus) {
-				lastHealthStatus = Warning
+				lastHealthStatus = health.Warning
 			} else {
-				lastHealthStatus = Unhealthy
+				lastHealthStatus = health.Unhealthy
 			}
 			continue
 		}
@@ -106,14 +107,14 @@ func GetLatestBlockNumberViaJSONRPC(httpUrl string, headers map[string]string, h
 		blockNumber, err := parseFunc(response.Result)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to parse block number from result: %w", err)
-			lastHealthStatus = Unhealthy
+			lastHealthStatus = health.Unhealthy
 			continue
 		}
 
 		// Success!
 		return &LatestBlockResult{
 			BlockNumber:    blockNumber,
-			HealthStatus:   Healthy,
+			HealthStatus:   health.Healthy,
 			ResponseStatus: lastResponseStatus,
 			Metadata:       make(map[string]interface{}),
 		}, nil

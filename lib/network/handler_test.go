@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 )
 
@@ -167,7 +168,7 @@ func (m *MockHandler) ParseHealthCheckResponse(body []byte) (*BlockInfo, error) 
 func (m *MockHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	return &LatestBlockResult{
 		BlockNumber:    12345,
-		HealthStatus:   Healthy,
+		HealthStatus:   health.Healthy,
 		ResponseStatus: 200,
 		Metadata:       make(map[string]interface{}),
 	}, nil
