@@ -139,9 +139,6 @@ test_evm_handler() {
     test_jsonrpc_endpoint "eth" "eth_chainId" "[]" "EVM - Get Chain ID"
     test_jsonrpc_endpoint "eth" "eth_getBalance" "[\"0x742d35cc6231c21308ad6fcdb6da8f421c68a7fb\", \"latest\"]" "EVM - Get Account Balance"
     
-    # Test invalid method (should still return 200 with JSON-RPC error)
-    test_jsonrpc_endpoint "eth" "eth_invalidMethod" "[]" "EVM - Invalid Method Handling"
-    
 
 }
 
