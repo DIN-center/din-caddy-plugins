@@ -60,7 +60,8 @@ func newSingleProviderMiddleware(t *testing.T, name, url, model, adapterType str
 		RequestAttemptCount: DefaultRequestAttemptCount,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 }
@@ -78,7 +79,8 @@ func newLiveMiddleware(t *testing.T) *DinAIMiddleware {
 		RequestAttemptCount: DefaultRequestAttemptCount,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 
@@ -574,7 +576,8 @@ func TestIntegration_Failover(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 
@@ -630,7 +633,8 @@ func TestIntegration_StreamingFailover_FirstChunkError(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 
@@ -811,7 +815,8 @@ func TestIntegration_MockServer_Failover(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 
@@ -857,7 +862,8 @@ func TestIntegration_MockServer_AllFail_503(t *testing.T) {
 		RequestAttemptCount: 3,
 		logger:              logger,
 		quit:                make(chan struct{}),
-		client:              client,
+		streamClient:        client,
+		nonStreamClient:     client,
 		testMode:            true,
 	}
 
