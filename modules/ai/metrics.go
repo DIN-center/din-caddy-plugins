@@ -3,8 +3,21 @@ package ai
 import (
 	"sync"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+// AIMetricsClient wraps the package-level AI metrics functions to satisfy
+// the shared metrics.HealthCheckRecorder interface.
+type AIMetricsClient struct{}
+
+// Compile-time check that AIMetricsClient implements HealthCheckRecorder.
+var _ metrics.HealthCheckRecorder = (*AIMetricsClient)(nil)
+
+// RecordHealthCheck implements metrics.HealthCheckRecorder.
+func (c *AIMetricsClient) RecordHealthCheck(provider, statusCode, healthStatus string) {
+	RecordHealthCheck(provider, statusCode, healthStatus)
+}
 
 var metricsOnce sync.Once
 

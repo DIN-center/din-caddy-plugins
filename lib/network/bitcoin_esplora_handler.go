@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
@@ -316,7 +317,7 @@ func (h *BitcoinEsploraHandler) GetLatestBlockNumber(httpUrl string, headers map
 
 	return &LatestBlockResult{
 		BlockNumber:    blockInfo.Number,
-		HealthStatus:   Healthy,
+		HealthStatus:   health.Healthy,
 		ResponseStatus: 200,
 		Metadata:       make(map[string]interface{}),
 	}, nil

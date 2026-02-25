@@ -7,8 +7,12 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
+	libprovider "github.com/DIN-center/din-caddy-plugins/lib/provider"
 	"go.uber.org/zap"
 )
+
+var _ libprovider.Provider = (*AIProvider)(nil)
 
 // AIProvider represents a backend AI model provider with health tracking and TTFT metrics.
 type AIProvider struct {
@@ -27,7 +31,7 @@ type AIProvider struct {
 	logger     *zap.Logger
 
 	mu           sync.RWMutex
-	healthStatus HealthStatus
+	healthStatus health.HealthStatus
 	failures     int
 	successes    int
 	hcThreshold  int
@@ -54,7 +58,7 @@ func NewAIProvider(name, urlStr string) (*AIProvider, error) {
 		Host:           u.Host,
 		Path:           u.Path,
 		Headers:        make(map[string]string),
-		healthStatus:   Healthy,
+		healthStatus:   health.Healthy,
 		hcThreshold:    DefaultHCThreshold,
 		ttftWindowSize: DefaultTTFTWindowSize,
 		ttftWindow:     make([]time.Duration, 0, DefaultTTFTWindowSize),
@@ -62,7 +66,7 @@ func NewAIProvider(name, urlStr string) (*AIProvider, error) {
 }
 
 // HealthStatus returns the current health status (thread-safe).
-func (p *AIProvider) HealthStatus() HealthStatus {
+func (p *AIProvider) HealthStatus() health.HealthStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.healthStatus
@@ -70,13 +74,13 @@ func (p *AIProvider) HealthStatus() HealthStatus {
 
 // IsHealthy returns true if the provider is in Healthy state.
 func (p *AIProvider) IsHealthy() bool {
-	return p.HealthStatus() == Healthy
+	return p.HealthStatus() == health.Healthy
 }
 
 // IsAvailable returns true if the provider is Healthy or Warning.
 func (p *AIProvider) IsAvailable() bool {
 	s := p.HealthStatus()
-	return s == Healthy || s == Warning
+	return s == health.Healthy || s == health.Warning
 }
 
 // MarkPingFailure records a failed health check ping.
@@ -86,7 +90,7 @@ func (p *AIProvider) MarkPingFailure() {
 	p.failures++
 	p.successes = 0
 	if p.failures > p.hcThreshold {
-		p.healthStatus = Unhealthy
+		p.healthStatus = health.Unhealthy
 	}
 }
 
@@ -96,7 +100,7 @@ func (p *AIProvider) MarkPingWarning() {
 	defer p.mu.Unlock()
 	p.failures = 0
 	p.successes = 0
-	p.healthStatus = Warning
+	p.healthStatus = health.Warning
 }
 
 // MarkPingSuccess records a successful health check ping.
@@ -105,10 +109,10 @@ func (p *AIProvider) MarkPingSuccess() {
 	defer p.mu.Unlock()
 	p.successes++
 	p.failures = 0
-	if p.healthStatus == Unhealthy && p.successes > p.hcThreshold {
-		p.healthStatus = Healthy
-	} else if p.healthStatus != Unhealthy {
-		p.healthStatus = Healthy
+	if p.healthStatus == health.Unhealthy && p.successes > p.hcThreshold {
+		p.healthStatus = health.Healthy
+	} else if p.healthStatus != health.Unhealthy {
+		p.healthStatus = health.Healthy
 	}
 }
 
@@ -153,3 +157,15 @@ func (p *AIProvider) CostForTokens(promptTokens, completionTokens int) float64 {
 	outputCost := float64(completionTokens) * p.OutputCostPer1M / 1_000_000
 	return inputCost + outputCost
 }
+
+// GetName returns the provider's display name.
+func (p *AIProvider) GetName() string { return p.Name }
+
+// GetURL returns the provider's HTTP URL.
+func (p *AIProvider) GetURL() string { return p.HttpUrl }
+
+// GetHeaders returns the provider's static request headers.
+func (p *AIProvider) GetHeaders() map[string]string { return p.Headers }
+
+// GetHealthStatus returns the current health status (thread-safe).
+func (p *AIProvider) GetHealthStatus() health.HealthStatus { return p.HealthStatus() }

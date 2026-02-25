@@ -17,14 +17,30 @@ lib/ai/              — Pure types, interfaces, adapters (zero Caddy dependency
   adapter_anthropic.go — Anthropic Messages API translation adapter
   hashing.go         — Session hash, TTFT-weighted, and cost-weighted selection
 
+lib/health/          — Shared health check infrastructure
+  status.go          — HealthStatus enum (Healthy, Warning, Unhealthy)
+  checker.go         — Reusable periodic health check loop with graceful shutdown
+
+lib/metrics/         — Shared metrics interfaces
+  metrics.go         — HealthCheckRecorder interface
+
+lib/provider/        — Shared provider abstractions
+  provider.go        — Provider interface (GetName, GetURL, GetHealthStatus, etc.)
+
 modules/ai/          — Caddy middleware module
   middleware.go      — Main module: ServeHTTP, Caddyfile parsing, Validate
   streaming.go       — SSE streaming proxy with first-chunk validation
-  healthcheck.go     — Periodic health check system
+  healthcheck.go     — Provider health check logic (uses lib/health.Checker)
   provider.go        — AIProvider struct with health state machine
   tier.go            — Tier-based provider selection
   metrics.go         — Prometheus metrics registration
   consts.go          — Constants and defaults
+
+modules/network/     — Network/RPC proxy Caddy modules
+  network.go         — Network struct with health check orchestration
+  din_middleware.go   — Main DIN middleware: ServeHTTP, Caddyfile parsing
+  provider.go        — Network provider with block history tracking
+  (+ helpers, selectors, upstreams, filters)
 ```
 
 ## Configuration

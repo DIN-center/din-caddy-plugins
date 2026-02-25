@@ -6,59 +6,31 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
 	"go.uber.org/zap"
 )
 
-// runHealthChecks starts a goroutine that periodically health checks all providers.
-// It stops when quit is closed, and cancels any in-flight health check requests.
-func runHealthChecks(
+// checkAllProviders health-checks every provider across all tiers in parallel.
+// Called by health.Checker on each tick.
+func checkAllProviders(
+	ctx context.Context,
 	tiers map[string]*Tier,
 	client libai.IStreamingHTTPClient,
-	intervalSec int,
 	logger *zap.Logger,
-	quit <-chan struct{},
 ) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-quit
-		cancel()
-	}()
-
-	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
-	defer ticker.Stop()
-
-	var running int32
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Info("stopping AI health checks")
-			return
-		case <-ticker.C:
-			if !atomic.CompareAndSwapInt32(&running, 0, 1) {
-				logger.Debug("skipping health check round, previous still running")
-				continue
-			}
-			go func() {
-				var wg sync.WaitGroup
-				for _, tier := range tiers {
-					for _, provider := range tier.Providers {
-						wg.Add(1)
-						go func(p *AIProvider) {
-							defer wg.Done()
-							checkProvider(ctx, p, client, logger)
-						}(provider)
-					}
-				}
-				wg.Wait()
-				atomic.StoreInt32(&running, 0)
-			}()
+	var wg sync.WaitGroup
+	for _, tier := range tiers {
+		for _, provider := range tier.Providers {
+			wg.Add(1)
+			go func(p *AIProvider) {
+				defer wg.Done()
+				checkProvider(ctx, p, client, logger)
+			}(provider)
 		}
 	}
+	wg.Wait()
 }
 
 // checkProvider performs a single health check against a provider.

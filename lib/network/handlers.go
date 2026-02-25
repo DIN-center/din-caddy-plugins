@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 )
@@ -131,39 +132,16 @@ func (e *HTTPError) Error() string {
 // LatestBlockResult represents the result of getting the latest block number
 type LatestBlockResult struct {
 	BlockNumber    int64
-	HealthStatus   HealthStatus
+	HealthStatus   health.HealthStatus
 	ResponseStatus int
 	// Additional context that might be useful for debugging
 	Metadata map[string]interface{}
 }
 
-// HealthStatus represents the health status of a provider
-type HealthStatus int
-
-const (
-	Healthy HealthStatus = iota
-	Warning
-	Unhealthy
-)
-
-// String returns the string representation of HealthStatus
-func (h HealthStatus) String() string {
-	switch h {
-	case Healthy:
-		return "healthy"
-	case Warning:
-		return "warning"
-	case Unhealthy:
-		return "unhealthy"
-	default:
-		return "unknown"
-	}
-}
-
 // HealthCheckResult represents the result of a health check operation
 type HealthCheckResult struct {
 	BlockNumber  int64
-	HealthStatus int // Maps to the HealthStatus constants in modules
+	HealthStatus health.HealthStatus
 }
 
 // RequestType enum for different request types
@@ -189,7 +167,7 @@ type NetworkConfig struct {
 }
 
 // RegisterBuiltinHandlers registers all built-in network handlers
-// Note: The handler type strings must match the HandlerType constants in modules/consts.go
+// Note: The handler type strings must match the HandlerType constants in modules/network/consts.go
 func RegisterBuiltinHandlers() {
 	// Register EVM handler - matches modules.EVMHandler constant
 	if err := DefaultRegistry.RegisterHandler("evm", func(config *NetworkConfig) (NetworkHandler, error) {

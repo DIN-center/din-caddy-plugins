@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/stretchr/testify/assert"
@@ -213,7 +214,7 @@ func TestHandler_GetLatestBlockNumber(t *testing.T) {
 	blockNum, err := h.GetLatestBlockNumber("", map[string]string{"Content-Type": "application/json"}, cl, nil, 5)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1000000), blockNum.BlockNumber)
-	assert.Equal(t, network.Healthy, blockNum.HealthStatus)
+	assert.Equal(t, health.Healthy, blockNum.HealthStatus)
 	assert.Equal(t, http.StatusOK, blockNum.ResponseStatus)
 	assert.Empty(t, blockNum.Metadata)
 }

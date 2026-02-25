@@ -12,6 +12,7 @@ import (
 	"time"
 
 	libai "github.com/DIN-center/din-caddy-plugins/lib/ai"
+	"github.com/DIN-center/din-caddy-plugins/lib/health"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
@@ -65,14 +66,14 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 				Name: TierBalanced,
 				Providers: []*AIProvider{
 					func() *AIProvider {
-						p := newTestProvider("openai-gpt4o", Healthy)
+						p := newTestProvider("openai-gpt4o", health.Healthy)
 						p.ModelID = "gpt-4o"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
 						return p
 					}(),
 					func() *AIProvider {
-						p := newTestProvider("deepseek-chat", Healthy)
+						p := newTestProvider("deepseek-chat", health.Healthy)
 						p.ModelID = "deepseek-chat"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
@@ -84,7 +85,7 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 				Name: TierFast,
 				Providers: []*AIProvider{
 					func() *AIProvider {
-						p := newTestProvider("groq-llama", Healthy)
+						p := newTestProvider("groq-llama", health.Healthy)
 						p.ModelID = "llama-3.1-8b-instant"
 						p.AdapterType = AdapterOpenAI
 						p.httpClient = client
@@ -94,7 +95,6 @@ func newTestMiddleware(t *testing.T) *DinAIMiddleware {
 			},
 		},
 		logger: zap.NewNop(),
-		quit:   make(chan struct{}),
 
 		streamClient:        client,
 		nonStreamClient:     client,
@@ -186,7 +186,7 @@ func TestServeHTTP_AllUnhealthy(t *testing.T) {
 
 	// Mark all providers unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		setProviderHealth(p, Unhealthy)
+		setProviderHealth(p, health.Unhealthy)
 	}
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
@@ -506,8 +506,8 @@ func TestWriteErrorResponse(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	m := &DinAIMiddleware{
-		logger: zap.NewNop(),
-		quit:   make(chan struct{}),
+		logger:  zap.NewNop(),
+		checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 	}
 
 	// Should not panic.
@@ -521,7 +521,7 @@ func TestCleanup(t *testing.T) {
 
 func TestCleanup_NilLogger(t *testing.T) {
 	m := &DinAIMiddleware{
-		quit: make(chan struct{}),
+		checker: health.NewChecker(health.CheckerConfig{Interval: time.Hour}, func(ctx context.Context) {}),
 		// logger intentionally nil — simulates Cleanup called before Provision.
 	}
 
@@ -543,39 +543,43 @@ func TestServeHTTP_PrefixedPathDoesNotMatch(t *testing.T) {
 }
 
 func TestCleanup_StopsHealthChecks(t *testing.T) {
-	m := &DinAIMiddleware{
-		Tiers: map[string]*Tier{
-			TierFast: {
-				Name: TierFast,
-				Providers: []*AIProvider{
-					func() *AIProvider {
-						p := newTestProvider("p1", Healthy)
-						p.ModelID = "test"
-						p.AdapterType = AdapterOpenAI
-						return p
-					}(),
-				},
+	client := &mockHealthCheckClient{statusCode: 200, body: `{}`}
+	tiers := map[string]*Tier{
+		TierFast: {
+			Name: TierFast,
+			Providers: []*AIProvider{
+				func() *AIProvider {
+					p := newTestProvider("p1", health.Healthy)
+					p.ModelID = "test"
+					p.AdapterType = AdapterOpenAI
+					return p
+				}(),
 			},
 		},
-		logger:              zap.NewNop(),
-		quit:                make(chan struct{}),
+	}
+	logger := zap.NewNop()
+
+	checker := health.NewChecker(health.CheckerConfig{
+		Interval:       1 * time.Second,
+		PreventOverlap: true,
+	}, func(ctx context.Context) {
+		checkAllProviders(ctx, tiers, client, logger)
+	})
+	checker.Start()
+
+	m := &DinAIMiddleware{
+		Tiers:               tiers,
+		logger:              logger,
+		checker:             checker,
 		HealthcheckInterval: 1,
 	}
-
-	client := &mockHealthCheckClient{statusCode: 200, body: `{}`}
-
-	done := make(chan struct{})
-	go func() {
-		runHealthChecks(m.Tiers, client, 1, m.logger, m.quit)
-		close(done)
-	}()
 
 	time.Sleep(100 * time.Millisecond)
 	m.Cleanup()
 
 	select {
-	case <-done:
-		// Success.
+	case <-checker.Quit():
+		// Success — checker stopped.
 	case <-time.After(2 * time.Second):
 		t.Fatal("health check goroutine did not stop after Cleanup")
 	}
@@ -991,7 +995,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 
 	// Get the first provider to check its health after.
 	firstProvider := m.Tiers[TierBalanced].Providers[0]
-	assert.Equal(t, Healthy, firstProvider.HealthStatus())
+	assert.Equal(t, health.Healthy, firstProvider.HealthStatus())
 
 	err := m.ServeHTTP(w, r, noopHandler)
 	assert.NoError(t, err)
@@ -1001,7 +1005,7 @@ func TestServeHTTP_FailoverUpdatesHealth(t *testing.T) {
 	// At least one provider should have been marked Warning.
 	hasWarning := false
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		if p.HealthStatus() == Warning {
+		if p.HealthStatus() == health.Warning {
 			hasWarning = true
 			break
 		}
@@ -1032,7 +1036,7 @@ func TestServeHTTP_SingleFailureStaysHealthy(t *testing.T) {
 
 	// MarkPingWarning sets Warning but one warning doesn't make a provider Unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "single failure should not transition to Unhealthy")
+		assert.NotEqual(t, health.Unhealthy, p.HealthStatus(), "single failure should not transition to Unhealthy")
 	}
 }
 
@@ -1057,7 +1061,7 @@ func TestServeHTTP_429DoesNotMarkUnhealthy(t *testing.T) {
 
 	// Provider that got 429 should be Warning, not Unhealthy.
 	for _, p := range m.Tiers[TierBalanced].Providers {
-		assert.NotEqual(t, Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
+		assert.NotEqual(t, health.Unhealthy, p.HealthStatus(), "429 should not transition to Unhealthy")
 	}
 }
 
@@ -1514,7 +1518,7 @@ func TestValidate_MissingCostConfig(t *testing.T) {
 }
 
 func TestCostForTokens(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 
@@ -1525,7 +1529,7 @@ func TestCostForTokens(t *testing.T) {
 }
 
 func TestCostForTokens_ZeroTokens(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 
@@ -1648,7 +1652,7 @@ func TestServeHTTP_XDINOptimize_Default(t *testing.T) {
 }
 
 func TestCostForTokens_LargeTokenCounts(t *testing.T) {
-	p := newTestProvider("test", Healthy)
+	p := newTestProvider("test", health.Healthy)
 	p.InputCostPer1M = 2.50
 	p.OutputCostPer1M = 10.00
 
@@ -1766,7 +1770,6 @@ func TestProvision_Defaults(t *testing.T) {
 
 	// Re-provision (newTestMiddleware already sets testMode=true).
 	m.logger = zap.NewNop()
-	m.quit = make(chan struct{})
 	m.streamClient = newStreamingClient()
 	m.nonStreamClient = newNonStreamingClient()
 	m.healthClient = newHealthCheckClient()

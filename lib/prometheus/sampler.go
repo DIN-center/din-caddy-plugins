@@ -94,9 +94,8 @@ func (hs *HybridSampler) ShouldSample(isError bool, labels ...string) bool {
 func (hs *HybridSampler) ShouldSampleRequest(responseStatus int, healthStatus string, labels ...string) bool {
 	// Consider it an error if:
 	// - HTTP status is 4xx or 5xx
-	// - Health status is not "Healthy" (capitalized, from HealthStatus.String())
-	// Note: healthStatus comes from the enum's String() method which returns "Healthy", "Warning", or "Unhealthy"
-	isError := responseStatus >= 400 || (healthStatus != "Healthy" && healthStatus != "")
+	// - Health status is not "healthy" (lowercase, from health.HealthStatus.String())
+	isError := responseStatus >= 400 || (healthStatus != "healthy" && healthStatus != "")
 	return hs.ShouldSample(isError, labels...)
 }
 
