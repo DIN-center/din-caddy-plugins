@@ -820,6 +820,7 @@ func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 				d.logger.Info("[DYNAMIC_LB] Synced watcher score",
 					zap.String("network", network.Name),
 					zap.String("provider", provider.host),
+					zap.String("provider_name", provider.Name),
 					zap.Float64("score_value", newScore.Value()),
 					zap.String("score_updated_at", newScore.LastUpdated().Format(time.RFC3339)),
 					zap.String("middleware_synced_at", d.DynamicLoadBalancing.WatcherScoreLastSyncTime.Format(time.RFC3339)),
@@ -828,7 +829,8 @@ func (d *DinMiddleware) SyncMiddlewareWithLatestScores() {
 			} else {
 				d.logger.Info("[DYNAMIC_LB] No score found for provider",
 					zap.String("network", network.Name),
-					zap.String("provider", provider.host))
+					zap.String("provider", provider.host),
+					zap.String("provider_name", provider.Name))
 			}
 		}
 	}
