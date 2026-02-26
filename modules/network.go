@@ -42,13 +42,15 @@ type caddyfileConfigFlags struct {
 
 var _ json.Unmarshaler = (*network)(nil)
 
+
+
 type network struct {
 	Name             string
 	HandlerType      HandlerType `json:"handler"` // Network handler type for handler registry
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
-	CaddyPort        string
+	LoopbackConfig   LoopbackConfig
 	logger           *logger.LoggerClient
 	machineID        string
 	Environment      utils.Environment
@@ -92,7 +94,7 @@ type network struct {
 // NewNetwork creates a new network with the given name and handler type
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, handlerType HandlerType, environment utils.Environment, caddyPort string) (*network, error) {
+func NewNetwork(name string, handlerType HandlerType, environment utils.Environment, loopbackConfig LoopbackConfig) (*network, error) {
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
@@ -112,7 +114,7 @@ func NewNetwork(name string, handlerType HandlerType, environment utils.Environm
 		ArchiveTraceBlockByNumberEnabled: DefaultArchiveTraceBlockByNumberEnabled,
 		Environment:                      environment,
 		Providers:                make(map[string]*provider),
-		CaddyPort:                caddyPort,
+		LoopbackConfig:           loopbackConfig,
 		// Initialize Caddyfile flags tracking
 		CaddyfileFlags: &caddyfileConfigFlags{
 			// If handlerType is provided (not empty), mark it as set in Caddyfile
@@ -757,12 +759,12 @@ func (n *network) getLatestBlockEntry() *blockHistoryEntry {
 
 // checkSelfLoopbackHealth performs a health check on the router's own endpoint (loopback)
 func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error) {
-	if n.CaddyPort == "" {
+	if n.LoopbackConfig.Port == "" {
 		return nil, errors.New("Caddy port is not set")
 	}
 
 	// Create synthetic request context for consistent logging (this is critical for logFailedAttempt)
-	providerHost := fmt.Sprintf("127.0.0.1:%s", n.CaddyPort) // Use loopback address as provider identifier
+	providerHost := fmt.Sprintf("127.0.0.1:%s", n.LoopbackConfig.Port) // Use loopback address as provider identifier
 	healthCheckMethod := n.handler.GetHealthCheckMethod()
 
 	repl, genericContext, _ := createHealthCheckRequestContext(n.Name, providerHost, healthCheckMethod, n)
@@ -777,11 +779,12 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 	}
 
 	// Use the loopback URL as the target
-	loopbackURL := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+	loopbackURL := fmt.Sprintf("http://127.0.0.1:%s/%s", n.LoopbackConfig.Port, n.Name)
 
 	// Create headers for the request
 	headers := map[string]string{
 		"Content-Type": "application/json",
+		"Din-Api-Key":  n.LoopbackConfig.ApiKey,
 	}
 
 	// Use handler's GetLatestBlockNumber method but maintain detailed logging
@@ -834,7 +837,7 @@ func (n *network) checkSelfLoopbackHealth() (*getLatestBlockNumberResult, error)
 func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 	n.logger.Debug("getBlockByNumber called", zap.Int64("blockNumber", blockNumber), zap.String("networkName", n.Name))
 
-	if n.CaddyPort == "" {
+	if n.LoopbackConfig.Port == "" {
 		return nil, errors.New("Caddy port is not set")
 	}
 
@@ -850,9 +853,10 @@ func (n *network) getBlockByNumber(blockNumber int64) (interface{}, error) {
 	}
 
 	// Use loopback URL to make request through the Din middleware
-	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.CaddyPort, n.Name)
+	url := fmt.Sprintf("http://127.0.0.1:%s/%s", n.LoopbackConfig.Port, n.Name)
 	headers := map[string]string{
 		"Content-Type": "application/json",
+		"Din-Api-Key":  n.LoopbackConfig.ApiKey,
 	}
 
 	// Get the block by number method directly from the handler

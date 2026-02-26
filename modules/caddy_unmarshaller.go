@@ -27,7 +27,7 @@ type caddyfileParser struct {
 	middleware       *DinMiddleware
 	dispenser        *caddyfile.Dispenser
 	siweSignerClient siwe.ISIWESignerClient
-	caddyPort        string
+	loopbackConfig   LoopbackConfig
 }
 
 // newCaddyfileParser creates a new parser instance
@@ -105,6 +105,8 @@ func (p *caddyfileParser) parseDirective() error {
 	switch p.dispenser.Val() {
 	case "port":
 		return p.parsePort()
+	case "loopback_api_key":
+		return p.parseLoopbackApiKey()
 	case "siwe-signer":
 		return p.parseSiweSigner()
 	case "networks":
@@ -123,14 +125,21 @@ func (p *caddyfileParser) parseDirective() error {
 	}
 }
 
+func (p *caddyfileParser) parseLoopbackApiKey() error {
+	p.dispenser.Next()
+	p.loopbackConfig.ApiKey = p.dispenser.Val()
+	p.middleware.LoopbackConfig.ApiKey = p.loopbackConfig.ApiKey
+	return nil
+}
+
 // parsePort handles port configuration
 func (p *caddyfileParser) parsePort() error {
 	p.dispenser.Next()
-	p.caddyPort = p.dispenser.Val()
-	if p.caddyPort == "" {
-		p.caddyPort = DefaultPort
+	p.loopbackConfig.Port = p.dispenser.Val()
+	if p.loopbackConfig.Port == "" {
+		p.loopbackConfig.Port = DefaultPort
 	}
-	p.middleware.CaddyPort = p.caddyPort
+	p.middleware.LoopbackConfig.Port = p.loopbackConfig.Port
 	return nil
 }
 
@@ -184,14 +193,17 @@ func (p *caddyfileParser) parseNetworks() error {
 
 // parseNetwork handles individual network configuration
 func (p *caddyfileParser) parseNetwork(networkName string, parentNesting int) error {
-	// Ensure caddyPort is set
-	if p.caddyPort == "" {
-		p.caddyPort = DefaultPort
+	// Ensure loopback config is set
+	if p.loopbackConfig.Port == "" {
+		p.loopbackConfig.Port = DefaultPort
+	}
+	if p.loopbackConfig.ApiKey == "" {
+		p.loopbackConfig.ApiKey = DefaultLoopbackApiKey
 	}
 
 	// Create network if it doesn't exist
 	if _, exists := p.middleware.Networks[networkName]; !exists {
-		newNetwork, err := NewNetwork(networkName, "", p.middleware.Env, p.caddyPort)
+		newNetwork, err := NewNetwork(networkName, "", p.middleware.Env, p.loopbackConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create network '%s': %w", networkName, err)
 		}

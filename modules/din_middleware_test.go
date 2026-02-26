@@ -611,7 +611,9 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 		{
 			name: "Successful processing",
 			setupNetwork: func(t *testing.T, netw *network) {
-				netw.CaddyPort = "8000"
+				netw.LoopbackConfig.Port = "8000"
+				netw.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
+
 
 				mockCtrl := gomock.NewController(t)
 				// defer mockCtrl.Finish() // Defers in callbacks can be tricky; manage Finish in t.Run if issues arise.
@@ -643,7 +645,8 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 		{
 			name: "HCMethod does not match",
 			setupNetwork: func(t *testing.T, netw *network) {
-				netw.CaddyPort = "8001" // Add a dummy CaddyPort to prevent nil errors if getBlockByNumber is unexpectedly called
+				netw.LoopbackConfig.Port = "8001"
+				netw.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
 				// No HttpClient mock needed as getBlockByNumber ideally won't be called
 			},
 			netPath:             "test/eth",
@@ -655,7 +658,8 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 		{
 			name: "Response body empty",
 			setupNetwork: func(t *testing.T, netw *network) {
-				netw.CaddyPort = "8002" // Add a dummy CaddyPort
+				netw.LoopbackConfig.Port = "8002"
+				netw.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
 				// No HttpClient mock needed
 			},
 			netPath:             "test/eth",
@@ -667,7 +671,8 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 		{
 			name: "Network object HCMethod empty",
 			setupNetwork: func(t *testing.T, netw *network) {
-				netw.CaddyPort = "8003" // Add a dummy CaddyPort
+				netw.LoopbackConfig.Port = "8003"
+				netw.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
 				// No HttpClient mock needed since we expect early return due to method mismatch
 			},
 			netPath:             "test/eth",
@@ -715,7 +720,7 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			// mockCtrl and mockHttpClient setup will be handled by tt.setupNetwork for relevant cases
 
 			// Create a proper network with handler using NewNetwork
-			netw, err := NewNetwork("test", EVMHandler, utils.EnvTest, "8000")
+			netw, err := NewNetwork("test", EVMHandler, utils.EnvTest, LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			if err != nil {
 				t.Fatalf("Failed to create network: %v", err)
 			}
