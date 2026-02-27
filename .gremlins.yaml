@@ -1,0 +1,40 @@
+---
+silent: false
+unleash:
+  integration: false
+  dry-run: false
+  tags: ""
+  output: ""
+  diff: ""
+  output-statuses: ""
+  workers: 0
+  test-cpu: 0
+  timeout-coefficient: 30 # default 0
+  threshold:
+    efficacy: 99.99999999999999 # default 0
+    mutant-coverage: 0
+  exclude-files: []
+
+mutants:
+  arithmetic-base:
+    enabled: true
+  conditionals-boundary:
+    enabled: true
+  conditionals-negation:
+    enabled: true
+  increment-decrement:
+    enabled: true
+  invert-assignments:
+    enabled: true # default false
+  invert-bitwise:
+    enabled: true # default false
+  invert-bwassign:
+    enabled: true # default false
+  invert-negatives:
+    enabled: true
+  invert-logical:
+    enabled: true # default false
+  invert-loopctrl:
+    enabled: true # default false
+  remove-self-assignments:
+    enabled: true # default false

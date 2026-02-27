@@ -497,15 +497,15 @@ func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
 	defer ctrl.Finish()
 
 	tests := []struct {
-		name                      string
-		archiveEnabled            bool
-		traceEnabled              bool
-		archiveResponse           []byte
-		archiveStatusCode         int
-		traceResponse             []byte
-		traceStatusCode           int
-		expectError               bool
-		expectedErrMsg            string
+		name              string
+		archiveEnabled    bool
+		traceEnabled      bool
+		archiveResponse   []byte
+		archiveStatusCode int
+		traceResponse     []byte
+		traceStatusCode   int
+		expectError       bool
+		expectedErrMsg    string
 	}{
 		{
 			name:              "trace_disabled_only_archive_check_runs",
@@ -584,7 +584,10 @@ func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
 			}
 
 			// Create network
-			n, err := NewNetwork("ethereum", EVMHandler, utils.Environment("test"), "8000")
+			n, err := NewNetwork("ethereum", EVMHandler, utils.Environment("test"), LoopbackConfig{
+				Port:   "8080",
+				ApiKey: DefaultLoopbackApiKey,
+			})
 			require.NoError(t, err)
 			n.HttpClient = mockHTTPClient
 			n.RequestAttemptCount = 1
@@ -887,7 +890,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			mockLogger := logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
 			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), LoopbackConfig{
-				Port: tt.caddyPort,
+				Port:   tt.caddyPort,
 				ApiKey: DefaultLoopbackApiKey,
 			})
 			assert.NoError(t, err)
@@ -1175,7 +1178,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			}
 
 			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), LoopbackConfig{
-				Port: tt.caddyPort,
+				Port:   tt.caddyPort,
 				ApiKey: DefaultLoopbackApiKey,
 			})
 			assert.NoError(t, err)
