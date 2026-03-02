@@ -19,8 +19,11 @@ func NewResponseWriterWrapper(rw http.ResponseWriter) *ResponseWriterWrapper {
 
 	return &ResponseWriterWrapper{
 		ResponseWriter: rw,
-		body:           new(bytes.Buffer),
-		statusCode:     200, // Default to 200 if WriteHeader is never called
+		// Pre-allocate 512 bytes to cover the vast majority of JSON-RPC responses
+		// without any internal grow calls. Avoids the 64->128->256->512 byte
+		// reallocation chain that new(bytes.Buffer) triggers on first writes.
+		body:       bytes.NewBuffer(make([]byte, 0, 512)),
+		statusCode: 200, // Default to 200 if WriteHeader is never called
 	}
 }
 
