@@ -531,10 +531,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// Extract network path - for REST APIs, this is just the first segment
-	fullPath := strings.TrimPrefix(r.URL.Path, "/")
-	pathSegments := strings.Split(fullPath, "/")
-	networkPath := pathSegments[0] // Get the first segment as network name
+	// Extract network path - for REST APIs, this is just the first segment.
+	// Use strings.Cut instead of strings.Split to avoid allocating a []string
+	// slice and a trimmed intermediate string on every request. Both TrimPrefix
+	// and Split allocated; Cut does neither.
+	path := r.URL.Path
+	if len(path) > 0 && path[0] == '/' {
+		path = path[1:]
+	}
+	networkPath, _, _ := strings.Cut(path, "/")
 
 	// If the network path is empty, return an empty JSON object with a 200.
 	if networkPath == "" {
