@@ -46,6 +46,17 @@ var (
 	// _ caddy.Validator            = (*mod.DinMiddleware)(nil)
 )
 
+// bodyBufPool reuses buffers for reading request bodies, reducing allocations
+// and GC pressure on the hot path. Each buffer is pre-grown to 4 KB which covers
+// typical JSON-RPC payloads without any internal grow calls.
+var bodyBufPool = sync.Pool{
+	New: func() any {
+		b := new(bytes.Buffer)
+		b.Grow(4096)
+		return b
+	},
+}
+
 // RegistryConfig contains all DIN Registry configuration settings
 type RegistryConfig struct {
 	// Core configuration
@@ -520,10 +531,15 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Caddy replacer is used to set the context for the request
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// Extract network path - for REST APIs, this is just the first segment
-	fullPath := strings.TrimPrefix(r.URL.Path, "/")
-	pathSegments := strings.Split(fullPath, "/")
-	networkPath := pathSegments[0] // Get the first segment as network name
+	// Extract network path - for REST APIs, this is just the first segment.
+	// Use strings.Cut instead of strings.Split to avoid allocating a []string
+	// slice and a trimmed intermediate string on every request. Both TrimPrefix
+	// and Split allocated; Cut does neither.
+	path := r.URL.Path
+	if len(path) > 0 && path[0] == '/' {
+		path = path[1:]
+	}
+	networkPath, _, _ := strings.Cut(path, "/")
 
 	// If the network path is empty, return an empty JSON object with a 200.
 	if networkPath == "" {
@@ -603,14 +619,24 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		return stdliberrors.Join(fmt.Errorf("handler failed to process request: %w", err), writeErr)
 	}
 
-	// Read request body and save in context
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
+	// Read request body and save in context.
+	// Use a pooled buffer to avoid the repeated grow() allocations that io.ReadAll
+	// triggers internally (64 -> 128 -> 256 -> ... bytes). The pooled buffer is
+	// returned immediately after copying out the bytes so it is available for the
+	// next request. bodyBytes is a single, exact-size allocation.
+	buf := bodyBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if _, err := buf.ReadFrom(r.Body); err != nil {
+		bodyBufPool.Put(buf)
 		return nil
 	}
+	bodyBytes := make([]byte, buf.Len())
+	copy(bodyBytes, buf.Bytes())
+	bodyBufPool.Put(buf)
 	repl.Set(RequestBodyKey, bodyBytes)
-	// Set request body back to original state
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	// Set request body back to original state using a lightweight Reader wrapper
+	// (bytes.NewReader instead of bytes.NewBuffer avoids an internal byte slice copy).
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	// Check if the request payload is too large
 	if (len(bodyBytes) / 1024) > int(networkObj.MaxRequestPayloadSizeKB) {
