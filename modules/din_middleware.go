@@ -700,6 +700,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	// Track if we should log metrics at the end (only for final outcomes)
 	var shouldLogMetrics bool
 
+	// Holds the decompressed response body from the successful attempt, passed to
+	// handlePostRequestTasks to avoid a second gzip decompression in the async path.
+	var decompressedResponseBody []byte
+
 	// Track providers excluded due to method-not-found (-32601) errors.
 	// These providers are skipped on subsequent attempts so a different provider is tried.
 	excludedProviders := make(map[string]struct{})
@@ -759,6 +763,9 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			if appError == nil {
 				// Request was successful
 				shouldLogMetrics = true
+				// Cache the decompressed body so handlePostRequestTasks can reuse it
+				// without a second gzip decompression pass.
+				decompressedResponseBody = responseBody
 
 				// Log if this success came after a method-level failover
 				if len(excludedProviders) > 0 {
@@ -1020,15 +1027,16 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 	if shouldLogMetrics {
 		// Post-Request Processing is now handled by the helper function
 		handlePostRequestTasks(PostRequestTaskParams{
-			DinMiddleware: d,
-			RWWrapper:     rww,
-			NetworkObj:    networkObj,
-			NetworkPath:   networkPath,
-			Provider:      provider,
-			Replacer:      repl,
-			Duration:      duration,
-			OriginalReq:   r,
-			ParsedReqBody: nil,
+			DinMiddleware:   d,
+			RWWrapper:       rww,
+			NetworkObj:      networkObj,
+			NetworkPath:     networkPath,
+			Provider:        provider,
+			Replacer:        repl,
+			Duration:        duration,
+			OriginalReq:     r,
+			ParsedReqBody:   nil,
+			DecompressedBody: decompressedResponseBody,
 		})
 	}
 
