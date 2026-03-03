@@ -1,6 +1,6 @@
 # Caddyfile for Din e2e testing - Enhanced for Handler Registry Testing
-# Provider URLs are injected via envsubst before Caddy reads this file.
-# ${E2E_ALCHEMY_BSC_URL} is fetched from AWS Secrets Manager in the workflow.
+# ${BSC_VALIDATIONCLOUD_KEY1} is fetched from AWS Secrets Manager and
+# substituted via envsubst before Caddy reads this file.
 {
 	debug
 	order din before reverse_proxy
@@ -15,14 +15,11 @@
 		# middleware declaration
 		din {
 			environment prod
-			# Test the new handler registry with multiple network types
 			networks {
-				# EVM Network - backed by Alchemy BSC mainnet (authenticated, no rate limits)
-				# Network is named "eth" so existing test scripts require no changes.
-				eth {
+				bsc-mainnet {
 					request_attempt_count 1
 					providers {
-						${E2E_ALCHEMY_BSC_URL} {
+						https://mainnet.bsc.validationcloud.io/v1/${BSC_VALIDATIONCLOUD_KEY1} {
 							priority 0
 						}
 					}
