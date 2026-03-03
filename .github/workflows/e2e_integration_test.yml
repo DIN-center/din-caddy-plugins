@@ -123,7 +123,7 @@ jobs:
       - name: Start Caddy Server
         run: |
           echo "Starting Caddy server..."
-          ./caddy-din start --config /tmp/e2e-Caddyfile &
+          ./caddy-din start --config /tmp/e2e-Caddyfile --adapter caddyfile &
           CADDY_PID=$!
           echo $CADDY_PID > caddy.pid
           
