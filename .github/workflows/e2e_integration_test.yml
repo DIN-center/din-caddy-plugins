@@ -121,21 +121,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Fetch E2E Provider URL from AWS Secrets Manager
+      - name: Fetch E2E Provider Keys from AWS Secrets Manager
         run: |
-          E2E_ALCHEMY_BSC_URL=$(aws secretsmanager get-secret-value \
-            --secret-id "${{ secrets.E2E_ALCHEMY_BSC_SECRET_NAME }}" \
+          BSC_VALIDATIONCLOUD_KEY1=$(aws secretsmanager get-secret-value \
+            --secret-id "BSC_VALIDATIONCLOUD_KEY1" \
             --query SecretString \
             --output text)
-          echo "E2E_ALCHEMY_BSC_URL=$E2E_ALCHEMY_BSC_URL" >> $GITHUB_ENV
+          echo "::add-mask::$BSC_VALIDATIONCLOUD_KEY1"
+          echo "BSC_VALIDATIONCLOUD_KEY1=$BSC_VALIDATIONCLOUD_KEY1" >> $GITHUB_ENV
 
       - name: Render Caddyfile
         run: |
           envsubst < ./.github/workflows/e2e_integration_test/Caddyfile > /tmp/e2e-Caddyfile
-          echo "Rendered Caddyfile:"
-          cat /tmp/e2e-Caddyfile
         env:
-          E2E_ALCHEMY_BSC_URL: ${{ env.E2E_ALCHEMY_BSC_URL }}
+          BSC_VALIDATIONCLOUD_KEY1: ${{ env.BSC_VALIDATIONCLOUD_KEY1 }}
 
       - name: Start Caddy Server
         run: |
