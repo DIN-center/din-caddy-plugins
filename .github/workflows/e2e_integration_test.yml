@@ -114,27 +114,11 @@ jobs:
           # Create test results directory
           mkdir -p test-results
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Fetch E2E Provider Keys from AWS Secrets Manager
-        run: |
-          BSC_VALIDATIONCLOUD_KEY1=$(aws secretsmanager get-secret-value \
-            --secret-id "BSC_VALIDATIONCLOUD_KEY1" \
-            --query SecretString \
-            --output text)
-          echo "::add-mask::$BSC_VALIDATIONCLOUD_KEY1"
-          echo "BSC_VALIDATIONCLOUD_KEY1=$BSC_VALIDATIONCLOUD_KEY1" >> $GITHUB_ENV
-
       - name: Render Caddyfile
         run: |
           envsubst < ./.github/workflows/e2e_integration_test/Caddyfile > /tmp/e2e-Caddyfile
         env:
-          BSC_VALIDATIONCLOUD_KEY1: ${{ env.BSC_VALIDATIONCLOUD_KEY1 }}
+          BSC_VALIDATIONCLOUD_KEY1: ${{ secrets.BSC_VALIDATIONCLOUD_KEY1 }}
 
       - name: Start Caddy Server
         run: |
