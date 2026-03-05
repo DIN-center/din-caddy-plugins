@@ -688,7 +688,10 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		// Set the upstreams in the context for the request
 		repl.Set(DinUpstreamsContextKey, networkObj.MethodFilter.FilterProviders(parsedRequest, networkObj.Providers))
 	} else {
-		// Set the upstreams in the context for the request
+		// Set the upstreams and network object in the context for the request.
+		// DinNetworkContextKey is only set here (no method filter) so GetUpstreams
+		// can use the upstream pool cache for this path.
+		repl.Set(DinNetworkContextKey, networkObj)
 		repl.Set(DinUpstreamsContextKey, networkObj.Providers)
 	}
 

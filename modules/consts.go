@@ -32,6 +32,7 @@ const (
 	// Module Context Key constants
 	DinUpstreamsContextKey          = "din.internal.upstreams"
 	DinExcludedProvidersContextKey  = "din.internal.excluded_providers"
+	DinNetworkContextKey            = "din.internal.network"
 	RequestProviderKey              = "request_provider"
 	RequestProviderPriorityKey      = "request_provider_priority"
 	RequestBodyKey                  = "request_body"

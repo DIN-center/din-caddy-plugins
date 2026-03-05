@@ -40,12 +40,20 @@ var (
 	_ caddyfile.Unmarshaler       = (*DinUpstreams)(nil)
 )
 
+// cachedPool holds a snapshot of the upstream pool along with the health check
+// version at which it was built. A stale version signals the pool must be rebuilt.
+type cachedPool struct {
+	version uint64
+	pool    []*reverseproxy.Upstream
+}
+
 type DinUpstreams struct {
-	logger *zap.Logger
+	logger    *zap.Logger
+	poolCache sync.Map // map[string]*cachedPool, keyed by network name
 }
 
 // CaddyModule returns the Caddy module information.
-func (DinUpstreams) CaddyModule() caddy.ModuleInfo {
+func (*DinUpstreams) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.reverse_proxy.upstreams.din_reverse_proxy_policy",
 		New: func() caddy.Module { return new(DinUpstreams) },
@@ -86,16 +94,42 @@ func (d *DinUpstreams) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, 
 		providers = networkConfig.Providers
 	}
 
-	// Check for providers excluded due to method-not-found errors on prior attempts
+	// Check for providers excluded due to method-not-found errors on prior attempts.
 	var excludedProviders map[string]struct{}
 	if v, ok := repl.Get(DinExcludedProvidersContextKey); ok {
 		excludedProviders = v.(map[string]struct{})
 	}
 
-	// Convert providers to upstreams based on priority and health status
-	upstreamPool := d.buildUpstreamPool(providers, excludedProviders)
+	// Use the cached upstream pool when:
+	//   - DinNetworkContextKey is set (only set when no method filter is active)
+	//   - No providers are excluded (retries must bypass cache for proper failover)
+	//
+	// Known trade-off: if Caddy's internal circuit breaker trips a backend between
+	// health check cycles, the cached pool may still include that upstream. Caddy's
+	// selection policy re-checks Available() per upstream and will skip it, burning
+	// a retry attempt. This is acceptable given the ~5-second health check window.
+	if v, ok := repl.Get(DinNetworkContextKey); ok && len(excludedProviders) == 0 {
+		net := v.(*network)
+		currentVersion := net.HealthCheckVersion()
 
-	return upstreamPool, nil
+		if entry, loaded := d.poolCache.Load(net.Name); loaded {
+			cached := entry.(*cachedPool)
+			if cached.version == currentVersion {
+				return cached.pool, nil
+			}
+		}
+
+		pool := d.buildUpstreamPool(providers, nil)
+		// Only cache non-empty pools. An empty pool means all providers are unhealthy;
+		// Caddy's circuit breaker may recover before the next health check cycle, so
+		// we must not cache the empty state.
+		if len(pool) > 0 {
+			d.poolCache.Store(net.Name, &cachedPool{version: currentVersion, pool: pool})
+		}
+		return pool, nil
+	}
+
+	return d.buildUpstreamPool(providers, excludedProviders), nil
 }
 
 // extractNetworkName extracts the network name from the request path
