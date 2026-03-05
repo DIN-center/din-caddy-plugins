@@ -89,6 +89,11 @@ type network struct {
 
 	// Custom configuration passed from Caddyfile
 	CustomConfig map[string]interface{} `json:"custom_config,omitempty"`
+
+	// healthCheckVersion is incremented after each health check cycle completes.
+	// Consumers can detect when provider health data has changed by comparing
+	// a stored version against HealthCheckVersion().
+	healthCheckVersion atomic.Uint64
 }
 
 // NewNetwork creates a new network with the given name and handler type
@@ -240,6 +245,16 @@ func (n *network) healthCheck() {
 		provider.AddBlockEntry(latestBlockResult.blockNumber, newStatus, n.ProviderBlockHistorySize)
 		n.sendHealthCheckMetric(provider.host, provider.Name, latestBlockResult.responseStatus, newStatus.String(), latestBlockResult.blockNumber, provider.Priority, string(n.Environment))
 	}
+
+	// Increment version after all providers are updated so consumers can detect
+	// that health data has changed.
+	n.healthCheckVersion.Add(1)
+}
+
+// HealthCheckVersion returns the current health check cycle counter.
+// The value is incremented after each healthCheck() call completes.
+func (n *network) HealthCheckVersion() uint64 {
+	return n.healthCheckVersion.Load()
 }
 
 // LoopbackHealthCheck performs a self loopback health check and logs/metrics the result.
