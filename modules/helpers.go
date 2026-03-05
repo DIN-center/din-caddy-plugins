@@ -323,15 +323,16 @@ func logFailedAttempt(params LogFailedAttemptParams) {
 // Ensure all fields are exported if this struct needs to be instantiated outside this package directly.
 // For now, assuming it's instantiated and used within the same package.
 type PostRequestTaskParams struct {
-	DinMiddleware *DinMiddleware
-	RWWrapper     *ResponseWriterWrapper
-	NetworkObj    *network
-	NetworkPath   string
-	Provider      string
-	Replacer      *caddy.Replacer
-	Duration      time.Duration
-	OriginalReq   *http.Request
-	ParsedReqBody *dinHttp.JSONRPCRequest
+	DinMiddleware    *DinMiddleware
+	RWWrapper        *ResponseWriterWrapper
+	NetworkObj       *network
+	NetworkPath      string
+	Provider         string
+	Replacer         *caddy.Replacer
+	Duration         time.Duration
+	OriginalReq      *http.Request
+	ParsedReqBody    *dinHttp.JSONRPCRequest
+	DecompressedBody []byte // Pre-decompressed response body; avoids a second gzip pass in handlePostRequestTasks
 }
 
 // handlePostRequestTasks encapsulates logic that runs after the main response has been written.
@@ -371,9 +372,14 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 		rawResponseBody = []byte{} // Ensure rawResponseBody is an empty slice, not nil
 	}
 
-	// Decompress the response body if it's GZIP encoded.
-	// This is necessary to inspect the content of the response, e.g., for health check processing.
-	processedResponseBody := decompressGzipBodyIfNecessary(responseHeaders, rawResponseBody, params.DinMiddleware.logger, params.NetworkPath)
+	// Use the pre-decompressed body if provided by the caller (avoids a second gzip pass).
+	// Otherwise decompress from the raw captured bytes.
+	var processedResponseBody []byte
+	if len(params.DecompressedBody) > 0 {
+		processedResponseBody = params.DecompressedBody
+	} else {
+		processedResponseBody = decompressGzipBodyIfNecessary(responseHeaders, rawResponseBody, params.DinMiddleware.logger, params.NetworkPath)
+	}
 
 	// Attempt to get the RPC method from the request.
 	// This is used to determine if the request was for a health check method.

@@ -13,6 +13,7 @@ import (
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 )
 
@@ -1675,4 +1676,30 @@ func TestNetworkSetHandler_AvoidDuplicates(t *testing.T) {
 	err = n.SetHandler(handler)
 	assert.NoError(t, err)
 	assert.Equal(t, handler, n.handler)
+}
+
+func TestHealthCheck_IncrementsVersion(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// PrometheusClient is called by the async LoopbackHealthCheck goroutine.
+	// AnyTimes allows it to be called before or after ctrl.Finish.
+	mockProm := prom.NewMockIPrometheusClient(ctrl)
+	mockProm.EXPECT().HandleNetworkHealthCheckMetric(gomock.Any()).AnyTimes()
+
+	// Empty LoopbackConfig.Port causes checkSelfLoopbackHealth to return early
+	// without making any HTTP calls, keeping the test self-contained.
+	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, LoopbackConfig{})
+	require.NoError(t, err)
+	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
+	n.PrometheusClient = mockProm
+	// No providers means the provider loop is a no-op.
+
+	assert.Equal(t, uint64(0), n.HealthCheckVersion(), "version should be 0 before any health check")
+
+	n.healthCheck()
+	assert.Equal(t, uint64(1), n.HealthCheckVersion(), "version should be 1 after first health check")
+
+	n.healthCheck()
+	assert.Equal(t, uint64(2), n.HealthCheckVersion(), "version should be 2 after second health check")
 }

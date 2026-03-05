@@ -123,7 +123,7 @@ test_handler_registration() {
     # Test network-specific health checks based on scenario
     case "$TEST_SCENARIO" in
         "evm-only")
-            test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM Handler - Block Number Check"
+            test_jsonrpc_endpoint "bsc-mainnet" "eth_blockNumber" "[]" "EVM Handler - Block Number Check"
             ;;
     esac
     
@@ -135,12 +135,12 @@ test_evm_handler() {
     echo -e "\n${BLUE}* Testing EVM Handler${NC}"
     
     # Basic EVM JSON-RPC tests
-    test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Get Latest Block Number"
-    test_jsonrpc_endpoint "eth" "eth_chainId" "[]" "EVM - Get Chain ID"
-    test_jsonrpc_endpoint "eth" "eth_getBalance" "[\"0x742d35cc6231c21308ad6fcdb6da8f421c68a7fb\", \"latest\"]" "EVM - Get Account Balance"
-    
+    test_jsonrpc_endpoint "bsc-mainnet" "eth_blockNumber" "[]" "EVM - Get Latest Block Number"
+    test_jsonrpc_endpoint "bsc-mainnet" "eth_chainId" "[]" "EVM - Get Chain ID"
+    test_jsonrpc_endpoint "bsc-mainnet" "eth_getBalance" "[\"0x742d35cc6231c21308ad6fcdb6da8f421c68a7fb\", \"latest\"]" "EVM - Get Account Balance"
+
     # Test invalid method (should still return 200 with JSON-RPC error)
-    test_jsonrpc_endpoint "eth" "eth_invalidMethod" "[]" "EVM - Invalid Method Handling"
+    test_jsonrpc_endpoint "bsc-mainnet" "eth_invalidMethod" "[]" "EVM - Invalid Method Handling"
     
 
 }
@@ -199,7 +199,7 @@ test_error_handling() {
     # Test invalid JSON-RPC for EVM
     if [[ "$TEST_SCENARIO" =~ (evm|all|mixed) ]]; then
         local invalid_payload='{"invalid":"json"}'
-        make_request "POST" "$BASE_URL/eth" "$invalid_payload" "400" "EVM - Invalid JSON-RPC Payload"
+        make_request "POST" "$BASE_URL/bsc-mainnet" "$invalid_payload" "400" "EVM - Invalid JSON-RPC Payload"
     fi
     
     # Test invalid REST endpoints
@@ -217,7 +217,7 @@ test_provider_failover() {
         "evm-only")
             # Make multiple requests to test provider rotation
             for i in {1..3}; do
-                test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Provider Failover Test $i"
+                test_jsonrpc_endpoint "bsc-mainnet" "eth_blockNumber" "[]" "EVM - Provider Failover Test $i"
                 sleep 1
             done
             ;;
@@ -235,7 +235,7 @@ test_performance() {
         "evm-only")
             # Launch multiple background requests
             for i in {1..5}; do
-                (test_jsonrpc_endpoint "eth" "eth_blockNumber" "[]" "EVM - Concurrent Request $i") &
+                (test_jsonrpc_endpoint "bsc-mainnet" "eth_blockNumber" "[]" "EVM - Concurrent Request $i") &
             done
             wait
             ;;

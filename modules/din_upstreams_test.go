@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"net/url"
 	reflect "reflect"
+	"sync"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpstreamsCaddyModule(t *testing.T) {
@@ -482,5 +485,227 @@ func TestGetDinUpstreams_WithExcludedProviders(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// makeHealthyProvider builds a provider with a single Healthy block history entry.
+func makeHealthyProvider(dial string, priority int) *provider {
+	upstream := &reverseproxy.Upstream{Dial: dial}
+	l := list.New()
+	l.PushBack(blockHistoryEntry{blockNumber: 100, healthStatus: Healthy})
+	return &provider{
+		host:         dial,
+		upstream:     upstream,
+		Priority:     priority,
+		blockHistory: l,
+	}
+}
+
+// makeUnhealthyProvider builds a provider with a single Unhealthy block history entry.
+func makeUnhealthyProvider(dial string, priority int) *provider {
+	upstream := &reverseproxy.Upstream{Dial: dial}
+	l := list.New()
+	l.PushBack(blockHistoryEntry{blockNumber: 0, healthStatus: Unhealthy})
+	return &provider{
+		host:         dial,
+		upstream:     upstream,
+		Priority:     priority,
+		blockHistory: l,
+	}
+}
+
+// makeTestRequest builds an HTTP request with a Caddy replacer set on the context.
+func makeTestRequest(networkName string) *http.Request {
+	req := &http.Request{URL: &url.URL{Path: "/" + networkName + "/eth_blockNumber"}}
+	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+	return req
+}
+
+// setNetworkContext attaches the network object to the request replacer under DinNetworkContextKey.
+func setNetworkContext(req *http.Request, net *network) {
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinNetworkContextKey, net)
+}
+
+func TestGetUpstreams_CacheHit(t *testing.T) {
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	p2 := makeHealthyProvider("provider-b:8001", 0)
+	providers := map[string]*provider{p1.host: p1, p2.host: p2}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	// Version starts at 0; pre-populate cache at version 0.
+	prebuiltPool := []*reverseproxy.Upstream{p1.upstream, p2.upstream}
+
+	d := &DinUpstreams{}
+	d.poolCache.Store(net.Name, &cachedPool{version: 0, pool: prebuiltPool})
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	setNetworkContext(req, net)
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	// Should return the pre-cached pool without rebuilding.
+	assert.Equal(t, prebuiltPool, got)
+}
+
+func TestGetUpstreams_CacheMiss_StaleVersion(t *testing.T) {
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	providers := map[string]*provider{p1.host: p1}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	net.healthCheckVersion.Store(2)
+
+	d := &DinUpstreams{}
+	// Pre-populate cache at an old version.
+	oldPool := []*reverseproxy.Upstream{{Dial: "stale:9999"}}
+	d.poolCache.Store(net.Name, &cachedPool{version: 1, pool: oldPool})
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	setNetworkContext(req, net)
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, p1.upstream.Dial, got[0].Dial)
+
+	// Cache should now be updated to version 2.
+	entry, loaded := d.poolCache.Load(net.Name)
+	require.True(t, loaded)
+	assert.Equal(t, uint64(2), entry.(*cachedPool).version)
+}
+
+func TestGetUpstreams_CacheMiss_NoEntry(t *testing.T) {
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	providers := map[string]*provider{p1.host: p1}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	net.healthCheckVersion.Store(1)
+
+	d := &DinUpstreams{}
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	setNetworkContext(req, net)
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, p1.upstream.Dial, got[0].Dial)
+
+	// Cache should be populated now.
+	entry, loaded := d.poolCache.Load(net.Name)
+	require.True(t, loaded)
+	assert.Equal(t, uint64(1), entry.(*cachedPool).version)
+}
+
+func TestGetUpstreams_EmptyPool_NotCached(t *testing.T) {
+	// All providers are unhealthy so buildUpstreamPool returns empty slice.
+	p1 := makeUnhealthyProvider("provider-a:8000", 0)
+	providers := map[string]*provider{p1.host: p1}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	net.healthCheckVersion.Store(1)
+
+	d := &DinUpstreams{}
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	setNetworkContext(req, net)
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	// Empty pool must not be stored in cache.
+	_, loaded := d.poolCache.Load(net.Name)
+	assert.False(t, loaded, "empty pool must not be cached")
+}
+
+func TestGetUpstreams_ExcludedProviders_BypassCache(t *testing.T) {
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	p2 := makeHealthyProvider("provider-b:8001", 0)
+	providers := map[string]*provider{p1.host: p1, p2.host: p2}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	// Pre-populate cache at current version containing both providers.
+	bothPool := []*reverseproxy.Upstream{p1.upstream, p2.upstream}
+	d := &DinUpstreams{}
+	d.poolCache.Store(net.Name, &cachedPool{version: 0, pool: bothPool})
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	setNetworkContext(req, net)
+	// Exclude provider-a; cache must be bypassed.
+	repl.Set(DinExcludedProvidersContextKey, map[string]struct{}{p1.host: {}})
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, p2.upstream.Dial, got[0].Dial)
+}
+
+func TestGetUpstreams_NoNetworkContext_BuildsFresh(t *testing.T) {
+	// DinNetworkContextKey is absent (simulates method-filter path).
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	providers := map[string]*provider{p1.host: p1}
+
+	d := &DinUpstreams{}
+
+	req := makeTestRequest("ethereum")
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set(DinUpstreamsContextKey, providers)
+	// Do NOT set DinNetworkContextKey.
+
+	got, err := d.GetUpstreams(req)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, p1.upstream.Dial, got[0].Dial)
+
+	// Cache must not have been written.
+	d.poolCache.Range(func(_, _ interface{}) bool {
+		t.Error("poolCache should be empty when DinNetworkContextKey is absent")
+		return false
+	})
+}
+
+func TestGetUpstreams_CacheConcurrency(t *testing.T) {
+	p1 := makeHealthyProvider("provider-a:8000", 0)
+	providers := map[string]*provider{p1.host: p1}
+
+	net := &network{Name: "ethereum", Providers: providers}
+	net.healthCheckVersion.Store(1)
+
+	d := &DinUpstreams{}
+
+	const goroutines = 20
+	results := make([][]*reverseproxy.Upstream, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			req := makeTestRequest("ethereum")
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(DinUpstreamsContextKey, providers)
+			setNetworkContext(req, net)
+			got, err := d.GetUpstreams(req)
+			require.NoError(t, err)
+			results[idx] = got
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i, pool := range results {
+		require.Len(t, pool, 1, "goroutine %d returned unexpected pool length", i)
+		assert.Equal(t, p1.upstream.Dial, pool[0].Dial)
 	}
 }

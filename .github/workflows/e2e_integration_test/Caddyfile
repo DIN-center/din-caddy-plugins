@@ -1,4 +1,6 @@
 # Caddyfile for Din e2e testing - Enhanced for Handler Registry Testing
+# ${BSC_VALIDATIONCLOUD_KEY1} is fetched from AWS Secrets Manager and
+# substituted via envsubst before Caddy reads this file.
 {
 	debug
 	order din before reverse_proxy
@@ -13,19 +15,15 @@
 		# middleware declaration
 		din {
 			environment prod
-			# Test the new handler registry with multiple network types
 			networks {
-				# EVM Network (existing functionality)
-				eth {
+				bsc-mainnet {
+					request_attempt_count 1
 					providers {
-						https://eth.llamarpc.com:443 {
+						https://mainnet.bsc.validationcloud.io/v1/${BSC_VALIDATIONCLOUD_KEY1} {
 							priority 0
 						}
-						https://ethereum-rpc.publicnode.com:443 {
-							priority 1
-						}
 					}
-					chain_id 0x1
+					chain_id 0x38
 				}
 			}
 		}
