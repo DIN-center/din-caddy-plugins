@@ -1,0 +1,207 @@
+{
+	auto_https off
+}
+
+:9080 {
+	route /v1/* {
+		din_ai {
+			healthcheck_interval 60
+			healthcheck_threshold 3
+			request_attempt_count 3
+
+			tiers {
+				fast {
+					providers {
+						openai-gpt41-nano https://api.openai.com/v1/chat/completions {
+							model gpt-4.1-nano
+							adapter openai
+							headers {
+								Authorization "Bearer {env.OPENAI_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.10
+								output_per_1m 0.40
+							}
+						}
+						anthropic-haiku https://api.anthropic.com/v1/messages {
+							model claude-haiku-4-5-20251001
+							adapter anthropic
+							headers {
+								x-api-key {env.ANTHROPIC_API_KEY}
+								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 0.80
+								output_per_1m 4.00
+							}
+						}
+						mistral-small https://api.mistral.ai/v1/chat/completions {
+							model mistral-small-latest
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MISTRAL_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.10
+								output_per_1m 0.30
+							}
+						}
+						moonshot-8k https://api.moonshot.ai/v1/chat/completions {
+							model moonshot-v1-8k
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MOONSHOT_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.20
+								output_per_1m 0.60
+							}
+						}
+						grok-mini https://api.x.ai/v1/chat/completions {
+							model grok-3-mini
+							adapter openai
+							headers {
+								Authorization "Bearer {env.GROK_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.30
+								output_per_1m 0.50
+							}
+						}
+					}
+				}
+				balanced {
+					providers {
+						openai-gpt41 https://api.openai.com/v1/chat/completions {
+							model gpt-4.1
+							adapter openai
+							headers {
+								Authorization "Bearer {env.OPENAI_API_KEY}"
+							}
+							cost {
+								input_per_1m 2.00
+								output_per_1m 8.00
+							}
+						}
+						anthropic-sonnet https://api.anthropic.com/v1/messages {
+							model claude-sonnet-4-6
+							adapter anthropic
+							headers {
+								x-api-key {env.ANTHROPIC_API_KEY}
+								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 3.00
+								output_per_1m 15.00
+							}
+						}
+						deepseek-chat https://api.deepseek.com/chat/completions {
+							model deepseek-chat
+							adapter openai
+							headers {
+								Authorization "Bearer {env.DEEPSEEK_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.27
+								output_per_1m 1.10
+							}
+						}
+						mistral-medium https://api.mistral.ai/v1/chat/completions {
+							model mistral-medium-latest
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MISTRAL_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.40
+								output_per_1m 2.00
+							}
+						}
+						moonshot-kimi https://api.moonshot.ai/v1/chat/completions {
+							model kimi-latest
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MOONSHOT_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.50
+								output_per_1m 2.00
+							}
+						}
+						grok-fast https://api.x.ai/v1/chat/completions {
+							model grok-4-fast-reasoning
+							adapter openai
+							headers {
+								Authorization "Bearer {env.GROK_API_KEY}"
+							}
+							cost {
+								input_per_1m 3.00
+								output_per_1m 15.00
+							}
+						}
+					}
+				}
+				premium {
+					providers {
+						openai-o3 https://api.openai.com/v1/chat/completions {
+							model o3
+							adapter openai
+							headers {
+								Authorization "Bearer {env.OPENAI_API_KEY}"
+							}
+							cost {
+								input_per_1m 10.00
+								output_per_1m 40.00
+							}
+						}
+						anthropic-opus https://api.anthropic.com/v1/messages {
+							model claude-opus-4-6
+							adapter anthropic
+							headers {
+								x-api-key {env.ANTHROPIC_API_KEY}
+								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 15.00
+								output_per_1m 75.00
+							}
+						}
+						mistral-large https://api.mistral.ai/v1/chat/completions {
+							model mistral-large-latest
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MISTRAL_API_KEY}"
+							}
+							cost {
+								input_per_1m 2.00
+								output_per_1m 6.00
+							}
+						}
+						moonshot-k2 https://api.moonshot.ai/v1/chat/completions {
+							model kimi-k2.5
+							adapter openai
+							headers {
+								Authorization "Bearer {env.MOONSHOT_API_KEY}"
+							}
+							cost {
+								input_per_1m 1.00
+								output_per_1m 4.00
+							}
+						}
+						grok-3 https://api.x.ai/v1/chat/completions {
+							model grok-3
+							adapter openai
+							headers {
+								Authorization "Bearer {env.GROK_API_KEY}"
+							}
+							cost {
+								input_per_1m 3.00
+								output_per_1m 15.00
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

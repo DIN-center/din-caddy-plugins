@@ -1,21 +1,86 @@
-# Caddyfile for Din e2e testing - Enhanced for Handler Registry Testing
+# Caddyfile for Din e2e testing - Handler Registry + AI Smart Routing
 {
 	debug
 	order din before reverse_proxy
+	order din_ai before din
 }
 :8000 {
-	# Add health check endpoint
+	# Health check endpoint
 	handle /health {
 		respond "OK" 200
 	}
 
+	# AI Smart Routing - matches /v1/* before the EVM wildcard
+	route /v1/* {
+		din_ai {
+			healthcheck_interval 120
+			healthcheck_threshold 3
+			request_attempt_count 2
+
+			tiers {
+				fast {
+					providers {
+						openai-nano https://api.openai.com/v1/chat/completions {
+							model gpt-4.1-nano
+							adapter openai
+							headers {
+								Authorization "Bearer {env.OPENAI_API_KEY}"
+							}
+							cost {
+								input_per_1m 0.10
+								output_per_1m 0.40
+							}
+						}
+						anthropic-haiku https://api.anthropic.com/v1/messages {
+							model claude-haiku-4-5-20251001
+							adapter anthropic
+							headers {
+								x-api-key {env.ANTHROPIC_API_KEY}
+								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 0.80
+								output_per_1m 4.00
+							}
+						}
+					}
+				}
+				balanced {
+					providers {
+						openai-gpt41 https://api.openai.com/v1/chat/completions {
+							model gpt-4.1
+							adapter openai
+							headers {
+								Authorization "Bearer {env.OPENAI_API_KEY}"
+							}
+							cost {
+								input_per_1m 2.00
+								output_per_1m 8.00
+							}
+						}
+						anthropic-sonnet https://api.anthropic.com/v1/messages {
+							model claude-sonnet-4-6
+							adapter anthropic
+							headers {
+								x-api-key {env.ANTHROPIC_API_KEY}
+								anthropic-version 2023-06-01
+							}
+							cost {
+								input_per_1m 3.00
+								output_per_1m 15.00
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	# EVM Handler Registry - catches everything else
 	route /* {
-		# middleware declaration
 		din {
 			environment prod
-			# Test the new handler registry with multiple network types
 			networks {
-				# EVM Network (existing functionality)
 				eth {
 					providers {
 						https://eth.llamarpc.com:443 {
@@ -29,7 +94,6 @@
 				}
 			}
 		}
-		# din reverse proxy directive configuration
 		reverse_proxy {
 			lb_policy din_reverse_proxy_policy
 			transport http {

@@ -1,0 +1,447 @@
+{
+  "version": "1.0.0",
+  "lockfileVersion": 1,
+  "packages": {
+    "@obra/skill-brainstorming#cursor": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-brainstorming/3.4.1.tar.gz",
+      "integrity": "sha256-12c0399ea0a39452cbc2b979536f5c354eb4cbb00f91651be170d93f813f02a6",
+      "format": "cursor",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-brainstorming/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-brainstorming",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-brainstorming",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-brainstorming",
+        "skillName": "skill-brainstorming",
+        "eager": false
+      }
+    },
+    "@obra/skill-using-superpowers#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-using-superpowers/3.4.1.tar.gz",
+      "integrity": "sha256-3eb09ae7aa6ffd5efaf812336ef7451a519f4629d5389515f417661a0b7eb12e",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-using-superpowers/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-using-superpowers",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-using-superpowers",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-using-superpowers",
+        "skillName": "skill-using-superpowers",
+        "eager": false
+      }
+    },
+    "@obra/skill-test-driven-development#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-test-driven-development/3.4.1.tar.gz",
+      "integrity": "sha256-9a1dc73bc64dd748e85845cdbb62c5b9f27409435d25055e177bc1b81bb8d213",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-test-driven-development/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-test-driven-development",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-test-driven-development",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-test-driven-development",
+        "skillName": "skill-test-driven-development",
+        "eager": false
+      }
+    },
+    "@obra/skill-subagent-driven-development#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-subagent-driven-development/3.4.1.tar.gz",
+      "integrity": "sha256-01d7b6dd9c03d03cea723e7021399fbca6ddd1f1ffb11bcf4ef2f5691a27c122",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-subagent-driven-development/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-subagent-driven-development",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-subagent-driven-development",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-subagent-driven-development",
+        "skillName": "skill-subagent-driven-development",
+        "eager": false
+      }
+    },
+    "@obra/skill-writing-plans#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-writing-plans/3.4.1.tar.gz",
+      "integrity": "sha256-ec7e536a5e6f5d246f4945711a71c916f5483ff301020f8c11fba07ed31c68e2",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-writing-plans/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-writing-plans",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-writing-plans",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-writing-plans",
+        "skillName": "skill-writing-plans",
+        "eager": false
+      }
+    },
+    "@obra/skill-executing-plans#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-executing-plans/3.4.1.tar.gz",
+      "integrity": "sha256-e58074c6dfaff4bb688d9be6918ed534effeea77e027090018c9752b67555bc0",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-executing-plans/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-executing-plans",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-executing-plans",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-executing-plans",
+        "skillName": "skill-executing-plans",
+        "eager": false
+      }
+    },
+    "@obra/skill-requesting-code-review#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-requesting-code-review/3.4.1.tar.gz",
+      "integrity": "sha256-9ca1781214d63f7420c3b2ec8e4be6503a99e9ae89e0b6c25bf9a94af6abcf97",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-requesting-code-review/skill-requesting-code-review",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-requesting-code-review",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-requesting-code-review",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-requesting-code-review",
+        "skillName": "skill-requesting-code-review",
+        "eager": false
+      }
+    },
+    "@obra/skill-systematic-debugging#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-systematic-debugging/3.4.1.tar.gz",
+      "integrity": "sha256-f284cfad11e07d4ce167af1becd8baa9619e688274c78cf92518ca6b18d14eef",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-systematic-debugging/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-systematic-debugging",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-systematic-debugging",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-systematic-debugging",
+        "skillName": "skill-systematic-debugging",
+        "eager": false
+      }
+    },
+    "@obra/skill-using-git-worktrees#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-using-git-worktrees/3.4.1.tar.gz",
+      "integrity": "sha256-c92aeeb56463d0e99ccfde3260bdb714635971f098eeb229ed35a567a942b008",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-using-git-worktrees/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-using-git-worktrees",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-using-git-worktrees",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-using-git-worktrees",
+        "skillName": "skill-using-git-worktrees",
+        "eager": false
+      }
+    },
+    "@obra/skill-dispatching-parallel-agents#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-dispatching-parallel-agents/3.4.1.tar.gz",
+      "integrity": "sha256-2acd3d0c42cb7b634467bf195508643866e3525e519d2391b6280550b67478c7",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-dispatching-parallel-agents/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-dispatching-parallel-agents",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-dispatching-parallel-agents",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-dispatching-parallel-agents",
+        "skillName": "skill-dispatching-parallel-agents",
+        "eager": false
+      }
+    },
+    "@obra/skill-receiving-code-review#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-receiving-code-review/3.4.1.tar.gz",
+      "integrity": "sha256-fbe9771464ef3c8fcc007c5b64df05cd1aab71fbf09f2272f36fc2d83667f4cb",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-receiving-code-review/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-receiving-code-review",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-receiving-code-review",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-receiving-code-review",
+        "skillName": "skill-receiving-code-review",
+        "eager": false
+      }
+    },
+    "@obra/skill-root-cause-tracing#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-root-cause-tracing/3.4.1.tar.gz",
+      "integrity": "sha256-0d5e121e1b73f28ab3ed69f37e51ff01064120eb31a340ff4966908f91c8aff7",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-root-cause-tracing/skill-root-cause-tracing",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-root-cause-tracing",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-root-cause-tracing",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-root-cause-tracing",
+        "skillName": "skill-root-cause-tracing",
+        "eager": false
+      }
+    },
+    "@obra/skill-testing-anti-patterns#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-testing-anti-patterns/3.4.1.tar.gz",
+      "integrity": "sha256-3166d17a6b954347ef8d3b3eb52cb0f77a57fb9cd24c5bf2e29dcbbd8991a373",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-testing-anti-patterns/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-testing-anti-patterns",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-testing-anti-patterns",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-testing-anti-patterns",
+        "skillName": "skill-testing-anti-patterns",
+        "eager": false
+      }
+    },
+    "@obra/skill-testing-skills-with-subagents#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-testing-skills-with-subagents/3.4.1.tar.gz",
+      "integrity": "sha256-509089aeb85eea70aa2ef496ada753c42c9456564a5b2befb23b20cb0ca592c5",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-testing-skills-with-subagents/skill-testing-skills-with-subagents",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-testing-skills-with-subagents",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-testing-skills-with-subagents",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-testing-skills-with-subagents",
+        "skillName": "skill-testing-skills-with-subagents",
+        "eager": false
+      }
+    },
+    "@obra/skill-defense-in-depth#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-defense-in-depth/3.4.1.tar.gz",
+      "integrity": "sha256-0ebe35e8078c250108045799ed1875ccaab117a7259d878d43e94c49bc30c9cb",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-defense-in-depth/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-defense-in-depth",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-defense-in-depth",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-defense-in-depth",
+        "skillName": "skill-defense-in-depth",
+        "eager": false
+      }
+    },
+    "@obra/skill-writing-skills#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-writing-skills/3.4.1.tar.gz",
+      "integrity": "sha256-a7cf67c385a6dba264045d2aa367f18362563baf2572930da9430ac35689bdbc",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-writing-skills/skill-writing-skills",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-writing-skills",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-writing-skills",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-writing-skills",
+        "skillName": "skill-writing-skills",
+        "eager": false
+      }
+    },
+    "@obra/skill-sharing-skills#agents.md": {
+      "version": "3.4.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40obra%2Fskill-sharing-skills/3.4.1.tar.gz",
+      "integrity": "sha256-62aea5526392323bfa37903a8cde59d813b022ae416ffa13b2b7548c3c24c703",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/skill-sharing-skills/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/skill-sharing-skills",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "skill-sharing-skills",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/skill-sharing-skills",
+        "skillName": "skill-sharing-skills",
+        "eager": false
+      }
+    },
+    "@wshobson/agents/blockchain-web3/blockchain-developer#agents.md": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40wshobson%2Fagents%2Fblockchain-web3%2Fblockchain-developer/1.0.0.tar.gz",
+      "integrity": "sha256-5499a25b846f909e4d03e713e903844f5718b36aea81f297f62930f5ba79c3b8",
+      "format": "agents.md",
+      "subtype": "agent",
+      "sourceFormat": "claude",
+      "sourceSubtype": "agent",
+      "installedPath": ".openagents/blockchain-developer/AGENT.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openagents/blockchain-developer",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "blockchain-developer",
+        "resourceType": "agent",
+        "skillsDir": ".openagents/blockchain-developer",
+        "skillName": "blockchain-developer",
+        "eager": false
+      }
+    },
+    "@prpm/typescript-type-safety-skill#agents.md": {
+      "version": "1.0.3",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40prpm%2Ftypescript-type-safety-skill/1.0.3.tar.gz",
+      "integrity": "sha256-900828a4a36a61bc2bb792f4b98d28fa99f7f3207a1e939ae2bef229e786c11a",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/typescript-type-safety-skill/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/typescript-type-safety-skill",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "typescript-type-safety-skill",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/typescript-type-safety-skill",
+        "skillName": "typescript-type-safety-skill",
+        "eager": false
+      }
+    },
+    "@claudekit/shadcn-ui#agents.md": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40claudekit%2Fshadcn-ui/1.0.0.tar.gz",
+      "integrity": "sha256-796211b8228809fa85d3613373ecf5dd6dfea91602542de96262053242220258",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/shadcn-ui/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/shadcn-ui",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "shadcn-ui",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/shadcn-ui",
+        "skillName": "shadcn-ui",
+        "eager": false
+      }
+    },
+    "@claudekit/tailwindcss#agents.md": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40claudekit%2Ftailwindcss/1.0.0.tar.gz",
+      "integrity": "sha256-6e34bdab30fd89a39907f398f691d019b7a314348ca99e2468507e266a741339",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/tailwindcss/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/tailwindcss",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "tailwindcss",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/tailwindcss",
+        "skillName": "tailwindcss",
+        "eager": false
+      }
+    },
+    "@prpm/creating-skills-skill#agents.md": {
+      "version": "1.0.4",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40prpm%2Fcreating-skills-skill/1.0.4.tar.gz",
+      "integrity": "sha256-845d12bda6e5b37ed3177e2a867f57319327704b2206d58643d8e06cecb64241",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/creating-skills-skill/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/creating-skills-skill",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "creating-skills-skill",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/creating-skills-skill",
+        "skillName": "creating-skills-skill",
+        "eager": false
+      }
+    }
+  },
+  "generated": "2026-01-18T20:01:41.430Z"
+}
