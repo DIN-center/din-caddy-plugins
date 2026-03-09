@@ -53,6 +53,7 @@ const (
 
 	// General constants
 	DefaultPort = "8000"
+	DefaultLoopbackApiKey = "din-loopback-key"
 
 	// Additional Status Codes
 	StatusOriginUnreachable = 523

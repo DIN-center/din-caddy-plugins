@@ -93,6 +93,11 @@ type DynamicLoadBalancingConfig struct {
 	watcherScoreSyncQuit chan struct{}
 }
 
+type LoopbackConfig struct {
+	Port string
+	ApiKey string
+}
+
 type DinMiddleware struct {
 	// A map of network paths to network objects
 	Networks map[string]*network `json:"networks"`
@@ -106,8 +111,8 @@ type DinMiddleware struct {
 	// The default siwe signer object
 	DefaultSiweSigner *siwe.SigningConfig
 
-	// The Caddy port to listen on
-	CaddyPort string
+	// Configuration for Loopback Calls
+	LoopbackConfig LoopbackConfig
 
 	// The default siwe signer client
 	SiweSignerClient siwe.ISIWESignerClient
@@ -256,8 +261,11 @@ func (d *DinMiddleware) initializeDefaults() {
 	if d.Registry.Priority == 0 {
 		d.Registry.Priority = DefaultRegistryPriority
 	}
-	if d.CaddyPort == "" {
-		d.CaddyPort = DefaultPort
+	if d.LoopbackConfig.Port == "" {
+		d.LoopbackConfig.Port = DefaultPort
+	}
+	if d.LoopbackConfig.ApiKey == "" {
+		d.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
 	}
 	// Set retry defaults
 	if d.Registry.RetryMaxAttempts == 0 {
@@ -946,7 +954,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				HealthStatus:   "unhealthy", // All providers failed
 				Priority:       priority,
 				Environment:    string(d.Env),
-			}, duration, nil)
+			}, duration)
 		}
 
 		return errors.Wrap(err, "Error serving HTTP")

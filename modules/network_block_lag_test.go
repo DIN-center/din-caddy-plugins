@@ -245,7 +245,10 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 
 // TestDynamicBlockLagWithNoProviders tests behavior when no providers are available
 func TestDynamicBlockLagWithNoProviders(t *testing.T) {
-	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, "8080")
+	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, LoopbackConfig{
+		Port:   "8080",
+		ApiKey: DefaultLoopbackApiKey,
+	})
 	require.NoError(t, err)
 
 	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
@@ -268,7 +271,10 @@ func TestDynamicBlockLagWithNoProviders(t *testing.T) {
 
 // TestDynamicBlockLagWithUnsupportedHandler tests behavior with handlers that don't support dynamic block lag
 func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
-	n, err := NewNetwork("test-network", networklib.BeaconHandlerType, utils.EnvTest, "8080")
+	n, err := NewNetwork("test-network", networklib.BeaconHandlerType, utils.EnvTest, LoopbackConfig{
+		Port:   "8080",
+		ApiKey: DefaultLoopbackApiKey,
+	})
 	require.NoError(t, err)
 
 	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
@@ -408,7 +414,10 @@ func createMockTimestampServer(sim blockTimestampSimulator) *httptest.Server {
 }
 
 func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim blockTimestampSimulator) *network {
-	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, "8080")
+	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, LoopbackConfig{
+		Port:   "8080",
+		ApiKey: DefaultLoopbackApiKey,
+	})
 	require.NoError(t, err)
 
 	// Initialize network dependencies
@@ -424,7 +433,7 @@ func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim 
 	mockProm := prom.NewMockIPrometheusClient(ctrl)
 	mockProm.EXPECT().HandleHealthCheckMetric(gomock.Any()).AnyTimes()
 	mockProm.EXPECT().HandleNetworkHealthCheckMetric(gomock.Any()).AnyTimes()
-	mockProm.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockProm.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).AnyTimes()
 	n.PrometheusClient = mockProm
 
 	// Initialize EVM handler

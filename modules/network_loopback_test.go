@@ -154,7 +154,10 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			mockProm := prom.NewMockIPrometheusClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), tt.caddyPort)
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{
+				Port: tt.caddyPort,
+				ApiKey: DefaultLoopbackApiKey,
+			})
 			assert.NoError(t, err)
 
 			// Set dependencies
@@ -285,7 +288,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			mockProm := prom.NewMockIPrometheusClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment(tt.environment), "8080")
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment(tt.environment), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies

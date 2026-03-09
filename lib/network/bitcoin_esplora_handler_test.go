@@ -293,3 +293,87 @@ func TestBitcoinEsploraHandler_ChainID(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "bitcoin:mainnet", chainID)
 }
+
+
+func TestEndpointID_CoversAllRegexRoutes(t *testing.T) {
+	// All cases use a non-empty prefix to assert we match by suffix (…$) not exact-path.
+	prefix := "/api/v1/esplora"
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		// ---- Transactions ----
+		{"GET_TX", "GET", prefix + "/tx/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "GET_TX"},
+		{"GET_TX_STATUS", "GET", prefix + "/tx/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/status", "GET_TX_STATUS"},
+		{"GET_TX_HEX", "GET", prefix + "/tx/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/hex", "GET_TX_HEX"},
+		{"GET_TX_RAW", "GET", prefix + "/tx/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/raw", "GET_TX_RAW"},
+		{"GET_TX_MERKLEBLOCK_PROOF", "GET", prefix + "/tx/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/merkleblock-proof", "GET_TX_MERKLEBLOCK_PROOF"},
+		{"GET_TX_MERKLE_PROOF", "GET", prefix + "/tx/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/merkle-proof", "GET_TX_MERKLE_PROOF"},
+		{"GET_TX_OUTSPEND_VOUT", "GET", prefix + "/tx/1111111111111111111111111111111111111111111111111111111111111111/outspend/0", "GET_TX_OUTSPEND_VOUT"},
+		{"GET_TX_OUTSPENDS", "GET", prefix + "/tx/2222222222222222222222222222222222222222222222222222222222222222/outspends", "GET_TX_OUTSPENDS"},
+		{"POST_TX_BROADCAST", "POST", prefix + "/tx", "POST_TX_BROADCAST"},
+		{"POST_TXS_PACKAGE", "POST", prefix + "/txs/package", "POST_TXS_PACKAGE"},
+
+		// ---- Addresses / Scripthash ----
+		{"GET_ADDRESS", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000", "GET_ADDRESS"},
+		{"GET_SCRIPTHASH", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "GET_SCRIPTHASH"},
+		{"GET_ADDRESS_TXS", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000/txs", "GET_ADDRESS_TXS"},
+		{"GET_SCRIPTHASH_TXS", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/txs", "GET_SCRIPTHASH_TXS"},
+		{"GET_ADDRESS_TXS_CHAIN", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000/txs/chain", "GET_ADDRESS_TXS_CHAIN"},
+		{"GET_ADDRESS_TXS_CHAIN_PAGINATED", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000/txs/chain/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "GET_ADDRESS_TXS_CHAIN"},
+		{"GET_SCRIPTHASH_TXS_CHAIN", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/txs/chain", "GET_SCRIPTHASH_TXS_CHAIN"},
+		{"GET_SCRIPTHASH_TXS_CHAIN_PAGINATED", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/txs/chain/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "GET_SCRIPTHASH_TXS_CHAIN"},
+		{"GET_ADDRESS_TXS_MEMPOOL", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000/txs/mempool", "GET_ADDRESS_TXS_MEMPOOL"},
+		{"GET_SCRIPTHASH_TXS_MEMPOOL", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/txs/mempool", "GET_SCRIPTHASH_TXS_MEMPOOL"},
+		{"GET_ADDRESS_UTXO", "GET", prefix + "/address/bc1qexampleaddress0000000000000000000000000000000000/utxo", "GET_ADDRESS_UTXO"},
+		{"GET_SCRIPTHASH_UTXO", "GET", prefix + "/scripthash/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/utxo", "GET_SCRIPTHASH_UTXO"},
+		{"GET_ADDRESS_PREFIX", "GET", prefix + "/address-prefix/bc1q", "GET_ADDRESS_PREFIX"},
+
+		// ---- Blocks ----
+		{"GET_BLOCK", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000", "GET_BLOCK"},
+		{"GET_BLOCK_HEADER", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/header", "GET_BLOCK_HEADER"},
+		{"GET_BLOCK_STATUS", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/status", "GET_BLOCK_STATUS"},
+		{"GET_BLOCK_TXS", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/txs", "GET_BLOCK_TXS"},
+		{"GET_BLOCK_TXS_PAGINATED", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/txs/25", "GET_BLOCK_TXS"},
+		{"GET_BLOCK_TXIDS", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/txids", "GET_BLOCK_TXIDS"},
+		{"GET_BLOCK_TXID_INDEX", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/txid/7", "GET_BLOCK_TXID_INDEX"},
+		{"GET_BLOCK_RAW", "GET", prefix + "/block/0000000000000000000000000000000000000000000000000000000000000000/raw", "GET_BLOCK_RAW"},
+		{"GET_BLOCK_HEIGHT", "GET", prefix + "/block-height/840000", "GET_BLOCK_HEIGHT"},
+		{"GET_BLOCKS", "GET", prefix + "/blocks", "GET_BLOCKS"},
+		{"GET_BLOCKS_START", "GET", prefix + "/blocks/839000", "GET_BLOCKS"},
+		{"GET_BLOCKS_TIP_HEIGHT", "GET", prefix + "/blocks/tip/height", "GET_BLOCKS_TIP_HEIGHT"},
+		{"GET_BLOCKS_TIP_HASH", "GET", prefix + "/blocks/tip/hash", "GET_BLOCKS_TIP_HASH"},
+
+		// ---- Mempool / Fees ----
+		{"GET_MEMPOOL", "GET", prefix + "/mempool", "GET_MEMPOOL"},
+		{"GET_MEMPOOL_TXIDS", "GET", prefix + "/mempool/txids", "GET_MEMPOOL_TXIDS"},
+		{"GET_MEMPOOL_RECENT", "GET", prefix + "/mempool/recent", "GET_MEMPOOL_RECENT"},
+		{"GET_FEE_ESTIMATES", "GET", prefix + "/fee-estimates", "GET_FEE_ESTIMATES"},
+
+		// ---- Assets (Elements/Liquid only) ----
+		{"GET_ASSET", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "GET_ASSET"},
+		{"GET_ASSET_TXS", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/txs", "GET_ASSET_TXS"},
+		{"GET_ASSET_TXS_MEMPOOL", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/txs/mempool", "GET_ASSET_TXS_MEMPOOL"},
+		{"GET_ASSET_TXS_CHAIN", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/txs/chain", "GET_ASSET_TXS_CHAIN"},
+		{"GET_ASSET_TXS_CHAIN_PAGINATED", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/txs/chain/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "GET_ASSET_TXS_CHAIN"},
+		{"GET_ASSET_SUPPLY", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/supply", "GET_ASSET_SUPPLY"},
+		{"GET_ASSET_SUPPLY_DECIMAL", "GET", prefix + "/asset/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/supply/decimal", "GET_ASSET_SUPPLY_DECIMAL"},
+		{"GET_ASSETS_REGISTRY", "GET", prefix + "/assets/registry", "GET_ASSETS_REGISTRY"},
+
+		// ---- Unknown ----
+		{"UNKNOWN", "GET", prefix + "/nope/not-a-route", "UNKNOWN"},
+		{"UNKNOWN_wrong_method", "PUT", prefix + "/tx", "UNKNOWN"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EndpointID(tt.method, tt.path); got != tt.want {
+				t.Fatalf("EndpointID(%q, %q) = %q, want %q", tt.method, tt.path, got, tt.want)
+			}
+		})
+	}
+}

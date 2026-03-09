@@ -47,7 +47,7 @@ func TestGetBlockByNumber(t *testing.T) {
 				statusCode := 200
 				mockHTTP.EXPECT().Post(
 					"http://127.0.0.1:8080/test-network",
-					map[string]string{"Content-Type": "application/json"},
+					map[string]string{"Content-Type": "application/json", "Din-Api-Key": DefaultLoopbackApiKey},
 					gomock.Any(),
 					nil,
 				).Return(responseBody, &statusCode, nil)
@@ -183,7 +183,7 @@ func TestGetBlockByNumber(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), tt.caddyPort)
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: tt.caddyPort, ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies
@@ -276,7 +276,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network with specific type
-			n, err := NewNetwork("test-network", tt.networkType, utils.Environment("test"), "8080")
+			n, err := NewNetwork("test-network", tt.networkType, utils.Environment("test"), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies
