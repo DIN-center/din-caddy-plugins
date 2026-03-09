@@ -42,8 +42,6 @@ type caddyfileConfigFlags struct {
 
 var _ json.Unmarshaler = (*network)(nil)
 
-
-
 type network struct {
 	Name             string
 	HandlerType      networklib.HandlerType `json:"handler"` // Network handler type for handler registry
@@ -94,7 +92,7 @@ type network struct {
 // NewNetwork creates a new network with the given name and handler type
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, handlerType networklib.HandlerType,, environment utils.Environment, loopbackConfig LoopbackConfig) (*network, error) {
+func NewNetwork(name string, handlerType networklib.HandlerType, environment utils.Environment, loopbackConfig LoopbackConfig) (*network, error) {
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
@@ -113,8 +111,8 @@ func NewNetwork(name string, handlerType networklib.HandlerType,, environment ut
 		ArchiveEnabled:                   DefaultArchiveEnabled,
 		ArchiveTraceBlockByNumberEnabled: DefaultArchiveTraceBlockByNumberEnabled,
 		Environment:                      environment,
-		Providers:                make(map[string]*provider),
-		LoopbackConfig:           loopbackConfig,
+		Providers:                        make(map[string]*provider),
+		LoopbackConfig:                   loopbackConfig,
 		// Initialize Caddyfile flags tracking
 		CaddyfileFlags: &caddyfileConfigFlags{
 			// If handlerType is provided (not empty), mark it as set in Caddyfile
