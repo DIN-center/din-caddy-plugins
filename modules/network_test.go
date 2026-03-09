@@ -63,7 +63,7 @@ func TestHandleErrorWithGracePeriod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			n.HCThreshold = tt.hcThreshold
 
@@ -120,7 +120,7 @@ func TestIsStalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			n.ProviderBlockHistorySize = tt.historySize
 
@@ -228,7 +228,7 @@ func TestGetLatestHealthyBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			n.Providers = make(map[string]*provider)
 
@@ -338,7 +338,7 @@ func TestProcessBlockNumberResponse(t *testing.T) {
 			// Set handler for tests
 			config := &networklib.NetworkConfig{
 				Name:    "test",
-				Type:    string(EVMHandler),
+				Type:    networklib.EVMHandlerType,
 				ChainID: "1",
 			}
 			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
@@ -453,9 +453,9 @@ func TestArchiveModeCheck(t *testing.T) {
 				AnyTimes()
 
 			// Use appropriate network type based on network name
-			networkType := string(EVMHandler)
+			networkType := networklib.EVMHandlerType
 			if strings.Contains(tt.networkName, "starknet") {
-				networkType = string(StarknetHandler)
+				networkType = networklib.StarknetHandlerType
 			}
 
 			n, err := NewNetwork(tt.networkName, "", utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
@@ -472,7 +472,7 @@ func TestArchiveModeCheck(t *testing.T) {
 				Type:    networkType,
 				ChainID: "test-chain",
 			}
-			if networkType == string(EVMHandler) {
+			if networkType == networklib.EVMHandlerType {
 				require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
 			} else {
 				require.NoError(t, n.SetHandler(networklib.NewStarknetHandler(config)))
@@ -584,7 +584,7 @@ func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
 			}
 
 			// Create network
-			n, err := NewNetwork("ethereum", EVMHandler, utils.Environment("test"), LoopbackConfig{
+			n, err := NewNetwork("ethereum", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{
 				Port:   "8080",
 				ApiKey: DefaultLoopbackApiKey,
 			})
@@ -598,7 +598,7 @@ func TestPerformArchiveCheck_TraceBlockByNumber(t *testing.T) {
 			// Set the EVM handler
 			config := &networklib.NetworkConfig{
 				Name:    "ethereum",
-				Type:    string(EVMHandler),
+				Type:    networklib.EVMHandlerType,
 				ChainID: "0x1",
 			}
 			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
@@ -703,7 +703,7 @@ func TestHasOtherHealthyProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			n.Providers = make(map[string]*provider)
 
@@ -774,7 +774,7 @@ func TestBlockJumpBehavior(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 			n.BlockJumpLimit = tt.blockJumpLimit
 			n.Providers = make(map[string]*provider)
@@ -889,7 +889,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			// Create mock logger
 			mockLogger := logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
 
-			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), LoopbackConfig{
+			n, err := NewNetwork(tt.networkName, networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{
 				Port:   tt.caddyPort,
 				ApiKey: DefaultLoopbackApiKey,
 			})
@@ -901,7 +901,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			// Create and set handler for test since it's not created in NewNetwork anymore
 			config := &networklib.NetworkConfig{
 				Name:   tt.networkName,
-				Type:   string(EVMHandler),
+				Type:   networklib.EVMHandlerType,
 				Logger: mockLogger,
 			}
 			handler := networklib.NewEVMHandler(config)
@@ -925,7 +925,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 func newTestNetwork(t *testing.T, name string, historySize int) *network {
 	t.Helper()
 
-	n, _ := NewNetwork(name, EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, _ := NewNetwork(name, networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	n.NetworkBlockHistorySize = historySize
 	// Initialize logger to prevent panic
 	n.logger = logger.NewLoggerClient(zap.NewNop(), utils.EnvTest)
@@ -933,7 +933,7 @@ func newTestNetwork(t *testing.T, name string, historySize int) *network {
 	// Create and set handler for test since it's not created in NewNetwork anymore
 	config := &networklib.NetworkConfig{
 		Name:   name,
-		Type:   string(EVMHandler),
+		Type:   networklib.EVMHandlerType,
 		Logger: n.logger,
 	}
 	handler := networklib.NewEVMHandler(config)
@@ -1177,7 +1177,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 					AnyTimes()
 			}
 
-			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), LoopbackConfig{
+			n, err := NewNetwork(tt.networkName, networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{
 				Port:   tt.caddyPort,
 				ApiKey: DefaultLoopbackApiKey,
 			})
@@ -1192,7 +1192,7 @@ func TestCheckSelfLoopbackHealth(t *testing.T) {
 			// Create and set handler for test since it's not created in NewNetwork anymore
 			config := &networklib.NetworkConfig{
 				Name:   tt.networkName,
-				Type:   string(EVMHandler),
+				Type:   networklib.EVMHandlerType,
 				Logger: n.logger,
 			}
 			handler := networklib.NewEVMHandler(config)
@@ -1221,7 +1221,7 @@ func TestNewNetwork(t *testing.T) {
 	tests := []struct {
 		name        string
 		networkName string
-		networkType string
+		networkType networklib.HandlerType
 		environment utils.Environment
 		caddyPort   string
 		expectError bool
@@ -1229,7 +1229,7 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_evm_network",
 			networkName: "ethereum",
-			networkType: string(EVMHandler),
+			networkType: networklib.EVMHandlerType,
 			environment: utils.EnvDev,
 			caddyPort:   "8000",
 			expectError: false,
@@ -1237,7 +1237,7 @@ func TestNewNetwork(t *testing.T) {
 		{
 			name:        "valid_beacon_network",
 			networkName: "ethereum-beacon",
-			networkType: string(BeaconHandler),
+			networkType: networklib.BeaconHandlerType,
 			environment: utils.EnvProd,
 			caddyPort:   "8080",
 			expectError: false,
@@ -1254,7 +1254,7 @@ func TestNewNetwork(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			network, err := NewNetwork(tt.networkName, HandlerType(tt.networkType), tt.environment, LoopbackConfig{Port: tt.caddyPort, ApiKey: DefaultLoopbackApiKey})
+			network, err := NewNetwork(tt.networkName, tt.networkType, tt.environment, LoopbackConfig{Port: tt.caddyPort, ApiKey: DefaultLoopbackApiKey})
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -1263,7 +1263,7 @@ func TestNewNetwork(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, network)
 				assert.Equal(t, tt.networkName, network.Name)
-				assert.Equal(t, HandlerType(tt.networkType), network.HandlerType)
+				assert.Equal(t, tt.networkType, network.HandlerType)
 				assert.Equal(t, tt.environment, network.Environment)
 				assert.Equal(t, tt.caddyPort, network.LoopbackConfig.Port)
 			}
@@ -1361,7 +1361,7 @@ func TestNetwork_processBlockNumberResponse(t *testing.T) {
 			// Set handler for processBlockNumberResponse tests
 			config := &networklib.NetworkConfig{
 				Name:    "test",
-				Type:    string(EVMHandler),
+				Type:    networklib.EVMHandlerType,
 				ChainID: "1",
 			}
 			require.NoError(t, n.SetHandler(networklib.NewEVMHandler(config)))
@@ -1386,7 +1386,7 @@ func intPtr(i int) *int {
 }
 
 func TestNetwork_isStalled(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 	n.ProviderBlockHistorySize = 3
 
@@ -1411,7 +1411,7 @@ func TestNetwork_isStalled(t *testing.T) {
 }
 
 func TestNetwork_allProvidersStalled(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 	n.ProviderBlockHistorySize = 3
 
@@ -1441,7 +1441,7 @@ func TestNetwork_allProvidersStalled(t *testing.T) {
 }
 
 func TestNetwork_getLatestHealthyBlock(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 
 	// Test empty providers
@@ -1466,7 +1466,7 @@ func TestNetwork_getLatestHealthyBlock(t *testing.T) {
 }
 
 func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 
 	provider1, err := NewProvider("http://provider1.com")
@@ -1495,7 +1495,7 @@ func TestNetwork_hasOtherHealthyProviders(t *testing.T) {
 }
 
 func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 	n.NetworkBlockHistorySize = 3
 
@@ -1518,7 +1518,7 @@ func TestNetwork_AddNetworkBlockEntry(t *testing.T) {
 }
 
 func TestNetwork_getLatestBlockEntry(t *testing.T) {
-	n, err := NewNetwork("test", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+	n, err := NewNetwork("test", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 	assert.NoError(t, err)
 
 	// Test empty history
@@ -1566,7 +1566,7 @@ func TestNetwork_ExtractBlockHashByNetworkType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n, err := NewNetwork(tt.networkName, EVMHandler, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork(tt.networkName, networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Initialize logger to prevent panic
@@ -1588,41 +1588,41 @@ func TestDetermineNetworkTypeFromNetworkName(t *testing.T) {
 	tests := []struct {
 		name         string
 		networkName  string
-		expectedType string
+		expectedType networklib.HandlerType
 	}{
 		{
 			name:         "ethereum_mainnet",
 			networkName:  "ethereum",
-			expectedType: string(EVMHandler),
+			expectedType: networklib.EVMHandlerType,
 		},
 		{
 			name:         "beacon-chain",
 			networkName:  "ethereum-beacon-mainnet",
-			expectedType: string(BeaconHandler),
+			expectedType: networklib.BeaconHandlerType,
 		},
 		{
 			name:         "starknet_mainnet",
 			networkName:  "starknet-mainnet",
-			expectedType: string(StarknetHandler),
+			expectedType: networklib.StarknetHandlerType,
 		},
 		{
 			name:         "solana_mainnet",
 			networkName:  "solana-mainnet",
-			expectedType: string(SolanaHandler),
+			expectedType: networklib.SolanaHandlerType,
 		},
 		{
 			name:         "unknown_network",
 			networkName:  "unknown-network",
-			expectedType: string(EVMHandler), // Default fallback
+			expectedType: networklib.EVMHandlerType, // Default fallback
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test this through NewNetwork since the detection logic is internal
-			n, err := NewNetwork(tt.networkName, HandlerType(tt.expectedType), utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork(tt.networkName, tt.expectedType, utils.Environment("test"), LoopbackConfig{Port: "8000", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
-			assert.Equal(t, HandlerType(tt.expectedType), n.HandlerType)
+			assert.Equal(t, tt.expectedType, n.HandlerType)
 		})
 	}
 }

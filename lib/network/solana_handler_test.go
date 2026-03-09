@@ -3,14 +3,14 @@ package network
 import (
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSolanaHandler_GetType(t *testing.T) {
 	handler := NewSolanaHandler(&NetworkConfig{})
 
-	if handler.GetType() != "solana" {
-		t.Errorf("Expected type 'solana', got '%s'", handler.GetType())
-	}
+	assert.Equal(t, SolanaHandlerType, handler.GetType())
 }
 
 func TestSolanaHandler_GetName(t *testing.T) {

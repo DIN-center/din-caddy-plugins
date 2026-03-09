@@ -28,8 +28,8 @@ func NewSolanaHandler(config *NetworkConfig) *SolanaHandler {
 }
 
 // Metadata methods for registry
-func (h *SolanaHandler) GetType() string {
-	return "solana" // Must match modules.SolanaHandler constant value
+func (h *SolanaHandler) GetType() HandlerType {
+	return SolanaHandlerType
 }
 
 func (h *SolanaHandler) GetName() string {
@@ -379,14 +379,16 @@ func (h *SolanaHandler) ParseChainIDResponse(body []byte, statusCode int) (strin
 // Uses the JSON-RPC method getBlockHeight to get the current block height
 func (h *SolanaHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	// Use the shared JSON-RPC helper with Solana-specific numeric parsing
+	// Create JSON-RPC payload for latest block number request
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":[],"id":1}`, h.GetHealthCheckMethod()))
 	return GetLatestBlockNumberViaJSONRPC(
 		httpUrl,
+		payload,
 		headers,
 		httpClient,
 		authClient,
 		requestAttempts,
-		h.GetHealthCheckMethod(), // "getBlockHeight"
-		ParseNumericBlockNumber,  // Solana returns numeric block heights
+		ParseNumericBlockNumber, // Solana returns numeric block heights
 	)
 }
 

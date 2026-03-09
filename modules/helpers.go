@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 	"golang.org/x/net/publicsuffix"
@@ -32,15 +33,7 @@ func checkForJSONRPCError(responseBody []byte) *dinHttp.JSONRPCError {
 	// Use the existing decompression function to handle gzipped content
 	// Note: We pass empty headers since we're detecting gzip by magic number
 	// The decompressGzipBodyIfNecessary function will handle the detection
-	processedBody := responseBody
-	if len(responseBody) >= 2 && responseBody[0] == 0x1f && responseBody[1] == 0x8b {
-		// Create headers to indicate gzip encoding
-		headers := make(http.Header)
-		headers.Set("Content-Encoding", "gzip")
-
-		// Use the existing decompression function
-		processedBody = decompressGzipBodyIfNecessary(headers, responseBody, nil, "checkForJSONRPCError")
-	}
+	processedBody := decompressBodyIfNecessary(make(http.Header), responseBody, nil, "checkForJSONRPCError")
 
 	var response dinHttp.JSONRPCResponse
 	if err := json.Unmarshal(processedBody, &response); err != nil {
@@ -169,28 +162,56 @@ func getRequestMethod(repl *caddy.Replacer) (string, error) {
 	return methodStr, nil
 }
 
-// decompressGzipBodyIfNecessary checks if the body is gzipped based on headers
-// and attempts to decompress it. It returns the processed body (decompressed or original).
-func decompressGzipBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
-	if headers.Get("Content-Encoding") == "gzip" {
-		bReader := bytes.NewReader(bodyBytes)
-		gzr, errDecompress := gzip.NewReader(bReader)
-		if errDecompress == nil {
-			decompressedBody, errRead := io.ReadAll(gzr)
-			if errRead == nil {
-				bodyBytes = decompressedBody // Update bodyBytes with decompressed data
-			} else {
-				lg.Warn("Failed to read decompressed gzip body", zap.Error(errRead), zap.String("network", networkPath))
-			}
-			// It's important to close the gzip.Reader.
-			// Defer is not suitable here as we want to close it before returning from this block.
-			if errClose := gzr.Close(); errClose != nil {
-				lg.Warn("Failed to close gzip reader", zap.Error(errClose), zap.String("network", networkPath))
-			}
-		} else {
-			lg.Warn("Failed to create gzip reader for body decompression", zap.Error(errDecompress), zap.String("network", networkPath))
-		}
+// decompressBodyIfNecessary checks if the body is compressed (gzip or Brotli) based on headers or inspection of the body bytes.
+// It attempts to decompress according to the content encoding and returns the (potentially decompressed) body.
+func decompressBodyIfNecessary(headers http.Header, bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
+	contentEncoding := strings.ToLower(headers.Get("Content-Encoding"))
+	gzipByMagic := len(bodyBytes) >= 2 && bodyBytes[0] == 0x1f && bodyBytes[1] == 0x8b
+	if contentEncoding == "gzip" || gzipByMagic {
+		return decompressGzipBodyIfNecessary(bodyBytes, lg, networkPath)
+	} else if contentEncoding == "br" {
+		return decompressBrotliBodyIfNecessary(bodyBytes, lg, networkPath)
 	}
+
+	// No compression or unknown encoding; return as-is
+	return bodyBytes
+}
+
+// decompressGzipBodyIfNecessary tries to decompress the body if it is GZIP-compressed.
+// It returns the processed body (decompressed or original if decompression fails).
+func decompressGzipBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
+	bReader := bytes.NewReader(bodyBytes)
+	gzr, errDecompress := gzip.NewReader(bReader)
+	if errDecompress == nil {
+		decompressedBody, errRead := io.ReadAll(gzr)
+		if errRead == nil {
+			bodyBytes = decompressedBody // Update bodyBytes with decompressed data
+		} else {
+			lg.Warn("Failed to read decompressed gzip body", zap.Error(errRead), zap.String("network", networkPath))
+		}
+		// It's important to close the gzip.Reader.
+		// Defer is not suitable here as we want to close it before returning from this block.
+		if errClose := gzr.Close(); errClose != nil {
+			lg.Warn("Failed to close gzip reader", zap.Error(errClose), zap.String("network", networkPath))
+		}
+	} else {
+		lg.Warn("Failed to create gzip reader for body decompression", zap.Error(errDecompress), zap.String("network", networkPath))
+	}
+	return bodyBytes
+}
+
+// decompressBrotliBody tries to decompress the body if it is Brotli-compressed.
+// It returns the processed body (decompressed or original if decompression fails).
+func decompressBrotliBodyIfNecessary(bodyBytes []byte, lg *logger.LoggerClient, networkPath string) []byte {
+	bReader := bytes.NewReader(bodyBytes)
+	brReader := brotli.NewReader(bReader)
+	decompressedBody, errRead := io.ReadAll(brReader)
+	if errRead == nil {
+		bodyBytes = decompressedBody // Update bodyBytes with decompressed data
+	} else {
+		lg.Warn("Failed to read decompressed Brotli body", zap.Error(errRead), zap.String("network", networkPath))
+	}
+	//No need to close the Brotli reader as it is automatically closed by the io.ReadAll function.
 	return bodyBytes
 }
 
@@ -292,12 +313,7 @@ func logFailedAttempt(params LogFailedAttemptParams) {
 	// Add raw response body snippet if provided
 	if len(params.RawResponseBody) > 0 {
 		// Handle gzip-compressed response bodies
-		processedResponseBody := params.RawResponseBody
-		if len(params.RawResponseBody) >= 2 && params.RawResponseBody[0] == 0x1f && params.RawResponseBody[1] == 0x8b {
-			headers := make(http.Header)
-			headers.Set("Content-Encoding", "gzip")
-			processedResponseBody = decompressGzipBodyIfNecessary(headers, params.RawResponseBody, params.Logger, params.NetworkPath)
-		}
+		processedResponseBody := decompressBodyIfNecessary(make(http.Header), params.RawResponseBody, params.Logger, params.NetworkPath)
 
 		// Create a snippet of the response for logging
 		length := 500
@@ -373,7 +389,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 
 	// Decompress the response body if it's GZIP encoded.
 	// This is necessary to inspect the content of the response, e.g., for health check processing.
-	processedResponseBody := decompressGzipBodyIfNecessary(responseHeaders, rawResponseBody, params.DinMiddleware.logger, params.NetworkPath)
+	processedResponseBody := decompressBodyIfNecessary(responseHeaders, rawResponseBody, params.DinMiddleware.logger, params.NetworkPath)
 
 	// Attempt to get the RPC method from the request.
 	// This is used to determine if the request was for a health check method.

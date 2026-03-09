@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestEVMHandler_GetType(t *testing.T) {
 	handler := NewEVMHandler(&NetworkConfig{})
-
-	if handler.GetType() != "evm" {
-		t.Errorf("Expected type 'evm', got '%s'", handler.GetType())
-	}
+	assert.Equal(t, EVMHandlerType, handler.GetType())
 }
 
 func TestEVMHandler_GetName(t *testing.T) {

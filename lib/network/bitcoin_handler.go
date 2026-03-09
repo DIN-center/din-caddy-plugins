@@ -30,8 +30,8 @@ func NewBitcoinHandler(config *NetworkConfig) *BitcoinHandler {
 }
 
 // Metadata methods for registry
-func (h *BitcoinHandler) GetType() string {
-	return "bitcoin" // Must match modules.BitcoinHandler constant value
+func (h *BitcoinHandler) GetType() HandlerType {
+	return BitcoinHandlerType
 }
 
 func (h *BitcoinHandler) GetName() string {
@@ -433,14 +433,16 @@ func (h *BitcoinHandler) ParseChainIDResponse(body []byte, statusCode int) (stri
 // Uses the JSON-RPC method getblockcount to get the current block height
 func (h *BitcoinHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
 	// Use the shared JSON-RPC helper with Bitcoin-specific numeric parsing
+	// Create JSON-RPC payload for latest block number request
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":[],"id":1}`, h.GetHealthCheckMethod()))
 	return GetLatestBlockNumberViaJSONRPC(
 		httpUrl,
+		payload,
 		headers,
 		httpClient,
 		authClient,
 		requestAttempts,
-		h.GetHealthCheckMethod(), // "getblockcount"
-		ParseNumericBlockNumber,  // Bitcoin returns numeric block heights
+		ParseNumericBlockNumber, // Bitcoin returns numeric block heights
 	)
 }
 

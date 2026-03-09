@@ -16,6 +16,19 @@ import (
 	"gotest.tools/v3/golden"
 )
 
+func TestTronHandler_GetType(t *testing.T) {
+	handler := network.NewTronHandler(&network.NetworkConfig{})
+
+	assert.Equal(t, network.TronHandlerType, handler.GetType())
+}
+
+func TestTronHandler_GetName(t *testing.T) {
+	handler := network.NewTronHandler(&network.NetworkConfig{})
+
+	expected := "Tron Full Node Handler"
+	assert.Equal(t, expected, handler.GetName())
+}
+
 //
 // Request processing
 //

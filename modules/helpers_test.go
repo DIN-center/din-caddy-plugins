@@ -691,23 +691,23 @@ func TestLogFailedAttempt(t *testing.T) {
 		expectedDebugLogFields        map[string]interface{}
 	}{
 		{
-			name:                   "basic log with no errors or complex params",
-			networkPath:            "test-network",
-			failedAttemptNumber:    1,
+			name:                "basic log with no errors or complex params",
+			networkPath:         "test-network",
+			failedAttemptNumber: 1,
 			maxAttempts:         3,
 			statusCodeOfFailure: 500,
 			setupReplacer: func(repl *caddy.Replacer) {
 				repl.Set(RequestProviderKey, "test-provider")
 				repl.Set(RequestProviderPriorityKey, 0)
 			},
-			parsedReqBody: &din_http.JSONRPCRequest{Method: "test_method"},
+			parsedReqBody:          &din_http.JSONRPCRequest{Method: "test_method"},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-network", "provider": "test-provider", "failed_attempt_number": int64(1), "max_attempts": int64(3), "status_code": int64(500), "request_method": "test_method", "reason": "Test failure"},
 		},
 		{
-			name:                   "with upstream error",
-			networkPath:            "test-network-err",
-			failedAttemptNumber:    2,
+			name:                "with upstream error",
+			networkPath:         "test-network-err",
+			failedAttemptNumber: 2,
 			maxAttempts:         3,
 			statusCodeOfFailure: 503,
 			error:               fmt.Errorf("connection refused"),
@@ -715,7 +715,7 @@ func TestLogFailedAttempt(t *testing.T) {
 				repl.Set(RequestProviderKey, "err-provider")
 				repl.Set(RequestProviderPriorityKey, 1)
 			},
-			parsedReqBody: &din_http.JSONRPCRequest{Method: "error_method"},
+			parsedReqBody:          &din_http.JSONRPCRequest{Method: "error_method"},
 			jsonRPCError:           nil,
 			expectedErrorLogFields: map[string]interface{}{"network": "test-network-err", "provider": "err-provider", "failed_attempt_number": int64(2), "max_attempts": int64(3), "status_code": int64(503), "request_method": "error_method", "error": "connection refused", "reason": "Test failure"},
 		},
@@ -946,19 +946,19 @@ func TestLogFailedAttempt(t *testing.T) {
 
 func TestGetRequestAPIKey(t *testing.T) {
 	tests := []struct {
-		name       string
-		apiKey  string
-		want       string
+		name   string
+		apiKey string
+		want   string
 	}{
 		{
-			name:      "Header present with value",
-			apiKey:    "abc123",
-			want:      "abc123",
+			name:   "Header present with value",
+			apiKey: "abc123",
+			want:   "abc123",
 		},
 		{
-			name:      "Header absent entirely",
-			apiKey:    "",
-			want:      "unspecified",
+			name:   "Header absent entirely",
+			apiKey: "",
+			want:   "unspecified",
 		},
 	}
 

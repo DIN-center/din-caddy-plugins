@@ -67,7 +67,7 @@ func TestHandlerSetForJSONLoadedConfig(t *testing.T) {
 	// Manually create network without handler (simulating JSON load)
 	network := &network{
 		Name:        "ethereum-mainnet",
-		HandlerType: EVMHandler,
+		HandlerType: networklib.EVMHandlerType,
 		ChainId:     "0x1",
 		Providers: map[string]*provider{
 			"localhost:8545": {
@@ -88,7 +88,7 @@ func TestHandlerSetForJSONLoadedConfig(t *testing.T) {
 
 	// Verify handler was set during Provision
 	assert.NotNil(t, network.handler)
-	assert.Equal(t, string(EVMHandler), network.handler.GetType())
+	assert.Equal(t, networklib.EVMHandlerType, network.handler.GetType())
 }
 
 // TestHandlerNotSetForEmptyType verifies no handler is set for networks without type

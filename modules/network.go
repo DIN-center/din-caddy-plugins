@@ -25,28 +25,26 @@ import (
 // When a field's flag is true, it means the value was configured in the Caddyfile and should
 // not be overridden by registry sync. This ensures Caddyfile settings take priority.
 type caddyfileConfigFlags struct {
-	HandlerTypeSetInCaddyfile              bool
-	ChainIdSetInCaddyfile                  bool
-	HCIntervalSetInCaddyfile               bool
-	HCThresholdSetInCaddyfile              bool
-	HCTimeoutSetInCaddyfile                bool
-	BlockLagLimitSetInCaddyfile            bool
-	BlockJumpLimitSetInCaddyfile           bool
-	MaxRequestPayloadSizeKBSetInCaddyfile  bool
-	RequestAttemptCountSetInCaddyfile      bool
-	ProviderBlockHistorySizeSetInCaddyfile bool
-	NetworkBlockHistorySizeSetInCaddyfile  bool
-	ArchiveEnabledSetInCaddyfile                   bool
-	ArchiveTraceBlockByNumberSetInCaddyfile        bool
+	HandlerTypeSetInCaddyfile               bool
+	ChainIdSetInCaddyfile                   bool
+	HCIntervalSetInCaddyfile                bool
+	HCThresholdSetInCaddyfile               bool
+	HCTimeoutSetInCaddyfile                 bool
+	BlockLagLimitSetInCaddyfile             bool
+	BlockJumpLimitSetInCaddyfile            bool
+	MaxRequestPayloadSizeKBSetInCaddyfile   bool
+	RequestAttemptCountSetInCaddyfile       bool
+	ProviderBlockHistorySizeSetInCaddyfile  bool
+	NetworkBlockHistorySizeSetInCaddyfile   bool
+	ArchiveEnabledSetInCaddyfile            bool
+	ArchiveTraceBlockByNumberSetInCaddyfile bool
 }
 
 var _ json.Unmarshaler = (*network)(nil)
 
-
-
 type network struct {
 	Name             string
-	HandlerType      HandlerType `json:"handler"` // Network handler type for handler registry
+	HandlerType      networklib.HandlerType `json:"handler"` // Network handler type for handler registry
 	quit             chan struct{}
 	HttpClient       din_http.IHTTPClient
 	PrometheusClient prom.IPrometheusClient
@@ -67,8 +65,8 @@ type network struct {
 	HCEndpoint               string `json:"healthcheck_endpoint,omitempty"` // REST endpoint for health checks
 	ProviderBlockHistorySize int
 	NetworkBlockHistorySize  int
-	blockHistory   *list.List
-	blockHistoryMu sync.RWMutex
+	blockHistory             *list.List
+	blockHistoryMu           sync.RWMutex
 
 	// MethodFilter can be used to route requests based on the method. It implements
 	// the ProviderFilter interface, but for now is the only implementation.
@@ -79,10 +77,10 @@ type network struct {
 	Methods   []*string            `json:"methods"`
 	ChainId   string               `json:"chain_id"`
 
-	HCInterval              int   `json:"healthcheck_interval_seconds"`
-	BlockLagLimit           int64 `json:"healthcheck_blocklag_limit"`
-	BlockJumpLimit          int64 `json:"healthcheck_blockjump_limit"`
-	MaxRequestPayloadSizeKB int64 `json:"max_request_payload_size_kb"`
+	HCInterval                       int   `json:"healthcheck_interval_seconds"`
+	BlockLagLimit                    int64 `json:"healthcheck_blocklag_limit"`
+	BlockJumpLimit                   int64 `json:"healthcheck_blockjump_limit"`
+	MaxRequestPayloadSizeKB          int64 `json:"max_request_payload_size_kb"`
 	RequestAttemptCount              int   `json:"request_attempt_count"`
 	ArchiveEnabled                   bool  `json:"archive_enabled"`
 	ArchiveTraceBlockByNumberEnabled bool  `json:"archive_trace_block_by_number"`
@@ -94,27 +92,27 @@ type network struct {
 // NewNetwork creates a new network with the given name and handler type
 // Only put values in the struct definition that are constant
 // Don't kick off any Background processes here
-func NewNetwork(name string, handlerType HandlerType, environment utils.Environment, loopbackConfig LoopbackConfig) (*network, error) {
+func NewNetwork(name string, handlerType networklib.HandlerType, environment utils.Environment, loopbackConfig LoopbackConfig) (*network, error) {
 	n := &network{
 		Name:        name,
 		HandlerType: handlerType, // Used for handler selection
 		quit:        make(chan struct{}),
 		// Default health check values, to be overridden if specified in the Caddyfile
-		HCThreshold:              DefaultHCThreshold,
-		HCTimeout:                DefaultHCTimeout,
-		HCInterval:               DefaultHCInterval,
-		BlockLagLimit:            DefaultBlockLagLimit,
-		BlockJumpLimit:           DefaultBlockJumpLimit,
-		MaxRequestPayloadSizeKB:  DefaultMaxRequestPayloadSizeKB,
-		RequestAttemptCount:      DefaultRequestAttemptCount,
-		ProviderBlockHistorySize: DefaultProviderBlockHistorySize,
-		NetworkBlockHistorySize:  DefaultNetworkBlockHistorySize,
+		HCThreshold:                      DefaultHCThreshold,
+		HCTimeout:                        DefaultHCTimeout,
+		HCInterval:                       DefaultHCInterval,
+		BlockLagLimit:                    DefaultBlockLagLimit,
+		BlockJumpLimit:                   DefaultBlockJumpLimit,
+		MaxRequestPayloadSizeKB:          DefaultMaxRequestPayloadSizeKB,
+		RequestAttemptCount:              DefaultRequestAttemptCount,
+		ProviderBlockHistorySize:         DefaultProviderBlockHistorySize,
+		NetworkBlockHistorySize:          DefaultNetworkBlockHistorySize,
 		blockHistory:                     list.New(),
 		ArchiveEnabled:                   DefaultArchiveEnabled,
 		ArchiveTraceBlockByNumberEnabled: DefaultArchiveTraceBlockByNumberEnabled,
 		Environment:                      environment,
-		Providers:                make(map[string]*provider),
-		LoopbackConfig:           loopbackConfig,
+		Providers:                        make(map[string]*provider),
+		LoopbackConfig:                   loopbackConfig,
 		// Initialize Caddyfile flags tracking
 		CaddyfileFlags: &caddyfileConfigFlags{
 			// If handlerType is provided (not empty), mark it as set in Caddyfile
@@ -152,7 +150,7 @@ func (n *network) SetHandler(handler networklib.NetworkHandler) error {
 	if n.logger != nil {
 		n.logger.Debug("Network handler set",
 			zap.String("network", n.Name),
-			zap.String("handler_type", handler.GetType()))
+			zap.String("handler_type", string(handler.GetType())))
 	}
 
 	return nil
@@ -332,7 +330,7 @@ func (n *network) evaluateProviderHealth(provider *provider, currentBlock int64,
 
 	if latestNetworkBlock > 0 {
 		blockLag = int64(latestNetworkBlock) - currentBlock
-		
+
 		// If block lag is greater than limit, mark as warning and set isLagged flag
 		if blockLag > blockLagLimit {
 			isLagged = true

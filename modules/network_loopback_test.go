@@ -35,7 +35,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			mockHandlerSetup: func(mockHandler *networklib.MockNetworkHandler) {
 				// Setup handler expectations
 				mockHandler.EXPECT().GetHealthCheckMethod().Return("eth_blockNumber").AnyTimes()
-				mockHandler.EXPECT().GetType().Return(string(EVMHandler)).AnyTimes()
+				mockHandler.EXPECT().GetType().Return(networklib.EVMHandlerType).AnyTimes()
 				mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
 				mockHandler.EXPECT().GetHealthCheckHTTPMethod().Return("POST").AnyTimes()
 				mockHandler.EXPECT().CreateHealthCheckPayload("eth_blockNumber").Return([]byte(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}`), nil).AnyTimes()
@@ -67,7 +67,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			caddyPort: "8080",
 			mockHandlerSetup: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().GetHealthCheckMethod().Return("eth_blockNumber").AnyTimes()
-				mockHandler.EXPECT().GetType().Return(string(EVMHandler)).AnyTimes()
+				mockHandler.EXPECT().GetType().Return(networklib.EVMHandlerType).AnyTimes()
 				mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
 				mockHandler.EXPECT().GetHealthCheckHTTPMethod().Return("POST").AnyTimes()
 				mockHandler.EXPECT().CreateHealthCheckPayload("eth_blockNumber").Return([]byte(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}`), nil).AnyTimes()
@@ -100,7 +100,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			caddyPort: "8080",
 			mockHandlerSetup: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().GetHealthCheckMethod().Return("eth_blockNumber").AnyTimes()
-				mockHandler.EXPECT().GetType().Return(string(EVMHandler)).AnyTimes()
+				mockHandler.EXPECT().GetType().Return(networklib.EVMHandlerType).AnyTimes()
 				mockHandler.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
 				mockHandler.EXPECT().GetHealthCheckHTTPMethod().Return("POST").AnyTimes()
 				mockHandler.EXPECT().CreateHealthCheckPayload("eth_blockNumber").Return([]byte(`{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}`), nil).AnyTimes()
@@ -154,7 +154,7 @@ func TestLoopbackHealthCheck(t *testing.T) {
 			mockProm := prom.NewMockIPrometheusClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), LoopbackConfig{
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{
 				Port: tt.caddyPort,
 				ApiKey: DefaultLoopbackApiKey,
 			})
@@ -288,7 +288,7 @@ func TestSendHealthCheckMetric(t *testing.T) {
 			mockProm := prom.NewMockIPrometheusClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", EVMHandler, utils.Environment(tt.environment), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment(tt.environment), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies

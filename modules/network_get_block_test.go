@@ -183,7 +183,7 @@ func TestGetBlockByNumber(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network
-			n, err := NewNetwork("test-network", EVMHandler, utils.Environment("test"), LoopbackConfig{Port: tt.caddyPort, ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.Environment("test"), LoopbackConfig{Port: tt.caddyPort, ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies
@@ -227,14 +227,14 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		networkType  string
+		networkType  networklib.HandlerType
 		blockNumber  int64
 		setupHandler func(*networklib.MockNetworkHandler)
 		expectNil    bool
 	}{
 		{
 			name:        "evm_network_supports_get_block",
-			networkType: string(EVMHandler),
+			networkType: networklib.EVMHandlerType,
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().SupportsGetBlockByNumber().Return(true)
@@ -246,7 +246,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 		},
 		{
 			name:        "beacon_network_does_not_support_json_rpc_get_block",
-			networkType: string(BeaconHandler),
+			networkType: networklib.BeaconHandlerType,
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				// Beacon chain should return false for SupportsGetBlockByNumber
@@ -257,7 +257,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 		},
 		{
 			name:        "solana_network_supports_get_block",
-			networkType: string(SolanaHandler),
+			networkType: networklib.SolanaHandlerType,
 			blockNumber: 100,
 			setupHandler: func(mockHandler *networklib.MockNetworkHandler) {
 				mockHandler.EXPECT().SupportsGetBlockByNumber().Return(true)
@@ -276,7 +276,7 @@ func TestGetBlockByNumberIntegration(t *testing.T) {
 			mockHTTP := din_http.NewMockIHTTPClient(ctrl)
 
 			// Create network with specific type
-			n, err := NewNetwork("test-network", HandlerType(tt.networkType), utils.Environment("test"), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
+			n, err := NewNetwork("test-network", tt.networkType, utils.Environment("test"), LoopbackConfig{Port: "8080", ApiKey: DefaultLoopbackApiKey})
 			assert.NoError(t, err)
 
 			// Set dependencies

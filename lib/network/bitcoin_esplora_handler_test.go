@@ -10,7 +10,7 @@ import (
 
 func TestBitcoinEsploraHandler_GetType(t *testing.T) {
 	handler := NewBitcoinEsploraHandler(&NetworkConfig{})
-	assert.Equal(t, "bitcoin-esplora", handler.GetType())
+	assert.Equal(t, BitcoinEsploraHandlerType, handler.GetType())
 }
 
 func TestBitcoinEsploraHandler_GetName(t *testing.T) {

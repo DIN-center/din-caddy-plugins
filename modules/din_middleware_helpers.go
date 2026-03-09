@@ -16,6 +16,7 @@ import (
 
 	"github.com/DIN-center/din-caddy-plugins/lib/auth/siwe"
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
+	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
 	"github.com/DIN-center/din-caddy-plugins/lib/web3"
 )
 
@@ -309,7 +310,7 @@ func (d *DinMiddleware) updateNetworkFields(network *network, regNetworkConfig *
 	if regNetworkConfig.Handler != "" && !network.CaddyfileFlags.HandlerTypeSetInCaddyfile {
 		// Only set handler type if network doesn't have one
 		if network.HandlerType == "" {
-			network.HandlerType = HandlerType(regNetworkConfig.Handler)
+			network.HandlerType = networklib.HandlerType(regNetworkConfig.Handler)
 			d.logger.Debug("Setting network handler from registry",
 				zap.String("network", network.Name),
 				zap.String("handler", regNetworkConfig.Handler))

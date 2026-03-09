@@ -31,8 +31,8 @@ func NewStarknetHandler(config *NetworkConfig) *StarknetHandler {
 }
 
 // Metadata methods for registry
-func (h *StarknetHandler) GetType() string {
-	return "starknet" // Must match modules.StarknetHandler constant value
+func (h *StarknetHandler) GetType() HandlerType {
+	return StarknetHandlerType
 }
 
 func (h *StarknetHandler) GetName() string {
@@ -418,14 +418,16 @@ func (h *StarknetHandler) ParseChainIDResponse(body []byte, statusCode int) (str
 // GetLatestBlockNumber retrieves the latest block number for Starknet chains
 // Uses the JSON-RPC method starknet_blockNumber to get the current block height
 func (h *StarknetHandler) GetLatestBlockNumber(httpUrl string, headers map[string]string, httpClient din_http.IHTTPClient, authClient auth.IAuthClient, requestAttempts int) (*LatestBlockResult, error) {
+	// Create JSON-RPC payload for latest block number request
+	payload := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"%s","params":[],"id":1}`, h.GetHealthCheckMethod()))
 	return GetLatestBlockNumberViaJSONRPC(
 		httpUrl,
+		payload,
 		headers,
 		httpClient,
 		authClient,
 		requestAttempts,
-		h.GetHealthCheckMethod(), // "starknet_blockNumber"
-		ParseNumericBlockNumber,  // Starknet returns numeric block numbers
+		ParseNumericBlockNumber, // Starknet returns numeric block numbers
 	)
 }
 

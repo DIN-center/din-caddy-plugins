@@ -245,7 +245,7 @@ func TestCalculateDynamicBlockLagLimitConcurrency(t *testing.T) {
 
 // TestDynamicBlockLagWithNoProviders tests behavior when no providers are available
 func TestDynamicBlockLagWithNoProviders(t *testing.T) {
-	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, LoopbackConfig{
+	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, LoopbackConfig{
 		Port:   "8080",
 		ApiKey: DefaultLoopbackApiKey,
 	})
@@ -271,7 +271,7 @@ func TestDynamicBlockLagWithNoProviders(t *testing.T) {
 
 // TestDynamicBlockLagWithUnsupportedHandler tests behavior with handlers that don't support dynamic block lag
 func TestDynamicBlockLagWithUnsupportedHandler(t *testing.T) {
-	n, err := NewNetwork("test-network", BeaconHandler, utils.EnvTest, LoopbackConfig{
+	n, err := NewNetwork("test-network", networklib.BeaconHandlerType, utils.EnvTest, LoopbackConfig{
 		Port:   "8080",
 		ApiKey: DefaultLoopbackApiKey,
 	})
@@ -414,7 +414,7 @@ func createMockTimestampServer(sim blockTimestampSimulator) *httptest.Server {
 }
 
 func createTestNetworkWithTimestampProvider(t *testing.T, serverURL string, sim blockTimestampSimulator) *network {
-	n, err := NewNetwork("test-network", EVMHandler, utils.EnvTest, LoopbackConfig{
+	n, err := NewNetwork("test-network", networklib.EVMHandlerType, utils.EnvTest, LoopbackConfig{
 		Port:   "8080",
 		ApiKey: DefaultLoopbackApiKey,
 	})

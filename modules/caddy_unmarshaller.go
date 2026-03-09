@@ -267,7 +267,7 @@ func (p *caddyfileParser) parseNetworkMethods(network *network) error {
 func (p *caddyfileParser) parseNetworkHandler(network *network) error {
 	p.dispenser.Next()
 	explicitType := p.dispenser.Val()
-	network.HandlerType = HandlerType(explicitType)
+	network.HandlerType = networklib.HandlerType(explicitType)
 	if network.CaddyfileFlags != nil {
 		network.CaddyfileFlags.HandlerTypeSetInCaddyfile = true
 	}
@@ -704,7 +704,7 @@ func (p *caddyfileParser) validateNetwork(networkName string) error {
 	if network.HandlerType == "" {
 		p.middleware.logger.Info("No explicit handler type specified, defaulting to EVM",
 			zap.String("network", networkName))
-		network.HandlerType = EVMHandler
+		network.HandlerType = networklib.EVMHandlerType
 	}
 
 	return nil
