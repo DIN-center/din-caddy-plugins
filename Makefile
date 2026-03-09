@@ -210,31 +210,6 @@ docs: ## Generate documentation
 	@echo "$(GREEN)Generating documentation...$(NC)"
 	go doc -all ./... > docs/API.md
 
-## Secret Management Commands
-secrets: ## Generate Caddyfile from secrets (main command)
-	@echo "$(GREEN)Generating Caddyfile from secrets...$(NC)"
-	@go run scripts/generate-caddyfile.go \
-		-template=Caddyfile \
-		-output=Caddyfile.generated \
-		-preview=true
-	@echo "$(YELLOW)Generated: Caddyfile.generated$(NC)"
-
-secrets-init: ## Initial setup: create .env.local from template
-	@echo "$(GREEN)Setting up secret management...$(NC)"
-	@go run scripts/generate-caddyfile.go -generate-example=true
-	@if [ ! -f ".env.local" ]; then \
-		cp .env.example .env.local; \
-		echo "$(GREEN)Created .env.local from .env.example$(NC)"; \
-		echo "$(YELLOW)Please edit .env.local and add your actual API keys$(NC)"; \
-	else \
-		echo "$(YELLOW).env.local already exists$(NC)"; \
-	fi
-
-secrets-update-ci: ## Update GitHub workflow with current secrets
-	@echo "$(GREEN)Updating GitHub Actions workflow...$(NC)"
-	@go run scripts/generate-caddyfile.go -update-workflow=true
-	@echo "$(YELLOW)Workflow updated! Review changes with: git diff$(NC)"
-
 ## Release Commands
 tag: ## Create a new git tag (usage: make tag VERSION=v1.0.0)
 	@if [ -z "$(VERSION)" ]; then \
