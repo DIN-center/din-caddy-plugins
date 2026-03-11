@@ -602,7 +602,7 @@ func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath st
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
 // and logging using the standard logFailedAttempt format for consistency
-func handleContextCancellation(l *logger.LoggerClient, promClient *prom.PrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
+func handleContextCancellation(l *logger.LoggerClient, promClient prom.IPrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
 	// Calculate duration
 	duration := time.Since(reqStartTime)
 	// Determine the appropriate HTTP status code and response based on the error type

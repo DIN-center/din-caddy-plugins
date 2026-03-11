@@ -118,7 +118,7 @@ type DinMiddleware struct {
 	SiweSignerClient siwe.ISIWESignerClient
 
 	// The prometheus client object
-	PrometheusClient *prom.PrometheusClient
+	PrometheusClient prom.IPrometheusClient
 
 	// The dingo client object
 	DingoClient din.IDinClient
