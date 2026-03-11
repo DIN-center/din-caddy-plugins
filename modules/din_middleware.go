@@ -94,7 +94,7 @@ type DynamicLoadBalancingConfig struct {
 }
 
 type LoopbackConfig struct {
-	Port string
+	Port   string
 	ApiKey string
 }
 
@@ -671,8 +671,8 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 
 	reqStartTime := time.Now()
 
-	// Track if we should log metrics at the end (only for final outcomes)
-	var shouldLogMetrics bool
+	// Track whether a provider endpoint was reached while serving the request
+	var internalRequestIssued bool
 
 	// Track providers excluded due to method-not-found (-32601) errors.
 	// These providers are skipped on subsequent attempts so a different provider is tried.
@@ -706,6 +706,7 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		}
 		// Serve the request
 		err = next.ServeHTTP(rww, r)
+		internalRequestIssued = true
 
 		// Check for success and handle response
 		if err == nil {
@@ -731,9 +732,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 				appError = fmt.Errorf("HTTP error: %d", rww.statusCode)
 			}
 			if appError == nil {
-				// Request was successful
-				shouldLogMetrics = true
-
 				// Log if this success came after a method-level failover
 				if len(excludedProviders) > 0 {
 					successProvider := "unknown"
@@ -891,7 +889,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 			reason := "HTTP/network error"
 			if attempt == networkObj.RequestAttemptCount-1 {
 				reason = "HTTP/network error (final attempt)"
-				shouldLogMetrics = true
 			}
 
 			logFailedAttempt(LogFailedAttemptParams{
@@ -910,62 +907,27 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		}
 	}
 
-	// Handle final error case (all retries exhausted)
+	duration := time.Since(reqStartTime)
+
+	// Record metrics for every request that reached an provider endpoint, regardless of outcome.
+	if internalRequestIssued {
+		handlePostRequestTasks(PostRequestTaskParams{
+			DinMiddleware: d,
+			RWWrapper:     rww,
+			NetworkObj:    networkObj,
+			NetworkPath:   networkPath,
+			Replacer:      repl,
+			Duration:      duration,
+			OriginalReq:   r,
+			ParsedReqBody: nil,
+		})
+	}
+
+	// If the request failed, return the error
 	if err != nil {
-		// Get provider for metrics
-		var provider string
-		if v, ok := repl.Get(RequestProviderKey); ok {
-			provider = v.(string)
-		}
-
-		// Get priority for metrics
-		priority := 0
-		if v, ok := repl.Get(RequestProviderPriorityKey); ok {
-			if pInt, ok := v.(int); ok {
-				priority = pInt
-			}
-		}
-
-		// Get provider name for metrics
-		providerName := "unknown"
-		if v, ok := networkObj.Providers[provider]; ok {
-			providerName = v.Name
-		}
-
-		duration := time.Since(reqStartTime)
-
-		// Determine appropriate status code for the failure
-		statusCode := http.StatusInternalServerError // Default for HTTP errors
-		if rww != nil && rww.statusCode > 0 {
-			statusCode = rww.statusCode
-		}
-
-		// Log metrics for final failure (only if we haven't already marked it for logging)
-		if !shouldLogMetrics && !d.testMode && d.PrometheusClient != nil {
-			// Record metrics for the failed request
-			d.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
-				Method:         method,
-				Network:        networkPath,
-				Provider:       provider,
-				ProviderName:   providerName,
-				ApiKey:         getRequestAPIKey(repl),
-				HostName:       r.Host,
-				ResponseStatus: statusCode,
-				HealthStatus:   "unhealthy", // All providers failed
-				Priority:       priority,
-				Environment:    string(d.Env),
-			}, duration)
-		}
-
 		return errors.Wrap(err, "Error serving HTTP")
 	}
 
-	var provider string
-	if v, ok := repl.Get(RequestProviderKey); ok {
-		provider = v.(string)
-	}
-
-	duration := time.Since(reqStartTime)
 	// Write the response body and status to the original response writer
 	// This is done after the request is attempted multiple times if needed
 	if rww != nil {
@@ -988,22 +950,6 @@ func (d *DinMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next 
 		if flusher, ok := rw.(http.Flusher); ok {
 			flusher.Flush()
 		}
-	}
-
-	// Only log metrics if this is a final outcome (success or final failure)
-	if shouldLogMetrics {
-		// Post-Request Processing is now handled by the helper function
-		handlePostRequestTasks(PostRequestTaskParams{
-			DinMiddleware: d,
-			RWWrapper:     rww,
-			NetworkObj:    networkObj,
-			NetworkPath:   networkPath,
-			Provider:      provider,
-			Replacer:      repl,
-			Duration:      duration,
-			OriginalReq:   r,
-			ParsedReqBody: nil,
-		})
 	}
 
 	return nil
