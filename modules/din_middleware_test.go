@@ -32,6 +32,7 @@ import (
 	din_http "github.com/DIN-center/din-caddy-plugins/lib/http"
 	"github.com/DIN-center/din-caddy-plugins/lib/logger"
 	networklib "github.com/DIN-center/din-caddy-plugins/lib/network"
+	prom "github.com/DIN-center/din-caddy-plugins/lib/prometheus"
 	"github.com/DIN-center/din-caddy-plugins/lib/utils"
 	ws "github.com/DIN-center/din-caddy-plugins/lib/watcherscore"
 	din "github.com/DIN-center/din-sc/apps/din-go/lib/din"
@@ -613,7 +614,6 @@ func TestProcessHCMethodResponseAsync(t *testing.T) {
 			setupNetwork: func(t *testing.T, netw *network) {
 				netw.LoopbackConfig.Port = "8000"
 				netw.LoopbackConfig.ApiKey = DefaultLoopbackApiKey
-
 
 				mockCtrl := gomock.NewController(t)
 				// defer mockCtrl.Finish() // Defers in callbacks can be tricky; manage Finish in t.Run if issues arise.
@@ -1375,6 +1375,370 @@ func TestMiddlewareStripsAuthorizationHeader(t *testing.T) {
 			// Verify Authorization header was stripped
 			if tt.shouldBeStripped {
 				assert.Empty(t, capturedRequest.Header.Get("Authorization"), "Authorization header should be stripped by middleware")
+			}
+		})
+	}
+}
+
+// TestServeHTTPRequestCountMetrics verifies that HandleRequestMetrics is called exactly once
+// for every request that reaches the retry loop in ServeHTTP, regardless of outcome.
+// ----------------------------------------------------------------------------
+// helpers
+// ----------------------------------------------------------------------------
+
+const testRPCBody = `{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}`
+
+// internalRequestOK is a next-handler that returns HTTP 200 with a minimal JSON-RPC success body
+// and optionally sets RequestProviderKey on the replacer (simulating DinSelect).
+func internalRequestOK(providerKey string) caddyhttp.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		if providerKey != "" {
+			repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			repl.Set(RequestProviderKey, providerKey)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","result":"0x1","id":1}`))
+		return nil
+	}
+}
+
+// internalRequestTransportError is a next-handler that simulates a low-level transport failure.
+func internalRequestTransportError() caddyhttp.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		return errors.New("dial tcp: connection refused")
+	}
+}
+
+// mockMiddleware wires up a DinMiddleware ready for metrics tests.
+// testMode is intentionally false so the Prometheus code-path is exercised.
+func mockMiddleware(t *testing.T, mockProm *prom.MockIPrometheusClient, nets map[string]*network) *DinMiddleware {
+	return &DinMiddleware{
+		testMode:         false,
+		logger:           logger.NewLoggerClient(zaptest.NewLogger(t), utils.EnvTest),
+		PrometheusClient: mockProm,
+		Networks:         nets,
+		handlerRegistry:  networklib.DefaultRegistry,
+	}
+}
+
+// mockNetworkWithAttemptCount returns a minimal network with a single provider and the
+// supplied handler mock.  RequestAttemptCount defaults to 1.
+func mockNetworkWithAttemptCount(handler networklib.NetworkHandler, attemptCount int) *network {
+	if attemptCount <= 0 {
+		attemptCount = 1
+	}
+	return &network{
+		Name:                    "eth",
+		handler:                 handler,
+		MaxRequestPayloadSizeKB: DefaultMaxRequestPayloadSizeKB,
+		RequestAttemptCount:     attemptCount,
+		Providers: map[string]*provider{
+			"provider1": {},
+		},
+	}
+}
+
+// newUserRequest builds a POST request with the given body and attaches a fresh Caddy replacer.
+func newUserRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/eth", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+}
+
+// ----------------------------------------------------------------------------
+// main test
+// ----------------------------------------------------------------------------
+
+func TestServeHTTPRequestCountMetric(t *testing.T) {
+	tests := []struct {
+		name string
+		// userRequest defines the *http.Request to use (allows cancelled contexts).
+		userRequest func() *http.Request
+
+		// setupNetwork defines the network map and configures handler mock expectations.
+		setupNetwork func(ctrl *gomock.Controller) map[string]*network
+
+		// setupPrometheusClient configures expectations on the prometheus mock.
+		setupPrometheusClient func(m *prom.MockIPrometheusClient)
+
+		// internalRequest defines the handler that simulates the upstream proxy chain.
+		internalRequest caddyhttp.HandlerFunc
+
+		// wantErr defines whether ServeHTTP itself should return a non-nil error.
+		wantErr bool
+	}{
+		// -----------------------------------------------------------------------
+		// COUNTING CASES – HandleRequestMetrics must be called exactly once
+		// -----------------------------------------------------------------------
+		{
+			name:        "success on first attempt – metrics recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil)
+				h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(nil) // success
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()          // async goroutine
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			internalRequest: internalRequestOK("provider1"),
+			wantErr:         false,
+		},
+		{
+			// Context cancelled before the retry loop starts → handleContextCancellation
+			// calls HandleRequestMetrics directly.
+			name: "context cancelled – metrics recorded via handleContextCancellation",
+			userRequest: func() *http.Request {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel() // cancelled before ServeHTTP is called
+				req := httptest.NewRequest(http.MethodPost, "http://localhost/eth", strings.NewReader(testRPCBody))
+				req.Header.Set("Content-Type", "application/json")
+				return req.WithContext(context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			},
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil)
+				// ParseResponse / IsRetryableError not called – context cancelled before next runs
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			internalRequest: internalRequestOK("provider1"),
+			wantErr:         false,
+		},
+
+		// -----------------------------------------------------------------------
+		// ERROR PATH CASES – metrics must be recorded regardless of error type
+		// -----------------------------------------------------------------------
+
+		// Path 1: non-retryable application-level error.
+		// next.ServeHTTP returns nil (transport OK, HTTP 200), but ParseResponse
+		// returns a non-nil error that is neither retryable nor retryable-on-different-provider.
+		// BUG: HandleRequestMetrics is never called.
+		{
+			name:        "non-retryable app error (path 1) – metrics must be recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_call", nil)
+				h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(errors.New("execution reverted"))
+				h.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(false)
+				h.EXPECT().IsRetryableOnDifferentProvider(gomock.Any(), gomock.Any()).Return(false)
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			internalRequest: internalRequestOK("provider1"),
+			wantErr:         false,
+		},
+
+		// Path 1 variant: multiple retryable errors on earlier attempts, then a
+		// non-retryable error on the final attempt (still never logs).
+		{
+			name:        "retryable errors then non-retryable final (path 1 variant) – metrics must be recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_call", nil)
+				// Attempt 0: retryable error → continue
+				// Attempt 1: non-retryable error → break
+				gomock.InOrder(
+					h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(errors.New("rate limit")),
+					h.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(true),
+					h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(errors.New("execution reverted")),
+					h.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(false),
+					h.EXPECT().IsRetryableOnDifferentProvider(gomock.Any(), gomock.Any()).Return(false),
+				)
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 2)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			internalRequest: internalRequestOK("provider1"),
+			wantErr:         false,
+		},
+
+		// Path 2: IsRetryableOnDifferentProvider returns true but RequestProviderKey is
+		// not present in the replacer (DinSelect didn't run or failed to set the key).
+		{
+			name:        "method-not-found with missing provider key (path 2) – metrics must be recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_call", nil)
+				h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(errors.New("method not found"))
+				h.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(false)
+				h.EXPECT().IsRetryableOnDifferentProvider(gomock.Any(), gomock.Any()).Return(true)
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			// next does NOT set RequestProviderKey – simulates missing DinSelect key
+			internalRequest: internalRequestOK(""),
+			wantErr:         false,
+		},
+
+		// Path 3: all providers excluded due to -32601 method-not-found failover.
+		// len(excludedProviders) >= len(providers) triggers the "all providers exhausted" break.
+		{
+			name:        "all providers excluded after method-not-found failover (path 3) – metrics must be recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_call", nil)
+				h.EXPECT().ParseResponse(gomock.Any(), gomock.Any()).Return(errors.New("method not found"))
+				h.EXPECT().IsRetryableError(gomock.Any(), gomock.Any()).Return(false)
+				h.EXPECT().IsRetryableOnDifferentProvider(gomock.Any(), gomock.Any()).Return(true)
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				// Single provider: after it is excluded len(excluded)==len(providers)==1 → break
+				net := mockNetworkWithAttemptCount(h, 1)
+				return map[string]*network{"eth": net}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			// next sets RequestProviderKey so the provider can be identified and excluded
+			internalRequest: internalRequestOK("provider1"),
+			wantErr:         false,
+		},
+
+		// Path 4: transport (Go-level) error on the final attempt.
+		{
+			name:        "transport error on final attempt – metrics must be recorded",
+			userRequest: func() *http.Request { return newUserRequest(testRPCBody) },
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				h.EXPECT().ExtractMethod(gomock.Any(), gomock.Any()).Return("eth_blockNumber", nil)
+				// ParseResponse / IsRetryableError not called for transport errors
+				h.EXPECT().GetHealthCheckMethod().Return("").AnyTimes()
+				h.EXPECT().ConfigureRequestPath(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(m *prom.MockIPrometheusClient) {
+				m.EXPECT().HandleRequestMetrics(gomock.Any(), gomock.Any()).Times(1)
+			},
+			internalRequest: internalRequestTransportError(),
+			wantErr:         true,
+		},
+
+		// -----------------------------------------------------------------------
+		// NON-COUNTING CASES – next.ServeHTTP never called, no metrics expected
+		// -----------------------------------------------------------------------
+		{
+			// Root path "/" is treated as a health probe and returns 200 immediately.
+			name: "empty network path – no metrics",
+			userRequest: func() *http.Request {
+				req := httptest.NewRequest(http.MethodGet, "http://localhost/", http.NoBody)
+				return req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			},
+			setupNetwork: func(_ *gomock.Controller) map[string]*network {
+				return map[string]*network{"eth": {}}
+			},
+			setupPrometheusClient: func(_ *prom.MockIPrometheusClient) {}, // no expectations
+			internalRequest:       internalRequestOK(""),
+			wantErr:               false,
+		},
+		{
+			name: "unknown network – no metrics",
+			userRequest: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "http://localhost/unknown", strings.NewReader(testRPCBody))
+				req.Header.Set("Content-Type", "application/json")
+				return req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			},
+			setupNetwork: func(_ *gomock.Controller) map[string]*network {
+				return map[string]*network{"eth": {}}
+			},
+			setupPrometheusClient: func(_ *prom.MockIPrometheusClient) {},
+			internalRequest:       internalRequestOK(""),
+			wantErr:               true,
+		},
+		{
+			// Empty body on an RPC network is explicitly excluded from metrics
+			// (OPTIONS requests, pre-flight, etc.).
+			name: "empty body on RPC network – no metrics (intentional skip)",
+			userRequest: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "http://localhost/eth", http.NoBody)
+				req.Header.Set("Content-Type", "application/json")
+				return req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			},
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				return map[string]*network{"eth": mockNetworkWithAttemptCount(h, 1)}
+			},
+			setupPrometheusClient: func(_ *prom.MockIPrometheusClient) {},
+			internalRequest:       internalRequestOK(""),
+			wantErr:               true,
+		},
+		{
+			// Request body exceeds MaxRequestPayloadSizeKB.
+			name: "payload too large – no metrics",
+			userRequest: func() *http.Request {
+				bigBody := `{"key":"` + strings.Repeat("x", 2048) + `"}`
+				req := httptest.NewRequest(http.MethodPost, "http://localhost/eth", strings.NewReader(bigBody))
+				req.Header.Set("Content-Type", "application/json")
+				return req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			},
+			setupNetwork: func(ctrl *gomock.Controller) map[string]*network {
+				h := networklib.NewMockNetworkHandler(ctrl)
+				h.EXPECT().ProcessRequest(gomock.Any()).Return(nil)
+				h.EXPECT().GetRequestType().Return(networklib.RequestTypeRPC).AnyTimes()
+				net := mockNetworkWithAttemptCount(h, 1)
+				net.MaxRequestPayloadSizeKB = 1 // 1 KB limit
+				return map[string]*network{"eth": net}
+			},
+			setupPrometheusClient: func(_ *prom.MockIPrometheusClient) {},
+			internalRequest:       internalRequestOK(""),
+			wantErr:               true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			mockProm := prom.NewMockIPrometheusClient(ctrl)
+			tt.setupPrometheusClient(mockProm)
+
+			nets := tt.setupNetwork(ctrl)
+			d := mockMiddleware(t, mockProm, nets)
+
+			req := tt.userRequest()
+			rw := httptest.NewRecorder()
+
+			err := d.ServeHTTP(rw, req, tt.internalRequest)
+			if tt.wantErr && err == nil {
+				t.Errorf("ServeHTTP() expected error, got nil")
+			} else if !tt.wantErr && err != nil {
+				t.Errorf("ServeHTTP() unexpected error: %v", err)
 			}
 		})
 	}

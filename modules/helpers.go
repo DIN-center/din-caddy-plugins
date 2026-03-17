@@ -343,7 +343,6 @@ type PostRequestTaskParams struct {
 	RWWrapper     *ResponseWriterWrapper
 	NetworkObj    *network
 	NetworkPath   string
-	Provider      string
 	Replacer      *caddy.Replacer
 	Duration      time.Duration
 	OriginalReq   *http.Request
@@ -407,17 +406,21 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 	// Determine the health status of the provider that handled the request.
 	// This information is used for Prometheus metrics.
 	healthStatus := "unknown" // Default health status.
+	var provider string
+	if v, ok := params.Replacer.Get(RequestProviderKey); ok {
+		provider = v.(string)
+	}
 	// Ensure NetworkObj is not nil before accessing its Providers map.
-	if params.Provider != "" && params.NetworkObj != nil {
+	if provider != "" && params.NetworkObj != nil {
 		// Look up the provider in the network's provider map.
-		if providerObj, ok := params.NetworkObj.Providers[params.Provider]; ok && providerObj != nil {
+		if providerObj, ok := params.NetworkObj.Providers[provider]; ok && providerObj != nil {
 			// Get the latest block entry for the provider to determine its health.
 			latestBlock := providerObj.getLatestBlockEntry()
 			if latestBlock != nil {
 				healthStatus = latestBlock.healthStatus.String()
 			} else {
 				// Log if the provider has no block entries yet.
-				params.DinMiddleware.logger.Debug("Provider has no block entries yet for metrics.", zap.String("provider", params.Provider), zap.String("network", params.NetworkPath))
+				params.DinMiddleware.logger.Debug("Provider has no block entries yet for metrics.", zap.String("provider", provider), zap.String("network", params.NetworkPath))
 			}
 		} else {
 			// Log a warning if the provider from the replacer is not found in the network's map.
@@ -427,7 +430,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 				availableProviders = append(availableProviders, host)
 			}
 			params.DinMiddleware.logger.Warn("Provider from replacer not found in network's providers map for metrics.",
-				zap.String("provider", params.Provider),
+				zap.String("provider", provider),
 				zap.String("network", params.NetworkPath),
 				zap.Strings("availableProviders", availableProviders))
 		}
@@ -437,11 +440,6 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 	} else { // provider is ""
 		// Log a warning if the provider key was not found in the replacer.
 		params.DinMiddleware.logger.Warn("Provider key not found in replacer for metrics reporting.", zap.String("network", params.NetworkPath))
-	}
-
-	// Skip Prometheus metrics reporting if in test mode.
-	if params.DinMiddleware.testMode {
-		return
 	}
 
 	// Ensure the Prometheus client is initialized before attempting to record metrics.
@@ -460,7 +458,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 
 	// Get provider name for metrics
 	providerName := "unknown"
-	if v, ok := params.NetworkObj.Providers[params.Provider]; ok {
+	if v, ok := params.NetworkObj.Providers[provider]; ok {
 		providerName = v.Name
 	}
 
@@ -469,7 +467,7 @@ func handlePostRequestTasks(params PostRequestTaskParams) {
 	params.DinMiddleware.PrometheusClient.HandleRequestMetrics(&prom.PromRequestMetricData{
 		Method:         requestMethod,
 		Network:        params.NetworkPath,
-		Provider:       params.Provider,
+		Provider:       provider,
 		ProviderName:   providerName,
 		ApiKey:         getRequestAPIKey(params.Replacer),
 		HostName:       params.OriginalReq.Host,
@@ -602,7 +600,7 @@ func checkRequestContext(l *logger.LoggerClient, r *http.Request, networkPath st
 
 // handleContextCancellation handles context cancellation by returning appropriate HTTP responses
 // and logging using the standard logFailedAttempt format for consistency
-func handleContextCancellation(l *logger.LoggerClient, promClient *prom.PrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
+func handleContextCancellation(l *logger.LoggerClient, promClient prom.IPrometheusClient, rw http.ResponseWriter, r *http.Request, networkPath string, attempt int, err error, reqStartTime time.Time, networkObj *network) {
 	// Calculate duration
 	duration := time.Since(reqStartTime)
 	// Determine the appropriate HTTP status code and response based on the error type
